@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
-import 'features/home/presentation/home_screen.dart';
+import 'core/theme/app_theme.dart';
+import 'features/home/presentation/home_screen.dart';            // ← import HomeScreen
+import 'features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const DiapaletApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DiapaletApp extends StatelessWidget {
+  const DiapaletApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Dia Palet Takip',
+      title: 'Diapalet',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       home: const HomeScreen(),
+
     );
   }
 }
