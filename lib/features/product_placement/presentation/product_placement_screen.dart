@@ -1,4 +1,3 @@
-import 'package:diapalet/features/product_placement/data/mock_product_service.dart';
 import 'package:flutter/material.dart';
 
 class ProductPlacementScreen extends StatefulWidget {
@@ -9,31 +8,166 @@ class ProductPlacementScreen extends StatefulWidget {
 }
 
 class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
-  List<String> _products = [];
+  // Dummy veriler
+  final List<String> pallets = ['Palet A', 'Palet B', 'Palet C'];
+  final List<String> invoices = ['İrsaliye 1', 'İrsaliye 2'];
+  final List<String> products = ['Gofret', 'Sucuk', 'Bal'];
 
-  @override
-  void initState() {
-    super.initState();
-    loadDummy();
-  }
+  // Seçimler
+  String? selectedPallet;
+  String? selectedInvoice;
+  String? selectedProduct;
 
-  void loadDummy() async {
-    final items = await MockProductService.getProducts();
-    setState(() {
-      _products = items;
-    });
-  }
+  // Miktar girişi kontrolcüsü
+  final TextEditingController quantityController = TextEditingController();
+
+  // Eklenen ürünlerin listesi
+  List<Map<String, dynamic>> addedProducts = [];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Products to Pallet')),
-      body: ListView.builder(
-        itemCount: _products.length,
-        itemBuilder: (context, index) {
-          return ListTile(title: Text(_products[index]));
-        },
+      appBar: AppBar(
+        title: const Text('Palete Ürün Yerleştir'),
       ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Palet Seç Dropdown
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Palet Seç'),
+                value: selectedPallet,
+                items: pallets
+                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: (val) {
+                  setState(() {
+                    selectedPallet = val;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // İrsaliye Seç Dropdown
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'İrsaliye Seç'),
+                value: selectedInvoice,
+                items: invoices
+                    .map((i) => DropdownMenuItem(value: i, child: Text(i)))
+                    .toList(),
+                onChanged: (val) {
+                  setState(() {
+                    selectedInvoice = val;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Ürün Seç Dropdown
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Ürün Seç'),
+                value: selectedProduct,
+                items: products
+                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: (val) {
+                  setState(() {
+                    selectedProduct = val;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Miktar Girişi ve Ekle Butonu
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Miktar Girin',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: addProduct,
+                    child: const Text("Ekle"),
+                  )
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Eklenen Ürünler Listesi
+              const Text(
+                'Eklenen Ürünler:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: addedProducts.length,
+                  itemBuilder: (context, index) {
+                    final item = addedProducts[index];
+                    return ListTile(
+                      title: Text(item['product']),
+                      trailing: Text('${item['quantity']}x'),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Onayla Butonu
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: onConfirm,
+                  child: const Text("Onayla"),
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void addProduct() {
+    if (selectedProduct == null || quantityController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lütfen ürün ve miktar girin.')),
+      );
+      return;
+    }
+
+    setState(() {
+      addedProducts.add({
+        'product': selectedProduct!,
+        'quantity': int.parse(quantityController.text),
+      });
+      quantityController.clear();
+    });
+  }
+
+  void onConfirm() {
+    // Şu anda dummy veri bastırıyoruz
+    debugPrint('Palet: $selectedPallet');
+    debugPrint('İrsaliye: $selectedInvoice');
+    debugPrint('Ürünler: $addedProducts');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Palet kaydedildi!')),
     );
   }
 }
