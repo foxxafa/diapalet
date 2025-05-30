@@ -32,7 +32,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               icon: const Icon(Icons.move_to_inbox),
-              label: const Text('Paleti Rafe Yerleştir'),
+              label: const Text('Paleti Rafa Yerleştir'),
               onPressed: () {
                 Navigator.push(
                   context,
