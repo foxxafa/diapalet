@@ -1,49 +1,62 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Kurumsal birincil renk (örk. koyu mor)
-  static const Color primary = Color(0xFF5E35B1);
-  // Arka plan rengi
-  static const Color background = Color(0xFFF5F5F5);
+  static const Color primary = Color(0xFF0D47A1); // Kurumsal mavi
+  static const Color background = Color(0xFFF1F3F4); // Hafif gri
+  static const Color inputBorder = Color(0xFFCED4DA); // Açık gri kenarlık
 
   static final ThemeData light = ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: primary, brightness: Brightness.light),
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: primary,
+      brightness: Brightness.light,
+    ),
     scaffoldBackgroundColor: background,
+
     appBarTheme: const AppBarTheme(
       backgroundColor: primary,
       foregroundColor: Colors.white,
+      elevation: 0,
     ),
 
-    // Input teması
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.grey),
+        borderSide: BorderSide(color: inputBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: primary, width: 1.5),
       ),
     ),
 
-    // ElevatedButton
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: primary,
+        foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
 
-    // ChoiceChip
     chipTheme: ChipThemeData(
       selectedColor: primary.withOpacity(0.15),
       backgroundColor: Colors.white,
-      labelStyle: const TextStyle(color: Colors.black87),
-      secondaryLabelStyle: const TextStyle(color: Colors.black87),
+      labelStyle: const TextStyle(color: Colors.black),
+      secondaryLabelStyle: const TextStyle(color: Colors.black),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
     ),
   );
 }
