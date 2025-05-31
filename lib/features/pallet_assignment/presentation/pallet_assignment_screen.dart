@@ -70,156 +70,156 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FormBuilder(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: SegmentedButton<Mode>(
-                          segments: const [
-                            ButtonSegment(value: Mode.palet, label: Text('Palet')),
-                            ButtonSegment(value: Mode.kutu, label: Text('Kutu')),
-                          ],
-                          selected: {selectedMode},
-                          onSelectionChanged: (val) =>
-                              setState(() => selectedMode = val.first),
-                          style: SegmentedButton.styleFrom(
-                            backgroundColor: Colors.grey[200],
-                            selectedBackgroundColor:
-                            Theme.of(context).colorScheme.primary,
-                            selectedForegroundColor: Colors.white,
-                          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FormBuilder(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: SegmentedButton<Mode>(
+                        segments: const [
+                          ButtonSegment(value: Mode.palet, label: Text('Palet')),
+                          ButtonSegment(value: Mode.kutu, label: Text('Kutu')),
+                        ],
+                        selected: {selectedMode},
+                        onSelectionChanged: (val) =>
+                            setState(() => selectedMode = val.first),
+                        style: SegmentedButton.styleFrom(
+                          backgroundColor: Colors.grey[200],
+                          selectedBackgroundColor:
+                          Theme.of(context).colorScheme.primary,
+                          selectedForegroundColor: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FormBuilderDropdown<String>(
-                              name: 'pallet',
-                              initialValue: _selectedPallet,
-                              decoration: InputDecoration(
-                                labelText: selectedMode == Mode.palet
-                                    ? 'Palet Seç'
-                                    : 'Kutu Seç',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FormBuilderDropdown<String>(
+                            name: 'pallet',
+                            initialValue: _selectedPallet,
+                            decoration: InputDecoration(
+                              labelText: selectedMode == Mode.palet
+                                  ? 'Palet Seç'
+                                  : 'Kutu Seç',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              items: _pallets
-                                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                                  .toList(),
-                              onChanged: _onPalletChanged,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
+                            items: _pallets
+                                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                                .toList(),
+                            onChanged: _onPalletChanged,
                           ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: _QrButton(onTap: () {}),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FormBuilderTextField(
-                              name: 'quantity',
-                              decoration: InputDecoration(
-                                labelText: 'Miktar',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: _QrButton(onTap: () {}),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FormBuilderTextField(
+                            name: 'quantity',
+                            decoration: InputDecoration(
+                              labelText: 'Miktar',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              keyboardType: TextInputType.number,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FormBuilderTextField(
-                              name: 'corridor',
-                              decoration: InputDecoration(
-                                labelText: 'KORİDOR',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FormBuilderTextField(
+                            name: 'corridor',
+                            decoration: InputDecoration(
+                              labelText: 'KORİDOR',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              keyboardType: TextInputType.number,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FormBuilderTextField(
-                              name: 'shelf',
-                              decoration: InputDecoration(
-                                labelText: 'RAF',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FormBuilderTextField(
+                            name: 'shelf',
+                            decoration: InputDecoration(
+                              labelText: 'RAF',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              keyboardType: TextInputType.number,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: _QrButton(onTap: () {}),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FormBuilderTextField(
-                              name: 'floor',
-                              decoration: InputDecoration(
-                                labelText: 'KAT',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: _QrButton(onTap: () {}),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FormBuilderTextField(
+                            name: 'floor',
+                            decoration: InputDecoration(
+                              labelText: 'KAT',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              keyboardType: TextInputType.number,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                Container(
+              ),
+              const SizedBox(height: 20),
+              // --- SCROLL & EXPANDED KISMI ---
+              Expanded(
+                child: Container(
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
                     borderRadius: BorderRadius.circular(20),
@@ -231,39 +231,37 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         padding: EdgeInsets.all(12),
                         child: Text(
                           'Paletteki Ürünler',
-                          style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                         ),
                       ),
                       const Divider(height: 1),
-                      _products.isEmpty
-                          ? const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: Text('Ürün yok')),
-                      )
-                          : ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.zero,
-                        itemCount: _products.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final item = _products[index];
-                          return ListTile(
-                            title: Text(item.name),
-                            trailing: Text(
-                              '${item.quantity}x',
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w500),
-                            ),
-                          );
-                        },
+                      Expanded(
+                        child: _products.isEmpty
+                            ? const Center(
+                          child: Text('Ürün yok'),
+                        )
+                            : ListView.separated(
+                          padding: EdgeInsets.zero,
+                          itemCount: _products.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final item = _products[index];
+                            return ListTile(
+                              title: Text(item.name),
+                              trailing: Text(
+                                '${item.quantity}x',
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w500),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

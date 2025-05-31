@@ -10,7 +10,8 @@ class ProductPlacementScreen extends StatefulWidget {
 }
 
 class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
-  late final ProductRepository _repository;
+  late ProductRepository _repository; // final değil!
+  bool _isRepoInitialized = false;
 
   List<String> pallets = [];
   List<String> invoices = [];
@@ -28,8 +29,11 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _repository = Provider.of<ProductRepository>(context, listen: false);
-    _loadData();
+    if (!_isRepoInitialized) {
+      _repository = Provider.of<ProductRepository>(context, listen: false);
+      _loadData();
+      _isRepoInitialized = true;
+    }
   }
 
   Future<void> _loadData() async {
@@ -73,98 +77,99 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        decoration: _inputDecoration('Palet Seç'),
-                        value: selectedPallet,
-                        items: pallets
-                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                            .toList(),
-                        onChanged: (val) => setState(() => selectedPallet = val),
+            : Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ÜSTTEKİLER
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      decoration: _inputDecoration('Palet Seç'),
+                      value: selectedPallet,
+                      items: pallets
+                          .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                          .toList(),
+                      onChanged: (val) => setState(() => selectedPallet = val),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: _QrButton(onTap: () {}),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      decoration: _inputDecoration('İrsaliye Seç'),
+                      value: selectedInvoice,
+                      items: invoices
+                          .map((i) => DropdownMenuItem(value: i, child: Text(i)))
+                          .toList(),
+                      onChanged: (val) => setState(() => selectedInvoice = val),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const SizedBox(width: 40),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      decoration: _inputDecoration('Ürün Seç'),
+                      value: selectedProduct,
+                      items: products
+                          .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                          .toList(),
+                      onChanged: (val) => setState(() => selectedProduct = val),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: _QrButton(onTap: () {}),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration('Miktar Girin'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: ElevatedButton(
+                      onPressed: addProduct,
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+                        padding: EdgeInsets.zero,
                       ),
+                      child: const Icon(Icons.add, size: 22),
                     ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: _QrButton(onTap: () {}),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        decoration: _inputDecoration('İrsaliye Seç'),
-                        value: selectedInvoice,
-                        items: invoices
-                            .map((i) => DropdownMenuItem(value: i, child: Text(i)))
-                            .toList(),
-                        onChanged: (val) => setState(() => selectedInvoice = val),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const SizedBox(width: 40),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        decoration: _inputDecoration('Ürün Seç'),
-                        value: selectedProduct,
-                        items: products
-                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                            .toList(),
-                        onChanged: (val) => setState(() => selectedProduct = val),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: _QrButton(onTap: () {}),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: quantityController,
-                        keyboardType: TextInputType.number,
-                        decoration: _inputDecoration('Miktar Girin'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: ElevatedButton(
-                        onPressed: addProduct,
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-                          padding: EdgeInsets.zero,
-                        ),
-                        child: const Icon(Icons.add, size: 22),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Container(
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              // ESAS KISIM: Expanded ile tüm kalan alanı kaplar
+              Expanded(
+                child: Container(
                   decoration: BoxDecoration(
                     color: Colors.grey[200],
                     borderRadius: BorderRadius.circular(18),
@@ -176,41 +181,42 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                         padding: EdgeInsets.all(12),
                         child: Text(
                           'Eklenen Ürünler',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                         ),
                       ),
                       const Divider(height: 1),
-                      addedProducts.isEmpty
-                          ? const Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Center(
-                          child: Text('Henüz ürün eklenmedi.',
-                              style: TextStyle(fontStyle: FontStyle.italic)),
+                      // Listedeki satırlar!
+                      Expanded(
+                        child: addedProducts.isEmpty
+                            ? const Center(
+                          child: Text(
+                            'Henüz ürün eklenmedi.',
+                            style: TextStyle(fontStyle: FontStyle.italic),
+                          ),
+                        )
+                            : ListView.separated(
+                          padding: EdgeInsets.zero,
+                          itemCount: addedProducts.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final item = addedProducts[index];
+                            return ListTile(
+                              title: Text(
+                                  '${item['product']} (${item['pallet']}/${item['invoice']})'),
+                              trailing: Text(
+                                '${item['quantity']}x',
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w500),
+                              ),
+                            );
+                          },
                         ),
-                      )
-                          : ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: addedProducts.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final item = addedProducts[index];
-                          return ListTile(
-                            title: Text(item['product']),
-                            trailing: Text(
-                              '${item['quantity']}x',
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w500),
-                            ),
-                          );
-                        },
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -232,6 +238,8 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
     }
     setState(() {
       addedProducts.add({
+        'pallet': selectedPallet,
+        'invoice': selectedInvoice,
         'product': selectedProduct!,
         'quantity': int.parse(quantityController.text),
       });
