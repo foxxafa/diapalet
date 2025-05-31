@@ -1,22 +1,26 @@
-// features/product_placement/data/mock_product_service.dart
-import '../domain/product_repository.dart';
+import 'package:diapalet/features/product_placement/domain/product_repository.dart';
 
-class MockProductService implements ProductRepository {
+class MockProductRepository implements ProductRepository {
   @override
   Future<List<String>> getPallets() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return ['Palet A', 'Palet B', 'Palet C'];
+    await Future.delayed(const Duration(milliseconds: 500));
+    return List.generate(5, (index) => 'Palet ${100 + index}');
   }
 
   @override
   Future<List<String>> getInvoices() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return ['İrsaliye 1', 'İrsaliye 2'];
+    await Future.delayed(const Duration(milliseconds: 500));
+    return List.generate(3, (index) => 'İrsaliye XYZ00${index + 1}');
   }
 
   @override
   Future<List<String>> getProducts() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return ['Gofret', 'Sucuk', 'Bal'];
+    await Future.delayed(const Duration(milliseconds: 500));
+    return ['Ürün A', 'Ürün B', 'Laptop HP Spectre', 'Klavye Logitech MX', 'Monitor Dell 27"'];
+  }
+
+  @override
+  Future<void> savePalletData(String? palletId, List<Map<String, dynamic>> products) async {
+    await Future.delayed(const Duration(seconds: 1));
   }
 }

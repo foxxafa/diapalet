@@ -1,10 +1,20 @@
+
+enum Mode { palet, kutu }
+
 abstract class PalletRepository {
   List<String> getPalletList();
   List<ProductItem> getPalletProducts(String palletName);
+
+  List<String> getBoxList();
+  List<ProductItem> getBoxProducts(String boxName);
+
+  Future<void> saveAssignment(Map<String, dynamic> formData, Mode mode);
 }
 
 class ProductItem {
+  final String id;
   final String name;
   final int quantity;
-  ProductItem({required this.name, required this.quantity});
+
+  ProductItem({required this.id, required this.name, required this.quantity});
 }

@@ -1,11 +1,15 @@
+// File: features/home/presentation/home_screen.dart
 import 'package:diapalet/features/pallet_assignment/data/mock_pallet_service.dart';
 import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
+import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
+import 'package:diapalet/features/product_placement/presentation/product_placement_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../product_placement/data/mock_product_service.dart';
-import '../../product_placement/domain/product_repository.dart';
-import '../../product_placement/presentation/product_placement_screen.dart';
-import '../../pallet_assignment/presentation/pallet_assignment_screen.dart';
+
+// Changed to absolute package imports for clarity and to help resolver
+import 'package:diapalet/features/product_placement/domain/product_repository.dart';
+import 'package:diapalet/features/product_placement/data/mock_product_service.dart';
+
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -15,21 +19,27 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dia Palet Takip'),
+        centerTitle: true, // Centering title for better aesthetics
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch, // Make buttons stretch
           children: [
             _HomeButton(
-              icon: Icons.inventory_2,
+              icon: Icons.inventory_2_outlined, // Using outlined icon for consistency
               label: "Palete Ürün Yerleştir",
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => Provider<ProductRepository>(
-                      create: (_) => MockProductService(), // İleride buraya ApiProductService yazabilirsin
+                      // Ensure MockProductRepository is defined in the imported
+                      // 'package:diapalet/features/product_placement/data/mock_product_service.dart'
+                      // and that it correctly implements ProductRepository from
+                      // 'package:diapalet/features/product_placement/domain/product_repository.dart'
+                      create: (_) => MockProductRepository(),
                       child: const ProductPlacementScreen(),
                     ),
                   ),
@@ -38,14 +48,14 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 30),
             _HomeButton(
-              icon: Icons.warehouse,
+              icon: Icons.warehouse_outlined, // Using outlined icon
               label: "Paleti Rafa Yerleştir",
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => Provider<PalletRepository>(
-                      create: (_) => MockPalletService(), // İleride buraya ApiPalletService yazabilirsin
+                      create: (_) => MockPalletService(),
                       child: const PalletAssignmentScreen(),
                     ),
                   ),
@@ -72,23 +82,22 @@ class _HomeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return SizedBox(
-      width: double.infinity,
-      height: 120,
-      child: ElevatedButton(
+      height: 130, // Slightly increased height
+      child: ElevatedButton.icon(
+        icon: Icon(icon, size: 48), // Icon first for ElevatedButton.icon
+        label: Text(label, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.all(16),
+          backgroundColor: theme.colorScheme.primaryContainer,
+          foregroundColor: theme.colorScheme.onPrimaryContainer,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          elevation: 3,
+          textStyle: const TextStyle(fontSize: 18), // Ensure label text style is applied
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 48, color: Colors.white),
-            const SizedBox(height: 12),
-            Text(label, style: const TextStyle(fontSize: 18)),
-          ],
-        ),
+        // The child property is not used when icon and label are provided directly
       ),
     );
   }
