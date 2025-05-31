@@ -1,6 +1,11 @@
+import 'package:diapalet/features/pallet_assignment/data/mock_pallet_service.dart';
+import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
 import 'package:flutter/material.dart';
-import 'package:diapalet/features/product_placement/presentation/product_placement_screen.dart';
-import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
+import 'package:provider/provider.dart';
+import '../../product_placement/data/mock_product_service.dart';
+import '../../product_placement/domain/product_repository.dart';
+import '../../product_placement/presentation/product_placement_screen.dart';
+import '../../pallet_assignment/presentation/pallet_assignment_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -23,7 +28,10 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ProductPlacementScreen(),
+                    builder: (context) => Provider<ProductRepository>(
+                      create: (_) => MockProductService(), // İleride buraya ApiProductService yazabilirsin
+                      child: const ProductPlacementScreen(),
+                    ),
                   ),
                 );
               },
@@ -36,7 +44,10 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PalletAssignmentScreen(),
+                    builder: (context) => Provider<PalletRepository>(
+                      create: (_) => MockPalletService(), // İleride buraya ApiPalletService yazabilirsin
+                      child: const PalletAssignmentScreen(),
+                    ),
                   ),
                 );
               },

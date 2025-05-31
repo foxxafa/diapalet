@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../data/mock_product_service.dart';
+import 'package:provider/provider.dart';
 import '../domain/product_repository.dart';
 
 class ProductPlacementScreen extends StatefulWidget {
@@ -11,7 +10,7 @@ class ProductPlacementScreen extends StatefulWidget {
 }
 
 class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
-  final ProductRepository _repository = MockProductService();
+  late final ProductRepository _repository;
 
   List<String> pallets = [];
   List<String> invoices = [];
@@ -23,14 +22,13 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
   final TextEditingController quantityController = TextEditingController();
 
   List<Map<String, dynamic>> addedProducts = [];
-
   bool _loading = true;
-
   final _borderRadius = BorderRadius.circular(12);
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _repository = Provider.of<ProductRepository>(context, listen: false);
     _loadData();
   }
 
@@ -82,7 +80,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Palet seç + QR
                 Row(
                   children: [
                     Expanded(
@@ -99,14 +96,11 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                     SizedBox(
                       width: 40,
                       height: 40,
-                      child: _QrButton(onTap: () {
-                        // TODO: QR kod kamera açma
-                      }),
+                      child: _QrButton(onTap: () {}),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // İrsaliye seç
                 Row(
                   children: [
                     Expanded(
@@ -124,7 +118,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Ürün seç + QR
                 Row(
                   children: [
                     Expanded(
@@ -141,14 +134,11 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                     SizedBox(
                       width: 40,
                       height: 40,
-                      child: _QrButton(onTap: () {
-                        // TODO: QR kod kamera açma
-                      }),
+                      child: _QrButton(onTap: () {}),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Miktar + Ekle
                 Row(
                   children: [
                     Expanded(
@@ -174,7 +164,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                // Eklenen ürünler kutusu
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.grey[200],

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
-import '../data/mock_pallet_service.dart';
+import 'package:provider/provider.dart';
 import '../domain/pallet_repository.dart';
 
 enum Mode { palet, kutu }
@@ -16,15 +16,15 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
   Mode selectedMode = Mode.palet;
 
-  late final PalletRepository _repo;
-  late final List<String> _pallets;
+  late PalletRepository _repo;
+  late List<String> _pallets;
   late String _selectedPallet;
   late List<ProductItem> _products;
 
   @override
-  void initState() {
-    super.initState();
-    _repo = MockPalletService();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _repo = Provider.of<PalletRepository>(context, listen: false);
     _pallets = _repo.getPalletList();
     _selectedPallet = _pallets.first;
     _products = _repo.getPalletProducts(_selectedPallet);
@@ -40,7 +40,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Ekran yüksekliği ve buton yüksekliği
     final double screenHeight = MediaQuery.of(context).size.height;
     final double buttonHeight = screenHeight * 0.10;
 
@@ -50,11 +49,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         centerTitle: true,
       ),
       resizeToAvoidBottomInset: true,
-      // Buton alt tarafta sabit
       bottomNavigationBar: Container(
         color: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        height: buttonHeight, // Ekranın %15'i kadar yükseklik
+        height: buttonHeight,
         child: ElevatedButton.icon(
           onPressed: () {
             if (_formKey.currentState?.saveAndValidate() ?? false) {
@@ -79,7 +77,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ÜST: Form
                 FormBuilder(
                   key: _formKey,
                   child: Column(
@@ -103,8 +100,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-
-                      // Palet Seç Dropdown
                       Row(
                         children: [
                           Expanded(
@@ -131,15 +126,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           SizedBox(
                             width: 40,
                             height: 40,
-                            child: _QrButton(onTap: () {
-                              // TODO: QR açma işlemi
-                            }),
+                            child: _QrButton(onTap: () {}),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
-
-                      // Diğer form alanları...
                       Row(
                         children: [
                           Expanded(
@@ -200,9 +191,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           SizedBox(
                             width: 40,
                             height: 40,
-                            child: _QrButton(onTap: () {
-                              // TODO: QR açma işlemi
-                            }),
+                            child: _QrButton(onTap: () {}),
                           ),
                         ],
                       ),
@@ -230,8 +219,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ORTA: Dinamik ürün listesi
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.grey[300],
@@ -244,8 +231,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         padding: EdgeInsets.all(12),
                         child: Text(
                           'Paletteki Ürünler',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w600),
+                          style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                         ),
                       ),
                       const Divider(height: 1),
@@ -259,8 +246,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         padding: EdgeInsets.zero,
                         itemCount: _products.length,
-                        separatorBuilder: (_, __) =>
-                        const Divider(height: 1),
+                        separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final item = _products[index];
                           return ListTile(
@@ -268,8 +254,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                             trailing: Text(
                               '${item.quantity}x',
                               style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500),
+                                  fontSize: 16, fontWeight: FontWeight.w500),
                             ),
                           );
                         },
@@ -286,7 +271,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 }
 
-// QR Button aynen kalabilir
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   const _QrButton({required this.onTap});
