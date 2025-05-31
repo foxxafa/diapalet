@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../pallet_assignment/presentation/pallet_assignment_screen.dart';
-import '../../product_placement/presentation/product_placement_screen.dart';
+import 'package:diapalet/features/product_placement/presentation/product_placement_screen.dart';
+import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -10,17 +10,16 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dia Palet Takip'),
-        centerTitle: true,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add_box),
-              label: const Text('Palete Ürün Yerleştir'),
-              onPressed: () {
+            _HomeButton(
+              icon: Icons.inventory_2,
+              label: "Palete Ürün Yerleştir",
+              onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -29,11 +28,11 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.move_to_inbox),
-              label: const Text('Paleti Rafa Yerleştir'),
-              onPressed: () {
+            const SizedBox(height: 30),
+            _HomeButton(
+              icon: Icons.warehouse,
+              label: "Paleti Rafa Yerleştir",
+              onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -42,6 +41,41 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _HomeButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 120,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 48, color: Colors.white),
+            const SizedBox(height: 12),
+            Text(label, style: const TextStyle(fontSize: 18)),
           ],
         ),
       ),
