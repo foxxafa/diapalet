@@ -1,4 +1,7 @@
-// File: features/home/presentation/home_screen.dart
+// lib/features/home/presentation/home_screen.dart
+import 'package:diapalet/features/goods_receiving/data/mock_goods_receiving_service.dart';
+import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/pallet_assignment/data/mock_pallet_service.dart';
 import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
@@ -28,6 +31,22 @@ class HomeScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch, // Make buttons stretch
           children: [
             _HomeButton(
+              icon: Icons.input_outlined, // Icon for Goods Receiving
+              label: "Mal Kabul (Sipariş Girişi)",
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Provider<GoodsReceivingRepository>(
+                      create: (_) => MockGoodsReceivingService(),
+                      child: const GoodsReceivingScreen(),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24), // Adjusted spacing
+            _HomeButton(
               icon: Icons.inventory_2_outlined, // Using outlined icon for consistency
               label: "Palete Ürün Yerleştir",
               onTap: () {
@@ -35,10 +54,6 @@ class HomeScreen extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (context) => Provider<ProductRepository>(
-                      // Ensure MockProductRepository is defined in the imported
-                      // 'package:diapalet/features/product_placement/data/mock_product_service.dart'
-                      // and that it correctly implements ProductRepository from
-                      // 'package:diapalet/features/product_placement/domain/product_repository.dart'
                       create: (_) => MockProductRepository(),
                       child: const ProductPlacementScreen(),
                     ),
@@ -46,7 +61,7 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24), // Adjusted spacing
             _HomeButton(
               icon: Icons.warehouse_outlined, // Using outlined icon
               label: "Paleti Rafa Yerleştir",
@@ -84,21 +99,25 @@ class _HomeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SizedBox(
-      height: 130, // Slightly increased height
+      height: 120, // Adjusted height for potentially longer labels
       child: ElevatedButton.icon(
-        icon: Icon(icon, size: 48), // Icon first for ElevatedButton.icon
-        label: Text(label, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        icon: Icon(icon, size: 44), // Icon first
+        label: Text(
+          label,
+          textAlign: TextAlign.center, // Center text if it wraps
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primaryContainer,
           foregroundColor: theme.colorScheme.onPrimaryContainer,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), // Adjusted padding
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 3,
-          textStyle: const TextStyle(fontSize: 18), // Ensure label text style is applied
+          textStyle: const TextStyle(fontSize: 17), // Ensure label text style is applied
         ),
-        // The child property is not used when icon and label are provided directly
       ),
     );
   }
 }
+
