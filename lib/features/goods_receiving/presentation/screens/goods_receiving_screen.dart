@@ -70,6 +70,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _showErrorSnackBar("Lütfen bir barkod girin.");
       return;
     }
+    FocusScope.of(context).unfocus(); // Dismiss keyboard
     setState(() => _isFetchingProduct = true);
     try {
       final productInfo = await _repository.getProductDetailsByBarcode(_barcodeController.text);
@@ -103,6 +104,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _selectExpirationDate(BuildContext context) async {
+    FocusScope.of(context).unfocus(); // Dismiss keyboard before showing date picker
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _expirationDate ?? DateTime.now(),
@@ -118,6 +120,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   void _addProductToList() {
+    FocusScope.of(context).unfocus(); // Dismiss keyboard
     if (!_formKey.currentState!.validate()) {
       _showErrorSnackBar("Lütfen tüm zorunlu alanları doğru doldurun.");
       return;
@@ -149,13 +152,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _expirationDate = null;
     _trackingNumberController.clear();
     _quantityController.clear();
-    // _selectedUnit = _availableUnits.isNotEmpty ? _availableUnits.first : null; // Optionally reset unit
-    // Keep unit selected or reset as per preference
     if (mounted) {
-      _formKey.currentState?.reset(); // Resets validation state as well
-      // Manually reset dropdown if not handled by form reset
+      _formKey.currentState?.reset();
       setState(() {
-        _selectedUnit = null; // Or pre-select if desired
+        _selectedUnit = null;
       });
     }
   }
@@ -168,6 +168,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _saveAndConfirm() async {
+    FocusScope.of(context).unfocus(); // Dismiss keyboard
     if (_addedProducts.isEmpty) {
       _showErrorSnackBar("Kaydedilecek ürün bulunmuyor.");
       return;
@@ -219,14 +220,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating),
     );
   }
 
   void _showSuccessSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: isError ? Colors.orangeAccent : Colors.green),
+      SnackBar(content: Text(message), backgroundColor: isError ? Colors.orangeAccent : Colors.green, behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -236,7 +237,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       filled: filled,
       fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
       border: OutlineInputBorder(borderRadius: _borderRadius),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2), // Adjusted for vertical centering
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
     );
@@ -252,9 +253,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         title: const Text('Mal Kabul Ekranı'),
         centerTitle: true,
       ),
-      resizeToAvoidBottomInset: true,
+      // resizeToAvoidBottomInset: true, // This can be true, SingleChildScrollView handles the rest
       bottomNavigationBar: _isLoading
-          ? null // Hide if overall loading
+          ? null
           : Container(
         margin: const EdgeInsets.only(bottom: 8.0, left: 20.0, right: 20.0),
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -270,28 +271,33 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ),
       ),
       body: SafeArea(
-        child: _isLoading && _availableUnits.isEmpty // Show loader only if initial data isn't loaded
+        child: _isLoading && _availableUnits.isEmpty
             ? const Center(child: CircularProgressIndicator())
-            : Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildBarcodeSection(),
-                const SizedBox(height: _gap),
-                _buildProductInfoSection(),
-                const SizedBox(height: _gap),
-                _buildExpirationAndTrackingSection(),
-                const SizedBox(height: _gap),
-                _buildQuantityAndUnitSection(),
-                const SizedBox(height: _gap),
-                _buildAddButton(),
-                const SizedBox(height: _gap + 4),
-                _buildAddedProductsListTitle(),
-                _buildAddedProductsList(),
-              ],
+            : SingleChildScrollView( // Wrap with SingleChildScrollView
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildBarcodeSection(),
+                  const SizedBox(height: _gap),
+                  _buildProductInfoSection(),
+                  const SizedBox(height: _gap),
+                  _buildExpirationAndTrackingSection(),
+                  const SizedBox(height: _gap),
+                  _buildQuantityAndUnitSection(),
+                  const SizedBox(height: _gap),
+                  _buildAddButton(),
+                  const SizedBox(height: _gap + 4),
+                  _buildAddedProductsListTitle(),
+                  // The ListView for added products needs a defined height or to be non-scrollable
+                  // if its parent SingleChildScrollView is handling the overall scroll.
+                  // Using shrinkWrap and NeverScrollableScrollPhysics for the inner ListView.
+                  _buildAddedProductsList(),
+                ],
+              ),
             ),
           ),
         ),
@@ -317,7 +323,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
             ),
             validator: (value) => value == null || value.isEmpty ? 'Barkod boş olamaz' : null,
-            onFieldSubmitted: (_) => _fetchProductDetails(), // Fetch on submit
+            onFieldSubmitted: (_) => _fetchProductDetails(),
           ),
         ),
         const SizedBox(width: _gap / 2),
@@ -325,7 +331,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           width: _fieldHeight,
           height: _fieldHeight,
           child: ElevatedButton(
-            onPressed: () { /* Placeholder for QR Scan Logic */
+            onPressed: () {
               _showSuccessSnackBar('QR Okuyucu açılacak (entegre edilecek).');
             },
             style: ElevatedButton.styleFrom(
@@ -383,9 +389,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           child: TextFormField(
             controller: _trackingNumberController,
-            readOnly: true,
+            readOnly: true, // Made readOnly as it's auto-generated
             decoration: _inputDecoration('Takip Numarası (Oto)'),
-            // No validator needed as it's auto-generated
           ),
         ),
       ],
@@ -397,7 +402,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 2, // Give more space to quantity
+          flex: 2,
           child: TextFormField(
             controller: _quantityController,
             keyboardType: TextInputType.number,
@@ -411,7 +416,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ),
         const SizedBox(width: _gap),
         Expanded(
-          flex: 3, // Give more space to unit dropdown
+          flex: 3,
           child: DropdownButtonFormField<String>(
             decoration: _inputDecoration('Birim', filled: true),
             value: _selectedUnit,
@@ -456,24 +461,33 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildAddedProductsList() {
-    return Expanded(
-      child: _addedProducts.isEmpty
-          ? Center(
+    // If the list itself can grow very long and needs its own scroll,
+    // then it should be constrained in height and use its own ScrollController.
+    // However, for typical use within a SingleChildScrollView, making it non-scrollable
+    // and letting the parent scroll is often simpler.
+    // If the list of added products is expected to be very long, consider a fixed height for this ListView.
+    // For now, using shrinkWrap and NeverScrollableScrollPhysics to make it take up only needed space
+    // and prevent nested scrolling conflicts.
+    return _addedProducts.isEmpty
+        ? Center(
+        child: Padding( // Added padding for better spacing when empty
+          padding: const EdgeInsets.symmetric(vertical: 20.0),
           child: Text(
             'Henüz listeye ürün eklenmedi.',
             style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey.shade600),
-          ))
-          : ListView.builder(
-        itemCount: _addedProducts.length,
-        itemBuilder: (context, index) {
-          final item = _addedProducts[index];
-          return ReceivedProductListItemCard(
-            item: item,
-            onDelete: () => _removeProductFromList(index),
-          );
-        },
-      ),
+          ),
+        ))
+        : ListView.builder(
+      shrinkWrap: true, // Important for ListView inside SingleChildScrollView
+      physics: const NeverScrollableScrollPhysics(), // Disables scrolling for this ListView
+      itemCount: _addedProducts.length,
+      itemBuilder: (context, index) {
+        final item = _addedProducts[index];
+        return ReceivedProductListItemCard(
+          item: item,
+          onDelete: () => _removeProductFromList(index),
+        );
+      },
     );
   }
 }
-
