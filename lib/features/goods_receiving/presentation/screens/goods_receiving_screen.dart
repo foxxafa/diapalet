@@ -35,9 +35,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   final List<ReceivedProductItem> _addedProducts = [];
 
   static const double _fieldHeight = 56;
-  static const double _gap = 12;
+  static const double _gap = 12; // Form elemanları arası genel boşluk
+  static const double _smallGap = 6; // Daha küçük boşluklar için
   final _borderRadius = BorderRadius.circular(12);
-  // _addedProductsListHeight artık kullanılmayacak, Expanded ile dinamik olacak.
+  late FocusNode _barcodeFocusNode; // Barkod alanı için FocusNode
+
+  @override
+  void initState() {
+    super.initState();
+    _barcodeFocusNode = FocusNode(); // FocusNode'u başlat
+  }
 
   @override
   void didChangeDependencies() {
@@ -49,10 +56,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _barcodeController.dispose();
+    _trackingNumberController.dispose();
+    _quantityController.dispose();
+    _barcodeFocusNode.dispose(); // FocusNode'u dispose et
+    super.dispose();
+  }
+
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
     try {
       _availableUnits = await _repository.getAvailableUnits();
+      if (_availableUnits.isNotEmpty && _selectedUnit == null) {
+        // Otomatik birim seçimi istenirse burada yapılabilir
+        // _selectedUnit = _availableUnits.first;
+      }
     } catch (e) {
       _showErrorSnackBar("Birimler yüklenirken hata: ${e.toString()}");
     }
@@ -71,7 +91,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _barcodeController.text = barcodeValue;
     }
 
-    FocusScope.of(context).unfocus();
+    FocusScope.of(context).unfocus(); // Genel odağı kaldır
     setState(() => _isFetchingProduct = true);
     try {
       final productInfo = await _repository.getProductDetailsByBarcode(barcodeToFetch);
@@ -81,6 +101,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           if (productInfo == null) {
             _showErrorSnackBar("Barkod bulunamadı: $barcodeToFetch");
           }
+          // Ürün bulunduktan sonra SKT alanına odaklanılabilir veya miktar alanına.
         });
       }
     } catch (e) {
@@ -120,8 +141,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _expirationDate ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
+      firstDate: DateTime.now().subtract(const Duration(days: 365 * 5)), // Son 5 yıl
+      lastDate: DateTime.now().add(const Duration(days: 365 * 10)), // Gelecek 10 yıl
+      helpText: 'SON KULLANMA TARİHİ',
+      confirmText: 'TAMAM',
+      cancelText: 'İPTAL',
     );
     if (picked != null && picked != _expirationDate) {
       setState(() {
@@ -167,15 +191,22 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   void _resetFormFields() {
+    _formKey.currentState?.reset(); // Formun kendi reset metodu çağrılabilir.
     _barcodeController.clear();
     _currentProductInfo = null;
     _expirationDate = null;
     _trackingNumberController.clear();
     _quantityController.clear();
+
     if (mounted) {
-      _formKey.currentState?.reset();
       setState(() {
-        _selectedUnit = null;
+        _selectedUnit = null; // Dropdown'ı sıfırla
+      });
+      // Barkod alanına tekrar odaklan
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _barcodeFocusNode.canRequestFocus) {
+          FocusScope.of(context).requestFocus(_barcodeFocusNode);
+        }
       });
     }
   }
@@ -252,12 +283,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool filled = false}) {
+    final textTheme = Theme.of(context).textTheme;
+    final double baseFontSize = textTheme.titleMedium?.fontSize ?? 16.0;
+    final double verticalPadding = (_fieldHeight - (baseFontSize * 1.2)) / 2;
+
     return InputDecoration(
       labelText: label,
       filled: filled,
       fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
       border: OutlineInputBorder(borderRadius: _borderRadius),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: verticalPadding > 0 ? verticalPadding : 16),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
     );
@@ -273,7 +308,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         title: const Text('Mal Kabul Ekranı'),
         centerTitle: true,
       ),
-      resizeToAvoidBottomInset: true, // Klavye açıldığında içeriğin kaydırılması için
+      resizeToAvoidBottomInset: true,
       bottomNavigationBar: _isLoading
           ? null
           : Container(
@@ -281,7 +316,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12),
         height: bottomNavHeight,
         child: ElevatedButton.icon(
-          onPressed: _addedProducts.isEmpty || _isLoading ? null : _saveAndConfirm,
+          onPressed: _addedProducts.isEmpty || _isLoading || _isFetchingProduct ? null : _saveAndConfirm,
           icon: const Icon(Icons.check_circle_outline),
           label: const Text('Kaydet ve Onayla'),
           style: ElevatedButton.styleFrom(
@@ -290,103 +325,141 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         ),
       ),
-      body: SafeArea(
-        child: _isLoading && _availableUnits.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-        // SingleChildScrollView KALDIRILDI
-            : Padding( // Ana Padding dışarıda
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column( // Ana Column
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildBarcodeSection(),
-                const SizedBox(height: _gap),
-                _buildProductInfoSection(),
-                const SizedBox(height: _gap),
-                _buildExpirationAndTrackingSection(),
-                const SizedBox(height: _gap),
-                _buildQuantityAndUnitSection(),
-                const SizedBox(height: _gap),
-                _buildAddButton(),
-                const SizedBox(height: _gap + 4), // "Listeye Ekle" butonu ile liste başlığı arası boşluk
-                // _buildAddedProductsListTitle(), // Başlık artık _buildAddedProductsSection içinde
-                _buildAddedProductsSection(), // Liste ve başlığını içeren Expanded widget
-              ],
+      body: Builder( // Wrap the body's content with a Builder
+        builder: (BuildContext scaffoldContext) { // This context is under the Scaffold
+          // Use scaffoldContext to get appBarMaxHeight.
+          // kToolbarHeight is a standard AppBar height, used as part of a fallback.
+          final double appBarMaxHeight = Scaffold.of(scaffoldContext).appBarMaxHeight ??
+              (kToolbarHeight + MediaQuery.of(scaffoldContext).padding.top);
+
+          // Calculate the available height for the SizedBox.
+          // This formula subtracts:
+          // 1. appBarMaxHeight (which includes AppBar's own height + status bar height).
+          // 2. bottomNavHeight.
+          // 3. System bottom inset (like Android navigation bar).
+          // 4. Vertical padding of the main Padding widget (16 top + 16 bottom = 32).
+          final double calculatedHeight = screenHeight -
+              appBarMaxHeight -
+              bottomNavHeight -
+              MediaQuery.of(context).padding.bottom - // System bottom inset (can use outer context)
+              32; // Vertical padding from Padding widget
+
+          return SafeArea(
+            child: _isLoading && _availableUnits.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Form(
+                  key: _formKey,
+                  child: SizedBox(
+                    height: calculatedHeight < 0 ? 0 : calculatedHeight, // Ensure height is not negative
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildBarcodeSection(),
+                        const SizedBox(height: _smallGap),
+                        _buildProductInfoSection(),
+                        const SizedBox(height: _gap),
+                        _buildExpirationAndTrackingSection(),
+                        const SizedBox(height: _gap),
+                        _buildQuantityAndUnitSection(),
+                        const SizedBox(height: _gap),
+                        _buildAddButton(),
+                        const SizedBox(height: _smallGap),
+                        Expanded(
+                          child: _buildAddedProductsSection(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildBarcodeSection() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextFormField(
-            controller: _barcodeController,
-            decoration: _inputDecoration(
-              'Barkod Okut/Yaz',
-              suffixIcon: _isFetchingProduct
-                  ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)))
-                  : IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: () => _fetchProductDetails(),
-                tooltip: 'Ürünü Bul',
+    return SizedBox(
+      height: _fieldHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _barcodeController,
+              focusNode: _barcodeFocusNode,
+              decoration: _inputDecoration(
+                'Barkod Okut/Yaz',
+                suffixIcon: _isFetchingProduct
+                    ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                    : IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: () => _fetchProductDetails(),
+                  tooltip: 'Ürünü Bul',
+                ),
               ),
+              validator: (value) => value == null || value.isEmpty ? 'Barkod boş olamaz' : null,
+              onFieldSubmitted: (_) => _fetchProductDetails(),
             ),
-            validator: (value) => value == null || value.isEmpty ? 'Barkod boş olamaz' : null,
-            onFieldSubmitted: (_) => _fetchProductDetails(),
           ),
-        ),
-        const SizedBox(width: _gap / 2),
-        SizedBox(
-          width: _fieldHeight,
-          height: _fieldHeight,
-          child: ElevatedButton(
-            onPressed: _scanBarcode,
-            style: ElevatedButton.styleFrom(
-              shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-              padding: EdgeInsets.zero,
-              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-              foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+          const SizedBox(width: _gap / 2),
+          SizedBox(
+            width: _fieldHeight,
+            height: _fieldHeight,
+            child: ElevatedButton(
+              onPressed: _scanBarcode,
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+                padding: EdgeInsets.zero,
+                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+              child: const Icon(Icons.qr_code_scanner, size: 28),
             ),
-            child: const Icon(Icons.qr_code_scanner, size: 28),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildProductInfoSection() {
     return Container(
-      padding: const EdgeInsets.all(12.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2),
         borderRadius: _borderRadius,
         border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
       ),
-      constraints: const BoxConstraints(minHeight: 70),
       alignment: Alignment.centerLeft,
       child: _isFetchingProduct
-          ? const Center(child: SizedBox(width:24, height:24, child: CircularProgressIndicator(strokeWidth: 3)))
+          ? const Center(child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 8.0),
+        child: SizedBox(width:20, height:20, child: CircularProgressIndicator(strokeWidth: 2.5)),
+      ))
           : (_currentProductInfo == null || _currentProductInfo == ProductInfo.empty)
-          ? Text('Barkod okutulduğunda ürün bilgileri burada görünecektir.', style: TextStyle(color: Theme.of(context).hintColor))
+          ? Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12.0),
+        child: Text('Barkod okutulduğunda ürün bilgileri burada görünecektir.', style: TextStyle(color: Theme.of(context).hintColor)),
+      )
           : Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             _currentProductInfo!.name.isNotEmpty ? _currentProductInfo!.name : "Ürün Adı: Bulunamadı",
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             _currentProductInfo!.stockCode.isNotEmpty ? 'Stok Kodu: ${_currentProductInfo!.stockCode}' : 'Stok Kodu: -',
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -394,67 +467,73 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildExpirationAndTrackingSection() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextFormField(
-            readOnly: true,
-            onTap: () => _selectExpirationDate(context),
-            decoration: _inputDecoration(
-              _expirationDate != null ? DateFormat('dd.MM.yyyy').format(_expirationDate!) : 'Son Kullanma Tarihi',
-              suffixIcon: const Icon(Icons.calendar_today),
+    return SizedBox(
+      height: _fieldHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextFormField(
+              readOnly: true,
+              onTap: () => _selectExpirationDate(context),
+              decoration: _inputDecoration(
+                _expirationDate != null ? DateFormat('dd.MM.yyyy').format(_expirationDate!) : 'Son Kullanma Tarihi',
+                suffixIcon: const Icon(Icons.calendar_today),
+              ),
+              validator: (value) => _expirationDate == null ? 'SKT seçin' : null,
             ),
-            validator: (value) => _expirationDate == null ? 'SKT seçin' : null,
           ),
-        ),
-        const SizedBox(width: _gap),
-        Expanded(
-          child: TextFormField(
-            controller: _trackingNumberController,
-            readOnly: true,
-            decoration: _inputDecoration('Takip Numarası (Oto)'),
+          const SizedBox(width: _gap),
+          Expanded(
+            child: TextFormField(
+              controller: _trackingNumberController,
+              readOnly: true,
+              decoration: _inputDecoration('Takip Numarası (Oto)'),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildQuantityAndUnitSection() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 2,
-          child: TextFormField(
-            controller: _quantityController,
-            keyboardType: TextInputType.number,
-            decoration: _inputDecoration('Miktar'),
-            validator: (value) {
-              if (value == null || value.isEmpty) return 'Miktar girin';
-              if (int.tryParse(value) == null || int.parse(value) <= 0) return 'Geçerli miktar';
-              return null;
-            },
+    return SizedBox(
+      height: _fieldHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 2,
+            child: TextFormField(
+              controller: _quantityController,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration('Miktar'),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Miktar girin';
+                if (int.tryParse(value) == null || int.parse(value) <= 0) return 'Geçerli miktar';
+                return null;
+              },
+            ),
           ),
-        ),
-        const SizedBox(width: _gap),
-        Expanded(
-          flex: 3,
-          child: DropdownButtonFormField<String>(
-            decoration: _inputDecoration('Birim', filled: true),
-            value: _selectedUnit,
-            isExpanded: true,
-            hint: const Text('Birim Seçin'),
-            items: _availableUnits.map((String unit) {
-              return DropdownMenuItem<String>(value: unit, child: Text(unit));
-            }).toList(),
-            onChanged: (String? newValue) {
-              setState(() => _selectedUnit = newValue);
-            },
-            validator: (value) => value == null ? 'Birim seçin' : null,
+          const SizedBox(width: _gap),
+          Expanded(
+            flex: 3,
+            child: DropdownButtonFormField<String>(
+              decoration: _inputDecoration('Birim', filled: true),
+              value: _selectedUnit,
+              isExpanded: true,
+              hint: const Text('Birim Seçin'),
+              items: _availableUnits.map((String unit) {
+                return DropdownMenuItem<String>(value: unit, child: Text(unit));
+              }).toList(),
+              onChanged: (String? newValue) {
+                setState(() => _selectedUnit = newValue);
+              },
+              validator: (value) => value == null ? 'Birim seçin' : null,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -473,60 +552,50 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // Bu metot artık kullanılmayacak, başlık _buildAddedProductsSection içine taşındı.
-  // Widget _buildAddedProductsListTitle() { ... }
-
-  // Bu metot, başlık ve listeyi içeren Expanded bir bölüm döndürecek.
   Widget _buildAddedProductsSection() {
-    return Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          // ProductPlacementScreen'deki gibi bir arka plan rengi eklenebilir.
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-          borderRadius: _borderRadius,
-          border: Border.all(color: Theme.of(context).dividerColor),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding( // Başlık için Padding
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Text(
-                'Eklenen Ürünler (${_addedProducts.length})',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+        borderRadius: _borderRadius,
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              'Eklenen Ürünler (${_addedProducts.length})',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-            const Divider(height: 1, thickness: 1), // Başlık ve liste arası ayraç
-            Expanded( // ListView'in bu Column içinde kalan alanı doldurması için
-              child: _addedProducts.isEmpty
-                  ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Henüz listeye ürün eklenmedi.',
-                    style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
-                    textAlign: TextAlign.center,
-                  ),
+          ),
+          const Divider(height: 1, thickness: 1),
+          Expanded(
+            child: _addedProducts.isEmpty
+                ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Henüz listeye ürün eklenmedi.',
+                  style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
+                  textAlign: TextAlign.center,
                 ),
-              )
-                  : ListView.builder(
-                padding: EdgeInsets.zero, // Kartlar kendi padding/margin'lerini yönetir
-                itemCount: _addedProducts.length,
-                itemBuilder: (context, index) {
-                  final item = _addedProducts[index];
-                  return ReceivedProductListItemCard(
-                    item: item,
-                    onDelete: () => _removeProductFromList(index),
-                  );
-                },
               ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.only(top: _smallGap, bottom: _smallGap),
+              itemCount: _addedProducts.length,
+              itemBuilder: (context, index) {
+                final item = _addedProducts[index];
+                return ReceivedProductListItemCard(
+                  item: item,
+                  onDelete: () => _removeProductFromList(index),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-
-// Eski _buildAddedProductsList metodu artık _buildAddedProductsSection içinde birleştirildi.
-// Widget _buildAddedProductsList() { ... }
 }
