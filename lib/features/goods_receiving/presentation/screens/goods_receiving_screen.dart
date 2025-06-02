@@ -7,7 +7,8 @@ import 'package:provider/provider.dart';
 import '../../domain/entities/product_info.dart';
 import '../../domain/entities/received_product_item.dart';
 import '../../domain/repositories/goods_receiving_repository.dart';
-import '../widgets/received_product_list_item_card.dart'; // Import the card widget
+import '../widgets/received_product_list_item_card.dart';
+import '../../../../core/widgets/qr_scanner_screen.dart'; // Import the scanner screen
 
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
@@ -19,10 +20,9 @@ class GoodsReceivingScreen extends StatefulWidget {
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   late GoodsReceivingRepository _repository;
   bool _isRepoInitialized = false;
-  bool _isLoading = false; // For general loading state
-  bool _isFetchingProduct = false; // For barcode specific loading
+  bool _isLoading = false;
+  bool _isFetchingProduct = false;
 
-  // Form Controllers & State
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _barcodeController = TextEditingController();
   ProductInfo? _currentProductInfo;
@@ -32,10 +32,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   String? _selectedUnit;
   List<String> _availableUnits = [];
 
-  // List of added products
   final List<ReceivedProductItem> _addedProducts = [];
 
-  // UI Constants
   static const double _fieldHeight = 56;
   static const double _gap = 12;
   final _borderRadius = BorderRadius.circular(12);
@@ -54,9 +52,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     setState(() => _isLoading = true);
     try {
       _availableUnits = await _repository.getAvailableUnits();
-      if (_availableUnits.isNotEmpty) {
-        // _selectedUnit = _availableUnits.first; // Optionally pre-select
-      }
     } catch (e) {
       _showErrorSnackBar("Birimler yüklenirken hata: ${e.toString()}");
     }
@@ -65,20 +60,29 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  Future<void> _fetchProductDetails() async {
-    if (_barcodeController.text.isEmpty) {
-      _showErrorSnackBar("Lütfen bir barkod girin.");
+  Future<void> _fetchProductDetails({String? barcodeValue}) async {
+    final String barcodeToFetch = barcodeValue ?? _barcodeController.text;
+    if (barcodeToFetch.isEmpty) {
+      _showErrorSnackBar("Lütfen bir barkod girin veya taratın.");
       return;
     }
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
+    // If barcodeValue is provided (from QR scan), update the controller
+    if (barcodeValue != null && _barcodeController.text != barcodeValue) {
+      _barcodeController.text = barcodeValue;
+    }
+
+    FocusScope.of(context).unfocus();
     setState(() => _isFetchingProduct = true);
     try {
-      final productInfo = await _repository.getProductDetailsByBarcode(_barcodeController.text);
+      final productInfo = await _repository.getProductDetailsByBarcode(barcodeToFetch);
       if (mounted) {
         setState(() {
           _currentProductInfo = productInfo;
           if (productInfo == null) {
-            _showErrorSnackBar("Barkod bulunamadı: ${_barcodeController.text}");
+            _showErrorSnackBar("Barkod bulunamadı: $barcodeToFetch");
+          } else {
+            // Optionally, move focus to the next logical field, e.g., expiration date
+            // For now, just fetching is enough.
           }
         });
       }
@@ -94,9 +98,22 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
+  Future<void> _scanBarcode() async {
+    FocusScope.of(context).unfocus(); // Dismiss keyboard if open
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      // Update controller and directly call fetch (simulates enter)
+      await _fetchProductDetails(barcodeValue: result);
+    }
+  }
+
+
   void _generateTrackingNumber() {
     if (_expirationDate != null) {
-      // Kural: Tarihin tersten yazımı (YYAAGG) -> Example: 06.03.2027 → 270306 (yyMMdd)
       _trackingNumberController.text = DateFormat('yyMMdd').format(_expirationDate!);
     } else {
       _trackingNumberController.clear();
@@ -104,7 +121,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _selectExpirationDate(BuildContext context) async {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard before showing date picker
+    FocusScope.of(context).unfocus();
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _expirationDate ?? DateTime.now(),
@@ -120,7 +137,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   void _addProductToList() {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) {
       _showErrorSnackBar("Lütfen tüm zorunlu alanları doğru doldurun.");
       return;
@@ -129,6 +146,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _showErrorSnackBar("Lütfen geçerli bir ürün için barkod okutun.");
       return;
     }
+    if (_expirationDate == null) {
+      _showErrorSnackBar("Lütfen son kullanma tarihi seçin.");
+      return;
+    }
+    if (_selectedUnit == null) {
+      _showErrorSnackBar("Lütfen birim seçin.");
+      return;
+    }
+
 
     final newProduct = ReceivedProductItem(
       barcode: _barcodeController.text,
@@ -141,7 +167,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     setState(() {
       _addedProducts.add(newProduct);
-      _resetFormFields(); // Clear form for next entry
+      _resetFormFields();
     });
     _showSuccessSnackBar("${newProduct.productInfo.name} listeye eklendi.");
   }
@@ -168,7 +194,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _saveAndConfirm() async {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
+    FocusScope.of(context).unfocus();
     if (_addedProducts.isEmpty) {
       _showErrorSnackBar("Kaydedilecek ürün bulunmuyor.");
       return;
@@ -237,7 +263,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       filled: filled,
       fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
       border: OutlineInputBorder(borderRadius: _borderRadius),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2), // Adjusted for vertical centering
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
     );
@@ -253,7 +279,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         title: const Text('Mal Kabul Ekranı'),
         centerTitle: true,
       ),
-      // resizeToAvoidBottomInset: true, // This can be true, SingleChildScrollView handles the rest
       bottomNavigationBar: _isLoading
           ? null
           : Container(
@@ -273,7 +298,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       body: SafeArea(
         child: _isLoading && _availableUnits.isEmpty
             ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView( // Wrap with SingleChildScrollView
+            : SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Form(
@@ -292,9 +317,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   _buildAddButton(),
                   const SizedBox(height: _gap + 4),
                   _buildAddedProductsListTitle(),
-                  // The ListView for added products needs a defined height or to be non-scrollable
-                  // if its parent SingleChildScrollView is handling the overall scroll.
-                  // Using shrinkWrap and NeverScrollableScrollPhysics for the inner ListView.
                   _buildAddedProductsList(),
                 ],
               ),
@@ -318,12 +340,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : IconButton(
                 icon: const Icon(Icons.search),
-                onPressed: _fetchProductDetails,
+                onPressed: () => _fetchProductDetails(), // Manually trigger fetch
                 tooltip: 'Ürünü Bul',
               ),
             ),
             validator: (value) => value == null || value.isEmpty ? 'Barkod boş olamaz' : null,
-            onFieldSubmitted: (_) => _fetchProductDetails(),
+            onFieldSubmitted: (_) => _fetchProductDetails(), // Trigger fetch on keyboard submit
           ),
         ),
         const SizedBox(width: _gap / 2),
@@ -331,9 +353,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           width: _fieldHeight,
           height: _fieldHeight,
           child: ElevatedButton(
-            onPressed: () {
-              _showSuccessSnackBar('QR Okuyucu açılacak (entegre edilecek).');
-            },
+            onPressed: _scanBarcode, // Call the new scan method
             style: ElevatedButton.styleFrom(
               shape: RoundedRectangleBorder(borderRadius: _borderRadius),
               padding: EdgeInsets.zero,
@@ -389,7 +409,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           child: TextFormField(
             controller: _trackingNumberController,
-            readOnly: true, // Made readOnly as it's auto-generated
+            readOnly: true,
             decoration: _inputDecoration('Takip Numarası (Oto)'),
           ),
         ),
@@ -461,16 +481,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildAddedProductsList() {
-    // If the list itself can grow very long and needs its own scroll,
-    // then it should be constrained in height and use its own ScrollController.
-    // However, for typical use within a SingleChildScrollView, making it non-scrollable
-    // and letting the parent scroll is often simpler.
-    // If the list of added products is expected to be very long, consider a fixed height for this ListView.
-    // For now, using shrinkWrap and NeverScrollableScrollPhysics to make it take up only needed space
-    // and prevent nested scrolling conflicts.
     return _addedProducts.isEmpty
         ? Center(
-        child: Padding( // Added padding for better spacing when empty
+        child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20.0),
           child: Text(
             'Henüz listeye ürün eklenmedi.',
@@ -478,8 +491,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           ),
         ))
         : ListView.builder(
-      shrinkWrap: true, // Important for ListView inside SingleChildScrollView
-      physics: const NeverScrollableScrollPhysics(), // Disables scrolling for this ListView
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _addedProducts.length,
       itemBuilder: (context, index) {
         final item = _addedProducts[index];

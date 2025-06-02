@@ -4,29 +4,38 @@ import '../domain/pallet_repository.dart'; // Imports PalletRepository, ProductI
 class MockPalletService implements PalletRepository {
   final Map<String, List<ProductItem>> _palletProducts = {
     'Palet #1': [
-      ProductItem(id: 'p1_item1', name: 'Domates', quantity: 100),
-      ProductItem(id: 'p1_item2', name: 'Salata', quantity: 50),
+      ProductItem(id: 'p1_1', name: 'Coca-Cola 1L', quantity: 120),
+      ProductItem(id: 'p1_2', name: 'Fanta 1L', quantity: 80),
+      ProductItem(id: 'p1_3', name: 'Süt İçim 1L', quantity: 60),
     ],
     'Palet #2': [
-      ProductItem(id: 'p2_item1', name: 'Biber', quantity: 200),
-      ProductItem(id: 'p2_item2', name: 'Patlıcan', quantity: 80),
+      ProductItem(id: 'p2_1', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 100),
+      ProductItem(id: 'p2_2', name: 'Bebek Bezi Prima 4 Numara', quantity: 30),
     ],
     'Palet #3': [
-      ProductItem(id: 'p3_item1', name: 'Elma', quantity: 120),
-      ProductItem(id: 'p3_item2', name: 'Armut', quantity: 70),
-      ProductItem(id: 'p3_item3', name: 'Sucuk', quantity: 50),
-      ProductItem(id: 'p3_item4', name: 'Peynir', quantity: 20),
-      ProductItem(id: 'p3_item5', name: 'Elma Tekrar', quantity: 120), // Assuming different ID if it's a distinct entry
-      ProductItem(id: 'p3_item6', name: 'Armut Tekrar', quantity: 70),
-      ProductItem(id: 'p3_item7', name: 'Sucuk Tekrar', quantity: 50),
-      ProductItem(id: 'p3_item8', name: 'Peynir Tekrar', quantity: 20),
+      ProductItem(id: 'p3_1', name: 'Şampuan Elidor 500ml', quantity: 96),
+      ProductItem(id: 'p3_2', name: 'Eti Karam Gofret 40g', quantity: 240),
+      ProductItem(id: 'p3_3', name: 'Ülker Çikolatalı Gofret 35g', quantity: 200),
+      ProductItem(id: 'p3_4', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 100),
+      ProductItem(id: 'p3_5', name: 'Bebek Bezi Prima 4 Numara', quantity: 30),
     ],
   };
 
   final Map<String, List<ProductItem>> _boxProducts = {
-    'Kutu #A': [ProductItem(id: 'bA_item1', name: 'Şampuan', quantity: 30)],
-    'Kutu #B': [ProductItem(id: 'bB_item1', name: 'Deterjan', quantity: 15)],
+    'Kutu #A': [
+      ProductItem(id: 'bA_1', name: 'Coca-Cola 1L', quantity: 12),
+      ProductItem(id: 'bA_2', name: 'Fanta 1L', quantity: 12),
+    ],
+    'Kutu #B': [
+      ProductItem(id: 'bB_1', name: 'Şampuan Elidor 500ml', quantity: 6),
+      ProductItem(id: 'bB_2', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 4),
+    ],
+    'Kutu #C': [
+      ProductItem(id: 'bC_1', name: 'Eti Karam Gofret 40g', quantity: 24),
+      ProductItem(id: 'bC_2', name: 'Ülker Çikolatalı Gofret 35g', quantity: 20),
+    ],
   };
+
 
   @override
   List<String> getPalletList() => _palletProducts.keys.toList();

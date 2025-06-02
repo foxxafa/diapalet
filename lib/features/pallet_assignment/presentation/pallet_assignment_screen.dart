@@ -4,10 +4,9 @@ import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:provider/provider.dart';
 
-// Imports PalletRepository, ProductItem, AND Mode from the domain layer
+// Domain katmanından Mode, ProductItem ve PalletRepository import ediliyor
 import '../domain/pallet_repository.dart';
-
-// The local enum Mode definition has been REMOVED from this file.
+import '../../../core/widgets/qr_scanner_screen.dart'; // Import the scanner screen
 
 class PalletAssignmentScreen extends StatefulWidget {
   const PalletAssignmentScreen({super.key});
@@ -18,7 +17,7 @@ class PalletAssignmentScreen extends StatefulWidget {
 
 class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
-  Mode _selectedMode = Mode.palet; // Now uses Mode from domain
+  Mode _selectedMode = Mode.palet; // Bu artık domain/pallet_repository.dart dosyasından gelen Mode tipini kullanacak
 
   late PalletRepository _repo;
   bool _isRepoInitialized = false;
@@ -45,7 +44,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Future<void> _initializeData() async {
     setState(() => _isLoading = true);
-    await Future.delayed(Duration.zero);
+    await Future.delayed(Duration.zero); // Ensure context is available
     _refreshOptions();
     if (mounted) {
       setState(() => _isLoading = false);
@@ -64,7 +63,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
     if (_formKey.currentState != null) {
       _formKey.currentState!.patchValue({'option': _selectedOption});
-      // Also clear other fields when mode or main option changes
       _formKey.currentState!.patchValue({
         'quantity': null,
         'corridor': null,
@@ -74,8 +72,46 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
   }
 
+  Future<void> _scanQrAndUpdateField(String fieldName, {bool isOptionDropdown = false}) async {
+    FocusScope.of(context).unfocus();
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      _formKey.currentState?.fields[fieldName]?.didChange(result);
+      _formKey.currentState?.save();
+
+      if (isOptionDropdown) {
+        final selectedValue = _formKey.currentState?.fields[fieldName]?.value;
+        if (selectedValue != null) {
+          setState(() {
+            if (_options.contains(selectedValue)) {
+              _selectedOption = selectedValue;
+              _products = _selectedMode == Mode.palet
+                  ? _repo.getPalletProducts(selectedValue)
+                  : _repo.getBoxProducts(selectedValue);
+            } else {
+              _formKey.currentState?.fields[fieldName]?.didChange(null); // Clear invalid selection
+              _selectedOption = null;
+              _products = [];
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('"${result}" geçerli bir seçenek değil.'), backgroundColor: Colors.orangeAccent, behavior: SnackBarBehavior.floating),
+              );
+            }
+          });
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$fieldName alanına "$result" girildi.'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+
   Future<void> _onConfirmSave() async {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
+    FocusScope.of(context).unfocus();
     if (_formKey.currentState?.saveAndValidate() ?? false) {
       setState(() => _isSaving = true);
       final formData = Map<String, dynamic>.from(_formKey.currentState!.value);
@@ -89,9 +125,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          // Optionally reset form or navigate
           _formKey.currentState?.reset();
-          _refreshOptions(); // To reset dropdown and product list
+          _refreshOptions();
         }
       } catch (e) {
         if (mounted) {
@@ -142,11 +177,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
       ),
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surface.withOpacity(0.05),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? Theme.of(context).colorScheme.surface.withOpacity(0.05),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2 + 4), // Adjusted for better vertical centering
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Makes error text take no space
+      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides default error text
     );
   }
 
@@ -170,7 +205,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         title: const Text('Raf Ayarla'),
         centerTitle: true,
       ),
-      // resizeToAvoidBottomInset: true, // Can be true
+      // resizeToAvoidBottomInset: true, // Kaldırılabilir veya false yapılabilir, çünkü SingleChildScrollView yok artık.
+      // Klavye açıldığında davranışını test etmek gerekebilir.
+      // ProductPlacementScreen'da true olarak kalmış, bu da sorun yaratmıyor gibi. Şimdilik kalsın.
+      resizeToAvoidBottomInset: true,
       bottomNavigationBar: Container(
         margin: const EdgeInsets.only(bottom: 8.0, left: 20.0, right: 20.0),
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -191,137 +229,170 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView( // Wrap with SingleChildScrollView
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20), // Added bottom padding for scroll
-            child: FormBuilder(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: SegmentedButton<Mode>(
-                      segments: const [
-                        ButtonSegment(value: Mode.palet, label: Text('Palet')),
-                        ButtonSegment(value: Mode.kutu, label: Text('Kutu')),
-                      ],
-                      selected: {_selectedMode},
-                      onSelectionChanged: (val) => setState(() {
-                        _selectedMode = val.first;
-                        _refreshOptions();
-                      }),
-                      style: SegmentedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                        selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-                        selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-                        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-                      ),
+        // SingleChildScrollView KALDIRILDI
+        child: Padding( // Padding ProductPlacementScreen'deki gibi dışarıda
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16), // Vertical padding'i ProductPlacementScreen ile eşitledim (16)
+          child: FormBuilder(
+            key: _formKey,
+            child: Column( // Ana Column
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: SegmentedButton<Mode>(
+                    segments: const [
+                      ButtonSegment(value: Mode.palet, label: Text('Palet')),
+                      ButtonSegment(value: Mode.kutu, label: Text('Kutu')),
+                    ],
+                    selected: {_selectedMode},
+                    onSelectionChanged: (val) => setState(() {
+                      _selectedMode = val.first;
+                      _refreshOptions();
+                    }),
+                    style: SegmentedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                      selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+                      selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(borderRadius: _borderRadius),
                     ),
                   ),
-                  const SizedBox(height: _gap * 2),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
+                ),
+                const SizedBox(height: _gap * 2), // ProductPlacementScreen'de 12, burada _gap*2 = 16. Farklılıklar olabilir.
+                // ProductPlacementScreen'de dropdown'lar arası 12, sonraki 12, sonra 20.
+                // Burada _gap*1.5 = 12. Benzer tutmaya çalışalım.
+                // SegmentedButton sonrası boşluk 12 olsun.
+                // const SizedBox(height: _gap * 2), // Eski: 16
+                const SizedBox(height: 12),
+
+
+                // Option Dropdown
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: _fieldHeight,
                         child: FormBuilderDropdown<String>(
                           name: 'option',
                           initialValue: _selectedOption,
                           decoration: _inputDecoration(
                             _selectedMode == Mode.palet ? 'Palet Seç' : 'Kutu Seç',
+                          ).copyWith(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 9.0),
                           ),
                           items: _options.isEmpty
                               ? [DropdownMenuItem(value: null, child: Text(_selectedMode == Mode.palet ? 'Palet Yok' : 'Kutu Yok', style: const TextStyle(color: Colors.grey)))]
                               : _options.map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))).toList(),
                           onChanged: _options.isEmpty ? null : (val) {
-                            if (val == null) return;
+                            if (val == null && _selectedOption == null) return;
+                            if (val == _selectedOption) return;
                             setState(() {
                               _selectedOption = val;
-                              _products = _selectedMode == Mode.palet
+                              _products = (val == null)
+                                  ? []
+                                  : (_selectedMode == Mode.palet
                                   ? _repo.getPalletProducts(val)
-                                  : _repo.getBoxProducts(val);
+                                  : _repo.getBoxProducts(val));
                             });
                           },
                           validator: FormBuilderValidators.required(errorText: "Lütfen bir seçim yapın."),
                           isExpanded: true,
                         ),
                       ),
-                      const SizedBox(width: _gap),
-                      SizedBox(
-                        width: qrButtonSize,
-                        height: _fieldHeight,
-                        child: _QrButton(
-                          onTap: () {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${_selectedMode == Mode.palet ? "Palet" : "Kutu"} QR okuyucu açılacak.')));
-                            }
-                          },
-                          size: qrButtonSize,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: _gap * 1.5),
-                  _buildTextFieldRow('quantity', 'Miktar', TextInputType.number, FormBuilderValidators.compose([
-                    FormBuilderValidators.required(errorText: "Miktar boş olamaz."),
-                    FormBuilderValidators.integer(errorText: "Lütfen geçerli bir sayı girin."),
-                    FormBuilderValidators.min(1, errorText: "Miktar en az 1 olmalı."),
-                  ]), qrButtonSize),
-                  const SizedBox(height: _gap * 1.5),
-                  _buildTextFieldRow('corridor', 'Koridor', TextInputType.text, FormBuilderValidators.required(errorText: "Koridor boş olamaz."), qrButtonSize),
-                  const SizedBox(height: _gap * 1.5),
-                  _buildTextFieldRow('shelf', 'Raf', TextInputType.text, FormBuilderValidators.required(errorText: "Raf boş olamaz."), qrButtonSize, hasQr: true),
-                  const SizedBox(height: _gap * 1.5),
-                  _buildTextFieldRow('floor', 'Kat', TextInputType.text, FormBuilderValidators.required(errorText: "Kat boş olamaz."), qrButtonSize),
-                  const SizedBox(height: _gap * 2.5),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: _gap),
-                    child: Text(
-                      _selectedMode == Mode.palet ? 'Paletteki Ürünler' : 'Kutudaki Ürünler',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                  ),
-                  // Constrain the height of the product list or make it non-scrollable
-                  // if the parent SingleChildScrollView is handling the scroll.
-                  Container(
-                    height: 150, // Example fixed height, adjust as needed
+                    const SizedBox(width: _gap),
+                    SizedBox(
+                      width: qrButtonSize,
+                      height: _fieldHeight,
+                      child: _QrButton(
+                        onTap: () => _scanQrAndUpdateField('option', isOptionDropdown: true),
+                        size: qrButtonSize,
+                      ),
+                    ),
+                  ],
+                ),
+                // const SizedBox(height: _gap * 1.5), // Eski: 12
+                const SizedBox(height: 12),
+
+
+                _buildTextFieldRow('quantity', 'Miktar', TextInputType.number, FormBuilderValidators.compose([
+                  FormBuilderValidators.required(errorText: "Miktar boş olamaz."),
+                  FormBuilderValidators.integer(errorText: "Lütfen geçerli bir sayı girin."),
+                  FormBuilderValidators.min(1, errorText: "Miktar en az 1 olmalı."),
+                ]), qrButtonSize),
+                // const SizedBox(height: _gap * 1.5), // Eski: 12
+                const SizedBox(height: 12),
+
+                _buildTextFieldRow('corridor', 'Koridor', TextInputType.text, FormBuilderValidators.required(errorText: "Koridor boş olamaz."), qrButtonSize),
+                // const SizedBox(height: _gap * 1.5), // Eski: 12
+                const SizedBox(height: 12),
+
+                _buildTextFieldRow('shelf', 'Raf', TextInputType.text, FormBuilderValidators.required(errorText: "Raf boş olamaz."), qrButtonSize, hasQr: true),
+                // const SizedBox(height: _gap * 1.5), // Eski: 12
+                const SizedBox(height: 12),
+
+                _buildTextFieldRow('floor', 'Kat', TextInputType.text, FormBuilderValidators.required(errorText: "Kat boş olamaz."), qrButtonSize),
+                // const SizedBox(height: _gap * 2.5), // Eski: 20
+                const SizedBox(height: 20), // ProductPlacementScreen'deki gibi
+
+
+                // --- ÜRÜN LİSTESİ BÖLÜMÜ (Expanded ile güncellendi) ---
+                Expanded( // Bu Expanded, Container'ın kalan tüm alanı kaplamasını sağlar
+                  child: Container(
                     decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                        borderRadius: _borderRadius,
-                        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5))
+                        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Theme.of(context).dividerColor)
                     ),
-                    child: _products.isEmpty
-                        ? Center(
-                      child: Padding( // Added padding for better spacing
-                        padding: const EdgeInsets.all(_gap),
-                        child: Text(
-                          '${_selectedOption ?? (_selectedMode == Mode.palet ? "Seçili palet" : "Seçili kutu")} için ürün bulunmuyor.',
-                          style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
-                        : ListView.separated(
-                      // shrinkWrap: true, // Use if height is not constrained and you want it to take minimum space
-                      // physics: const NeverScrollableScrollPhysics(), // Use with shrinkWrap if parent scrolls
-                      padding: const EdgeInsets.symmetric(vertical: _gap / 2),
-                      itemCount: _products.length,
-                      separatorBuilder: (_, __) => Divider(height: 1, indent: 16, endIndent: 16, color: Theme.of(context).dividerColor.withOpacity(0.5)),
-                      itemBuilder: (context, index) {
-                        final item = _products[index];
-                        return ListTile(
-                          title: Text(item.name, style: Theme.of(context).textTheme.bodyLarge),
-                          trailing: Text(
-                            '${item.quantity}x',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      // mainAxisSize: MainAxisSize.min, // KALDIRILDI
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          child: Text(
+                            _selectedMode == Mode.palet ? 'Paletteki Ürünler' : 'Kutudaki Ürünler',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
-                        );
-                      },
+                        ),
+                        const Divider(height: 1, thickness: 1),
+                        Expanded( // Bu Expanded, ListView'in Column içinde kalan alanı kaplamasını sağlar
+                          child: _products.isEmpty
+                              ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(_gap * 2).copyWith(top: 20, bottom: 20),
+                              child: Text(
+                                '${_selectedOption ?? (_selectedMode == Mode.palet ? "Seçili palet" : "Seçili kutu")} için ürün bulunmuyor.',
+                                style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor.withOpacity(0.8)),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          )
+                              : ListView.separated(
+                            // shrinkWrap: true, // KALDIRILDI
+                            // physics: const NeverScrollableScrollPhysics(), // KALDIRILDI
+                            padding: EdgeInsets.zero,
+                            itemCount: _products.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 1),
+                            itemBuilder: (context, index) {
+                              final item = _products[index];
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                                title: Text(item.name, style: Theme.of(context).textTheme.bodyLarge),
+                                trailing: Text(
+                                  '${item.quantity}x',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: _gap), // Space at the bottom
-                ],
-              ),
+                ),
+                // --- ÜRÜN LİSTESİ BÖLÜMÜ SONU ---
+                // const SizedBox(height: _gap), // KALDIRILDI, Expanded en sonda olmalı
+              ],
             ),
           ),
         ),
@@ -330,32 +401,33 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildTextFieldRow(String name, String label, TextInputType inputType, FormFieldValidator<String>? validator, double qrButtonSize, {bool hasQr = false}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start, // Align to top for consistent appearance with/without error
-      children: [
-        Expanded(
-          child: FormBuilderTextField(
-            name: name,
-            decoration: _inputDecoration(label),
-            keyboardType: inputType,
-            validator: validator,
-            autovalidateMode: AutovalidateMode.onUserInteraction,
+    return SizedBox(
+      height: _fieldHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: FormBuilderTextField(
+              name: name,
+              decoration: _inputDecoration(label),
+              keyboardType: inputType,
+              validator: validator,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+            ),
           ),
-        ),
-        const SizedBox(width: _gap),
-        SizedBox(
-          width: qrButtonSize,
-          height: _fieldHeight,
-          child: hasQr ? _QrButton(
-            onTap: () {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label QR okuyucu açılacak.')));
-              }
-            },
-            size: qrButtonSize,
-          ) : SizedBox(width: qrButtonSize), // Keep space consistent if no QR button
-        ),
-      ],
+          const SizedBox(width: _gap),
+          SizedBox(
+            width: qrButtonSize,
+            height: _fieldHeight,
+            child: hasQr
+                ? _QrButton(
+              onTap: () => _scanQrAndUpdateField(name),
+              size: qrButtonSize,
+            )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -363,13 +435,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
-  const _QrButton({required this.onTap, required this.size}); // Removed super.key for brevity
+  const _QrButton({required this.onTap, required this.size, Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: size,
-      height: size, // Make it a square based on the smaller of _fieldHeight and calculated size
+      height: size,
       child: Material(
         color: Theme.of(context).colorScheme.secondaryContainer,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),

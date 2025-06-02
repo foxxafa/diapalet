@@ -9,11 +9,17 @@ import '../domain/repositories/goods_receiving_repository.dart';
 class MockGoodsReceivingService implements GoodsReceivingRepository {
   // Mock database of products
   final Map<String, ProductInfo> _mockProducts = {
-    "8697459290704": ProductInfo(name: "LABBAIK LEMON UP", stockCode: "30221"),
-    "1234567890123": ProductInfo(name: "Sample Product X", stockCode: "SPX001"),
-    "9876543210987": ProductInfo(name: "Another Item Y", stockCode: "AIY999"),
-    "1112223334445": ProductInfo(name: "Super Widget", stockCode: "SWG007"),
+    "8690526083835": ProductInfo(name: "Coca-Cola 1L", stockCode: "COLA1L"),
+    "8693604010239": ProductInfo(name: "Eti Karam Gofret 40g", stockCode: "ETIGF40"),
+    "8690632058997": ProductInfo(name: "Fairy Bulaşık Deterjanı 1L", stockCode: "FAIRY1L"),
+    "8693604011113": ProductInfo(name: "Ülker Çikolatalı Gofret 35g", stockCode: "ULKCGF35"),
+    "8697432331903": ProductInfo(name: "Şampuan Elidor 500ml", stockCode: "ELIDOR500"),
+    "8697410173312": ProductInfo(name: "Süt İçim 1L", stockCode: "ICIM1L"),
+    "8697409602826": ProductInfo(name: "Bebek Bezi Prima 4 Numara", stockCode: "PRIMA4"),
+    "8690570512341": ProductInfo(name: "Fanta 1L", stockCode: "FANTA1L"),
+    "1112223334445": ProductInfo(name: "Super Widget (Demo)", stockCode: "SWG007"),
   };
+
 
   // Mock list of units
   final List<String> _mockUnits = ["BOX", "UNIT"];
