@@ -178,7 +178,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       ),
       filled: true,
       fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? Theme.of(context).colorScheme.surface.withOpacity(0.05),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2 + 4), // Adjusted for better vertical centering
+      // Tutarlı dikey iç dolgu için: (alan yüksekliği - yaklaşık metin yüksekliği) / 2
+      // _fieldHeight = 56, yaklaşık metin yüksekliği 16-20px varsayılırsa, (56-16)/2 = 20
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18), // Dikey dolguyu 18 veya 20 olarak ayarlayabilirsiniz.
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
       errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides default error text
@@ -205,9 +207,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         title: const Text('Raf Ayarla'),
         centerTitle: true,
       ),
-      // resizeToAvoidBottomInset: true, // Kaldırılabilir veya false yapılabilir, çünkü SingleChildScrollView yok artık.
-      // Klavye açıldığında davranışını test etmek gerekebilir.
-      // ProductPlacementScreen'da true olarak kalmış, bu da sorun yaratmıyor gibi. Şimdilik kalsın.
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: Container(
         margin: const EdgeInsets.only(bottom: 8.0, left: 20.0, right: 20.0),
@@ -229,12 +228,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         ),
       ),
       body: SafeArea(
-        // SingleChildScrollView KALDIRILDI
-        child: Padding( // Padding ProductPlacementScreen'deki gibi dışarıda
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16), // Vertical padding'i ProductPlacementScreen ile eşitledim (16)
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           child: FormBuilder(
             key: _formKey,
-            child: Column( // Ana Column
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
@@ -256,15 +254,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: _gap * 2), // ProductPlacementScreen'de 12, burada _gap*2 = 16. Farklılıklar olabilir.
-                // ProductPlacementScreen'de dropdown'lar arası 12, sonraki 12, sonra 20.
-                // Burada _gap*1.5 = 12. Benzer tutmaya çalışalım.
-                // SegmentedButton sonrası boşluk 12 olsun.
-                // const SizedBox(height: _gap * 2), // Eski: 16
                 const SizedBox(height: 12),
-
-
-                // Option Dropdown
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -274,10 +264,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         child: FormBuilderDropdown<String>(
                           name: 'option',
                           initialValue: _selectedOption,
-                          decoration: _inputDecoration(
+                          decoration: _inputDecoration( // .copyWith kaldırıldı, standart _inputDecoration kullanılacak
                             _selectedMode == Mode.palet ? 'Palet Seç' : 'Kutu Seç',
-                          ).copyWith(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 9.0),
                           ),
                           items: _options.isEmpty
                               ? [DropdownMenuItem(value: null, child: Text(_selectedMode == Mode.palet ? 'Palet Yok' : 'Kutu Yok', style: const TextStyle(color: Colors.grey)))]
@@ -310,33 +298,20 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     ),
                   ],
                 ),
-                // const SizedBox(height: _gap * 1.5), // Eski: 12
                 const SizedBox(height: 12),
-
-
                 _buildTextFieldRow('quantity', 'Miktar', TextInputType.number, FormBuilderValidators.compose([
                   FormBuilderValidators.required(errorText: "Miktar boş olamaz."),
                   FormBuilderValidators.integer(errorText: "Lütfen geçerli bir sayı girin."),
                   FormBuilderValidators.min(1, errorText: "Miktar en az 1 olmalı."),
                 ]), qrButtonSize),
-                // const SizedBox(height: _gap * 1.5), // Eski: 12
                 const SizedBox(height: 12),
-
                 _buildTextFieldRow('corridor', 'Koridor', TextInputType.text, FormBuilderValidators.required(errorText: "Koridor boş olamaz."), qrButtonSize),
-                // const SizedBox(height: _gap * 1.5), // Eski: 12
                 const SizedBox(height: 12),
-
                 _buildTextFieldRow('shelf', 'Raf', TextInputType.text, FormBuilderValidators.required(errorText: "Raf boş olamaz."), qrButtonSize, hasQr: true),
-                // const SizedBox(height: _gap * 1.5), // Eski: 12
                 const SizedBox(height: 12),
-
                 _buildTextFieldRow('floor', 'Kat', TextInputType.text, FormBuilderValidators.required(errorText: "Kat boş olamaz."), qrButtonSize),
-                // const SizedBox(height: _gap * 2.5), // Eski: 20
-                const SizedBox(height: 20), // ProductPlacementScreen'deki gibi
-
-
-                // --- ÜRÜN LİSTESİ BÖLÜMÜ (Expanded ile güncellendi) ---
-                Expanded( // Bu Expanded, Container'ın kalan tüm alanı kaplamasını sağlar
+                const SizedBox(height: 20),
+                Expanded(
                   child: Container(
                     decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
@@ -345,7 +320,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      // mainAxisSize: MainAxisSize.min, // KALDIRILDI
                       children: [
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -355,7 +329,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           ),
                         ),
                         const Divider(height: 1, thickness: 1),
-                        Expanded( // Bu Expanded, ListView'in Column içinde kalan alanı kaplamasını sağlar
+                        Expanded(
                           child: _products.isEmpty
                               ? Center(
                             child: Padding(
@@ -368,8 +342,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                             ),
                           )
                               : ListView.separated(
-                            // shrinkWrap: true, // KALDIRILDI
-                            // physics: const NeverScrollableScrollPhysics(), // KALDIRILDI
                             padding: EdgeInsets.zero,
                             itemCount: _products.length,
                             separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 1),
@@ -390,8 +362,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     ),
                   ),
                 ),
-                // --- ÜRÜN LİSTESİ BÖLÜMÜ SONU ---
-                // const SizedBox(height: _gap), // KALDIRILDI, Expanded en sonda olmalı
               ],
             ),
           ),
