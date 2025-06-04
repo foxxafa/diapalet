@@ -25,6 +25,10 @@ class DatabaseHelper {
     return await openDatabase(
       path,
       version: _dbVersion,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+        debugPrint('Foreign keys enabled.');
+      },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade, // Yeni versiyon için onUpgrade eklendi
     );
