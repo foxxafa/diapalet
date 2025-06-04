@@ -1,12 +1,16 @@
-// lib/features/goods_receiving/domain/repositories/goods_receiving_repository.dart
+// features/goods_receiving/domain/repositories/goods_receiving_repository.dart
 import '../entities/product_info.dart';
-import '../entities/goods_receipt_log_item.dart';
+import '../entities/goods_receipt_entities.dart';
 
 abstract class GoodsReceivingRepository {
   Future<List<String>> getInvoices();
-  Future<List<String>> getPalletsForDropdown(); // Palet ID/isim listesi
-  Future<List<String>> getBoxesForDropdown();   // Kutu ID/isim listesi
-  Future<List<ProductInfo>> getProductsForDropdown(); // Ürün listesi (ProductInfo olarak)
+  Future<List<String>> getPalletsForDropdown();
+  Future<List<String>> getBoxesForDropdown();
+  Future<List<ProductInfo>> getProductsForDropdown();
 
-  Future<void> saveGoodsReceiptLog(List<GoodsReceiptLogItem> items, ReceiveMode mode);
+  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
+
+  Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts();
+  Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId);
+  Future<void> markGoodsReceiptAsSynced(int receiptId);
 }

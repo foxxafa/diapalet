@@ -1,35 +1,49 @@
-// features/pallet_assignment/data/mock_pallet_service.dart
-import 'package:flutter/foundation.dart'; // debugPrint için
-import '../domain/pallet_repository.dart';
+// lib/features/pallet_assignment/data/mock_pallet_service.dart
+import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
+import 'package:flutter/foundation.dart';
 
-class MockPalletService implements PalletRepository {
+// Ensure all imports use the absolute package path for consistency
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
+
+class MockPalletService implements PalletAssignmentRepository {
   final List<String> _mockSourceLocations = [
-    "RAF-A1-01", "RAF-A1-02", "YER-001", "DEPO-GİRİŞ-A", "ALAN-X"
+    "RAF-A1-01", "RAF-A1-02", "YER-001", "DEPO-GİRİŞ-A", "ALAN-X", "10A21", "10B20"
   ];
 
   final List<String> _mockTargetLocations = [
     "RAF-B2-05", "RAF-C3-10", "SEVKİYAT-ALANI-1", "İADE-BÖLÜMÜ-X", "URETIM-HATTI-1"
   ];
 
-  // Mock data for contents of specific pallets/boxes
   final Map<String, List<ProductItem>> _containerContents = {
     "PALET-A001": [
-      ProductItem(id: 'prod1', name: 'Coca-Cola 1L', currentQuantity: 50),
-      ProductItem(id: 'prod2', name: 'Fanta 1L', currentQuantity: 30),
+      const ProductItem(id: 'prod1', name: 'Coca-Cola 1L', productCode: 'COLA1L', currentQuantity: 50),
+      const ProductItem(id: 'prod2', name: 'Fanta 1L', productCode: 'FANTA1L', currentQuantity: 30),
+      const ProductItem(id: 'prod6', name: 'Sprite 1.5L', productCode: 'SPRITE15', currentQuantity: 24),
     ],
     "PALET-B001": [
-      ProductItem(id: 'prod3', name: 'Süt İçim 1L', currentQuantity: 100),
-      ProductItem(id: 'prod4', name: 'Eti Karam Gofret 40g', currentQuantity: 200),
+      const ProductItem(id: 'prod3', name: 'Süt İçim 1L', productCode: 'ICIM1L', currentQuantity: 100),
+      const ProductItem(id: 'prod4', name: 'Eti Karam Gofret 40g', productCode: 'ETIKARAM40', currentQuantity: 200),
     ],
     "KUTU-X01": [
-      ProductItem(id: 'prod1', name: 'Coca-Cola 1L', currentQuantity: 10),
-      ProductItem(id: 'prod5', name: 'Super Widget (Demo)', currentQuantity: 5),
+      const ProductItem(id: 'prod1', name: 'Coca-Cola 1L', productCode: 'COLA1L', currentQuantity: 10),
+      const ProductItem(id: 'prod5', name: 'Super Widget (Demo)', productCode: 'SWIDGET', currentQuantity: 5),
     ],
     "KUTU-Y01": [
-      ProductItem(id: 'prod2', name: 'Fanta 1L', currentQuantity: 12),
+      const ProductItem(id: 'prod2', name: 'Fanta 1L', productCode: 'FANTA1L', currentQuantity: 12),
     ],
+    "XYZ123": [
+      const ProductItem(id: 'prod7', name: 'Genel Ürün Alpha', productCode: 'GENALPHA', currentQuantity: 75),
+      const ProductItem(id: 'prod8', name: 'Genel Ürün Beta', productCode: 'GENBETA', currentQuantity: 60),
+    ]
   };
 
+  final List<TransferOperationHeader> _savedTransferHeaders = [];
+  final Map<int, List<TransferItemDetail>> _savedTransferItems = {};
+  int _nextTransferOpId = 1;
+  int _nextTransferItemId = 1;
 
   @override
   Future<List<String>> getSourceLocations() async {
@@ -49,48 +63,90 @@ class MockPalletService implements PalletRepository {
   Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode) async {
     debugPrint("MockPalletService: Fetching contents for ${mode.displayName} ID: $containerId");
     await Future.delayed(const Duration(milliseconds: 300));
-    // Simulate finding contents based on ID.
-    // In a real app, you might have different maps or logic for pallets vs boxes if IDs overlap.
+
     if (_containerContents.containsKey(containerId)) {
       return List.from(_containerContents[containerId]!);
     }
-    // Simulate a case where the pallet/box is known but empty, or just return empty if not found.
-    // For example, if "PALET-EMPTY" is scanned:
-    if (containerId == "PALET-EMPTY") return [];
-
-    if (mode == AssignmentMode.palet && !containerId.startsWith("PALET-")) {
-      return [
-        ProductItem(id: 'demoProdA', name: 'Demo Palet Ürünü A', currentQuantity: 25),
-        ProductItem(id: 'demoProdB', name: 'Demo Palet Ürünü B', currentQuantity: 15),
-      ];
-    }
-    if (mode == AssignmentMode.kutu && !containerId.startsWith("KUTU-")) {
-      return [
-        ProductItem(id: 'demoProdC', name: 'Demo Kutu Ürünü C', currentQuantity: 8),
-      ];
-    }
-    return []; // Default to empty if no specific match and no demo fallback triggered
+    if (containerId == "PALET-EMPTY" || containerId == "KUTU-EMPTY") return [];
+    debugPrint("MockPalletService: No content found for $containerId, returning empty list.");
+    return [];
   }
 
   @override
-  Future<void> recordTransfer({
-    required AssignmentMode mode,
-    required String? sourceLocation,
-    required String containerId,
-    required String? targetLocation,
-    required List<TransferItem> transferredItems,
-  }) async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    debugPrint('MockPalletService: Recording Transfer...');
-    debugPrint('Mode: ${mode.displayName}');
-    debugPrint('Source Location: $sourceLocation');
-    debugPrint('Source Container ID: $containerId');
-    debugPrint('Target Location: $targetLocation');
-    debugPrint('Transferred Items (${transferredItems.length}):');
-    for (var item in transferredItems) {
-      debugPrint('  - Product: ${item.productName} (ID: ${item.productId}), Quantity: ${item.quantityToTransfer}');
+  Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+    debugPrint('MockPalletService: Recording Transfer Operation...');
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final newHeader = header.copyWith(
+      id: _nextTransferOpId,
+      // synced status is preserved from the input 'header' by copyWith
+    );
+    _savedTransferHeaders.add(newHeader);
+
+    List<TransferItemDetail> newItemsWithCorrectOpId = [];
+    for (var item in items) {
+      newItemsWithCorrectOpId.add(TransferItemDetail(
+        id: _nextTransferItemId++,
+        operationId: newHeader.id!,
+        productCode: item.productCode,
+        productName: item.productName,
+        quantity: item.quantity,
+      ));
     }
-    debugPrint('Transfer recorded successfully (mock).');
-    // Here you would typically interact with a backend or local database.
+    _savedTransferItems[newHeader.id!] = newItemsWithCorrectOpId;
+
+    debugPrint('Mock Saved Transfer - ID: ${newHeader.id}, Mode: ${newHeader.operationType.displayName}, Synced: ${newHeader.synced}');
+    debugPrint('  Source: ${newHeader.sourceLocation} -> ${newHeader.containerId}');
+    debugPrint('  Target: ${newHeader.targetLocation}');
+    debugPrint('  Items (${newItemsWithCorrectOpId.length}):');
+    for (var item in newItemsWithCorrectOpId) {
+      debugPrint('    - ${item.productName} (Code: ${item.productCode}), Qty: ${item.quantity}, OpID: ${item.operationId}');
+    }
+
+    _nextTransferOpId++;
+    return newHeader.id!;
+  }
+
+  @override
+  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations() async {
+    debugPrint("MockPalletService: Fetching unsynced transfer operations.");
+    await Future.delayed(const Duration(milliseconds: 50));
+    return _savedTransferHeaders.where((op) => op.synced == 0).toList();
+  }
+
+  @override
+  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId) async {
+    debugPrint("MockPalletService: Fetching items for transfer operation ID: $operationId");
+    await Future.delayed(const Duration(milliseconds: 50));
+    return _savedTransferItems[operationId] ?? [];
+  }
+
+  @override
+  Future<void> markTransferOperationAsSynced(int operationId) async {
+    debugPrint("MockPalletService: Marking transfer operation ID: $operationId as synced.");
+    await Future.delayed(const Duration(milliseconds: 50));
+    final index = _savedTransferHeaders.indexWhere((op) => op.id == operationId);
+    if (index != -1) {
+      _savedTransferHeaders[index] = _savedTransferHeaders[index].copyWith(synced: 1);
+    } else {
+      debugPrint("MockPalletService: Operation ID $operationId not found to mark as synced.");
+    }
+  }
+
+  @override
+  Future<void> updateContainerLocation(String containerId, String newLocation) async {
+    debugPrint("MockPalletService: Updating container $containerId location to $newLocation (mock).");
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
+
+  @override
+  Future<String?> getContainerLocation(String containerId) async {
+    debugPrint("MockPalletService: Getting container $containerId location (mock).");
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (containerId == "PALET-A001") return "RAF-A1-01";
+    if (containerId == "KUTU-X01" && _savedTransferHeaders.any((h) => h.containerId == "KUTU-X01" && h.targetLocation == "SEVKİYAT-ALANI-1")) {
+      return "SEVKİYAT-ALANI-1";
+    }
+    return null;
   }
 }

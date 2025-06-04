@@ -1,9 +1,16 @@
-// features/pallet_assignment/presentation/pallet_assignment_screen.dart
+// lib/features/pallet_assignment/presentation/pallet_assignment_screen.dart
+import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:provider/provider.dart';
-import '../domain/pallet_repository.dart';
-import '../../../core/widgets/qr_scanner_screen.dart';
+
+// Corrected entity and repository imports using your project name 'diapalet'
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/core/widgets/qr_scanner_screen.dart'; // Assuming 'diapalet'
+
 
 class PalletAssignmentScreen extends StatefulWidget {
   const PalletAssignmentScreen({super.key});
@@ -14,7 +21,7 @@ class PalletAssignmentScreen extends StatefulWidget {
 
 class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   final _formKey = GlobalKey<FormState>();
-  late PalletRepository _repo;
+  late PalletAssignmentRepository _repo;
   bool _isRepoInitialized = false;
   bool _isLoadingInitialData = true;
   bool _isLoadingContainerContents = false;
@@ -24,16 +31,16 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   List<String> _availableSourceLocations = [];
   String? _selectedSourceLocation;
+  final TextEditingController _sourceLocationController = TextEditingController();
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
-  // Map to store quantity controllers for each product in the list
   Map<String, TextEditingController> _quantityControllers = {};
   Map<String, FocusNode> _quantityFocusNodes = {};
 
-
   List<String> _availableTargetLocations = [];
   String? _selectedTargetLocation;
+  final TextEditingController _targetLocationController = TextEditingController();
 
   static const double _fieldHeight = 56.0;
   static const double _gap = 16.0;
@@ -47,7 +54,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   void _onScannedIdChange() {
-    // Clear previous products if ID changes
     if (_scannedContainerIdController.text.isEmpty && _productsInContainer.isNotEmpty) {
       if (mounted) {
         setState(() {
@@ -56,16 +62,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         });
       }
     }
-    // Optionally, auto-fetch if ID is of a certain length or format,
-    // or rely on a separate button/action. For now, manual fetch via button/enter.
   }
-
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isRepoInitialized) {
-      _repo = Provider.of<PalletRepository>(context, listen: false);
+      _repo = Provider.of<PalletAssignmentRepository>(context, listen: false);
       _loadInitialData();
       _isRepoInitialized = true;
     }
@@ -75,6 +78,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   void dispose() {
     _scannedContainerIdController.removeListener(_onScannedIdChange);
     _scannedContainerIdController.dispose();
+    _sourceLocationController.dispose();
+    _targetLocationController.dispose();
     _clearQuantityControllers(disposeNodes: true);
     super.dispose();
   }
@@ -102,10 +107,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       ]);
       if (!mounted) return;
       setState(() {
-        _availableSourceLocations = results[0];
-        _availableTargetLocations = results[1];
-        _selectedSourceLocation = _availableSourceLocations.isNotEmpty ? _availableSourceLocations.first : null;
-        _selectedTargetLocation = _availableTargetLocations.isNotEmpty ? _availableTargetLocations.first : null;
+        _availableSourceLocations = List<String>.from(results[0]);
+        _availableTargetLocations = List<String>.from(results[1]);
       });
     } catch (e) {
       if (mounted) _showSnackBar("Veri yüklenirken hata: ${e.toString()}", isError: true);
@@ -115,7 +118,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Future<void> _fetchContainerContents() async {
-    FocusScope.of(context).unfocus(); // Klavyeyi kapat
+    FocusScope.of(context).unfocus();
     final containerId = _scannedContainerIdController.text.trim();
     if (containerId.isEmpty) {
       _showSnackBar("${_selectedMode.displayName} ID boş olamaz.", isError: true);
@@ -124,20 +127,20 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     if (!mounted) return;
     setState(() {
       _isLoadingContainerContents = true;
-      _productsInContainer = []; // Önceki ürünleri temizle
+      _productsInContainer = [];
       _clearQuantityControllers();
     });
     try {
+      // Ensure _selectedMode is passed correctly
       final contents = await _repo.getContentsOfContainer(containerId, _selectedMode);
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
-        // Create new controllers for the new products
         for (var product in _productsInContainer) {
           _quantityControllers[product.id] = TextEditingController();
           _quantityFocusNodes[product.id] = FocusNode();
         }
-        if (contents.isEmpty) {
+        if (contents.isEmpty && containerId.isNotEmpty) {
           _showSnackBar("$containerId ID'li ${_selectedMode.displayName} bulunamadı veya içi boş.", isError: true);
         }
       });
@@ -148,9 +151,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
   }
 
-
   void _resetForm({bool resetAll = true}) {
-    _formKey.currentState?.reset(); // Formun kendi içindeki alanları sıfırlar (varsa)
+    _formKey.currentState?.reset();
     _scannedContainerIdController.clear();
     _clearQuantityControllers();
     if (mounted) {
@@ -158,8 +160,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _productsInContainer = [];
         if (resetAll) {
           _selectedMode = AssignmentMode.palet;
-          _selectedSourceLocation = _availableSourceLocations.isNotEmpty ? _availableSourceLocations.first : null;
-          _selectedTargetLocation = _availableTargetLocations.isNotEmpty ? _availableTargetLocations.first : null;
+          _selectedSourceLocation = null;
+          _sourceLocationController.clear();
+          _selectedTargetLocation = null;
+          _targetLocationController.clear();
         }
       });
     }
@@ -173,92 +177,128 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
 
     if (result != null && result.isNotEmpty && mounted) {
-      setState(() {
-        bool showSuccess = true;
-        String message = "";
-        if (fieldIdentifier == 'source') {
-          if (_availableSourceLocations.contains(result)) {
+      String successMessage = "";
+      bool found = false;
+      if (fieldIdentifier == 'source') {
+        if (_availableSourceLocations.contains(result)) {
+          setState(() {
             _selectedSourceLocation = result;
-            message = "Kaynak QR ile seçildi: $result";
-          } else {
-            message = "Taranan QR ($result) geçerli bir Kaynak Lokasyonu değil."; showSuccess = false;
-          }
-        } else if (fieldIdentifier == 'scannedId') {
-          _scannedContainerIdController.text = result;
-          message = "${_selectedMode.displayName} ID QR ile okundu: $result";
-          // ID okunduktan sonra otomatik içerik yükleme
-          _fetchContainerContents();
-        } else if (fieldIdentifier == 'target') {
-          if (_availableTargetLocations.contains(result)) {
-            _selectedTargetLocation = result;
-            message = "Hedef QR ile seçildi: $result";
-          } else {
-            message = "Taranan QR ($result) geçerli bir Hedef Lokasyonu değil."; showSuccess = false;
-          }
+            _sourceLocationController.text = result;
+          });
+          successMessage = "Kaynak QR ile seçildi: $result";
+          found = true;
+        } else {
+          _showSnackBar("Taranan QR ($result) geçerli bir Kaynak Lokasyonu değil.", isError: true);
         }
-        _showSnackBar(message, isError: !showSuccess);
-      });
+      } else if (fieldIdentifier == 'scannedId') {
+        setState(() {
+          _scannedContainerIdController.text = result;
+        });
+        successMessage = "${_selectedMode.displayName} ID QR ile okundu: $result";
+        found = true;
+        await _fetchContainerContents();
+      } else if (fieldIdentifier == 'target') {
+        if (_availableTargetLocations.contains(result)) {
+          setState(() {
+            _selectedTargetLocation = result;
+            _targetLocationController.text = result;
+          });
+          successMessage = "Hedef QR ile seçildi: $result";
+          found = true;
+        } else {
+          _showSnackBar("Taranan QR ($result) geçerli bir Hedef Lokasyonu değil.", isError: true);
+        }
+      }
+      if (found && successMessage.isNotEmpty) _showSnackBar(successMessage);
+      _formKey.currentState?.validate();
     }
   }
 
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _showSnackBar("Lütfen tüm zorunlu alanları doldurun.", isError: true);
+      _showSnackBar("Lütfen tüm zorunlu alanları doldurun ve hataları düzeltin.", isError: true);
       return;
     }
 
-    List<TransferItem> itemsToTransfer = [];
-    bool validationError = false;
+    List<TransferItemDetail> itemsToTransferDetails = [];
+    bool quantityValidationError = false;
+
     for (var product in _productsInContainer) {
       final controller = _quantityControllers[product.id];
       if (controller != null && controller.text.isNotEmpty) {
         final quantity = int.tryParse(controller.text);
         if (quantity == null || quantity < 0) {
-          _showSnackBar("${product.name} için geçersiz miktar.", isError: true);
-          validationError = true;
+          quantityValidationError = true;
           _quantityFocusNodes[product.id]?.requestFocus();
+          _showSnackBar("${product.name} için geçersiz miktar.", isError: true);
           break;
         }
         if (quantity > product.currentQuantity) {
-          _showSnackBar("${product.name} için transfer miktarı (${quantity}) mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
-          validationError = true;
+          quantityValidationError = true;
           _quantityFocusNodes[product.id]?.requestFocus();
+          _showSnackBar("${product.name} için transfer miktarı (${quantity}) mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
           break;
         }
         if (quantity > 0) {
-          itemsToTransfer.add(TransferItem(
-            productId: product.id,
-            productName: product.name,
-            quantityToTransfer: quantity,
-          ));
+          itemsToTransferDetails.add(
+              TransferItemDetail(
+                // The 'operationId' is required by the TransferItemDetail constructor.
+                // This ID will ultimately be the ID of the TransferOperationHeader after it's saved.
+                // The repository layer (specifically local data source during transaction)
+                // should handle assigning the correct operationId.
+                // We pass a placeholder (e.g., 0 or a temporary unique negative number)
+                // or rely on the repository to reconstruct items with the correct ID.
+                // For now, passing 0 as per previous logic, assuming repository handles it.
+                operationId: 0, // DİKKAT: Bu değer repository/datasource'da güncellenmelidir!
+                productCode: product.productCode,
+                productName: product.name,
+                quantity: quantity,
+              )
+          );
         }
       }
     }
 
-    if (validationError) return;
+    if (quantityValidationError) return;
 
-    if (itemsToTransfer.isEmpty) {
-      _showSnackBar("Transfer edilecek ürün miktarı girilmedi.", isError: true);
+    if (itemsToTransferDetails.isEmpty && _productsInContainer.isNotEmpty) {
+      _showSnackBar("Transfer edilecek ürünler için miktar girilmedi.", isError: true);
+      return;
+    }
+    if (_productsInContainer.isEmpty && _scannedContainerIdController.text.isNotEmpty && !_isLoadingContainerContents) {
+      _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı veya getirilmedi. Lütfen 'İçeriği Getir' butonunu kullanın.", isError: true);
       return;
     }
 
     if (!mounted) return;
     setState(() => _isSaving = true);
     try {
-      await _repo.recordTransfer(
-        mode: _selectedMode,
-        sourceLocation: _selectedSourceLocation,
+      // Ensure sourceLocation and targetLocation are not null before creating header
+      // The form validation should ensure this.
+      final header = TransferOperationHeader(
+        operationType: _selectedMode,
+        sourceLocation: _selectedSourceLocation!,
         containerId: _scannedContainerIdController.text,
-        targetLocation: _selectedTargetLocation,
-        transferredItems: itemsToTransfer,
+        targetLocation: _selectedTargetLocation!,
+        transferDate: DateTime.now(),
+        // synced status will be handled by the repository based on API call result
       );
+
+      // The repository's recordTransferOperation method is responsible for:
+      // 1. Attempting to send to API.
+      // 2. Updating header.synced based on API result.
+      // 3. Saving header to local DB (getting its actual local ID).
+      // 4. Updating the operationId for each item in itemsToTransferDetails with the new header ID.
+      // 5. Saving items to local DB.
+      await _repo.recordTransferOperation(header, itemsToTransferDetails);
+
       if (mounted) {
         _showSnackBar("${_selectedMode.displayName} transferi başarıyla kaydedildi!");
         _resetForm(resetAll: true);
       }
     } catch (e) {
-      if (mounted) _showSnackBar("Kaydetme sırasında hata: $e", isError: true);
+      if (mounted) _showSnackBar("Kaydetme sırasında hata: ${e.toString()}", isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -266,12 +306,14 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar(); // Önceki snackbar'ı kaldır
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.redAccent : Colors.green,
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
       ),
     );
   }
@@ -298,9 +340,91 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       ),
       filled: filled,
       fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 20) / 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
+      errorStyle: const TextStyle(fontSize: 0, height: 0.01),
+      helperText: ' ',
+      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
+    );
+  }
+
+  Future<T?> _showSearchableDropdownDialog<T>({
+    required BuildContext context,
+    required String title,
+    required List<T> items,
+    required String Function(T) itemToString,
+    required bool Function(T, String) filterCondition,
+    T? initialValue,
+  }) async {
+    return showDialog<T>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        String searchText = '';
+        List<T> filteredItems = List.from(items);
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateDialog) {
+            if (searchText.isNotEmpty) {
+              filteredItems = items.where((item) => filterCondition(item, searchText)).toList();
+            } else {
+              filteredItems = List.from(items);
+            }
+
+            return AlertDialog(
+              title: Text(title),
+              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Ara...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: _borderRadius),
+                      ),
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          searchText = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: _gap),
+                    Expanded(
+                      child: filteredItems.isEmpty
+                          ? const Center(child: Text("Sonuç bulunamadı"))
+                          : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredItems.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final item = filteredItems[index];
+                          return ListTile(
+                            title: Text(itemToString(item)),
+                            onTap: () {
+                              Navigator.of(dialogContext).pop(item);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('İptal'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -340,55 +464,87 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           padding: const EdgeInsets.all(20.0),
           child: Form(
             key: _formKey,
-            child: Column( // ListView yerine Column ve Expanded kullandık
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
-                _buildDropdownWithQr(
-                  label: 'Kaynak Lokasyon Seç',
-                  value: _selectedSourceLocation,
-                  items: _availableSourceLocations,
-                  onChanged: (val) {
-                    if (mounted) setState(() => _selectedSourceLocation = val);
-                  },
-                  onQrTap: () => _scanQrAndUpdateField('source'),
-                  validator: (val) => val == null ? 'Kaynak lokasyon seçin.' : null,
+                _buildSearchableDropdownWithQr(
+                    controller: _sourceLocationController,
+                    label: 'Kaynak Lokasyon Seç',
+                    value: _selectedSourceLocation,
+                    items: _availableSourceLocations,
+                    onSelected: (val) {
+                      if (mounted) {
+                        setState(() {
+                          _selectedSourceLocation = val;
+                          _sourceLocationController.text = val ?? "";
+                        });
+                      }
+                    },
+                    onQrTap: () => _scanQrAndUpdateField('source'),
+                    validator: (val) {
+                      if (val == null || val.isEmpty) return 'Kaynak lokasyon seçimi zorunludur.';
+                      return null;
+                    }
                 ),
                 const SizedBox(height: _gap),
                 _buildScannedIdSection(),
-                const SizedBox(height: _smallGap), // Fetch butonu için boşluk
+                const SizedBox(height: _smallGap),
                 if (_scannedContainerIdController.text.isNotEmpty)
                   ElevatedButton.icon(
-                    icon: const Icon(Icons.search),
-                    label: Text("${_selectedMode.displayName} İçeriğini Getir"),
+                    icon: _isLoadingContainerContents
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary ))
+                        : const Icon(Icons.search),
+                    label: Text(_isLoadingContainerContents? "Yükleniyor..." : "${_selectedMode.displayName} İçeriğini Getir"),
                     onPressed: _isLoadingContainerContents ? null : _fetchContainerContents,
-                    style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, _fieldHeight * 0.8)),
+                    style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, _fieldHeight * 0.85)),
                   ),
+
                 if (_isLoadingContainerContents)
                   const Padding(
-                    padding: EdgeInsets.symmetric(vertical: _smallGap),
+                    padding: EdgeInsets.symmetric(vertical: _gap),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
-                  const SizedBox(height: _gap),
-                if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
-                  Expanded(child: _buildProductsList()),
-                if (!_isLoadingContainerContents && _productsInContainer.isEmpty && _scannedContainerIdController.text.isNotEmpty && !_isLoadingInitialData)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: _gap),
-                    child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
+
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
+                        Expanded(child: _buildProductsList())
+                      else if (!_isLoadingContainerContents && _scannedContainerIdController.text.isNotEmpty && !_isLoadingInitialData)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: _gap),
+                            child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+
+                      const SizedBox(height: _gap),
+                      _buildSearchableDropdownWithQr(
+                          controller: _targetLocationController,
+                          label: 'Hedef Lokasyon Seç',
+                          value: _selectedTargetLocation,
+                          items: _availableTargetLocations,
+                          onSelected: (val) {
+                            if (mounted) {
+                              setState(() {
+                                _selectedTargetLocation = val;
+                                _targetLocationController.text = val ?? "";
+                              });
+                            }
+                          },
+                          onQrTap: () => _scanQrAndUpdateField('target'),
+                          validator: (val) {
+                            if (val == null || val.isEmpty) return 'Hedef lokasyon seçimi zorunludur.';
+                            return null;
+                          }
+                      ),
+                    ],
                   ),
-                const SizedBox(height: _gap),
-                _buildDropdownWithQr(
-                  label: 'Hedef Lokasyon Seç',
-                  value: _selectedTargetLocation,
-                  items: _availableTargetLocations,
-                  onChanged: (val) {
-                    if (mounted) setState(() => _selectedTargetLocation = val);
-                  },
-                  onQrTap: () => _scanQrAndUpdateField('target'),
-                  validator: (val) => val == null ? 'Hedef lokasyon seçin.' : null,
                 ),
               ],
             ),
@@ -401,7 +557,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<AssignmentMode>(
-        segments: const [
+        segments: [ // Removed 'const'
           ButtonSegment(value: AssignmentMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
           ButtonSegment(value: AssignmentMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
         ],
@@ -413,6 +569,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _scannedContainerIdController.clear();
               _productsInContainer = [];
               _clearQuantityControllers();
+              _formKey.currentState?.reset();
             });
           }
         },
@@ -426,30 +583,37 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 
-  Widget _buildDropdownWithQr({
+  Widget _buildSearchableDropdownWithQr({
+    required TextEditingController controller,
     required String label,
     required String? value,
     required List<String> items,
-    required ValueChanged<String?> onChanged,
+    required ValueChanged<String?> onSelected,
     required VoidCallback onQrTap,
     required FormFieldValidator<String>? validator,
   }) {
     return SizedBox(
-      height: _fieldHeight, // Yüksekliği sabitledik
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start, // Hizalama için
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: DropdownButtonFormField<String>(
-              decoration: _inputDecoration(label, filled: true),
-              value: value,
-              isExpanded: true,
-              hint: Text(label),
-              items: items.map((String item) {
-                return DropdownMenuItem<String>(value: item, child: Text(item, overflow: TextOverflow.ellipsis));
-              }).toList(),
-              onChanged: items.isEmpty ? null : onChanged, // Liste boşsa onChanged'i null yap
+            child: TextFormField(
+              controller: controller,
+              readOnly: true,
+              decoration: _inputDecoration(label, filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
+              onTap: () async {
+                final String? selected = await _showSearchableDropdownDialog<String>(
+                  context: context,
+                  title: label,
+                  items: items,
+                  itemToString: (item) => item,
+                  filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                  initialValue: value,
+                );
+                onSelected(selected);
+              },
               validator: validator,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
@@ -461,9 +625,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Widget _buildScannedIdSection() {
     return SizedBox(
-      height: _fieldHeight, // Yüksekliği sabitledik
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start, // Hizalama için
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: TextFormField(
@@ -475,8 +638,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 }
                 return null;
               },
-              // Enter'a basıldığında içerik getirme
               onFieldSubmitted: (_) => _fetchContainerContents(),
+              autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
@@ -491,58 +654,85 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Widget _buildProductsList() {
     return Container(
+      margin: const EdgeInsets.only(top: _smallGap),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
         borderRadius: _borderRadius,
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
               "${_scannedContainerIdController.text} İçeriği (${_productsInContainer.length} ürün):",
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          const Divider(height:1),
-          Expanded(
-            child: ListView.separated(
+          const Divider(height:1, thickness: 0.5),
+          Flexible(
+            child: _productsInContainer.isEmpty
+                ? Padding(
+              padding: const EdgeInsets.all(_gap),
+              child: Center(child: Text("${_selectedMode.displayName} içeriği boş.", style: TextStyle(color: Theme.of(context).hintColor))),
+            )
+                : ListView.separated(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: _smallGap),
               itemCount: _productsInContainer.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16),
+              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 0.5),
               itemBuilder: (context, index) {
                 final product = _productsInContainer[index];
                 _quantityControllers[product.id] ??= TextEditingController();
                 _quantityFocusNodes[product.id] ??= FocusNode();
 
-
-                return ListTile(
-                  title: Text(product.name, style: Theme.of(context).textTheme.bodyLarge),
-                  subtitle: Text('Mevcut: ${product.currentQuantity}'),
-                  trailing: SizedBox(
-                    width: 100, // Miktar alanı için genişlik
-                    child: TextFormField(
-                      controller: _quantityControllers[product.id],
-                      focusNode: _quantityFocusNodes[product.id],
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        labelText: 'Miktar',
-                        isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hata mesajını gizle (SnackBar ile gösteriliyor)
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: _smallGap /2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(product.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
+                            Text('Mevcut: ${product.currentQuantity}', style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                      validator: (value) { // Bu validator _onConfirmSave içinde ayrıca kontrol ediliyor
-                        if (value == null || value.isEmpty) return null; // Boşsa sorun yok, 0 kabul edilecek
-                        final quantity = int.tryParse(value);
-                        if (quantity == null) return 'Sayı!';
-                        if (quantity < 0) return '>0!';
-                        if (quantity > product.currentQuantity) return 'Max ${product.currentQuantity}!';
-                        return null;
-                      },
-                      autovalidateMode: AutovalidateMode.onUserInteraction,
-                    ),
+                      const SizedBox(width: _gap),
+                      SizedBox(
+                        width: 90,
+                        height: _fieldHeight * 0.85,
+                        child: TextFormField(
+                          controller: _quantityControllers[product.id],
+                          focusNode: _quantityFocusNodes[product.id],
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          decoration: InputDecoration(
+                            labelText: 'Miktar',
+                            isDense: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            errorStyle: const TextStyle(fontSize: 0, height: 0.01),
+                            helperText: ' ',
+                            helperStyle: const TextStyle(fontSize: 0, height: 0.01),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          ),
+                          textAlign: TextAlign.center,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) return null;
+                            final quantity = int.tryParse(value);
+                            if (quantity == null) return 'Sayı!';
+                            if (quantity < 0) return '>0!';
+                            if (quantity > product.currentQuantity) return 'Max!';
+                            return null;
+                          },
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },

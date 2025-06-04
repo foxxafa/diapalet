@@ -1,11 +1,6 @@
-// lib/features/goods_receiving/domain/entities/product_info.dart
-// Bu dosya önceki haliyle kalabilir, ürün seçimi için kullanılacak.
-// Eğer ürünler sadece isim olarak tutulacaksa basitleştirilebilir.
-// Şimdilik mevcut ProductInfo yapısını kullanıyoruz.
-
-/// Represents basic information about a product, typically fetched by barcode.
+// features/goods_receiving/domain/entities/product_info.dart
 class ProductInfo {
-  final String id; // Benzersiz bir ürün ID'si eklendi
+  final String id;
   final String name;
   final String stockCode;
 
@@ -15,7 +10,6 @@ class ProductInfo {
     required this.stockCode,
   });
 
-  // Factory constructor for creating a new ProductInfo instance from a map.
   factory ProductInfo.fromJson(Map<String, dynamic> json) {
     return ProductInfo(
       id: json['id'] as String,
