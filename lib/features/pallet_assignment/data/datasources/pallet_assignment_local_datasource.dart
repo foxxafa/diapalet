@@ -121,8 +121,6 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       columns: ['location'],
       where: 'container_id = ?',
       whereArgs: [containerId],
-      orderBy: 'last_updated DESC',
-      limit: 1,
     );
     if (maps.isNotEmpty) {
       return maps.first['location'] as String?;
