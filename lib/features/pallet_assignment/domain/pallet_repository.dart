@@ -16,4 +16,5 @@ abstract class PalletAssignmentRepository {
   Future<void> markTransferOperationAsSynced(int operationId);
   Future<void> updateContainerLocation(String containerId, String newLocation);
   Future<String?> getContainerLocation(String containerId);
+  Future<void> synchronizePendingTransfers();
 }

@@ -148,8 +148,7 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
     return await localDataSource.getContainerLocation(containerId);
   }
 
-  // This method was in your provided Impl but not in the Repository interface.
-  // Ensure it's added to PalletAssignmentRepository if it's a public capability.
+  @override
   Future<void> synchronizePendingTransfers() async {
     if (await networkInfo.isConnected) {
       debugPrint("Starting synchronization of pending transfers...");
