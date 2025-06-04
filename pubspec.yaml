@@ -5,17 +5,17 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.8.0 <4.0.0'         # Dart 3.8 kullandığını belirt
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
   flutter_form_builder: ^10.0.1
-  form_builder_validators: ^11.1.2   # 3.8 istiyor, artık uyumlu
+  form_builder_validators: ^11.1.2
   provider: ^6.1.5
-  intl: ^0.20.2                      # 0.20.2 dart 3.8 ile uyumlu
-  mobile_scanner: ^7.0.0             # Dart 3.6+ uyumlu, getter’lar mevcut
+  intl: ^0.20.2
+  mobile_scanner: ^7.0.0
 
 dev_dependencies:
   flutter_test:

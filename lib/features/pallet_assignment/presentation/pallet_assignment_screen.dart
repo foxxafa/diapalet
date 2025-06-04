@@ -1,12 +1,9 @@
-// File: features/pallet_assignment/presentation/pallet_assignment_screen.dart
+// features/pallet_assignment/presentation/pallet_assignment_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_form_builder/flutter_form_builder.dart';
-import 'package:form_builder_validators/form_builder_validators.dart';
+import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:provider/provider.dart';
-
-// Domain katmanından Mode, ProductItem ve PalletRepository import ediliyor
 import '../domain/pallet_repository.dart';
-import '../../../core/widgets/qr_scanner_screen.dart'; // Import the scanner screen
+import '../../../core/widgets/qr_scanner_screen.dart';
 
 class PalletAssignmentScreen extends StatefulWidget {
   const PalletAssignmentScreen({super.key});
@@ -16,63 +13,159 @@ class PalletAssignmentScreen extends StatefulWidget {
 }
 
 class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
-  final _formKey = GlobalKey<FormBuilderState>();
-  Mode _selectedMode = Mode.palet; // Bu artık domain/pallet_repository.dart dosyasından gelen Mode tipini kullanacak
-
+  final _formKey = GlobalKey<FormState>();
   late PalletRepository _repo;
   bool _isRepoInitialized = false;
-
-  List<String> _options = [];
-  String? _selectedOption;
-  List<ProductItem> _products = [];
-  bool _isLoading = true;
+  bool _isLoadingInitialData = true;
+  bool _isLoadingContainerContents = false;
   bool _isSaving = false;
 
-  final _borderRadius = BorderRadius.circular(12.0);
-  static const double _gap = 8.0;
+  AssignmentMode _selectedMode = AssignmentMode.palet;
+
+  List<String> _availableSourceLocations = [];
+  String? _selectedSourceLocation;
+
+  final TextEditingController _scannedContainerIdController = TextEditingController();
+  List<ProductItem> _productsInContainer = [];
+  // Map to store quantity controllers for each product in the list
+  Map<String, TextEditingController> _quantityControllers = {};
+  Map<String, FocusNode> _quantityFocusNodes = {};
+
+
+  List<String> _availableTargetLocations = [];
+  String? _selectedTargetLocation;
+
   static const double _fieldHeight = 56.0;
+  static const double _gap = 16.0;
+  static const double _smallGap = 8.0;
+  final _borderRadius = BorderRadius.circular(12.0);
+
+  @override
+  void initState() {
+    super.initState();
+    _scannedContainerIdController.addListener(_onScannedIdChange);
+  }
+
+  void _onScannedIdChange() {
+    // Clear previous products if ID changes
+    if (_scannedContainerIdController.text.isEmpty && _productsInContainer.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _productsInContainer = [];
+          _clearQuantityControllers();
+        });
+      }
+    }
+    // Optionally, auto-fetch if ID is of a certain length or format,
+    // or rely on a separate button/action. For now, manual fetch via button/enter.
+  }
+
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isRepoInitialized) {
       _repo = Provider.of<PalletRepository>(context, listen: false);
-      _initializeData();
+      _loadInitialData();
       _isRepoInitialized = true;
     }
   }
 
-  Future<void> _initializeData() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(Duration.zero); // Ensure context is available
-    _refreshOptions();
-    if (mounted) {
-      setState(() => _isLoading = false);
+  @override
+  void dispose() {
+    _scannedContainerIdController.removeListener(_onScannedIdChange);
+    _scannedContainerIdController.dispose();
+    _clearQuantityControllers(disposeNodes: true);
+    super.dispose();
+  }
+
+  void _clearQuantityControllers({bool disposeNodes = false}) {
+    for (var controller in _quantityControllers.values) {
+      controller.dispose();
+    }
+    _quantityControllers.clear();
+    if (disposeNodes) {
+      for (var node in _quantityFocusNodes.values) {
+        node.dispose();
+      }
+      _quantityFocusNodes.clear();
     }
   }
 
-  void _refreshOptions() {
-    if (_selectedMode == Mode.palet) {
-      _options = _repo.getPalletList();
-      _selectedOption = _options.isNotEmpty ? _options.first : null;
-      _products = _selectedOption != null ? _repo.getPalletProducts(_selectedOption!) : [];
-    } else {
-      _options = _repo.getBoxList();
-      _selectedOption = _options.isNotEmpty ? _options.first : null;
-      _products = _selectedOption != null ? _repo.getBoxProducts(_selectedOption!) : [];
+  Future<void> _loadInitialData() async {
+    if (!mounted) return;
+    setState(() => _isLoadingInitialData = true);
+    try {
+      final results = await Future.wait([
+        _repo.getSourceLocations(),
+        _repo.getTargetLocations(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _availableSourceLocations = results[0];
+        _availableTargetLocations = results[1];
+        _selectedSourceLocation = _availableSourceLocations.isNotEmpty ? _availableSourceLocations.first : null;
+        _selectedTargetLocation = _availableTargetLocations.isNotEmpty ? _availableTargetLocations.first : null;
+      });
+    } catch (e) {
+      if (mounted) _showSnackBar("Veri yüklenirken hata: ${e.toString()}", isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingInitialData = false);
     }
-    if (_formKey.currentState != null) {
-      _formKey.currentState!.patchValue({'option': _selectedOption});
-      _formKey.currentState!.patchValue({
-        'quantity': null,
-        'corridor': null,
-        'shelf': null,
-        'floor': null,
+  }
+
+  Future<void> _fetchContainerContents() async {
+    FocusScope.of(context).unfocus(); // Klavyeyi kapat
+    final containerId = _scannedContainerIdController.text.trim();
+    if (containerId.isEmpty) {
+      _showSnackBar("${_selectedMode.displayName} ID boş olamaz.", isError: true);
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _isLoadingContainerContents = true;
+      _productsInContainer = []; // Önceki ürünleri temizle
+      _clearQuantityControllers();
+    });
+    try {
+      final contents = await _repo.getContentsOfContainer(containerId, _selectedMode);
+      if (!mounted) return;
+      setState(() {
+        _productsInContainer = contents;
+        // Create new controllers for the new products
+        for (var product in _productsInContainer) {
+          _quantityControllers[product.id] = TextEditingController();
+          _quantityFocusNodes[product.id] = FocusNode();
+        }
+        if (contents.isEmpty) {
+          _showSnackBar("$containerId ID'li ${_selectedMode.displayName} bulunamadı veya içi boş.", isError: true);
+        }
+      });
+    } catch (e) {
+      if (mounted) _showSnackBar("İçerik yüklenirken hata: ${e.toString()}", isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingContainerContents = false);
+    }
+  }
+
+
+  void _resetForm({bool resetAll = true}) {
+    _formKey.currentState?.reset(); // Formun kendi içindeki alanları sıfırlar (varsa)
+    _scannedContainerIdController.clear();
+    _clearQuantityControllers();
+    if (mounted) {
+      setState(() {
+        _productsInContainer = [];
+        if (resetAll) {
+          _selectedMode = AssignmentMode.palet;
+          _selectedSourceLocation = _availableSourceLocations.isNotEmpty ? _availableSourceLocations.first : null;
+          _selectedTargetLocation = _availableTargetLocations.isNotEmpty ? _availableTargetLocations.first : null;
+        }
       });
     }
   }
 
-  Future<void> _scanQrAndUpdateField(String fieldName, {bool isOptionDropdown = false}) async {
+  Future<void> _scanQrAndUpdateField(String fieldIdentifier) async {
     FocusScope.of(context).unfocus();
     final result = await Navigator.push<String>(
       context,
@@ -80,83 +173,110 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
 
     if (result != null && result.isNotEmpty && mounted) {
-      _formKey.currentState?.fields[fieldName]?.didChange(result);
-      _formKey.currentState?.save();
-
-      if (isOptionDropdown) {
-        final selectedValue = _formKey.currentState?.fields[fieldName]?.value;
-        if (selectedValue != null) {
-          setState(() {
-            if (_options.contains(selectedValue)) {
-              _selectedOption = selectedValue;
-              _products = _selectedMode == Mode.palet
-                  ? _repo.getPalletProducts(selectedValue)
-                  : _repo.getBoxProducts(selectedValue);
-            } else {
-              _formKey.currentState?.fields[fieldName]?.didChange(null); // Clear invalid selection
-              _selectedOption = null;
-              _products = [];
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('"${result}" geçerli bir seçenek değil.'), backgroundColor: Colors.orangeAccent, behavior: SnackBarBehavior.floating),
-              );
-            }
-          });
+      setState(() {
+        bool showSuccess = true;
+        String message = "";
+        if (fieldIdentifier == 'source') {
+          if (_availableSourceLocations.contains(result)) {
+            _selectedSourceLocation = result;
+            message = "Kaynak QR ile seçildi: $result";
+          } else {
+            message = "Taranan QR ($result) geçerli bir Kaynak Lokasyonu değil."; showSuccess = false;
+          }
+        } else if (fieldIdentifier == 'scannedId') {
+          _scannedContainerIdController.text = result;
+          message = "${_selectedMode.displayName} ID QR ile okundu: $result";
+          // ID okunduktan sonra otomatik içerik yükleme
+          _fetchContainerContents();
+        } else if (fieldIdentifier == 'target') {
+          if (_availableTargetLocations.contains(result)) {
+            _selectedTargetLocation = result;
+            message = "Hedef QR ile seçildi: $result";
+          } else {
+            message = "Taranan QR ($result) geçerli bir Hedef Lokasyonu değil."; showSuccess = false;
+          }
         }
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$fieldName alanına "$result" girildi.'), behavior: SnackBarBehavior.floating),
-      );
+        _showSnackBar(message, isError: !showSuccess);
+      });
     }
   }
-
 
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
-    if (_formKey.currentState?.saveAndValidate() ?? false) {
-      setState(() => _isSaving = true);
-      final formData = Map<String, dynamic>.from(_formKey.currentState!.value);
-      try {
-        await _repo.saveAssignment(formData, _selectedMode);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${_selectedMode == Mode.palet ? "Palet" : "Kutu"} bilgileri başarıyla kaydedildi!'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.green,
-            ),
-          );
-          _formKey.currentState?.reset();
-          _refreshOptions();
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      _showSnackBar("Lütfen tüm zorunlu alanları doldurun.", isError: true);
+      return;
+    }
+
+    List<TransferItem> itemsToTransfer = [];
+    bool validationError = false;
+    for (var product in _productsInContainer) {
+      final controller = _quantityControllers[product.id];
+      if (controller != null && controller.text.isNotEmpty) {
+        final quantity = int.tryParse(controller.text);
+        if (quantity == null || quantity < 0) {
+          _showSnackBar("${product.name} için geçersiz miktar.", isError: true);
+          validationError = true;
+          _quantityFocusNodes[product.id]?.requestFocus();
+          break;
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Kaydetme sırasında hata: $e'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.redAccent,
-            ),
-          );
+        if (quantity > product.currentQuantity) {
+          _showSnackBar("${product.name} için transfer miktarı (${quantity}) mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
+          validationError = true;
+          _quantityFocusNodes[product.id]?.requestFocus();
+          break;
         }
-      } finally {
-        if(mounted){
-          setState(() => _isSaving = false);
+        if (quantity > 0) {
+          itemsToTransfer.add(TransferItem(
+            productId: product.id,
+            productName: product.name,
+            quantityToTransfer: quantity,
+          ));
         }
       }
-    } else {
+    }
+
+    if (validationError) return;
+
+    if (itemsToTransfer.isEmpty) {
+      _showSnackBar("Transfer edilecek ürün miktarı girilmedi.", isError: true);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isSaving = true);
+    try {
+      await _repo.recordTransfer(
+        mode: _selectedMode,
+        sourceLocation: _selectedSourceLocation,
+        containerId: _scannedContainerIdController.text,
+        targetLocation: _selectedTargetLocation,
+        transferredItems: itemsToTransfer,
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Lütfen gerekli tüm alanları doldurun! Formda hatalar var.'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.orangeAccent,
-          ),
-        );
+        _showSnackBar("${_selectedMode.displayName} transferi başarıyla kaydedildi!");
+        _resetForm(resetAll: true);
       }
+    } catch (e) {
+      if (mounted) _showSnackBar("Kaydetme sırasında hata: $e", isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  InputDecoration _inputDecoration(String labelText, {Widget? suffixIcon}) {
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).removeCurrentSnackBar(); // Önceki snackbar'ı kaldır
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String labelText, {Widget? suffixIcon, bool filled = false}) {
     return InputDecoration(
       labelText: labelText,
       border: OutlineInputBorder(borderRadius: _borderRadius),
@@ -176,191 +296,99 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         borderRadius: _borderRadius,
         borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
       ),
-      filled: true,
-      fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? Theme.of(context).colorScheme.surface.withOpacity(0.05),
-      // Tutarlı dikey iç dolgu için: (alan yüksekliği - yaklaşık metin yüksekliği) / 2
-      // _fieldHeight = 56, yaklaşık metin yüksekliği 16-20px varsayılırsa, (56-16)/2 = 20
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18), // Dikey dolguyu 18 veya 20 olarak ayarlayabilirsiniz.
+      filled: filled,
+      fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 20) / 2),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides default error text
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double screenWidth = MediaQuery.of(context).size.width;
     final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
-    final double qrButtonSize = (screenWidth * 0.13).clamp(48.0, _fieldHeight);
-
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Raf Ayarla'), centerTitle: true),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Raf Ayarla'),
+        title: const Text('Palet/Kutu Taşıma'),
         centerTitle: true,
       ),
       resizeToAvoidBottomInset: true,
-      bottomNavigationBar: Container(
-        margin: const EdgeInsets.only(bottom: 8.0, left: 20.0, right: 20.0),
-        padding: const EdgeInsets.symmetric(vertical: 12),
+      bottomNavigationBar: _isLoadingInitialData || _isSaving
+          ? null
+          : Container(
+        margin: const EdgeInsets.all(20).copyWith(top:0),
         height: bottomNavHeight,
         child: ElevatedButton.icon(
           onPressed: _isSaving ? null : _onConfirmSave,
           icon: _isSaving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.check),
-          label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet ve Onayla'),
+              : const Icon(Icons.save_alt_outlined),
+          label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet'),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             shape: RoundedRectangleBorder(borderRadius: _borderRadius),
             textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            backgroundColor: Theme.of(context).primaryColor,
-            foregroundColor: Colors.white,
           ),
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: FormBuilder(
+        child: _isLoadingInitialData
+            ? const Center(child: CircularProgressIndicator())
+            : Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Form(
             key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column( // ListView yerine Column ve Expanded kullandık
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: SegmentedButton<Mode>(
-                    segments: const [
-                      ButtonSegment(value: Mode.palet, label: Text('Palet')),
-                      ButtonSegment(value: Mode.kutu, label: Text('Kutu')),
-                    ],
-                    selected: {_selectedMode},
-                    onSelectionChanged: (val) => setState(() {
-                      _selectedMode = val.first;
-                      _refreshOptions();
-                    }),
-                    style: SegmentedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                      selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-                      selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-                      shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-                    ),
-                  ),
+                _buildModeSelector(),
+                const SizedBox(height: _gap),
+                _buildDropdownWithQr(
+                  label: 'Kaynak Lokasyon Seç',
+                  value: _selectedSourceLocation,
+                  items: _availableSourceLocations,
+                  onChanged: (val) {
+                    if (mounted) setState(() => _selectedSourceLocation = val);
+                  },
+                  onQrTap: () => _scanQrAndUpdateField('source'),
+                  validator: (val) => val == null ? 'Kaynak lokasyon seçin.' : null,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: _fieldHeight,
-                        child: FormBuilderDropdown<String>(
-                          name: 'option',
-                          initialValue: _selectedOption,
-                          decoration: _inputDecoration( // .copyWith kaldırıldı, standart _inputDecoration kullanılacak
-                            _selectedMode == Mode.palet ? 'Palet Seç' : 'Kutu Seç',
-                          ),
-                          items: _options.isEmpty
-                              ? [DropdownMenuItem(value: null, child: Text(_selectedMode == Mode.palet ? 'Palet Yok' : 'Kutu Yok', style: const TextStyle(color: Colors.grey)))]
-                              : _options.map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis))).toList(),
-                          onChanged: _options.isEmpty ? null : (val) {
-                            if (val == null && _selectedOption == null) return;
-                            if (val == _selectedOption) return;
-                            setState(() {
-                              _selectedOption = val;
-                              _products = (val == null)
-                                  ? []
-                                  : (_selectedMode == Mode.palet
-                                  ? _repo.getPalletProducts(val)
-                                  : _repo.getBoxProducts(val));
-                            });
-                          },
-                          validator: FormBuilderValidators.required(errorText: "Lütfen bir seçim yapın."),
-                          isExpanded: true,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: _gap),
-                    SizedBox(
-                      width: qrButtonSize,
-                      height: _fieldHeight,
-                      child: _QrButton(
-                        onTap: () => _scanQrAndUpdateField('option', isOptionDropdown: true),
-                        size: qrButtonSize,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildTextFieldRow('quantity', 'Miktar', TextInputType.number, FormBuilderValidators.compose([
-                  FormBuilderValidators.required(errorText: "Miktar boş olamaz."),
-                  FormBuilderValidators.integer(errorText: "Lütfen geçerli bir sayı girin."),
-                  FormBuilderValidators.min(1, errorText: "Miktar en az 1 olmalı."),
-                ]), qrButtonSize),
-                const SizedBox(height: 12),
-                _buildTextFieldRow('corridor', 'Koridor', TextInputType.text, FormBuilderValidators.required(errorText: "Koridor boş olamaz."), qrButtonSize),
-                const SizedBox(height: 12),
-                _buildTextFieldRow('shelf', 'Raf', TextInputType.text, FormBuilderValidators.required(errorText: "Raf boş olamaz."), qrButtonSize, hasQr: true),
-                const SizedBox(height: 12),
-                _buildTextFieldRow('floor', 'Kat', TextInputType.text, FormBuilderValidators.required(errorText: "Kat boş olamaz."), qrButtonSize),
-                const SizedBox(height: 20),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: Theme.of(context).dividerColor)
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                          child: Text(
-                            _selectedMode == Mode.palet ? 'Paletteki Ürünler' : 'Kutudaki Ürünler',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const Divider(height: 1, thickness: 1),
-                        Expanded(
-                          child: _products.isEmpty
-                              ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(_gap * 2).copyWith(top: 20, bottom: 20),
-                              child: Text(
-                                '${_selectedOption ?? (_selectedMode == Mode.palet ? "Seçili palet" : "Seçili kutu")} için ürün bulunmuyor.',
-                                style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor.withOpacity(0.8)),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          )
-                              : ListView.separated(
-                            padding: EdgeInsets.zero,
-                            itemCount: _products.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 1),
-                            itemBuilder: (context, index) {
-                              final item = _products[index];
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                                title: Text(item.name, style: Theme.of(context).textTheme.bodyLarge),
-                                trailing: Text(
-                                  '${item.quantity}x',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
+                const SizedBox(height: _gap),
+                _buildScannedIdSection(),
+                const SizedBox(height: _smallGap), // Fetch butonu için boşluk
+                if (_scannedContainerIdController.text.isNotEmpty)
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.search),
+                    label: Text("${_selectedMode.displayName} İçeriğini Getir"),
+                    onPressed: _isLoadingContainerContents ? null : _fetchContainerContents,
+                    style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, _fieldHeight * 0.8)),
                   ),
+                if (_isLoadingContainerContents)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: _smallGap),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
+                  const SizedBox(height: _gap),
+                if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
+                  Expanded(child: _buildProductsList()),
+                if (!_isLoadingContainerContents && _productsInContainer.isEmpty && _scannedContainerIdController.text.isNotEmpty && !_isLoadingInitialData)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: _gap),
+                    child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
+                  ),
+                const SizedBox(height: _gap),
+                _buildDropdownWithQr(
+                  label: 'Hedef Lokasyon Seç',
+                  value: _selectedTargetLocation,
+                  items: _availableTargetLocations,
+                  onChanged: (val) {
+                    if (mounted) setState(() => _selectedTargetLocation = val);
+                  },
+                  onQrTap: () => _scanQrAndUpdateField('target'),
+                  validator: (val) => val == null ? 'Hedef lokasyon seçin.' : null,
                 ),
               ],
             ),
@@ -370,31 +398,155 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 
-  Widget _buildTextFieldRow(String name, String label, TextInputType inputType, FormFieldValidator<String>? validator, double qrButtonSize, {bool hasQr = false}) {
+  Widget _buildModeSelector() {
+    return Center(
+      child: SegmentedButton<AssignmentMode>(
+        segments: const [
+          ButtonSegment(value: AssignmentMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
+          ButtonSegment(value: AssignmentMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
+        ],
+        selected: {_selectedMode},
+        onSelectionChanged: (Set<AssignmentMode> newSelection) {
+          if (mounted) {
+            setState(() {
+              _selectedMode = newSelection.first;
+              _scannedContainerIdController.clear();
+              _productsInContainer = [];
+              _clearQuantityControllers();
+            });
+          }
+        },
+        style: SegmentedButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdownWithQr({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    required VoidCallback onQrTap,
+    required FormFieldValidator<String>? validator,
+  }) {
     return SizedBox(
-      height: _fieldHeight,
+      height: _fieldHeight, // Yüksekliği sabitledik
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start, // Hizalama için
         children: [
           Expanded(
-            child: FormBuilderTextField(
-              name: name,
-              decoration: _inputDecoration(label),
-              keyboardType: inputType,
+            child: DropdownButtonFormField<String>(
+              decoration: _inputDecoration(label, filled: true),
+              value: value,
+              isExpanded: true,
+              hint: Text(label),
+              items: items.map((String item) {
+                return DropdownMenuItem<String>(value: item, child: Text(item, overflow: TextOverflow.ellipsis));
+              }).toList(),
+              onChanged: items.isEmpty ? null : onChanged, // Liste boşsa onChanged'i null yap
               validator: validator,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
-          const SizedBox(width: _gap),
-          SizedBox(
-            width: qrButtonSize,
-            height: _fieldHeight,
-            child: hasQr
-                ? _QrButton(
-              onTap: () => _scanQrAndUpdateField(name),
-              size: qrButtonSize,
-            )
-                : const SizedBox.shrink(),
+          const SizedBox(width: _smallGap),
+          _QrButton(onTap: onQrTap, size: _fieldHeight),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScannedIdSection() {
+    return SizedBox(
+      height: _fieldHeight, // Yüksekliği sabitledik
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start, // Hizalama için
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _scannedContainerIdController,
+              decoration: _inputDecoration('${_selectedMode.displayName} ID Okut/Yaz'),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return '${_selectedMode.displayName} ID boş olamaz.';
+                }
+                return null;
+              },
+              // Enter'a basıldığında içerik getirme
+              onFieldSubmitted: (_) => _fetchContainerContents(),
+            ),
+          ),
+          const SizedBox(width: _smallGap),
+          _QrButton(
+            onTap: () => _scanQrAndUpdateField('scannedId'),
+            size: _fieldHeight,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductsList() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: _borderRadius,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(_smallGap),
+            child: Text(
+              "${_scannedContainerIdController.text} İçeriği (${_productsInContainer.length} ürün):",
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const Divider(height:1),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _productsInContainer.length,
+              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16),
+              itemBuilder: (context, index) {
+                final product = _productsInContainer[index];
+                _quantityControllers[product.id] ??= TextEditingController();
+                _quantityFocusNodes[product.id] ??= FocusNode();
+
+
+                return ListTile(
+                  title: Text(product.name, style: Theme.of(context).textTheme.bodyLarge),
+                  subtitle: Text('Mevcut: ${product.currentQuantity}'),
+                  trailing: SizedBox(
+                    width: 100, // Miktar alanı için genişlik
+                    child: TextFormField(
+                      controller: _quantityControllers[product.id],
+                      focusNode: _quantityFocusNodes[product.id],
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: InputDecoration(
+                        labelText: 'Miktar',
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hata mesajını gizle (SnackBar ile gösteriliyor)
+                      ),
+                      textAlign: TextAlign.center,
+                      validator: (value) { // Bu validator _onConfirmSave içinde ayrıca kontrol ediliyor
+                        if (value == null || value.isEmpty) return null; // Boşsa sorun yok, 0 kabul edilecek
+                        final quantity = int.tryParse(value);
+                        if (quantity == null) return 'Sayı!';
+                        if (quantity < 0) return '>0!';
+                        if (quantity > product.currentQuantity) return 'Max ${product.currentQuantity}!';
+                        return null;
+                      },
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -412,20 +564,15 @@ class _QrButton extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: Material(
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12.0),
-          onTap: onTap,
-          child: Center(
-            child: Icon(
-              Icons.qr_code_scanner,
-              size: size * 0.6,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-            ),
-          ),
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          padding: EdgeInsets.zero,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
+        child: const Icon(Icons.qr_code_scanner, size: 28),
       ),
     );
   }

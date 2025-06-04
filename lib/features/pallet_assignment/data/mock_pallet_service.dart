@@ -1,63 +1,96 @@
-// File: features/pallet_assignment/data/mock_pallet_service.dart
-import '../domain/pallet_repository.dart'; // Imports PalletRepository, ProductItem, and Mode
+// features/pallet_assignment/data/mock_pallet_service.dart
+import 'package:flutter/foundation.dart'; // debugPrint için
+import '../domain/pallet_repository.dart';
 
 class MockPalletService implements PalletRepository {
-  final Map<String, List<ProductItem>> _palletProducts = {
-    'Palet #1': [
-      ProductItem(id: 'p1_1', name: 'Coca-Cola 1L', quantity: 120),
-      ProductItem(id: 'p1_2', name: 'Fanta 1L', quantity: 80),
-      ProductItem(id: 'p1_3', name: 'Süt İçim 1L', quantity: 60),
-    ],
-    'Palet #2': [
-      ProductItem(id: 'p2_1', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 100),
-      ProductItem(id: 'p2_2', name: 'Bebek Bezi Prima 4 Numara', quantity: 30),
-    ],
-    'Palet #3': [
-      ProductItem(id: 'p3_1', name: 'Şampuan Elidor 500ml', quantity: 96),
-      ProductItem(id: 'p3_2', name: 'Eti Karam Gofret 40g', quantity: 240),
-      ProductItem(id: 'p3_3', name: 'Ülker Çikolatalı Gofret 35g', quantity: 200),
-      ProductItem(id: 'p3_4', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 100),
-      ProductItem(id: 'p3_5', name: 'Bebek Bezi Prima 4 Numara', quantity: 30),
-    ],
-  };
+  final List<String> _mockSourceLocations = [
+    "RAF-A1-01", "RAF-A1-02", "YER-001", "DEPO-GİRİŞ-A", "ALAN-X"
+  ];
 
-  final Map<String, List<ProductItem>> _boxProducts = {
-    'Kutu #A': [
-      ProductItem(id: 'bA_1', name: 'Coca-Cola 1L', quantity: 12),
-      ProductItem(id: 'bA_2', name: 'Fanta 1L', quantity: 12),
+  final List<String> _mockTargetLocations = [
+    "RAF-B2-05", "RAF-C3-10", "SEVKİYAT-ALANI-1", "İADE-BÖLÜMÜ-X", "URETIM-HATTI-1"
+  ];
+
+  // Mock data for contents of specific pallets/boxes
+  final Map<String, List<ProductItem>> _containerContents = {
+    "PALET-A001": [
+      ProductItem(id: 'prod1', name: 'Coca-Cola 1L', currentQuantity: 50),
+      ProductItem(id: 'prod2', name: 'Fanta 1L', currentQuantity: 30),
     ],
-    'Kutu #B': [
-      ProductItem(id: 'bB_1', name: 'Şampuan Elidor 500ml', quantity: 6),
-      ProductItem(id: 'bB_2', name: 'Fairy Bulaşık Deterjanı 1L', quantity: 4),
+    "PALET-B001": [
+      ProductItem(id: 'prod3', name: 'Süt İçim 1L', currentQuantity: 100),
+      ProductItem(id: 'prod4', name: 'Eti Karam Gofret 40g', currentQuantity: 200),
     ],
-    'Kutu #C': [
-      ProductItem(id: 'bC_1', name: 'Eti Karam Gofret 40g', quantity: 24),
-      ProductItem(id: 'bC_2', name: 'Ülker Çikolatalı Gofret 35g', quantity: 20),
+    "KUTU-X01": [
+      ProductItem(id: 'prod1', name: 'Coca-Cola 1L', currentQuantity: 10),
+      ProductItem(id: 'prod5', name: 'Super Widget (Demo)', currentQuantity: 5),
+    ],
+    "KUTU-Y01": [
+      ProductItem(id: 'prod2', name: 'Fanta 1L', currentQuantity: 12),
     ],
   };
 
 
   @override
-  List<String> getPalletList() => _palletProducts.keys.toList();
+  Future<List<String>> getSourceLocations() async {
+    debugPrint("MockPalletService: Fetching source locations.");
+    await Future.delayed(const Duration(milliseconds: 150));
+    return List.from(_mockSourceLocations);
+  }
 
   @override
-  List<ProductItem> getPalletProducts(String palletName) =>
-      _palletProducts[palletName] ?? [];
+  Future<List<String>> getTargetLocations() async {
+    debugPrint("MockPalletService: Fetching target locations.");
+    await Future.delayed(const Duration(milliseconds: 150));
+    return List.from(_mockTargetLocations);
+  }
 
   @override
-  List<String> getBoxList() => _boxProducts.keys.toList();
+  Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode) async {
+    debugPrint("MockPalletService: Fetching contents for ${mode.displayName} ID: $containerId");
+    await Future.delayed(const Duration(milliseconds: 300));
+    // Simulate finding contents based on ID.
+    // In a real app, you might have different maps or logic for pallets vs boxes if IDs overlap.
+    if (_containerContents.containsKey(containerId)) {
+      return List.from(_containerContents[containerId]!);
+    }
+    // Simulate a case where the pallet/box is known but empty, or just return empty if not found.
+    // For example, if "PALET-EMPTY" is scanned:
+    if (containerId == "PALET-EMPTY") return [];
+
+    if (mode == AssignmentMode.palet && !containerId.startsWith("PALET-")) {
+      return [
+        ProductItem(id: 'demoProdA', name: 'Demo Palet Ürünü A', currentQuantity: 25),
+        ProductItem(id: 'demoProdB', name: 'Demo Palet Ürünü B', currentQuantity: 15),
+      ];
+    }
+    if (mode == AssignmentMode.kutu && !containerId.startsWith("KUTU-")) {
+      return [
+        ProductItem(id: 'demoProdC', name: 'Demo Kutu Ürünü C', currentQuantity: 8),
+      ];
+    }
+    return []; // Default to empty if no specific match and no demo fallback triggered
+  }
 
   @override
-  List<ProductItem> getBoxProducts(String boxName) =>
-      _boxProducts[boxName] ?? [];
-
-  @override
-  Future<void> saveAssignment(Map<String, dynamic> formData, Mode mode) async {
-    // Simulate network delay or database operation
-    await Future.delayed(const Duration(milliseconds: 500));
-    print('MockPalletService: Saving assignment for ${mode.toString()}');
-    print('Form Data: $formData');
-    // In a real scenario, you would save this data to a database or backend API.
-    // For this mock, we're just printing it.
+  Future<void> recordTransfer({
+    required AssignmentMode mode,
+    required String? sourceLocation,
+    required String containerId,
+    required String? targetLocation,
+    required List<TransferItem> transferredItems,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 700));
+    debugPrint('MockPalletService: Recording Transfer...');
+    debugPrint('Mode: ${mode.displayName}');
+    debugPrint('Source Location: $sourceLocation');
+    debugPrint('Source Container ID: $containerId');
+    debugPrint('Target Location: $targetLocation');
+    debugPrint('Transferred Items (${transferredItems.length}):');
+    for (var item in transferredItems) {
+      debugPrint('  - Product: ${item.productName} (ID: ${item.productId}), Quantity: ${item.quantityToTransfer}');
+    }
+    debugPrint('Transfer recorded successfully (mock).');
+    // Here you would typically interact with a backend or local database.
   }
 }

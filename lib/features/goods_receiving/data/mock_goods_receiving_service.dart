@@ -1,60 +1,70 @@
 // lib/features/goods_receiving/data/mock_goods_receiving_service.dart
-
-import 'package:flutter/foundation.dart'; // For debugPrint
+// Mock servis yeni repository arayüzüne göre güncellendi.
+import 'package:flutter/foundation.dart';
 import '../domain/entities/product_info.dart';
-import '../domain/entities/received_product_item.dart';
+import '../domain/entities/goods_receipt_log_item.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
 
-/// Mock implementation of [GoodsReceivingRepository] for development and testing.
 class MockGoodsReceivingService implements GoodsReceivingRepository {
-  // Mock database of products
-  final Map<String, ProductInfo> _mockProducts = {
-    "8690526083835": ProductInfo(name: "Coca-Cola 1L", stockCode: "COLA1L"),
-    "8693604010239": ProductInfo(name: "Eti Karam Gofret 40g", stockCode: "ETIGF40"),
-    "8690632058997": ProductInfo(name: "Fairy Bulaşık Deterjanı 1L", stockCode: "FAIRY1L"),
-    "8693604011113": ProductInfo(name: "Ülker Çikolatalı Gofret 35g", stockCode: "ULKCGF35"),
-    "8697432331903": ProductInfo(name: "Şampuan Elidor 500ml", stockCode: "ELIDOR500"),
-    "8697410173312": ProductInfo(name: "Süt İçim 1L", stockCode: "ICIM1L"),
-    "8697409602826": ProductInfo(name: "Bebek Bezi Prima 4 Numara", stockCode: "PRIMA4"),
-    "8690570512341": ProductInfo(name: "Fanta 1L", stockCode: "FANTA1L"),
-    "1112223334445": ProductInfo(name: "Super Widget (Demo)", stockCode: "SWG007"),
-  };
+  final List<String> _mockInvoices = [
+    "INV-2023-001", "INV-2023-002", "INV-2023-003", "INV-2023-004"
+  ];
 
+  final List<String> _mockPallets = [
+    "PALET-A001", "PALET-A002", "PALET-B001", "PALET-C001X"
+  ];
 
-  // Mock list of units
-  final List<String> _mockUnits = ["BOX", "UNIT"];
+  final List<String> _mockBoxes = [
+    "KUTU-X01", "KUTU-X02", "KUTU-Y01", "KUTU-Z05"
+  ];
+
+  final List<ProductInfo> _mockProductsForDropdown = [
+    ProductInfo(id: "prod1", name: "Coca-Cola 1L", stockCode: "COLA1L"),
+    ProductInfo(id: "prod2", name: "Eti Karam Gofret 40g", stockCode: "ETIGF40"),
+    ProductInfo(id: "prod3", name: "Fairy Bulaşık Deterjanı 1L", stockCode: "FAIRY1L"),
+    ProductInfo(id: "prod4", name: "Süt İçim 1L", stockCode: "ICIM1L"),
+    ProductInfo(id: "prod5", name: "Super Widget (Demo)", stockCode: "SWG007"),
+  ];
 
   @override
-  Future<ProductInfo?> getProductDetailsByBarcode(String barcode) async {
-    debugPrint("MockService: Fetching product for barcode: $barcode");
-    await Future.delayed(const Duration(milliseconds: 600)); // Simulate network delay
-    if (_mockProducts.containsKey(barcode)) {
-      return _mockProducts[barcode];
-    }
-    debugPrint("MockService: Product not found for barcode: $barcode");
-    return null; // Or throw an exception: throw Exception('Product not found');
+  Future<List<String>> getInvoices() async {
+    debugPrint("MockService: Fetching invoices.");
+    await Future.delayed(const Duration(milliseconds: 150));
+    return List.from(_mockInvoices);
   }
 
   @override
-  Future<List<String>> getAvailableUnits() async {
-    debugPrint("MockService: Fetching available units.");
-    await Future.delayed(const Duration(milliseconds: 300)); // Simulate network delay
-    return List.from(_mockUnits); // Return a copy
+  Future<List<String>> getPalletsForDropdown() async {
+    debugPrint("MockService: Fetching pallets for dropdown.");
+    await Future.delayed(const Duration(milliseconds: 150));
+    return List.from(_mockPallets);
   }
 
   @override
-  Future<void> saveReceivedProducts(List<ReceivedProductItem> items) async {
-    debugPrint("MockService: Attempting to save ${items.length} received products.");
-    await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
+  Future<List<String>> getBoxesForDropdown() async {
+    debugPrint("MockService: Fetching boxes for dropdown.");
+    await Future.delayed(const Duration(milliseconds: 150));
+    return List.from(_mockBoxes);
+  }
+
+  @override
+  Future<List<ProductInfo>> getProductsForDropdown() async {
+    debugPrint("MockService: Fetching products for dropdown.");
+    await Future.delayed(const Duration(milliseconds: 250));
+    return List.from(_mockProductsForDropdown);
+  }
+
+  @override
+  Future<void> saveGoodsReceiptLog(List<GoodsReceiptLogItem> items, ReceiveMode mode) async {
+    debugPrint("MockService: Attempting to save ${items.length} goods receipt log items for mode: ${mode.displayName}.");
+    await Future.delayed(const Duration(seconds: 1));
     if (items.isEmpty) {
       debugPrint("MockService: No items to save.");
-      // throw Exception("No items to save."); // Optionally throw error
       return;
     }
     for (var item in items) {
       debugPrint("MockService: Saving item - ${item.toString()}");
     }
-    debugPrint("MockService: All items processed successfully.");
-    // In a real scenario, this would involve API calls or local database operations.
+    debugPrint("MockService: All items processed successfully for ${mode.displayName}.");
   }
 }

@@ -1,6 +1,8 @@
+// features/product_placement/presentation/product_placement_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../domain/product_repository.dart'; // Assuming this path is correct for your project
+import '../../../core/widgets/qr_scanner_screen.dart'; // Import the scanner screen
 
 class ProductPlacementScreen extends StatefulWidget {
   const ProductPlacementScreen({super.key});
@@ -36,10 +38,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isRepoInitialized) {
-      // Ensure ProductRepository is provided in your widget tree above this screen
-      // For example, in your main.dart or a higher-level widget:
-      // ChangeNotifierProvider(create: (_) => ProductRepository(), child: ...)
-      // If ProductRepository is not a ChangeNotifier, use Provider directly.
       _repository = Provider.of<ProductRepository>(context, listen: false);
       _loadData();
       _isRepoInitialized = true;
@@ -53,11 +51,10 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
       invoices = await _repository.getInvoices();
       products = await _repository.getProducts();
     } catch (e) {
-      // Handle potential errors during data fetching
       debugPrint("Error loading data: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Veri yüklenirken hata oluştu: $e')),
+          SnackBar(content: Text('Veri yüklenirken hata oluştu: $e'), backgroundColor: Colors.redAccent),
         );
       }
     }
@@ -71,12 +68,56 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
     }
   }
 
+  Future<void> _scanQrAndUpdateDropdown(String fieldType) async {
+    FocusScope.of(context).unfocus();
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      String fieldNameForSnackbar = '';
+      bool isValid = false;
+
+      if (fieldType == 'pallet') {
+        fieldNameForSnackbar = 'Palet';
+        if (pallets.contains(result)) {
+          setState(() => selectedPallet = result);
+          isValid = true;
+        }
+      } else if (fieldType == 'product') {
+        fieldNameForSnackbar = 'Ürün';
+        if (products.contains(result)) {
+          setState(() => selectedProduct = result);
+          isValid = true;
+        }
+      }
+      // İrsaliye için de benzer bir yapı eklenebilir istenirse.
+      // else if (fieldType == 'invoice') {
+      //   fieldNameForSnackbar = 'İrsaliye';
+      //   if (invoices.contains(result)) {
+      //     setState(() => selectedInvoice = result);
+      //     isValid = true;
+      //   }
+      // }
+
+      if (isValid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$fieldNameForSnackbar QR ile seçildi: $result'), behavior: SnackBarBehavior.floating, backgroundColor: Colors.green),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Taranan QR ($result) geçerli bir $fieldNameForSnackbar seçeneği değil.'), backgroundColor: Colors.orangeAccent, behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
+
+
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    // Ensure buttonHeight is reasonable, not too large or too small
-    // ---- MODIFIED: Increased button container height slightly ----
     final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
 
 
@@ -87,16 +128,14 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
       ),
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: Container(
-        // ---- MODIFIED: Added bottom margin to lift the button container ----
         margin: const EdgeInsets.only(bottom: 8.0, left: 20.0, right: 20.0),
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 12), // Horizontal padding removed as margin is used
-        height: bottomNavHeight, // Adjusted for better responsiveness
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+        height: bottomNavHeight,
         child: ElevatedButton.icon(
-          onPressed: _loading || addedProducts.isEmpty ? null : onConfirm, // Disable if no products added
+          onPressed: _loading || addedProducts.isEmpty ? null : onConfirm,
           icon: const Icon(Icons.check),
           label: const Text('Kaydet ve Onayla'),
           style: ElevatedButton.styleFrom(
-            // ---- MODIFIED: Reduced vertical padding slightly to help text fit ----
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
               shape: RoundedRectangleBorder(borderRadius: _borderRadius),
               textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)
@@ -119,12 +158,7 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                   ),
                   const SizedBox(width: _gap),
                   _QrButton(
-                    onTap: () {
-                      // Placeholder for QR scan logic for pallet
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Palet QR okuyucu açılacak.')),
-                      );
-                    },
+                    onTap: () => _scanQrAndUpdateDropdown('pallet'),
                     size: _fieldHeight,
                   ),
                 ],
@@ -136,7 +170,7 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                 children: [
                   Expanded(child: _invoiceDropdown()),
                   const SizedBox(width: _gap),
-                  // yer hizası için boş kutu
+                  // İrsaliye için QR butonu yoksa boşluk bırakılır
                   SizedBox(width: _fieldHeight, height: _fieldHeight),
                 ],
               ),
@@ -148,12 +182,7 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                   Expanded(child: _productDropdown()),
                   const SizedBox(width: _gap),
                   _QrButton(
-                    onTap: () {
-                      // Placeholder for QR scan logic for product
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Ürün QR okuyucu açılacak.')),
-                      );
-                    },
+                    onTap: () => _scanQrAndUpdateDropdown('product'),
                     size: _fieldHeight,
                   ),
                 ],
@@ -184,8 +213,8 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
                           borderRadius: _borderRadius,
                         ),
                         padding: EdgeInsets.zero,
-                        backgroundColor: Theme.of(context).primaryColor, // Consistent color
-                        foregroundColor: Colors.white, // Icon color
+                        backgroundColor: Theme.of(context).primaryColor,
+                        foregroundColor: Colors.white,
                       ),
                       child: const Icon(Icons.add, size: 30.0),
                     ),
@@ -207,7 +236,7 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
   Widget _buildDropdownContainer(Widget dropdown) {
     return Container(
       height: _fieldHeight,
-      alignment: Alignment.center, // Centers the dropdown vertically
+      alignment: Alignment.center,
       child: dropdown,
     );
   }
@@ -249,14 +278,14 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
     child: Container(
       decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-          borderRadius: BorderRadius.circular(18), // Consistent border radius
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Theme.of(context).dividerColor)
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch children
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), // Adjusted padding
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
               'Eklenen Ürünler',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -313,7 +342,7 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
     filled: filled,
     fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
     border: OutlineInputBorder(borderRadius: _borderRadius),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2), // Adjusted for vertical centering
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
     floatingLabelBehavior: FloatingLabelBehavior.auto,
   );
 
@@ -343,7 +372,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
       return;
     }
 
-    // Check for duplicates
     final existingProductIndex = addedProducts.indexWhere((p) =>
     p['pallet'] == selectedPallet &&
         p['invoice'] == selectedInvoice &&
@@ -351,12 +379,10 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
 
     setState(() {
       if (existingProductIndex != -1) {
-        // Update quantity if product already exists for the same pallet/invoice
         addedProducts[existingProductIndex]['quantity'] =
             (addedProducts[existingProductIndex]['quantity'] as int) +
                 int.parse(quantityController.text);
       } else {
-        // Add new product
         addedProducts.add({
           'pallet': selectedPallet,
           'invoice': selectedInvoice,
@@ -365,8 +391,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
         });
       }
       quantityController.clear();
-      // Optionally, reset product selection or keep it for faster multi-adding
-      // selectedProduct = products.isNotEmpty ? products.first : null;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${selectedProduct} eklendi/güncellendi.'), backgroundColor: Colors.green),
@@ -391,7 +415,6 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
       return;
     }
 
-    // Show a confirmation dialog
     bool? confirmSave = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -419,27 +442,18 @@ class _ProductPlacementScreenState extends State<ProductPlacementScreen> {
     if (confirmSave == true) {
       setState(() => _loading = true);
       try {
-        // This is where you would call your repository to save the data
-        // For example: await _repository.savePalletData(selectedPallet, addedProducts);
         debugPrint('Palet: $selectedPallet');
-        debugPrint('İrsaliye: $selectedInvoice'); // Note: selectedInvoice is singular, addedProducts can have multiple
+        debugPrint('İrsaliye: $selectedInvoice');
         debugPrint('Ürünler: $addedProducts');
 
-        // Simulate network call
-        await Future.delayed(const Duration(seconds: 1));
+        await Future.delayed(const Duration(seconds: 1)); // Simulate save
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Palet başarıyla kaydedildi!'), backgroundColor: Colors.green),
         );
-        // Optionally, clear the list and navigate away or reset the form
         setState(() {
           addedProducts.clear();
-          // Reset selections if needed
-          // selectedPallet  = pallets.isNotEmpty  ? pallets.first  : null;
-          // selectedInvoice = invoices.isNotEmpty ? invoices.first : null;
-          // selectedProduct = products.isNotEmpty ? products.first : null;
         });
-        // if (Navigator.canPop(context)) Navigator.pop(context);
 
       } catch (e) {
         debugPrint("Error saving data: $e");
@@ -469,16 +483,16 @@ class _QrButton extends StatelessWidget {
       width: size,
       height: size,
       child: Material(
-        color: Theme.of(context).colorScheme.secondaryContainer, // Use theme color
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // Consistent border radius
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12), // Consistent border radius
+          borderRadius: BorderRadius.circular(12),
           onTap: onTap,
           child: Center(
             child: Icon(
               Icons.qr_code_scanner,
-              size: size * 0.65, // Increased multiplier for a larger QR icon
-              color: Theme.of(context).colorScheme.onSecondaryContainer, // Use theme color
+              size: size * 0.65,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
             ),
           ),
         ),
@@ -486,4 +500,3 @@ class _QrButton extends StatelessWidget {
     );
   }
 }
-
