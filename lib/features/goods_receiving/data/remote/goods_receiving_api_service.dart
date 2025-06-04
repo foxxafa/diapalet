@@ -14,6 +14,7 @@ abstract class GoodsReceivingRemoteDataSource {
 
 class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSource {
   // Gerçek uygulamada HttpClient (Dio, http) burada olurdu.
+  final Set<String> _processedIds = {};
 
   @override
   Future<List<String>> fetchInvoices() async {
@@ -49,15 +50,18 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
 
   @override
   Future<bool> sendGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
-    debugPrint("API: Sending goods receipt for invoice: ${header.invoiceNumber} to API...");
+    if (_processedIds.contains(header.externalId)) {
+      debugPrint('API: Duplicate receipt ${header.externalId} ignored.');
+      return true;
+    }
+    debugPrint(
+        "API: Sending goods receipt ${header.externalId} for invoice: ${header.invoiceNumber}...");
     debugPrint("API: Header: ${header.toMap()}");
     for (var item in items) {
       debugPrint("API: Item: ${item.toMap()}");
     }
-    await Future.delayed(const Duration(seconds: 2)); // Simulate API call
-
-    // Başarı/başarısızlık simülasyonu
-    // return Random().nextBool();
+    await Future.delayed(const Duration(seconds: 2));
+    _processedIds.add(header.externalId);
     debugPrint("API: Goods receipt sent successfully.");
     return true;
   }

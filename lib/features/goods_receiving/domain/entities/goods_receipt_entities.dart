@@ -1,5 +1,6 @@
 // features/goods_receiving/domain/entities/goods_receipt_entities.dart
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 import 'product_info.dart';
 
 enum ReceiveMode { palet, kutu }
@@ -17,6 +18,7 @@ extension ReceiveModeExtension on ReceiveMode {
 
 class GoodsReceipt {
   final int? id;
+  final String externalId;
   final String invoiceNumber;
   final DateTime receiptDate;
   final ReceiveMode mode;
@@ -24,15 +26,17 @@ class GoodsReceipt {
 
   GoodsReceipt({
     this.id,
+    String? externalId,
     required this.invoiceNumber,
     required this.receiptDate,
     required this.mode,
     this.synced = 0,
-  });
+  }) : externalId = externalId ?? const Uuid().v4();
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'external_id': externalId,
       'invoice_number': invoiceNumber,
       'receipt_date': receiptDate.toIso8601String(),
       'mode': mode.name,
@@ -43,6 +47,7 @@ class GoodsReceipt {
   factory GoodsReceipt.fromMap(Map<String, dynamic> map) {
     return GoodsReceipt(
       id: map['id'] as int?,
+      externalId: map['external_id'] as String? ?? const Uuid().v4(),
       invoiceNumber: map['invoice_number'] as String,
       receiptDate: DateTime.parse(map['receipt_date'] as String),
       mode: ReceiveMode.values.firstWhere(
