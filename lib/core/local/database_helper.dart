@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db'; // Veritabanı adı
-  static const int _dbVersion = 2; // Versiyonu artırdık (yeni tablolar için)
+  static const int _dbVersion = 3; // Versiyon 3: external_id added
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -34,7 +34,8 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE goods_receipt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        invoice_number TEXT NOT NULL, 
+        external_id TEXT NOT NULL UNIQUE,
+        invoice_number TEXT NOT NULL,
         receipt_date TEXT NOT NULL, -- ISO8601 format
         mode TEXT NOT NULL, -- 'palet' or 'kutu'
         synced INTEGER NOT NULL DEFAULT 0 -- 0 for false, 1 for true
@@ -115,10 +116,10 @@ class DatabaseHelper {
       // await _createGoodsReceiptTables(db);
       debugPrint("DB Upgrade: (No specific schema changes for v1 to v2 in this example, assuming onCreate handles all tables if DB is new at v2)");
     }
-    // Diğer versiyon geçişleri için:
-    // if (oldVersion < 3) {
-    //   await db.execute("ALTER TABLE some_table ADD COLUMN new_feature TEXT;");
-    // }
+    if (oldVersion < 3) {
+      await db.execute("ALTER TABLE goods_receipt ADD COLUMN external_id TEXT");
+      debugPrint("DB Upgrade: Added external_id column to goods_receipt table");
+    }
   }
 
   Future<void> close() async {
