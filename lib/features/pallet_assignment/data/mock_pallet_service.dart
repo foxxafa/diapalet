@@ -149,4 +149,15 @@ class MockPalletService implements PalletAssignmentRepository {
     }
     return null;
   }
+
+  @override
+  Future<void> synchronizePendingTransfers() async {
+    debugPrint("MockPalletService: Synchronizing pending transfers.");
+    await Future.delayed(const Duration(milliseconds: 50));
+    for (final header in _savedTransferHeaders.where((op) => op.synced == 0)) {
+      if (header.id != null) {
+        await markTransferOperationAsSynced(header.id!);
+      }
+    }
+  }
 }
