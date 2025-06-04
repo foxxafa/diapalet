@@ -478,13 +478,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ],
         selected: {_selectedMode},
         onSelectionChanged: (Set<ReceiveMode> newSelection) {
-          if (mounted) {
+          if (mounted && newSelection.first != _selectedMode) {
             setState(() {
               _selectedMode = newSelection.first;
               _updatePalletOrBoxOptions();
               _selectedPalletOrBoxId = null;
               _palletOrBoxController.clear();
+              // Switching between Palet and Kutu should start with an empty list
+              // to avoid mixing items of different modes.
+              _addedItems.clear();
+              _formKey.currentState?.reset();
             });
+            _showSuccessSnackBar(
+                "${_selectedMode.displayName} moduna geçildi. Liste temizlendi.");
           }
         },
         style: SegmentedButton.styleFrom(
@@ -668,7 +674,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Text(
-                  'Henüz listeye kalem eklenmedi.',
+                  'Henüz listeye kalem eklenmedi veya liste temizlendi.',
                   style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
                   textAlign: TextAlign.center,
                 ),
