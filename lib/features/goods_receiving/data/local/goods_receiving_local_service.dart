@@ -115,27 +115,31 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   @override
   Future<List<String>> getPalletIds() async {
     final db = await dbHelper.database;
+    const location = 'MAL KABUL';
     final rows = await db.rawQuery('''
-      SELECT DISTINCT gri.pallet_or_box_id
-      FROM goods_receipt_item gri
-      JOIN goods_receipt gr ON gri.receipt_id = gr.id
-      WHERE gr.mode = ?
-      ORDER BY gri.pallet_or_box_id
-    ''', [ReceiveMode.palet.name]);
-    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+      SELECT DISTINCT cl.container_id
+      FROM container_location cl
+      JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
+      JOIN goods_receipt gr ON gr.id = gri.receipt_id
+      WHERE cl.location = ? AND gr.mode = ?
+      ORDER BY cl.container_id
+    ''', [location, ReceiveMode.palet.name]);
+    return rows.map((e) => e['container_id'] as String).toList();
   }
 
   @override
   Future<List<String>> getBoxIds() async {
     final db = await dbHelper.database;
+    const location = 'MAL KABUL';
     final rows = await db.rawQuery('''
-      SELECT DISTINCT gri.pallet_or_box_id
-      FROM goods_receipt_item gri
-      JOIN goods_receipt gr ON gri.receipt_id = gr.id
-      WHERE gr.mode = ?
-      ORDER BY gri.pallet_or_box_id
-    ''', [ReceiveMode.kutu.name]);
-    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+      SELECT DISTINCT cl.container_id
+      FROM container_location cl
+      JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
+      JOIN goods_receipt gr ON gr.id = gri.receipt_id
+      WHERE cl.location = ? AND gr.mode = ?
+      ORDER BY cl.container_id
+    ''', [location, ReceiveMode.kutu.name]);
+    return rows.map((e) => e['container_id'] as String).toList();
   }
 
   @override
