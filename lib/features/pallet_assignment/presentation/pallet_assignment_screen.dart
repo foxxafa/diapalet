@@ -235,20 +235,34 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı.", isError: true);
         return;
       }
-      final product = _productsInContainer.first;
+      final product = _productsInContainer.first; // Kutu modunda listede tek ürün olmalı
       final qty = int.tryParse(_transferQuantityController.text) ?? 0;
+
+      // Transfer edilecek miktar sıfırdan büyük olmalı
+      if (qty <= 0) {
+        _showSnackBar("Transfer miktarı 0'dan büyük olmalıdır.", isError: true);
+        return;
+      }
+      // Transfer edilecek miktar mevcut miktarı aşmamalı
+      if (qty > product.currentQuantity) {
+        _showSnackBar("Transfer miktarı mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
+        return;
+      }
+
       itemsToTransferDetails = [
         TransferItemDetail(
           operationId: 0,
+          productId: product.id, // ProductItem'ın 'id' alanı productId'yi temsil eder
           productCode: product.productCode,
           productName: product.name,
           quantity: qty,
         )
       ];
-    } else {
+    } else { // Palet modu
       itemsToTransferDetails = _productsInContainer
           .map((p) => TransferItemDetail(
-        operationId: 0, // Will be updated by repository after header is saved
+        operationId: 0,
+        productId: p.id, // ProductItem'ın 'id' alanı productId'yi temsil eder
         productCode: p.productCode,
         productName: p.name,
         quantity: p.currentQuantity,
@@ -257,35 +271,26 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
 
     if (itemsToTransferDetails.isEmpty) {
-      _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı.", isError: true);
+      _showSnackBar("Kaynak ${_selectedMode.displayName} için transfer edilecek ürün bulunamadı.", isError: true);
       return;
     }
 
     if (!mounted) return;
     setState(() => _isSaving = true);
     try {
-      // Ensure sourceLocation and targetLocation are not null before creating header
-      // The form validation should ensure this.
       final header = TransferOperationHeader(
         operationType: _selectedMode,
         sourceLocation: _selectedSourceLocation!,
         containerId: _scannedContainerIdController.text,
         targetLocation: _selectedTargetLocation!,
         transferDate: DateTime.now(),
-        // synced status will be handled by the repository based on API call result
       );
 
-      // The repository's recordTransferOperation method is responsible for:
-      // 1. Attempting to send to API.
-      // 2. Updating header.synced based on API result.
-      // 3. Saving header to local DB (getting its actual local ID).
-      // 4. Updating the operationId for each item in itemsToTransferDetails with the new header ID.
-      // 5. Saving items to local DB.
       await _repo.recordTransferOperation(header, itemsToTransferDetails);
 
       if (mounted) {
         _showSnackBar("${_selectedMode.displayName} transferi başarıyla kaydedildi!");
-        _resetForm(resetAll: true); // Reset all fields after successful save
+        _resetForm(resetAll: true);
       }
     } catch (e) {
       if (mounted) _showSnackBar("Kaydetme sırasında hata: ${e.toString()}", isError: true);
@@ -329,14 +334,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
       ),
       filled: filled,
-      // fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null, // LINT FIX: surfaceVariant and withOpacity
       fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2), // Adjust vertical padding for standard height
-      floatingLabelBehavior: FloatingLabelBehavior.auto, // Or always, or never as per design
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides default error text space
-      helperText: ' ', // Reserves space for error text, preventing layout jump
-      helperStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides helper text space
+      errorStyle: const TextStyle(fontSize: 0, height: 0.01),
+      helperText: ' ',
+      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
     );
   }
 
@@ -353,31 +357,30 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       context: context,
       builder: (BuildContext dialogContext) {
         String searchText = '';
-        List<T> filteredItems = List.from(items); // Initial list
+        List<T> filteredItems = List.from(items);
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setStateDialog) {
-            // Filter logic
             if (searchText.isNotEmpty) {
               filteredItems = items.where((item) => filterCondition(item, searchText)).toList();
             } else {
-              filteredItems = List.from(items); // Reset to full list if search is empty
+              filteredItems = List.from(items);
             }
 
             return AlertDialog(
               title: Text(title),
-              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0), // Adjust padding
+              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               content: SizedBox(
-                width: double.maxFinite, // Use available width
+                width: double.maxFinite,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min, // Fit content
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     TextField(
                       autofocus: true,
                       decoration: InputDecoration(
                         hintText: 'Ara...',
                         prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: _borderRadius), // Consistent border
+                        border: OutlineInputBorder(borderRadius: _borderRadius),
                       ),
                       onChanged: (value) {
                         setStateDialog(() {
@@ -385,8 +388,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         });
                       },
                     ),
-                    const SizedBox(height: _gap), // Spacing
-                    Expanded( // Make ListView scrollable if content overflows
+                    const SizedBox(height: _gap),
+                    Expanded(
                       child: filteredItems.isEmpty
                           ? const Center(child: Text("Sonuç bulunamadı"))
                           : ListView.builder(
@@ -410,7 +413,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 TextButton(
                   child: const Text('İptal'),
                   onPressed: () {
-                    Navigator.of(dialogContext).pop(); // No value selected
+                    Navigator.of(dialogContext).pop();
                   },
                 ),
               ],
@@ -425,20 +428,19 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0); // Dynamic but capped
+    final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Palet/Kutu Taşıma'),
         centerTitle: true,
       ),
-      resizeToAvoidBottomInset: true, // Ensures keyboard doesn't hide content
-      // Standardized Bottom Nav Button
+      resizeToAvoidBottomInset: true,
       bottomNavigationBar: _isLoadingInitialData || _isSaving
-          ? null // Hide if loading or saving
+          ? null
           : Container(
-        margin: const EdgeInsets.all(20).copyWith(top:0), // All sides margin, but no top margin to allow closer positioning
-        height: bottomNavHeight, // Use dynamic height
+        margin: const EdgeInsets.all(20).copyWith(top:0),
+        height: bottomNavHeight,
         child: ElevatedButton.icon(
           onPressed: _isSaving ? null : _onConfirmSave,
           icon: _isSaving
@@ -446,25 +448,24 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               : const Icon(Icons.save_alt_outlined),
           label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20), // Good padding
-            shape: RoundedRectangleBorder(borderRadius: _borderRadius), // Consistent border radius
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600), // Clear text
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+            shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
       ),
-      body: SafeArea( // Ensures content is within screen boundaries
+      body: SafeArea(
         child: _isLoadingInitialData
             ? const Center(child: CircularProgressIndicator())
             : Padding(
-          padding: const EdgeInsets.all(20.0), // Consistent padding
+          padding: const EdgeInsets.all(20.0),
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch children horizontally
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
-                // Source Location Dropdown
                 _buildSearchableDropdownWithQr(
                     controller: _sourceLocationController,
                     label: 'Kaynak Lokasyon Seç',
@@ -475,9 +476,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         setState(() {
                           _selectedSourceLocation = val;
                           _sourceLocationController.text = val ?? "";
-                          _scannedContainerIdController.clear(); // Clear ID when source changes
+                          _scannedContainerIdController.clear();
                         });
-                        _loadContainerIdsForLocation(); // Reload IDs for new location
+                        _loadContainerIdsForLocation();
                       }
                     },
                     onQrTap: () => _scanQrAndUpdateField('source'),
@@ -487,45 +488,34 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     }
                 ),
                 const SizedBox(height: _gap),
-                // Scanned ID Section (Pallet/Box ID)
                 _buildScannedIdSection(),
-                if (_isLoadingContainerIds) // Show loader if IDs are being fetched
+                if (_isLoadingContainerIds)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: _smallGap),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                const SizedBox(height: _smallGap), // Small gap before content list
-                // Container Contents Loader
+                const SizedBox(height: _smallGap),
                 if (_isLoadingContainerContents)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: _gap),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-
-                // This Expanded widget will contain the product list (if any)
-                // and the target location dropdown, pushing the target dropdown
-                // towards the bottom if there's content, or allowing it to be
-                // higher if there's no product list.
                 Expanded(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween, // Pushes target location to bottom
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Conditionally display product list or message
                       if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
-                        Expanded(child: _buildProductsList()) // Takes available space
+                        Expanded(child: _buildProductsList())
                       else if (!_isLoadingContainerContents && _scannedContainerIdController.text.isNotEmpty && !_isLoadingInitialData)
-                      // Message if no products found for a scanned ID
-                        Expanded( // Takes available space
+                        Expanded(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: _gap),
                             child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
                           ),
                         )
                       else
-                        const Spacer(), // Takes up space if no list and no message (e.g., initial state)
-
-                      // Target Location Dropdown
-                      const SizedBox(height: _gap), // Ensure space above target location
+                        const Spacer(),
+                      const SizedBox(height: _gap),
                       _buildSearchableDropdownWithQr(
                           controller: _targetLocationController,
                           label: 'Hedef Lokasyon Seç',
@@ -557,7 +547,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildModeSelector() {
-    return Center( // Center the SegmentedButton
+    return Center(
       child: SegmentedButton<AssignmentMode>(
         segments: const [
           ButtonSegment(value: AssignmentMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
@@ -571,18 +561,16 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _scannedContainerIdController.clear();
               _productsInContainer = [];
               _transferQuantityController.clear();
-              _formKey.currentState?.reset(); // Reset form fields when mode changes
-              // Also consider resetting _selectedSourceLocation, _selectedTargetLocation if needed
+              _formKey.currentState?.reset();
             });
-            _loadContainerIdsForLocation(); // Reload container IDs for the new mode and current source
+            _loadContainerIdsForLocation();
           }
         },
         style: SegmentedButton.styleFrom(
-          // backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3), // LINT FIX: surfaceVariant and withOpacity
           backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
           selectedBackgroundColor: Theme.of(context).colorScheme.primary,
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius), // Consistent shape
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
         ),
       ),
     );
@@ -597,10 +585,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     required VoidCallback onQrTap,
     required FormFieldValidator<String>? validator,
   }) {
-    return SizedBox( // Ensure the Row takes up appropriate height
-      // height: _fieldHeight + 24, // Consider TextFormField's internal padding and helper/error text space
+    return SizedBox(
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start, // Align to top to handle validator text
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: TextFormField(
@@ -616,14 +603,14 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                   filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                   initialValue: value,
                 );
-                onSelected(selected); // This will trigger setState in the parent for controller.text
+                onSelected(selected);
               },
               validator: validator,
-              autovalidateMode: AutovalidateMode.onUserInteraction, // Validate on interaction
+              autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
-          _QrButton(onTap: onQrTap, size: _fieldHeight), // Use consistent field height
+          _QrButton(onTap: onQrTap, size: _fieldHeight),
         ],
       ),
     );
@@ -632,7 +619,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildScannedIdSection() {
     return _buildSearchableDropdownWithQr(
       controller: _scannedContainerIdController,
-      label: '${_selectedMode.displayName} ID Seç', // Dynamic label based on mode
+      label: '${_selectedMode.displayName} ID Seç',
       value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
       items: _availableContainerIds,
       onSelected: (val) async {
@@ -681,90 +668,91 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           Flexible(
             child: _productsInContainer.isEmpty
                 ? Padding(
-                    padding: const EdgeInsets.all(_gap),
-                    child: Center(
-                        child: Text("${_selectedMode.displayName} içeriği boş.",
-                            style: TextStyle(color: Theme.of(context).hintColor))),
-                  )
-                : isBox
-                    ? Padding(
-                        padding: const EdgeInsets.all(_smallGap),
-                        child: Row(
+              padding: const EdgeInsets.all(_gap),
+              child: Center(
+                  child: Text("${_selectedMode.displayName} içeriği boş.",
+                      style: TextStyle(color: Theme.of(context).hintColor))),
+            )
+                : isBox && boxProduct != null
+                ? Padding(
+              padding: const EdgeInsets.all(_smallGap),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min, // Ensure Column takes minimum space
+                      children: [
+                        Text(boxProduct.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w500)),
+                        Text("Mevcut: ${boxProduct.currentQuantity}",
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: _smallGap),
+                  SizedBox(
+                    width: 100,
+                    child: TextFormField(
+                      controller: _transferQuantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: _inputDecoration('Miktar', filled: true),
+                      validator: (value) {
+                        if (!isBox) return null;
+                        if (value == null || value.isEmpty) {
+                          return 'Miktar gerekli';
+                        }
+                        final qty = int.tryParse(value);
+                        if (qty == null) return 'Geçersiz';
+                        if (qty <= 0) return 'Miktar > 0 olmalı';
+                        if (boxProduct.currentQuantity < qty ) { // Check against the current quantity of the product in the box
+                          return 'En fazla ${boxProduct.currentQuantity}';
+                        }
+                        return null;
+                      },
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                    ),
+                  ),
+                ],
+              ),
+            )
+                : ListView.separated(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: _smallGap),
+              itemCount: _productsInContainer.length,
+              separatorBuilder: (context, index) => const Divider(
+                  height: 1, indent: 16, endIndent: 16, thickness: 0.5),
+              itemBuilder: (context, index) {
+                final product = _productsInContainer[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: _smallGap, vertical: _smallGap / 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(boxProduct!.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.copyWith(fontWeight: FontWeight.w500)),
-                                  Text("Mevcut: ${boxProduct.currentQuantity}",
-                                      style: Theme.of(context).textTheme.bodySmall),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: _smallGap),
-                            SizedBox(
-                              width: 100,
-                              child: TextFormField(
-                                controller: _transferQuantityController,
-                                keyboardType: TextInputType.number,
-                                decoration: _inputDecoration('Miktar', filled: true),
-                                validator: (value) {
-                                  if (!isBox) return null;
-                                  if (value == null || value.isEmpty) {
-                                    return 'Miktar gerekli';
-                                  }
-                                  final qty = int.tryParse(value);
-                                  if (qty == null) return 'Geçersiz';
-                                  if (qty <= 0) return 'Miktar > 0 olmalı';
-                                  if (qty > boxProduct.currentQuantity) {
-                                    return 'En fazla ${boxProduct.currentQuantity}';
-                                  }
-                                  return null;
-                                },
-                                autovalidateMode: AutovalidateMode.onUserInteraction,
-                              ),
-                            ),
+                            Text(product.name,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w500)),
+                            Text("Miktar: ${product.currentQuantity}",
+                                style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        physics: const ClampingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(vertical: _smallGap),
-                        itemCount: _productsInContainer.length,
-                        separatorBuilder: (context, index) => const Divider(
-                            height: 1, indent: 16, endIndent: 16, thickness: 0.5),
-                        itemBuilder: (context, index) {
-                          final product = _productsInContainer[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: _smallGap, vertical: _smallGap / 2),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(product.name,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall
-                                              ?.copyWith(fontWeight: FontWeight.w500)),
-                                      Text("Miktar: ${product.currentQuantity}",
-                                          style: Theme.of(context).textTheme.bodySmall),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
                       ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -775,7 +763,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
-  // const _QrButton({required this.onTap, required this.size, super.key}); // LINT FIX for unused_element_parameter
   const _QrButton({required this.onTap, required this.size});
 
 
@@ -787,12 +774,12 @@ class _QrButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)), // Consistent border radius
-          padding: EdgeInsets.zero, // Remove default padding to center icon
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer, // Themed color
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer, // Themed icon color
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          padding: EdgeInsets.zero,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
-        child: const Icon(Icons.qr_code_scanner, size: 28), // Slightly larger icon
+        child: const Icon(Icons.qr_code_scanner, size: 28),
       ),
     );
   }

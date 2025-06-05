@@ -1,13 +1,11 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
-import 'package:diapalet/core/local/database_helper.dart'; // Assuming 'diapalet' is your project name
-// Corrected entity imports
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
-// AssignmentMode is imported via TransferOperationHeader, but explicit import is also fine if needed directly.
-// import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 
 
 abstract class PalletAssignmentLocalDataSource {
@@ -21,6 +19,14 @@ abstract class PalletAssignmentLocalDataSource {
   Future<List<String>> getDistinctContainerLocations();
   Future<List<String>> getContainerIdsByLocation(String location, String mode);
   Future<List<ProductItem>> getContainerContents(String containerId);
+  Future<void> decreaseProductQuantityInGoodsReceipt(String containerId, String productCode, int quantityToDecrease);
+  Future<void> addReceivedPortionAtTarget(
+      String originalContainerId,
+      String targetLocation,
+      AssignmentMode mode,
+      DateTime transferDate,
+      List<TransferItemDetail> transferredItems
+      );
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -31,38 +37,33 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
     final db = await dbHelper.database;
-    late int operationId; // Will hold the ID of the saved header
+    late int operationId;
 
     await db.transaction((txn) async {
-      // Save the header first to get its ID
-      // The header passed in might have synced=0 or 1 depending on prior API attempt.
-      // The toMap() method should correctly serialize it.
       operationId = await txn.insert(
-        'transfer_operation', // Make sure this table name matches your DatabaseHelper
-        header.toMap()..remove('id'), // DB generates 'id' for the header
+        'transfer_operation',
+        header.toMap()..remove('id'),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       debugPrint("Saved transfer_operation with id: $operationId. Synced status: ${header.synced}");
 
-      // Now save each item, linking it to the header's operationId
       for (var item in items) {
-        // Create a new TransferItemDetail with the obtained operationId
         final itemToSave = TransferItemDetail(
-          // id: item.id, // If items can be updated, otherwise DB generates new ID
-          operationId: operationId, // Link to the saved header
+          operationId: operationId,
+          productId: item.productId, // HATA DÜZELTİLDİ: item.productId değeri atandı.
           productCode: item.productCode,
           productName: item.productName,
           quantity: item.quantity,
         );
         await txn.insert(
-          'transfer_item', // Make sure this table name matches your DatabaseHelper
-          itemToSave.toMap()..remove('id'), // DB generates 'id' for the item
+          'transfer_item',
+          itemToSave.toMap()..remove('id'),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
-        debugPrint("Saved transfer_item for operation_id: $operationId, product: ${item.productCode}");
+        debugPrint("Saved transfer_item for operation_id: $operationId, product: ${item.productCode}, productId: ${item.productId}");
       }
     });
-    return operationId; // Return the ID of the saved header
+    return operationId;
   }
 
   @override
@@ -110,7 +111,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   Future<void> updateContainerLocation(String containerId, String newLocation, DateTime updateTime) async {
     final db = await dbHelper.database;
     await db.insert(
-      'container_location', // Make sure this table name matches your DatabaseHelper
+      'container_location',
       {'container_id': containerId, 'location': newLocation, 'last_updated': updateTime.toIso8601String()},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -135,7 +136,6 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<void> clearSyncedTransferOperations() async {
     final db = await dbHelper.database;
-    // Consider deleting associated items as well, or use ON DELETE CASCADE in DB schema
     final count = await db.delete(
       'transfer_operation',
       where: 'synced = ?',
@@ -160,8 +160,8 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       SELECT DISTINCT cl.container_id
       FROM container_location cl
       JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
-      JOIN goods_receipt gr ON gr.id = gri.receipt_id
-      WHERE cl.location = ? AND gr.mode = ?
+      JOIN goods_receipt gr ON gr.id = gri.receipt_id 
+      WHERE cl.location = ? AND gr.mode = ? 
       ORDER BY cl.container_id
     ''', [location, mode]);
     return rows.map((e) => e['container_id'] as String).toList();
@@ -173,17 +173,120 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     final rows = await db.rawQuery('''
       SELECT product_id, product_name, product_code, SUM(quantity) as qty
       FROM goods_receipt_item
-      WHERE pallet_or_box_id = ?
+      WHERE pallet_or_box_id = ? AND quantity > 0 
       GROUP BY product_id, product_name, product_code
       ORDER BY product_name
     ''', [containerId]);
     return rows
         .map((e) => ProductItem(
-              id: e['product_id'] as String,
-              name: e['product_name'] as String,
-              productCode: e['product_code'] as String,
-              currentQuantity: (e['qty'] as int? ?? 0),
-            ))
+      id: e['product_id'] as String,
+      name: e['product_name'] as String,
+      productCode: e['product_code'] as String,
+      currentQuantity: (e['qty'] as int? ?? 0),
+    ))
         .toList();
+  }
+
+  @override
+  Future<void> decreaseProductQuantityInGoodsReceipt(String containerId, String productCode, int quantityToDecrease) async {
+    final db = await dbHelper.database;
+    if (quantityToDecrease <= 0) return;
+
+    List<Map<String, dynamic>> itemsInContainer = await db.query(
+      'goods_receipt_item',
+      where: 'pallet_or_box_id = ? AND product_code = ? AND quantity > 0',
+      whereArgs: [containerId, productCode],
+      orderBy: 'id ASC',
+    );
+
+    if (itemsInContainer.isEmpty) {
+      debugPrint("UYARI: Miktar azaltılacak ürün ($productCode) $containerId içinde bulunamadı veya miktarı zaten sıfır.");
+      return;
+    }
+
+    int remainingToDecrease = quantityToDecrease;
+
+    for (var itemMap in itemsInContainer) {
+      if (remainingToDecrease <= 0) break;
+
+      int currentItemDbId = itemMap['id'] as int;
+      int currentItemQty = itemMap['quantity'] as int;
+
+      if (currentItemQty >= remainingToDecrease) {
+        int newQty = currentItemQty - remainingToDecrease;
+        await db.update(
+          'goods_receipt_item',
+          {'quantity': newQty},
+          where: 'id = ?',
+          whereArgs: [currentItemDbId],
+        );
+        debugPrint("goods_receipt_item ID $currentItemDbId miktarı $remainingToDecrease azaltıldı. Yeni miktar: $newQty");
+        remainingToDecrease = 0;
+      } else {
+        await db.update(
+          'goods_receipt_item',
+          {'quantity': 0},
+          where: 'id = ?',
+          whereArgs: [currentItemDbId],
+        );
+        debugPrint("goods_receipt_item ID $currentItemDbId tamamen tüketildi (eski miktar: $currentItemQty).");
+        remainingToDecrease -= currentItemQty;
+      }
+    }
+
+    if (remainingToDecrease > 0) {
+      debugPrint("KRİTİK UYARI: $containerId içindeki $productCode için toplam stok, istenen $quantityToDecrease miktarını karşılayamadı. $remainingToDecrease birim eksik kaldı.");
+    }
+  }
+
+  @override
+  Future<void> addReceivedPortionAtTarget(
+      String originalContainerId,
+      String targetLocation,
+      AssignmentMode mode,
+      DateTime transferDate,
+      List<TransferItemDetail> transferredItems
+      ) async {
+    final db = await dbHelper.database;
+    await db.transaction((txn) async {
+      String externalReceiptId = 'TRANSFER_${originalContainerId}_${DateTime.now().millisecondsSinceEpoch}';
+      String invoiceNumber = 'FROM_$originalContainerId';
+
+      final receiptData = {
+        'external_id': externalReceiptId,
+        'invoice_number': invoiceNumber,
+        'receipt_date': transferDate.toIso8601String(),
+        'mode': mode.name,
+        'synced': 0,
+      };
+      int newReceiptId = await txn.insert('goods_receipt', receiptData);
+      debugPrint("Hedef lokasyon için yeni goods_receipt oluşturuldu ID: $newReceiptId");
+
+      for (var item in transferredItems) {
+        String targetInstanceContainerId = '${originalContainerId}_${item.productCode}_TARGET_${DateTime.now().microsecondsSinceEpoch}';
+
+        final itemData = {
+          'receipt_id': newReceiptId,
+          'pallet_or_box_id': targetInstanceContainerId,
+          'product_id': item.productId,
+          'product_name': item.productName,
+          'product_code': item.productCode,
+          'quantity': item.quantity,
+        };
+        await txn.insert('goods_receipt_item', itemData);
+        debugPrint("Hedef lokasyon için yeni goods_receipt_item oluşturuldu: ${item.productName}, Miktar: ${item.quantity}, Sanal Kutu ID: $targetInstanceContainerId");
+
+        await txn.insert(
+          'container_location',
+          {
+            'container_id': targetInstanceContainerId,
+            'location': targetLocation,
+            'last_updated': transferDate.toIso8601String()
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        debugPrint("Sanal container $targetInstanceContainerId, $targetLocation lokasyonuna eklendi.");
+      }
+    });
   }
 }

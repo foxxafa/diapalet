@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db'; // Veritabanı adı
-  static const int _dbVersion = 3; // Versiyon 3: external_id added
+  static const int _dbVersion = 4; // Versiyon 4: product_id added to transfer_item
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -30,7 +30,7 @@ class DatabaseHelper {
         debugPrint('Foreign keys enabled.');
       },
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade, // Yeni versiyon için onUpgrade eklendi
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -80,13 +80,14 @@ class DatabaseHelper {
       CREATE TABLE transfer_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL,
+        product_id TEXT NOT NULL, -- YENİ EKLENDİ
         product_code TEXT NOT NULL,
         product_name TEXT NOT NULL,
         quantity INTEGER NOT NULL,
         FOREIGN KEY (operation_id) REFERENCES transfer_operation (id) ON DELETE CASCADE
       )
     ''');
-    debugPrint("Table 'transfer_item' created.");
+    debugPrint("Table 'transfer_item' created with product_id.");
 
     await db.execute('''
       CREATE TABLE container_location (
@@ -103,26 +104,40 @@ class DatabaseHelper {
     debugPrint("Creating database tables for version $version...");
     await _createGoodsReceiptTables(db);
     await _createTransferTables(db);
-    // Gelecekte eklenecek diğer tablolar için _create... metodları çağrılabilir.
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Upgrading database from version $oldVersion to $newVersion...");
     if (oldVersion < 2) {
-      // Versiyon 1'den 2'ye geçerken, eğer goods_receipt tabloları yoksa oluştur.
-      // Bu, _onCreate'in zaten var olan tabloları tekrar oluşturmaya çalışmasını engeller.
-      // Ancak, openDatabase versiyonu artırıldığında ve tablolar yoksa onCreate zaten çağrılır.
-      // Bu yüzden burası daha çok var olan tabloları ALTER etmek için kullanılır.
-      // Eğer tablolar kesinlikle yoksa ve onCreate'de oluşturulacaksa, burası boş kalabilir
-      // veya sadece ALTER işlemleri için kullanılabilir.
-      // Bu senaryoda, onCreate'in tüm tabloları oluşturduğunu varsayıyoruz.
-      // Eğer versiyon 1'de sadece transfer tabloları varsa, goods_receipt'leri burada ekleyebiliriz:
-      // await _createGoodsReceiptTables(db);
+      // Bu blok genellikle eski, artık desteklenmeyen versiyonlar için kalır.
+      // V1'den V2'ye geçişte spesifik bir işlem yoksa, log yeterlidir.
       debugPrint("DB Upgrade: (No specific schema changes for v1 to v2 in this example, assuming onCreate handles all tables if DB is new at v2)");
     }
     if (oldVersion < 3) {
-      await db.execute("ALTER TABLE goods_receipt ADD COLUMN external_id TEXT");
-      debugPrint("DB Upgrade: Added external_id column to goods_receipt table");
+      // V2'den V3'e geçiş
+      try {
+        await db.execute("ALTER TABLE goods_receipt ADD COLUMN external_id TEXT");
+        debugPrint("DB Upgrade: Added external_id column to goods_receipt table (for V3)");
+      } catch (e) {
+        debugPrint("DB Upgrade: Could not add external_id to goods_receipt (maybe already exists or other error): $e");
+        // external_id UNIQUE olmalı, bu yüzden default değer atamak yerine null bırakılabilir veya NOT NULL UNIQUE yapılabilir.
+        // Eğer NOT NULL UNIQUE yapılıyorsa ve varolan satırlar varsa, onlara benzersiz değerler atanmalıdır.
+        // Şimdilik TEXT olarak bırakıldı, UNIQUE constraint onCreate'de var.
+      }
+    }
+    if (oldVersion < 4) {
+      // V3'ten V4'e geçiş
+      try {
+        await db.execute("ALTER TABLE transfer_item ADD COLUMN product_id TEXT");
+        debugPrint("DB Upgrade: Added product_id column to transfer_item table (for V4)");
+        // Varolan satırlar için product_id'nin nasıl doldurulacağı burada ele alınabilir,
+        // ancak genellikle bu tür sütunlar başlangıçta NULL olabilir veya bir default değeri olabilir.
+        // Entity'miz NOT NULL gerektirdiği için, aslında bu sütun eklendikten sonra
+        // varolan transfer_item kayıtları için product_id doldurulmalı ya da NOT NULL constraint'i daha sonra eklenmeli.
+        // Şimdilik TEXT olarak ekliyoruz. Entity'deki fromMap null kontrolü yapıyor.
+      } catch (e) {
+        debugPrint("DB Upgrade: Could not add product_id to transfer_item (maybe already exists or other error): $e");
+      }
     }
   }
 

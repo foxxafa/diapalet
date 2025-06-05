@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'; // For @immutable and @override
 class TransferItemDetail {
   final int? id;
   final int operationId; // This ID links it to the TransferOperationHeader
+  final String productId; // YENİ EKLENDİ: Ürünün benzersiz ID'si
   final String productCode;
   final String productName;
   final int quantity;
@@ -12,6 +13,7 @@ class TransferItemDetail {
   const TransferItemDetail({
     this.id,
     required this.operationId,
+    required this.productId, // YENİ EKLENDİ
     required this.productCode,
     required this.productName,
     required this.quantity,
@@ -21,6 +23,7 @@ class TransferItemDetail {
     return {
       'id': id,
       'operation_id': operationId,
+      'product_id': productId, // YENİ EKLENDİ
       'product_code': productCode,
       'product_name': productName,
       'quantity': quantity,
@@ -30,7 +33,8 @@ class TransferItemDetail {
   factory TransferItemDetail.fromMap(Map<String, dynamic> map) {
     return TransferItemDetail(
       id: map['id'] as int?,
-      operationId: map['operation_id'] as int? ?? 0, // Default if null, though should exist
+      operationId: map['operation_id'] as int? ?? 0,
+      productId: map['product_id'] as String? ?? '', // YENİ EKLENDİ
       productCode: map['product_code'] as String? ?? '',
       productName: map['product_name'] as String? ?? '',
       quantity: map['quantity'] as int? ?? 0,
@@ -44,6 +48,7 @@ class TransferItemDetail {
               runtimeType == other.runtimeType &&
               id == other.id &&
               operationId == other.operationId &&
+              productId == other.productId && // YENİ EKLENDİ
               productCode == other.productCode &&
               productName == other.productName &&
               quantity == other.quantity;
@@ -52,6 +57,7 @@ class TransferItemDetail {
   int get hashCode =>
       id.hashCode ^
       operationId.hashCode ^
+      productId.hashCode ^ // YENİ EKLENDİ
       productCode.hashCode ^
       productName.hashCode ^
       quantity.hashCode;

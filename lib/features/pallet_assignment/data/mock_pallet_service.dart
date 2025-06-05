@@ -27,11 +27,11 @@ class MockPalletService implements PalletAssignmentRepository {
       const ProductItem(id: 'prod3', name: 'Süt İçim 1L', productCode: 'ICIM1L', currentQuantity: 100),
       const ProductItem(id: 'prod4', name: 'Eti Karam Gofret 40g', productCode: 'ETIKARAM40', currentQuantity: 200),
     ],
-    "KUTU-X01": [
-      const ProductItem(id: 'prod1', name: 'Coca-Cola 1L', productCode: 'COLA1L', currentQuantity: 10),
+    "KUTU-X01": [ // Kutu için ProductItem'da id alanı productId'yi temsil eder.
+      const ProductItem(id: 'prod1_kutu_x01', name: 'Coca-Cola 1L (Kutu)', productCode: 'COLA1L', currentQuantity: 10),
     ],
     "KUTU-Y01": [
-      const ProductItem(id: 'prod2', name: 'Fanta 1L', productCode: 'FANTA1L', currentQuantity: 12),
+      const ProductItem(id: 'prod2_kutu_y01', name: 'Fanta 1L (Kutu)', productCode: 'FANTA1L', currentQuantity: 12),
     ],
     "XYZ123": [
       const ProductItem(id: 'prod7', name: 'Genel Ürün Alpha', productCode: 'GENALPHA', currentQuantity: 75),
@@ -99,15 +99,19 @@ class MockPalletService implements PalletAssignmentRepository {
 
     final newHeader = header.copyWith(
       id: _nextTransferOpId,
-      // synced status is preserved from the input 'header' by copyWith
     );
     _savedTransferHeaders.add(newHeader);
 
     List<TransferItemDetail> newItemsWithCorrectOpId = [];
     for (var item in items) {
+      // Mock servisinde, ProductItem'dan gelen 'id'yi productId olarak kullanıyoruz.
+      // Gerçek senaryoda, bu productId'nin transfer edilen ürünün gerçek ID'si olması gerekir.
+      // Eğer items listesi zaten doğru productId ile geliyorsa (ki PalletAssignmentScreen'den öyle geliyor olmalı),
+      // item.productId doğrudan kullanılabilir.
       newItemsWithCorrectOpId.add(TransferItemDetail(
         id: _nextTransferItemId++,
         operationId: newHeader.id!,
+        productId: item.productId, // HATA BURADAYDI, item.productId KULLANILMALI (Bu yorum daha önceki bir düzeltmeye ait olabilir)
         productCode: item.productCode,
         productName: item.productName,
         quantity: item.quantity,
@@ -120,8 +124,33 @@ class MockPalletService implements PalletAssignmentRepository {
     debugPrint('  Target: ${newHeader.targetLocation}');
     debugPrint('  Items (${newItemsWithCorrectOpId.length}):');
     for (var item in newItemsWithCorrectOpId) {
-      debugPrint('    - ${item.productName} (Code: ${item.productCode}), Qty: ${item.quantity}, OpID: ${item.operationId}');
+      debugPrint('    - ProductID: ${item.productId}, Name: ${item.productName} (Code: ${item.productCode}), Qty: ${item.quantity}, OpID: ${item.operationId}');
     }
+
+    // Eğer kutu transferi ise, kaynak kutudaki miktarı azalt (mock için)
+    if (header.operationType == AssignmentMode.kutu && items.isNotEmpty) {
+      final transferredItemDetail = items.first;
+      final sourceContainerId = header.containerId;
+      if (_containerContents.containsKey(sourceContainerId)) {
+        final productInSource = _containerContents[sourceContainerId]!.firstWhere(
+                (p) => p.productCode == transferredItemDetail.productCode,
+            orElse: () => const ProductItem(id: 'not-found', name: 'Not Found', productCode: 'N/A', currentQuantity: 0) // Dummy item
+        );
+        if (productInSource.productCode != 'N/A') {
+          final newQuantity = productInSource.currentQuantity - transferredItemDetail.quantity;
+          _containerContents[sourceContainerId] = [
+            ProductItem(
+                id: productInSource.id, // Orjinal product id'sini koru
+                name: productInSource.name,
+                productCode: productInSource.productCode,
+                currentQuantity: newQuantity >= 0 ? newQuantity : 0
+            )
+          ];
+          debugPrint("Mock Kutu Transferi: Kaynak $sourceContainerId içindeki ${productInSource.name} miktarı ${transferredItemDetail.quantity} azaltıldı. Yeni miktar: ${newQuantity >= 0 ? newQuantity : 0}");
+        }
+      }
+    }
+
 
     _nextTransferOpId++;
     return newHeader.id!;
@@ -156,6 +185,10 @@ class MockPalletService implements PalletAssignmentRepository {
   @override
   Future<void> updateContainerLocation(String containerId, String newLocation) async {
     debugPrint("MockPalletService: Updating container $containerId location to $newLocation (mock).");
+    // Gerçek DB'de container_location tablosu güncellenir. Mock'ta,
+    // bu durum _containerContents veya ayrı bir lokasyon map'inde yönetilebilir.
+    // Kutu transferleri için bu metodun çağrılmaması gerekir.
+    // Bu metod şimdilik sadece palet tam transferleri için anlamlı.
     await Future.delayed(const Duration(milliseconds: 100));
   }
 
@@ -163,9 +196,40 @@ class MockPalletService implements PalletAssignmentRepository {
   Future<String?> getContainerLocation(String containerId) async {
     debugPrint("MockPalletService: Getting container $containerId location (mock).");
     await Future.delayed(const Duration(milliseconds: 50));
+    // Bu mock, basit bir lokasyon döndürür. Kısmi transfer edilen kutuların
+    // "sanal" container ID'leri için bir mantık eklenmesi gerekebilir.
     if (containerId == "PALET-A001") return "RAF-A1-01";
+    if (containerId.startsWith("KUTU-X01_TARGET_") || containerId.startsWith("BOX-001_PROD-E_TARGET_")) { // Sanal hedef kutu ID'leri için
+      // Transfer edilmiş bir kutu parçasının lokasyonunu döndürmek için _savedTransferHeaders'a bakılabilir.
+      final transfer = _savedTransferHeaders.lastWhere(
+        // DÜZELTME: Hatalı anonim fonksiyon çağrısı kaldırıldı ve koşul basitleştirildi.
+        // Orijinal hatalı kısım:
+        // (h) => h.targetLocation.isNotEmpty && (items) {
+        //   // ... comments ...
+        //   return true; // Basitleştirilmiş
+        // }(),
+        // Düzeltilmiş hali:
+              (h) => h.targetLocation.isNotEmpty,
+          orElse: () => TransferOperationHeader(
+              operationType: AssignmentMode.kutu,
+              sourceLocation: '',
+              containerId: '',
+              targetLocation: '', // orElse, geçerli bir varsayılan başlık sağlamalıdır
+              transferDate: DateTime.now()
+          )
+      );
+      if (transfer.targetLocation.isNotEmpty) return transfer.targetLocation;
+    }
     if (containerId == "KUTU-X01" && _savedTransferHeaders.any((h) => h.containerId == "KUTU-X01" && h.targetLocation == "SEVKİYAT-ALANI-1")) {
-      return "SEVKİYAT-ALANI-1";
+      // Bu koşul, KUTU-X01'in tamamının taşındığı senaryolar için kalabilir, ama kısmi transferler farklı ele alınmalı.
+      // return "SEVKİYAT-ALANI-1";
+    }
+    // Basitçe, eğer _containerContents'de varsa ve bir lokasyonla eşleşiyorsa:
+    if (_locationContainerBoxes.entries.any((entry) => entry.value.contains(containerId))) {
+      return _locationContainerBoxes.entries.firstWhere((entry) => entry.value.contains(containerId)).key;
+    }
+    if (_locationContainerPallets.entries.any((entry) => entry.value.contains(containerId))) {
+      return _locationContainerPallets.entries.firstWhere((entry) => entry.value.contains(containerId)).key;
     }
     return null;
   }
@@ -176,7 +240,6 @@ class MockPalletService implements PalletAssignmentRepository {
     await Future.delayed(const Duration(milliseconds: 50));
     for (final header in _savedTransferHeaders.where((op) => op.synced == 0)) {
       if (header.id != null) {
-        // Simulate API call success for synchronization
         debugPrint("MockPalletService: Simulating API sync for transfer ID ${header.id}");
         await markTransferOperationAsSynced(header.id!);
       }

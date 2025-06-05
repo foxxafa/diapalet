@@ -9,7 +9,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/product_item
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; // flutter/foundation.dart yerine material.dart debugPrint için
 
 class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   final PalletAssignmentLocalDataSource localDataSource;
@@ -24,111 +24,129 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
 
   @override
   Future<List<String>> getSourceLocations() async {
+    // Öncelikli olarak API'den lokasyonları çekmeye çalış
     if (await networkInfo.isConnected) {
       try {
-        return await remoteDataSource.fetchSourceLocations();
+        final remoteLocations = await remoteDataSource.fetchSourceLocations();
+        // API'den boş liste gelirse veya hata olursa yerel veriye düşebiliriz.
+        // Şimdilik API'den geleni olduğu gibi döndürüyoruz. İsteğe bağlı olarak yerel ile birleştirilebilir.
+        return remoteLocations;
       } catch (e) {
         debugPrint("API getSourceLocations error: $e. Falling back to local.");
+        // Hata durumunda yerel veriye düş
       }
     }
-
-    final locations = await localDataSource.getDistinctContainerLocations();
-    if (!locations.contains('MAL KABUL')) {
-      locations.insert(0, 'MAL KABUL');
-    } else {
-      locations.remove('MAL KABUL');
-      locations.insert(0, 'MAL KABUL');
+    // Çevrimdışı veya API hatası durumunda yerel DB'den lokasyonları al
+    final localLocations = await localDataSource.getDistinctContainerLocations();
+    // 'MAL KABUL' lokasyonunu listenin başına ekle (eğer varsa ve başta değilse)
+    if (localLocations.contains('MAL KABUL')) {
+      localLocations.remove('MAL KABUL');
     }
-    return locations;
+    localLocations.insert(0, 'MAL KABUL');
+    return localLocations;
   }
 
   @override
   Future<List<String>> getTargetLocations() async {
+    // Öncelikli olarak API'den lokasyonları çekmeye çalış
     if (await networkInfo.isConnected) {
       try {
-        return await remoteDataSource.fetchTargetLocations();
+        final remoteLocations = await remoteDataSource.fetchTargetLocations();
+        return remoteLocations;
       } catch (e) {
         debugPrint("API getTargetLocations error: $e. Falling back to local.");
       }
     }
-
-    final locations = await localDataSource.getDistinctContainerLocations();
-    if (!locations.contains('MAL KABUL')) {
-      locations.insert(0, 'MAL KABUL');
-    } else {
-      locations.remove('MAL KABUL');
-      locations.insert(0, 'MAL KABUL');
+    // Çevrimdışı veya API hatası durumunda yerel DB'den lokasyonları al
+    final localLocations = await localDataSource.getDistinctContainerLocations();
+    if (localLocations.contains('MAL KABUL')) {
+      localLocations.remove('MAL KABUL');
     }
-    return locations;
+    localLocations.insert(0, 'MAL KABUL');
+    return localLocations;
   }
 
   @override
   Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode) async {
     if (await networkInfo.isConnected) {
-      // There is no remote API in this example; fall back immediately if any error occurs
       try {
         return await remoteDataSource.fetchContainerIds(location, mode);
       } catch (e) {
-        debugPrint("API getContainerIds error for $location: $e. Falling back to local.");
+        debugPrint("API getContainerIds error for $location and mode ${mode.name}: $e. Falling back to local.");
       }
     }
-
     return await localDataSource.getContainerIdsByLocation(location, mode.name);
   }
 
   @override
   Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode) async {
+    // API'den içerik çekme mantığı eklenebilir, şimdilik sadece yerelden alıyoruz.
+    // Kutu modunda, tek bir ürün ve onun toplam miktarı beklenir.
+    // Palet modunda, birden fazla ürün ve miktarları olabilir.
+    // Bu metod AssignmentMode'u doğrudan kullanmıyor gibi görünüyor, çünkü localDataSource.getContainerContents
+    // sadece containerId alıyor. Bu, DB sorgusunun zaten palet/kutu ayrımı yapmadan tüm ürünleri getirdiği anlamına gelir.
+    // Ekran tarafında AssignmentMode.kutu ise sadece ilk ürün gösteriliyor.
     if (await networkInfo.isConnected) {
       try {
         return await remoteDataSource.fetchContainerContents(containerId, mode);
       } catch (e) {
-        debugPrint("API getContentsOfContainer error for $containerId: $e. Falling back to local.");
+        debugPrint("API getContentsOfContainer error for $containerId and mode ${mode.name}: $e. Falling back to local.");
       }
     }
-
-    final contents = await localDataSource.getContainerContents(containerId);
-    return contents;
+    return await localDataSource.getContainerContents(containerId);
   }
 
   @override
   Future<int> recordTransferOperation(
       TransferOperationHeader header, List<TransferItemDetail> items) async {
-    TransferOperationHeader headerToSave = header; // Use a mutable copy for sync status
+    TransferOperationHeader headerToSave = header;
 
     if (await networkInfo.isConnected) {
       try {
-        // Attempt to send to remote. If successful, mark as synced.
-        // The header sent to remoteDataSource might not have an ID yet.
-        // The items sent to remoteDataSource will have operationId = 0 (placeholder).
-        // The remote API should handle this or the payload should be adjusted.
         bool remoteSuccess = await remoteDataSource.sendTransferOperation(header, items);
         if (remoteSuccess) {
-          headerToSave = header.copyWith(synced: 1); // Mark as synced
+          headerToSave = header.copyWith(synced: 1);
           debugPrint("Transfer operation sent to API successfully and marked as synced.");
         } else {
-          headerToSave = header.copyWith(synced: 0); // API call failed, mark as not synced
+          headerToSave = header.copyWith(synced: 0);
           debugPrint("Failed to send transfer operation to API. Marked as not synced.");
         }
       } catch (e) {
         debugPrint("Error sending transfer to remote API: $e. Marked as not synced.");
-        headerToSave = header.copyWith(synced: 0); // Error, mark as not synced
+        headerToSave = header.copyWith(synced: 0);
       }
     } else {
-      // Offline, mark as not synced
       headerToSave = header.copyWith(synced: 0);
       debugPrint("Offline. Transfer operation marked as not synced.");
     }
 
-    // Always save to local data source.
-    // localDataSource.saveTransferOperation will save the header and then items,
-    // assigning the new header's ID to each item's operationId.
     final localId = await localDataSource.saveTransferOperation(headerToSave, items);
     debugPrint("Transfer operation saved locally with ID: $localId and synced status: ${headerToSave.synced}.");
 
-    // Update container location locally
-    await localDataSource.updateContainerLocation(
-        headerToSave.containerId, headerToSave.targetLocation, headerToSave.transferDate);
-    debugPrint("Local container location updated for ${headerToSave.containerId}.");
+    // ----- KUTU TRANSFERİ İÇİN MİKTAR AZALTMA VE LOKASYON GÜNCELLEME LOGİĞİ -----
+    if (headerToSave.operationType == AssignmentMode.kutu) {
+      // Kutu transferinde, orijinal kutunun lokasyonu değişmez.
+      // Sadece içindeki ürün miktarı azalır.
+      if (items.isNotEmpty) {
+        final transferredItem = items.first; // Kutu için tek bir item olacağını varsayıyoruz.
+        await localDataSource.decreaseProductQuantityInGoodsReceipt(
+            headerToSave.containerId, // Kaynak kutu ID'si
+            transferredItem.productCode, // Transfer edilen ürünün kodu
+            transferredItem.quantity // Transfer edilen miktar
+        );
+        debugPrint("KUTU TRANSFERİ: ${headerToSave.containerId} ID'li kutudan ${transferredItem.productName} ürünü için ${transferredItem.quantity} adet miktar düşüldü.");
+
+        // İsteğe bağlı: Eğer kutudaki ürün tamamen biterse (getContainerContents ile kontrol edilebilir),
+        // container_location tablosundan kaydı silinebilir veya 'EMPTY' gibi bir lokasyona atanabilir.
+        // Şimdilik sadece miktarı azaltıyoruz.
+      }
+    } else if (headerToSave.operationType == AssignmentMode.palet) {
+      // Palet transferinde, paletin tamamı yeni lokasyona taşınır.
+      await localDataSource.updateContainerLocation(
+          headerToSave.containerId, headerToSave.targetLocation, headerToSave.transferDate);
+      debugPrint("PALET TRANSFERİ: ${headerToSave.containerId} ID'li paletin lokasyonu ${headerToSave.targetLocation} olarak güncellendi.");
+    }
+    // ----- BİTİŞ -----
 
     return localId;
   }
@@ -150,15 +168,16 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
 
   @override
   Future<void> updateContainerLocation(String containerId, String newLocation) async {
+    // Bu metod genel bir container lokasyon güncellemesi için,
+    // recordTransferOperation içindeki mantık daha spesifik.
     DateTime now = DateTime.now();
     await localDataSource.updateContainerLocation(containerId, newLocation, now);
     if (await networkInfo.isConnected) {
       try {
-        // Placeholder for API call to update container location
-        // await remoteDataSource.updateContainerLocationOnApi(containerId, newLocation);
-        debugPrint("Container location update for $containerId potentially sent to API (mock).");
+        // await remoteDataSource.updateContainerLocationOnApi(containerId, newLocation); // API çağrısı
+        debugPrint("Genel container location update for $containerId to $newLocation potentially sent to API (mock).");
       } catch (e) {
-        debugPrint("Failed to update container $containerId location on API: $e");
+        debugPrint("Failed to update general container $containerId location on API: $e");
       }
     }
   }
@@ -186,11 +205,7 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
         }
 
         final items = await getTransferItemsForOperation(header.id!);
-        // It's important that items here have the correct operationId (header.id)
-        // which should be the case if they were fetched by getTransferItemsForOperation.
-
         try {
-          // Send the header (which has its original local ID) and its items
           bool success = await remoteDataSource.sendTransferOperation(header, items);
           if (success) {
             await markTransferOperationAsSynced(header.id!);
