@@ -1,7 +1,6 @@
 // lib/features/pallet_assignment/presentation/pallet_assignment_screen.dart
 import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:provider/provider.dart';
 
 // Corrected entity and repository imports using your project name 'diapalet'
@@ -38,8 +37,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
-  Map<String, TextEditingController> _quantityControllers = {};
-  Map<String, FocusNode> _quantityFocusNodes = {};
 
   List<String> _availableTargetLocations = [];
   String? _selectedTargetLocation;
@@ -61,7 +58,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       if (mounted) {
         setState(() {
           _productsInContainer = [];
-          _clearQuantityControllers();
         });
       }
     }
@@ -83,21 +79,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     _scannedContainerIdController.dispose();
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
-    _clearQuantityControllers(disposeNodes: true);
     super.dispose();
-  }
-
-  void _clearQuantityControllers({bool disposeNodes = false}) {
-    for (var controller in _quantityControllers.values) {
-      controller.dispose();
-    }
-    _quantityControllers.clear();
-    if (disposeNodes) {
-      for (var node in _quantityFocusNodes.values) {
-        node.dispose();
-      }
-      _quantityFocusNodes.clear();
-    }
   }
 
   Future<void> _loadInitialData() async {
@@ -148,7 +130,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     setState(() {
       _isLoadingContainerContents = true;
       _productsInContainer = [];
-      _clearQuantityControllers();
     });
     try {
       // Ensure _selectedMode is passed correctly
@@ -156,9 +137,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
-        for (var product in _productsInContainer) {
-          _quantityControllers[product.id] = TextEditingController();
-          _quantityFocusNodes[product.id] = FocusNode();
+        if (_selectedMode == AssignmentMode.kutu && _productsInContainer.length > 1) {
+          _productsInContainer = [_productsInContainer.first];
+          _showSnackBar(
+              "Kutu birden fazla ürün içeremez. Fazla ürünler gözardı edildi.",
+              isError: true);
         }
         if (contents.isEmpty && containerId.isNotEmpty) {
           _showSnackBar("$containerId ID'li ${_selectedMode.displayName} bulunamadı veya içi boş.", isError: true);
@@ -174,7 +157,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   void _resetForm({bool resetAll = true}) {
     _formKey.currentState?.reset();
     _scannedContainerIdController.clear();
-    _clearQuantityControllers();
     if (mounted) {
       setState(() {
         _productsInContainer = [];
@@ -244,53 +226,22 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       return;
     }
 
-    List<TransferItemDetail> itemsToTransferDetails = [];
-    bool quantityValidationError = false;
-
-    for (var product in _productsInContainer) {
-      final controller = _quantityControllers[product.id];
-      if (controller != null && controller.text.isNotEmpty) {
-        final quantity = int.tryParse(controller.text);
-        if (quantity == null || quantity < 0) {
-          quantityValidationError = true;
-          _quantityFocusNodes[product.id]?.requestFocus();
-          _showSnackBar("${product.name} için geçersiz miktar.", isError: true);
-          break;
-        }
-        if (quantity > product.currentQuantity) {
-          quantityValidationError = true;
-          _quantityFocusNodes[product.id]?.requestFocus();
-          _showSnackBar("${product.name} için transfer miktarı (${quantity}) mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
-          break;
-        }
-        if (quantity > 0) {
-          itemsToTransferDetails.add(
-              TransferItemDetail(
-                // The 'operationId' is required by the TransferItemDetail constructor.
-                // This ID will ultimately be the ID of the TransferOperationHeader after it's saved.
-                // The repository layer (specifically local data source during transaction)
-                // should handle assigning the correct operationId.
-                // We pass a placeholder (e.g., 0 or a temporary unique negative number)
-                // or rely on the repository to reconstruct items with the correct ID.
-                // For now, passing 0 as per previous logic, assuming repository handles it.
-                operationId: 0, // DİKKAT: Bu değer repository/datasource'da güncellenmelidir!
-                productCode: product.productCode,
-                productName: product.name,
-                quantity: quantity,
-              )
-          );
-        }
-      }
-    }
-
-    if (quantityValidationError) return;
-
-    if (itemsToTransferDetails.isEmpty && _productsInContainer.isNotEmpty) {
-      _showSnackBar("Transfer edilecek ürünler için miktar girilmedi.", isError: true);
-      return;
-    }
-    if (_productsInContainer.isEmpty && _scannedContainerIdController.text.isNotEmpty && !_isLoadingContainerContents) {
-      _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı veya getirilmedi. Lütfen 'İçeriği Getir' butonunu kullanın.", isError: true);
+    List<TransferItemDetail> itemsToTransferDetails = _productsInContainer
+        .map(
+          (product) => TransferItemDetail(
+            operationId: 0,
+            productCode: product.productCode,
+            productName: product.name,
+            quantity: product.currentQuantity,
+          ),
+        )
+        .toList();
+    if (_productsInContainer.isEmpty &&
+        _scannedContainerIdController.text.isNotEmpty &&
+        !_isLoadingContainerContents) {
+      _showSnackBar(
+          "Kaynak ${_selectedMode.displayName} için ürün bulunamadı veya getirilmedi.",
+          isError: true);
       return;
     }
 
@@ -588,7 +539,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _selectedMode = newSelection.first;
               _scannedContainerIdController.clear();
               _productsInContainer = [];
-              _clearQuantityControllers();
               _formKey.currentState?.reset();
             });
             _loadContainerIdsForLocation();
@@ -702,8 +652,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 0.5),
               itemBuilder: (context, index) {
                 final product = _productsInContainer[index];
-                _quantityControllers[product.id] ??= TextEditingController();
-                _quantityFocusNodes[product.id] ??= FocusNode();
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: _smallGap /2),
@@ -719,35 +667,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         ),
                       ),
                       const SizedBox(width: _gap),
-                      SizedBox(
-                        width: 90,
-                        height: _fieldHeight * 0.85,
-                        child: TextFormField(
-                          controller: _quantityControllers[product.id],
-                          focusNode: _quantityFocusNodes[product.id],
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          decoration: InputDecoration(
-                            labelText: 'Miktar',
-                            isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            errorStyle: const TextStyle(fontSize: 0, height: 0.01),
-                            helperText: ' ',
-                            helperStyle: const TextStyle(fontSize: 0, height: 0.01),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          ),
-                          textAlign: TextAlign.center,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) return null;
-                            final quantity = int.tryParse(value);
-                            if (quantity == null) return 'Sayı!';
-                            if (quantity < 0) return '>0!';
-                            if (quantity > product.currentQuantity) return 'Max!';
-                            return null;
-                          },
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                        ),
-                      ),
+                      Text('Adet: ${product.currentQuantity}',
+                          style: Theme.of(context).textTheme.bodyMedium),
                     ],
                   ),
                 );

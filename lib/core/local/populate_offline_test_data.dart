@@ -1,125 +1,75 @@
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:sqflite/sqflite.dart';
 
 Future<void> populateTestData() async {
   final dbHelper = DatabaseHelper();
   final db = await dbHelper.database;
 
-  // UNIQUE constraint'i korumak için eklemeden önce bak!
-  const externalId = 'GR-001';
-  final check = await db.query(
-    'goods_receipt',
-    where: 'external_id = ?',
-    whereArgs: [externalId],
-  );
-  if (check.isNotEmpty) {
-    // Test datası zaten eklenmiş.
+  const seedCheck = 'SEED-V2';
+  final existing = await db.query('goods_receipt', where: 'external_id = ?', whereArgs: [seedCheck]);
+  if (existing.isNotEmpty) {
     return;
   }
 
-  // Goods receipt
-  final receiptId = await db.insert('goods_receipt', {
-    'external_id': externalId,
-    'invoice_number': 'INV-TEST',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'palet',
-    'synced': 0,
-  });
+  Future<int> _insertReceipt(String externalId, String invoice, String mode) {
+    return db.insert('goods_receipt', {
+      'external_id': externalId,
+      'invoice_number': invoice,
+      'receipt_date': DateTime.now().toIso8601String(),
+      'mode': mode,
+      'synced': 0,
+    });
+  }
 
-  await db.insert('goods_receipt_item', {
-    'receipt_id': receiptId,
-    'pallet_or_box_id': 'PALET-123',
-    'product_id': 'PROD-1',
-    'product_name': 'Test Ürün A',
-    'product_code': 'A100',
-    'quantity': 5,
-  });
+  Future<void> _insertItem(int receiptId, String container, String prodId,
+      String prodName, String prodCode, int qty) async {
+    await db.insert('goods_receipt_item', {
+      'receipt_id': receiptId,
+      'pallet_or_box_id': container,
+      'product_id': prodId,
+      'product_name': prodName,
+      'product_code': prodCode,
+      'quantity': qty,
+    });
+  }
 
-  await db.insert('goods_receipt_item', {
-    'receipt_id': receiptId,
-    'pallet_or_box_id': 'PALET-123',
-    'product_id': 'PROD-2',
-    'product_name': 'Test Ürün B',
-    'product_code': 'B200',
-    'quantity': 10,
-  });
+  Future<void> _setLocation(String container, String location) async {
+    await db.insert('container_location', {
+      'container_id': container,
+      'location': location,
+      'last_updated': DateTime.now().toIso8601String(),
+    });
+  }
 
-  // Palet transferi
-  final transferId = await db.insert('transfer_operation', {
-    'operation_type': 'transfer',
-    'source_location': 'Giris',
-    'container_id': 'PALET-123',
-    'target_location': 'Raf-10',
-    'transfer_date': DateTime.now().toIso8601String(),
-    'synced': 0,
-  });
+  // Pallet in MAL KABUL with two products
+  final r1 = await _insertReceipt(seedCheck, 'INV-P1', 'palet');
+  await _insertItem(r1, 'PALLET-MK1', 'PRD-1', 'Çay 1kg', 'CAY1', 20);
+  await _insertItem(r1, 'PALLET-MK1', 'PRD-2', 'Şeker 1kg', 'SEKER1', 30);
+  await _setLocation('PALLET-MK1', 'MAL KABUL');
 
-  await db.insert('transfer_item', {
-    'operation_id': transferId,
-    'product_code': 'A100',
-    'product_name': 'Test Ürün A',
-    'quantity': 2,
-  });
+  // Pallet in 10A21 with multiple products
+  final r2 = await _insertReceipt('SEED-V2-P2', 'INV-P2', 'palet');
+  await _insertItem(r2, 'PALLET-10A21', 'PRD-3', 'Un 2kg', 'UN2', 15);
+  await _insertItem(r2, 'PALLET-10A21', 'PRD-4', 'Makarna 500g', 'MAK500', 25);
+  await _setLocation('PALLET-10A21', '10A21');
 
-  await db.insert('transfer_item', {
-    'operation_id': transferId,
-    'product_code': 'B200',
-    'product_name': 'Test Ürün B',
-    'quantity': 5,
-  });
+  // Pallet in 5C3
+  final r3 = await _insertReceipt('SEED-V2-P3', 'INV-P3', 'palet');
+  await _insertItem(r3, 'PALLET-5C3', 'PRD-1', 'Çay 1kg', 'CAY1', 10);
+  await _insertItem(r3, 'PALLET-5C3', 'PRD-5', 'Zeytin 1kg', 'ZEYTIN1', 40);
+  await _setLocation('PALLET-5C3', '5C3');
 
-  // Container location
-  await db.insert('container_location', {
-    'container_id': 'PALET-123',
-    'location': 'Raf-10',
-    'last_updated': DateTime.now().toIso8601String(),
-  });
+  // Box in MAL KABUL with single product
+  final r4 = await _insertReceipt('SEED-V2-B1', 'INV-B1', 'kutu');
+  await _insertItem(r4, 'BOX-MK1', 'PRD-2', 'Şeker 1kg', 'SEKER1', 40);
+  await _setLocation('BOX-MK1', 'MAL KABUL');
 
-  // Additional pallet located at MAL KABUL
-  final palletReceiptId = await db.insert('goods_receipt', {
-    'external_id': 'GR-002',
-    'invoice_number': 'INV-PAL',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'palet',
-    'synced': 0,
-  });
+  // Box in KASA with single product
+  final r5 = await _insertReceipt('SEED-V2-B2', 'INV-B2', 'kutu');
+  await _insertItem(r5, 'BOX-KASA1', 'PRD-3', 'Un 2kg', 'UN2', 5);
+  await _setLocation('BOX-KASA1', 'KASA');
 
-  await db.insert('goods_receipt_item', {
-    'receipt_id': palletReceiptId,
-    'pallet_or_box_id': 'PALET-MK1',
-    'product_id': 'PROD-3',
-    'product_name': 'Test Ürün C',
-    'product_code': 'C300',
-    'quantity': 7,
-  });
-
-  await db.insert('container_location', {
-    'container_id': 'PALET-MK1',
-    'location': 'MAL KABUL',
-    'last_updated': DateTime.now().toIso8601String(),
-  });
-
-  // Box located at MAL KABUL
-  final boxReceiptId = await db.insert('goods_receipt', {
-    'external_id': 'GR-003',
-    'invoice_number': 'INV-BOX',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'kutu',
-    'synced': 0,
-  });
-
-  await db.insert('goods_receipt_item', {
-    'receipt_id': boxReceiptId,
-    'pallet_or_box_id': 'KUTU-MK1',
-    'product_id': 'PROD-4',
-    'product_name': 'Test Ürün D',
-    'product_code': 'D400',
-    'quantity': 3,
-  });
-
-  await db.insert('container_location', {
-    'container_id': 'KUTU-MK1',
-    'location': 'MAL KABUL',
-    'last_updated': DateTime.now().toIso8601String(),
-  });
+  // Box in 10A21 with single product
+  final r6 = await _insertReceipt('SEED-V2-B3', 'INV-B3', 'kutu');
+  await _insertItem(r6, 'BOX-10A21', 'PRD-4', 'Makarna 500g', 'MAK500', 8);
+  await _setLocation('BOX-10A21', '10A21');
 }
