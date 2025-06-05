@@ -17,6 +17,7 @@ abstract class PalletAssignmentLocalDataSource {
   Future<void> updateContainerLocation(String containerId, String newLocation, DateTime updateTime);
   Future<String?> getContainerLocation(String containerId);
   Future<void> clearSyncedTransferOperations();
+  Future<List<String>> getDistinctContainerLocations();
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -138,5 +139,14 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       whereArgs: [1],
     );
     debugPrint("Cleared $count synced transfer operations.");
+  }
+
+  @override
+  Future<List<String>> getDistinctContainerLocations() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT location FROM container_location ORDER BY location',
+    );
+    return rows.map((e) => e['location'] as String).toList();
   }
 }
