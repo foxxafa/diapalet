@@ -1,5 +1,4 @@
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:sqflite/sqflite.dart';
 
 Future<void> populateTestData() async {
   final dbHelper = DatabaseHelper();
