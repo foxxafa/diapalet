@@ -11,6 +11,10 @@ abstract class GoodsReceivingLocalDataSource {
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId);
   Future<void> markGoodsReceiptAsSynced(int receiptId);
   Future<ProductInfo?> getProductInfoById(String productId);
+  Future<List<String>> getInvoiceNumbers();
+  Future<List<String>> getPalletIds();
+  Future<List<String>> getBoxIds();
+  Future<List<ProductInfo>> getProductsForDropdown();
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -97,5 +101,57 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   Future<ProductInfo?> getProductInfoById(String productId) async {
     debugPrint("LocalDataSource: getProductInfoById for $productId (not fully implemented for separate table).");
     return null;
+  }
+
+  @override
+  Future<List<String>> getInvoiceNumbers() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT invoice_number FROM goods_receipt ORDER BY invoice_number',
+    );
+    return rows.map((e) => e['invoice_number'] as String).toList();
+  }
+
+  @override
+  Future<List<String>> getPalletIds() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT gri.pallet_or_box_id
+      FROM goods_receipt_item gri
+      JOIN goods_receipt gr ON gri.receipt_id = gr.id
+      WHERE gr.mode = ?
+      ORDER BY gri.pallet_or_box_id
+    ''', [ReceiveMode.palet.name]);
+    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+  }
+
+  @override
+  Future<List<String>> getBoxIds() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT gri.pallet_or_box_id
+      FROM goods_receipt_item gri
+      JOIN goods_receipt gr ON gri.receipt_id = gr.id
+      WHERE gr.mode = ?
+      ORDER BY gri.pallet_or_box_id
+    ''', [ReceiveMode.kutu.name]);
+    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+  }
+
+  @override
+  Future<List<ProductInfo>> getProductsForDropdown() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT product_id, product_name, product_code
+      FROM goods_receipt_item
+      ORDER BY product_name
+    ''');
+    return rows
+        .map((e) => ProductInfo(
+              id: e['product_id'] as String,
+              name: e['product_name'] as String,
+              stockCode: e['product_code'] as String,
+            ))
+        .toList();
   }
 }
