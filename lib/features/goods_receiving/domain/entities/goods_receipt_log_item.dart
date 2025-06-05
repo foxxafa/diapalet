@@ -1,3 +1,4 @@
+//features/goods_receiving/domain/entities/goods_receipt_log_item.dart
 import 'product_info.dart';
 
 enum ReceiveMode { palet, kutu }
@@ -9,8 +10,8 @@ extension ReceiveModeExtension on ReceiveMode {
         return 'Palet';
       case ReceiveMode.kutu:
         return 'Kutu';
-      default:
-        return '';
+    // The default case was removed as it's unreachable
+    // because all enum values are explicitly handled.
     }
   }
 }

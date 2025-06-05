@@ -222,11 +222,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
     List<TransferItemDetail> itemsToTransferDetails = _productsInContainer
         .map((p) => TransferItemDetail(
-              operationId: 0,
-              productCode: p.productCode,
-              productName: p.name,
-              quantity: p.currentQuantity,
-            ))
+      operationId: 0, // Will be updated by repository after header is saved
+      productCode: p.productCode,
+      productName: p.name,
+      quantity: p.currentQuantity,
+    ))
         .toList();
 
     if (itemsToTransferDetails.isEmpty) {
@@ -258,7 +258,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
       if (mounted) {
         _showSnackBar("${_selectedMode.displayName} transferi başarıyla kaydedildi!");
-        _resetForm(resetAll: true);
+        _resetForm(resetAll: true); // Reset all fields after successful save
       }
     } catch (e) {
       if (mounted) _showSnackBar("Kaydetme sırasında hata: ${e.toString()}", isError: true);
@@ -302,15 +302,17 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
       ),
       filled: filled,
-      fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
+      // fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null, // LINT FIX: surfaceVariant and withOpacity
+      fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2), // Adjust vertical padding for standard height
+      floatingLabelBehavior: FloatingLabelBehavior.auto, // Or always, or never as per design
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01),
-      helperText: ' ',
-      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
+      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides default error text space
+      helperText: ' ', // Reserves space for error text, preventing layout jump
+      helperStyle: const TextStyle(fontSize: 0, height: 0.01), // Hides helper text space
     );
   }
+
 
   Future<T?> _showSearchableDropdownDialog<T>({
     required BuildContext context,
@@ -324,30 +326,31 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       context: context,
       builder: (BuildContext dialogContext) {
         String searchText = '';
-        List<T> filteredItems = List.from(items);
+        List<T> filteredItems = List.from(items); // Initial list
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setStateDialog) {
+            // Filter logic
             if (searchText.isNotEmpty) {
               filteredItems = items.where((item) => filterCondition(item, searchText)).toList();
             } else {
-              filteredItems = List.from(items);
+              filteredItems = List.from(items); // Reset to full list if search is empty
             }
 
             return AlertDialog(
               title: Text(title),
-              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0), // Adjust padding
               content: SizedBox(
-                width: double.maxFinite,
+                width: double.maxFinite, // Use available width
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.min, // Fit content
                   children: <Widget>[
                     TextField(
                       autofocus: true,
                       decoration: InputDecoration(
                         hintText: 'Ara...',
                         prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: _borderRadius),
+                        border: OutlineInputBorder(borderRadius: _borderRadius), // Consistent border
                       ),
                       onChanged: (value) {
                         setStateDialog(() {
@@ -355,8 +358,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         });
                       },
                     ),
-                    const SizedBox(height: _gap),
-                    Expanded(
+                    const SizedBox(height: _gap), // Spacing
+                    Expanded( // Make ListView scrollable if content overflows
                       child: filteredItems.isEmpty
                           ? const Center(child: Text("Sonuç bulunamadı"))
                           : ListView.builder(
@@ -380,7 +383,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 TextButton(
                   child: const Text('İptal'),
                   onPressed: () {
-                    Navigator.of(dialogContext).pop();
+                    Navigator.of(dialogContext).pop(); // No value selected
                   },
                 ),
               ],
@@ -391,22 +394,24 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
-    final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
+    final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0); // Dynamic but capped
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Palet/Kutu Taşıma'),
         centerTitle: true,
       ),
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: true, // Ensures keyboard doesn't hide content
+      // Standardized Bottom Nav Button
       bottomNavigationBar: _isLoadingInitialData || _isSaving
-          ? null
+          ? null // Hide if loading or saving
           : Container(
-        margin: const EdgeInsets.all(20).copyWith(top:0),
-        height: bottomNavHeight,
+        margin: const EdgeInsets.all(20).copyWith(top:0), // All sides margin, but no top margin to allow closer positioning
+        height: bottomNavHeight, // Use dynamic height
         child: ElevatedButton.icon(
           onPressed: _isSaving ? null : _onConfirmSave,
           icon: _isSaving
@@ -414,24 +419,25 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               : const Icon(Icons.save_alt_outlined),
           label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-            shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20), // Good padding
+            shape: RoundedRectangleBorder(borderRadius: _borderRadius), // Consistent border radius
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600), // Clear text
           ),
         ),
       ),
-      body: SafeArea(
+      body: SafeArea( // Ensures content is within screen boundaries
         child: _isLoadingInitialData
             ? const Center(child: CircularProgressIndicator())
             : Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(20.0), // Consistent padding
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch children horizontally
               children: [
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
+                // Source Location Dropdown
                 _buildSearchableDropdownWithQr(
                     controller: _sourceLocationController,
                     label: 'Kaynak Lokasyon Seç',
@@ -442,9 +448,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         setState(() {
                           _selectedSourceLocation = val;
                           _sourceLocationController.text = val ?? "";
-                          _scannedContainerIdController.clear();
+                          _scannedContainerIdController.clear(); // Clear ID when source changes
                         });
-                        _loadContainerIdsForLocation();
+                        _loadContainerIdsForLocation(); // Reload IDs for new location
                       }
                     },
                     onQrTap: () => _scanQrAndUpdateField('source'),
@@ -454,36 +460,45 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     }
                 ),
                 const SizedBox(height: _gap),
+                // Scanned ID Section (Pallet/Box ID)
                 _buildScannedIdSection(),
-                if (_isLoadingContainerIds)
+                if (_isLoadingContainerIds) // Show loader if IDs are being fetched
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: _smallGap),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                const SizedBox(height: _smallGap),
+                const SizedBox(height: _smallGap), // Small gap before content list
+                // Container Contents Loader
                 if (_isLoadingContainerContents)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: _gap),
                     child: Center(child: CircularProgressIndicator()),
                   ),
 
+                // This Expanded widget will contain the product list (if any)
+                // and the target location dropdown, pushing the target dropdown
+                // towards the bottom if there's content, or allowing it to be
+                // higher if there's no product list.
                 Expanded(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween, // Pushes target location to bottom
                     children: [
+                      // Conditionally display product list or message
                       if (!_isLoadingContainerContents && _productsInContainer.isNotEmpty)
-                        Expanded(child: _buildProductsList())
+                        Expanded(child: _buildProductsList()) // Takes available space
                       else if (!_isLoadingContainerContents && _scannedContainerIdController.text.isNotEmpty && !_isLoadingInitialData)
-                        Expanded(
+                      // Message if no products found for a scanned ID
+                        Expanded( // Takes available space
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: _gap),
                             child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
                           ),
                         )
                       else
-                        const Spacer(),
+                        const Spacer(), // Takes up space if no list and no message (e.g., initial state)
 
-                      const SizedBox(height: _gap),
+                      // Target Location Dropdown
+                      const SizedBox(height: _gap), // Ensure space above target location
                       _buildSearchableDropdownWithQr(
                           controller: _targetLocationController,
                           label: 'Hedef Lokasyon Seç',
@@ -515,9 +530,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildModeSelector() {
-    return Center(
+    return Center( // Center the SegmentedButton
       child: SegmentedButton<AssignmentMode>(
-        segments: [ // Removed 'const'
+        segments: const [
           ButtonSegment(value: AssignmentMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
           ButtonSegment(value: AssignmentMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
         ],
@@ -528,16 +543,18 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _selectedMode = newSelection.first;
               _scannedContainerIdController.clear();
               _productsInContainer = [];
-              _formKey.currentState?.reset();
+              _formKey.currentState?.reset(); // Reset form fields when mode changes
+              // Also consider resetting _selectedSourceLocation, _selectedTargetLocation if needed
             });
-            _loadContainerIdsForLocation();
+            _loadContainerIdsForLocation(); // Reload container IDs for the new mode and current source
           }
         },
         style: SegmentedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+          // backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3), // LINT FIX: surfaceVariant and withOpacity
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
           selectedBackgroundColor: Theme.of(context).colorScheme.primary,
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius), // Consistent shape
         ),
       ),
     );
@@ -552,9 +569,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     required VoidCallback onQrTap,
     required FormFieldValidator<String>? validator,
   }) {
-    return SizedBox(
+    return SizedBox( // Ensure the Row takes up appropriate height
+      // height: _fieldHeight + 24, // Consider TextFormField's internal padding and helper/error text space
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start, // Align to top to handle validator text
         children: [
           Expanded(
             child: TextFormField(
@@ -570,14 +588,14 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                   filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                   initialValue: value,
                 );
-                onSelected(selected);
+                onSelected(selected); // This will trigger setState in the parent for controller.text
               },
               validator: validator,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
+              autovalidateMode: AutovalidateMode.onUserInteraction, // Validate on interaction
             ),
           ),
           const SizedBox(width: _smallGap),
-          _QrButton(onTap: onQrTap, size: _fieldHeight),
+          _QrButton(onTap: onQrTap, size: _fieldHeight), // Use consistent field height
         ],
       ),
     );
@@ -586,7 +604,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildScannedIdSection() {
     return _buildSearchableDropdownWithQr(
       controller: _scannedContainerIdController,
-      label: '${_selectedMode.displayName} ID Seç',
+      label: '${_selectedMode.displayName} ID Seç', // Dynamic label based on mode
       value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
       items: _availableContainerIds,
       onSelected: (val) async {
@@ -611,13 +629,15 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     return Container(
       margin: const EdgeInsets.only(top: _smallGap),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
+        // border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)), // LINT FIX: withOpacity
+        border: Border.all(color: Theme.of(context).dividerColor.withAlpha((255 * 0.5).round())),
         borderRadius: _borderRadius,
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2),
+        // color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2), // LINT FIX: surfaceVariant and withOpacity
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.2).round()),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min, // Important for Column inside scrollable
         children: [
           Padding(
             padding: const EdgeInsets.all(_smallGap),
@@ -626,22 +646,22 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          const Divider(height:1, thickness: 0.5),
-          Flexible(
+          const Divider(height:1, thickness: 0.5), // Visual separation
+          Flexible( // Allows ListView to scroll if it exceeds available space
             child: _productsInContainer.isEmpty
                 ? Padding(
-              padding: const EdgeInsets.all(_gap),
+              padding: const EdgeInsets.all(_gap), // Add padding for empty message
               child: Center(child: Text("${_selectedMode.displayName} içeriği boş.", style: TextStyle(color: Theme.of(context).hintColor))),
             )
                 : ListView.separated(
-              shrinkWrap: true,
-              physics: const ClampingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(vertical: _smallGap),
+              shrinkWrap: true, // Important for ListView inside Column/Flexible
+              physics: const ClampingScrollPhysics(), // Good for potentially short lists
+              padding: const EdgeInsets.symmetric(vertical: _smallGap), // Padding for items
               itemCount: _productsInContainer.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 0.5),
+              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 0.5), // Subtle separator
               itemBuilder: (context, index) {
                 final product = _productsInContainer[index];
-                return Padding(
+                return Padding( // Padding for each list item
                   padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: _smallGap / 2),
                   child: Row(
                     children: [
@@ -654,6 +674,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           ],
                         ),
                       ),
+                      // Optionally add an icon or action button here
                     ],
                   ),
                 );
@@ -669,7 +690,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
-  const _QrButton({required this.onTap, required this.size, Key? key}) : super(key: key);
+  // const _QrButton({required this.onTap, required this.size, super.key}); // LINT FIX for unused_element_parameter
+  const _QrButton({required this.onTap, required this.size});
+
 
   @override
   Widget build(BuildContext context) {
@@ -679,12 +702,12 @@ class _QrButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          padding: EdgeInsets.zero,
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)), // Consistent border radius
+          padding: EdgeInsets.zero, // Remove default padding to center icon
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer, // Themed color
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer, // Themed icon color
         ),
-        child: const Icon(Icons.qr_code_scanner, size: 28),
+        child: const Icon(Icons.qr_code_scanner, size: 28), // Slightly larger icon
       ),
     );
   }

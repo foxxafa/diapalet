@@ -331,7 +331,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return InputDecoration(
       labelText: label,
       filled: filled,
-      fillColor: filled ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : null,
+      fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
       border: OutlineInputBorder(borderRadius: _borderRadius),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -499,7 +499,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           }
         },
         style: SegmentedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
           selectedBackgroundColor: Theme.of(context).colorScheme.primary,
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
           shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -658,9 +658,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildAddedItemsList() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.5).round()),
         borderRadius: _borderRadius,
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.7)),
+        border: Border.all(color: Theme.of(context).dividerColor.withAlpha((255 * 0.7).round())),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -727,7 +727,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
-  const _QrButton({required this.onTap, required this.size, Key? key}) : super(key: key);
+  const _QrButton({required this.onTap, required this.size}); // Removed super.key and Key? key
 
   @override
   Widget build(BuildContext context) {

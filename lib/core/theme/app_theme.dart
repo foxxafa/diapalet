@@ -19,17 +19,17 @@ class AppTheme {
       elevation: 0,
     ),
 
-    inputDecorationTheme: InputDecorationTheme(
+    inputDecorationTheme: const InputDecorationTheme( // LINT FIX: prefer_const_constructors
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: inputBorder),
+        borderRadius: BorderRadius.all(Radius.circular(12)), // Can be const
+        borderSide: BorderSide(color: inputBorder), // Can be const
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: primary, width: 1.5),
+        borderRadius: BorderRadius.all(Radius.circular(12)), // Can be const
+        borderSide: BorderSide(color: primary, width: 1.5), // Can be const
       ),
     ),
 
@@ -49,7 +49,7 @@ class AppTheme {
     ),
 
     chipTheme: ChipThemeData(
-      selectedColor: primary.withOpacity(0.15),
+      selectedColor: primary.withAlpha((255 * 0.15).round()), // LINT FIX: deprecated_member_use (withOpacity -> withAlpha)
       backgroundColor: Colors.white,
       labelStyle: const TextStyle(color: Colors.black),
       secondaryLabelStyle: const TextStyle(color: Colors.black),

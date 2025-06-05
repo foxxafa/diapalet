@@ -15,13 +15,15 @@ class NetworkInfoImpl implements NetworkInfo {
   Future<bool> get isConnected async {
     try {
       final connectivityResult = await connectivity.checkConnectivity();
-      // connectivity_plus v5.0.0 ve sonrası tek bir sonuç döndürür.
-      // Bu yüzden doğrudan karşılaştırma yapıyoruz.
-      if (connectivityResult == ConnectivityResult.mobile ||
-          connectivityResult == ConnectivityResult.wifi ||
-          connectivityResult == ConnectivityResult.ethernet ||
-          connectivityResult == ConnectivityResult.vpn ||
-          connectivityResult == ConnectivityResult.other) { // 'other' da eklendi
+      // connectivity_plus v5.0.0 ve sonrası List<ConnectivityResult> döndürür.
+      // Bu yüzden listenin istenen bağlantı türlerinden birini içerip içermediğini kontrol ediyoruz.
+      if (connectivityResult.contains(ConnectivityResult.mobile) ||
+          connectivityResult.contains(ConnectivityResult.wifi) ||
+          connectivityResult.contains(ConnectivityResult.ethernet) ||
+          connectivityResult.contains(ConnectivityResult.vpn) ||
+          connectivityResult.contains(ConnectivityResult.other) ||
+          // Fallback for older versions or unexpected single result (though less likely with v5+)
+          (connectivityResult.isNotEmpty && !connectivityResult.contains(ConnectivityResult.none))) {
         return true;
       }
       return false;

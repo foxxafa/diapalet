@@ -23,7 +23,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDebug = kDebugMode; // Sadece debug modunda ekle
+    const bool isDebug = kDebugMode; // LINT FIX: prefer_const_declarations
 
     return Scaffold(
       appBar: AppBar(
