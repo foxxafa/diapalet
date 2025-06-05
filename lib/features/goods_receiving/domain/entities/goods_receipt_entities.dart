@@ -1,5 +1,4 @@
 // features/goods_receiving/domain/entities/goods_receipt_entities.dart
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'product_info.dart';
 

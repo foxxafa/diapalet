@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'features/home/presentation/home_screen.dart';
-import 'features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 
 void main() {
   runApp(const DiapaletApp());

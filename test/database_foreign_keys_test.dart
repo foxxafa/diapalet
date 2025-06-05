@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:sqflite/utils/utils.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:test/test.dart';
@@ -44,14 +45,14 @@ void main() {
       'quantity': 1,
     });
 
-    final before = Sqflite.firstIntValue(await db.rawQuery(
+    final before = firstIntValue(await db.rawQuery(
         'SELECT COUNT(*) FROM goods_receipt_item WHERE receipt_id=?',
         [receiptId]));
     expect(before, 1);
 
     await db.delete('goods_receipt', where: 'id=?', whereArgs: [receiptId]);
 
-    final after = Sqflite.firstIntValue(await db.rawQuery(
+    final after = firstIntValue(await db.rawQuery(
         'SELECT COUNT(*) FROM goods_receipt_item WHERE receipt_id=?',
         [receiptId]));
     expect(after, 0);

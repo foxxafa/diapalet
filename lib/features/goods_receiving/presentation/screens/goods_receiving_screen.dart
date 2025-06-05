@@ -138,38 +138,47 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void _addItemToList() {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
+    // First, validate the form fields (TextFormFields)
+    if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
       _showErrorSnackBar("Lütfen ürün eklemek için tüm zorunlu alanları (Palet/Kutu, Ürün, Miktar) doğru doldurun.");
       return;
     }
 
-    // Additional checks for selected objects after form validation passes
-    if (_selectedPalletOrBoxId == null || _selectedPalletOrBoxId!.isEmpty) {
-      _showErrorSnackBar("Lütfen geçerli bir Palet/Kutu seçin veya okutun.");
+    // After text field validation, explicitly check if the backing state variables are set.
+    if (_selectedPalletOrBoxId == null) { // Check for null first
+      _showErrorSnackBar("Lütfen geçerli bir Palet/Kutu seçin veya okutun (seçim yapılmamış).");
       return;
     }
+    // Since _selectedPalletOrBoxId is now confirmed not null, we can safely check if it's empty.
+    if (_selectedPalletOrBoxId!.isEmpty) { // Then check for empty
+      _showErrorSnackBar("Palet/Kutu ID boş olamaz.");
+      return;
+    }
+
     if (_selectedProduct == null) {
-      _showErrorSnackBar("Lütfen geçerli bir Ürün seçin veya okutun.");
+      _showErrorSnackBar("Lütfen geçerli bir Ürün seçin veya okutun (seçim yapılmamış).");
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text);
-    // The form validator for quantity already ensures it's a positive number.
-    // This is an additional safeguard, though unlikely to be null if form validation passed.
+    // The form validator for the quantity field already ensures it's a positive number.
     if (quantity == null) {
-      _showErrorSnackBar("Miktar geçersiz.");
+      _showErrorSnackBar("Miktar geçersiz veya sayısal değil.");
       return;
     }
+    // Validator also checks if quantity <= 0
 
     final newItem = GoodsReceiptItem(
       goodsReceiptId: -1,
-      palletOrBoxId: _selectedPalletOrBoxId!, // Safe due to check above
-      product: _selectedProduct!,           // Safe due to check above
+      palletOrBoxId: _selectedPalletOrBoxId!, // Now safe due to the explicit null & empty checks above
+      product: _selectedProduct!,           // Now safe due to the explicit null check above
       quantity: quantity,
     );
+
     if (mounted) {
       setState(() {
         _addedItems.insert(0, newItem);
+        // Reset for next item entry
         _selectedProduct = null;
         _productController.clear();
         _quantityController.clear();
@@ -264,9 +273,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             found = true;
           } else {
             _showErrorSnackBar("Taranan QR ($result) geçerli bir ${_selectedMode.displayName} seçeneği değil.");
-            // Clear previous selection if invalid QR is scanned
-            _selectedPalletOrBoxId = null;
-            _palletOrBoxController.clear();
+            _selectedPalletOrBoxId = null; // Clear state variable
+            _palletOrBoxController.clear(); // Clear text field
           }
         } else if (fieldType == 'product') {
           final matchedProduct = _availableProducts.firstWhere(
@@ -280,9 +288,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             found = true;
           } else {
             _showErrorSnackBar("Taranan QR ($result) geçerli bir ürün seçeneği değil.");
-            // Clear previous selection if invalid QR is scanned
-            _selectedProduct = null;
-            _productController.clear();
+            _selectedProduct = null; // Clear state variable
+            _productController.clear(); // Clear text field
           }
         }
       });
@@ -484,8 +491,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               _updatePalletOrBoxOptions();
               _selectedPalletOrBoxId = null;
               _palletOrBoxController.clear();
-              // Switching between Palet and Kutu should start with an empty list
-              // to avoid mixing items of different modes.
               _addedItems.clear();
               _formKey.currentState?.reset();
             });
@@ -742,4 +747,3 @@ class _QrButton extends StatelessWidget {
     );
   }
 }
-
