@@ -27,13 +27,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       try {
         return await remoteDataSource.fetchInvoices();
       } catch (e) {
-        debugPrint("API getInvoices error: $e. Returning empty list.");
-        return []; // Veya lokal cache'den
+        debugPrint("API getInvoices error: $e. Falling back to local.");
       }
     }
-    // Offline: Lokal cache'den veya boş liste
-    debugPrint("Offline: Cannot fetch invoices from API. Returning empty list.");
-    return [];
+    // Offline or API error: read from local database
+    return await localDataSource.getInvoiceNumbers();
   }
 
   @override
@@ -42,12 +40,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       try {
         return await remoteDataSource.fetchPalletsForDropdown();
       } catch (e) {
-        debugPrint("API getPalletsForDropdown error: $e. Returning empty list.");
-        return [];
+        debugPrint("API getPalletsForDropdown error: $e. Falling back to local.");
       }
     }
-    debugPrint("Offline: Cannot fetch pallets from API. Returning empty list.");
-    return [];
+    // Offline or API error
+    return await localDataSource.getPalletIds();
   }
 
   @override
@@ -56,12 +53,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       try {
         return await remoteDataSource.fetchBoxesForDropdown();
       } catch (e) {
-        debugPrint("API getBoxesForDropdown error: $e. Returning empty list.");
-        return [];
+        debugPrint("API getBoxesForDropdown error: $e. Falling back to local.");
       }
     }
-    debugPrint("Offline: Cannot fetch boxes from API. Returning empty list.");
-    return [];
+    // Offline or API error
+    return await localDataSource.getBoxIds();
   }
 
   @override
@@ -75,15 +71,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         // }
         return products;
       } catch (e) {
-        debugPrint("API getProductsForDropdown error: $e. Trying local.");
-        // return await localDataSource.getAllProductInfos(); // Lokal cache'den
-        return [];
+        debugPrint("API getProductsForDropdown error: $e. Falling back to local.");
       }
     }
-    // Offline: Lokal cache'den ürünleri getir
-    debugPrint("Offline: Fetching products from local storage (not implemented in this example).");
-    // return await localDataSource.getAllProductInfos();
-    return [];
+    // Offline or API error: use local database
+    return await localDataSource.getProductsForDropdown();
   }
 
   @override
