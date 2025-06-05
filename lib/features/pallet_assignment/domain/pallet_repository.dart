@@ -8,6 +8,7 @@ abstract class PalletAssignmentRepository {
   Future<List<String>> getSourceLocations();
   Future<List<String>> getTargetLocations();
   Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode);
+  Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode);
 
   Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
 

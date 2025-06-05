@@ -29,14 +29,18 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
       try {
         return await remoteDataSource.fetchSourceLocations();
       } catch (e) {
-        debugPrint("API getSourceLocations error: $e. Returning empty list.");
-        return [];
+        debugPrint("API getSourceLocations error: $e. Falling back to local.");
       }
-    } else {
-      // Implement local fetching if needed, e.g., from a cache
-      debugPrint("No connection, cannot fetch source locations from API. Returning empty list.");
-      return [];
     }
+
+    final locations = await localDataSource.getDistinctContainerLocations();
+    if (!locations.contains('MAL KABUL')) {
+      locations.insert(0, 'MAL KABUL');
+    } else {
+      locations.remove('MAL KABUL');
+      locations.insert(0, 'MAL KABUL');
+    }
+    return locations;
   }
 
   @override
@@ -45,13 +49,32 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
       try {
         return await remoteDataSource.fetchTargetLocations();
       } catch (e) {
-        debugPrint("API getTargetLocations error: $e. Returning empty list.");
-        return [];
+        debugPrint("API getTargetLocations error: $e. Falling back to local.");
       }
-    } else {
-      debugPrint("No connection, cannot fetch target locations from API. Returning empty list.");
-      return [];
     }
+
+    final locations = await localDataSource.getDistinctContainerLocations();
+    if (!locations.contains('MAL KABUL')) {
+      locations.insert(0, 'MAL KABUL');
+    } else {
+      locations.remove('MAL KABUL');
+      locations.insert(0, 'MAL KABUL');
+    }
+    return locations;
+  }
+
+  @override
+  Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode) async {
+    if (await networkInfo.isConnected) {
+      // There is no remote API in this example; fall back immediately if any error occurs
+      try {
+        return await remoteDataSource.fetchContainerIds(location, mode);
+      } catch (e) {
+        debugPrint("API getContainerIds error for $location: $e. Falling back to local.");
+      }
+    }
+
+    return await localDataSource.getContainerIdsByLocation(location, mode.name);
   }
 
   @override
@@ -60,14 +83,12 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
       try {
         return await remoteDataSource.fetchContainerContents(containerId, mode);
       } catch (e) {
-        debugPrint("API getContentsOfContainer error for $containerId: $e. Returning empty list.");
-        return [];
+        debugPrint("API getContentsOfContainer error for $containerId: $e. Falling back to local.");
       }
-    } else {
-      // Implement local fetching if needed
-      debugPrint("No connection, cannot fetch container contents for $containerId from API. Returning empty list.");
-      return [];
     }
+
+    final contents = await localDataSource.getContainerContents(containerId);
+    return contents;
   }
 
   @override

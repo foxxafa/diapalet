@@ -5,6 +5,7 @@ import 'package:diapalet/core/local/database_helper.dart'; // Assuming 'diapalet
 // Corrected entity imports
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 // AssignmentMode is imported via TransferOperationHeader, but explicit import is also fine if needed directly.
 // import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 
@@ -17,6 +18,9 @@ abstract class PalletAssignmentLocalDataSource {
   Future<void> updateContainerLocation(String containerId, String newLocation, DateTime updateTime);
   Future<String?> getContainerLocation(String containerId);
   Future<void> clearSyncedTransferOperations();
+  Future<List<String>> getDistinctContainerLocations();
+  Future<List<String>> getContainerIdsByLocation(String location, String mode);
+  Future<List<ProductItem>> getContainerContents(String containerId);
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -138,5 +142,48 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       whereArgs: [1],
     );
     debugPrint("Cleared $count synced transfer operations.");
+  }
+
+  @override
+  Future<List<String>> getDistinctContainerLocations() async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT location FROM container_location ORDER BY location',
+    );
+    return rows.map((e) => e['location'] as String).toList();
+  }
+
+  @override
+  Future<List<String>> getContainerIdsByLocation(String location, String mode) async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT cl.container_id
+      FROM container_location cl
+      JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
+      JOIN goods_receipt gr ON gr.id = gri.receipt_id
+      WHERE cl.location = ? AND gr.mode = ?
+      ORDER BY cl.container_id
+    ''', [location, mode]);
+    return rows.map((e) => e['container_id'] as String).toList();
+  }
+
+  @override
+  Future<List<ProductItem>> getContainerContents(String containerId) async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT product_id, product_name, product_code, SUM(quantity) as qty
+      FROM goods_receipt_item
+      WHERE pallet_or_box_id = ?
+      GROUP BY product_id, product_name, product_code
+      ORDER BY product_name
+    ''', [containerId]);
+    return rows
+        .map((e) => ProductItem(
+              id: e['product_id'] as String,
+              name: e['product_name'] as String,
+              productCode: e['product_code'] as String,
+              currentQuantity: (e['qty'] as int? ?? 0),
+            ))
+        .toList();
   }
 }
