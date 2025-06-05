@@ -10,7 +10,8 @@ import 'package:diapalet/features/goods_receiving/presentation/screens/goods_rec
 import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart';
 import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart';
 import 'package:diapalet/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart';
-import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
+import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
+
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 
 import 'package:flutter/material.dart';

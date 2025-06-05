@@ -1,9 +1,6 @@
-// features/goods_receiving/data/goods_receiving_composite_repository.dart
-// Bu dosya GoodsReceivingRepository arayüzünü implemente eder.
-// Gerçekte adı GoodsReceivingRepositoryImpl olabilir.
-
+// lib/features/goods_receiving/data/goods_receiving_composite_repository.dart
 import 'package:flutter/foundation.dart';
-import '../../../core/network/network_info.dart'; // NetworkInfo'yu import et
+import '../../../core/network/network_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
 import '../domain/entities/product_info.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
@@ -28,9 +25,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         return await remoteDataSource.fetchInvoices();
       } catch (e) {
         debugPrint("API getInvoices error: $e. Falling back to local.");
+        return await localDataSource.getInvoiceNumbers();
       }
     }
-    // Offline or API error: read from local database
     return await localDataSource.getInvoiceNumbers();
   }
 
@@ -41,9 +38,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         return await remoteDataSource.fetchPalletsForDropdown();
       } catch (e) {
         debugPrint("API getPalletsForDropdown error: $e. Falling back to local.");
+        return await localDataSource.getPalletIds();
       }
     }
-    // Offline or API error
     return await localDataSource.getPalletIds();
   }
 
@@ -54,9 +51,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         return await remoteDataSource.fetchBoxesForDropdown();
       } catch (e) {
         debugPrint("API getBoxesForDropdown error: $e. Falling back to local.");
+        return await localDataSource.getBoxIds();
       }
     }
-    // Offline or API error
     return await localDataSource.getBoxIds();
   }
 
@@ -64,51 +61,82 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<ProductInfo>> getProductsForDropdown() async {
     if (await networkInfo.isConnected) {
       try {
-        // API'den ürünleri çek ve lokalde de sakla/güncelle (opsiyonel)
         final products = await remoteDataSource.fetchProductsForDropdown();
-        // for (var product in products) {
-        //   await localDataSource.saveProductInfo(product); // Eğer lokal product tablonuz varsa
-        // }
         return products;
       } catch (e) {
         debugPrint("API getProductsForDropdown error: $e. Falling back to local.");
+        return await localDataSource.getProductsForDropdown();
       }
     }
-    // Offline or API error: use local database
     return await localDataSource.getProductsForDropdown();
   }
 
   @override
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
-    if (await networkInfo.isConnected) {
+    // Determine initial sync status based on network connectivity
+    // The actual API call and sync status update will happen after local save.
+    bool isOnline = await networkInfo.isConnected;
+    GoodsReceipt headerToSave = header; // Use a mutable copy or ensure header.synced can be changed
+
+    if (isOnline) {
       try {
+        // Attempt to send to API first. The header ID is not known yet.
+        // The remoteDataSource might need to handle a header without a local DB ID.
+        // Or, save locally first, then send with ID.
+        // For now, let's assume we try to send, then save locally with sync status.
         bool apiSuccess = await remoteDataSource.sendGoodsReceipt(header, items);
         if (apiSuccess) {
-          header.synced = 1; // API'ye gönderildi olarak işaretle
-          final localId = await localDataSource.saveGoodsReceipt(header, items);
-          debugPrint("Goods Receipt (id: $localId) recorded and synced to API.");
-          return localId;
+          headerToSave = GoodsReceipt(
+            externalId: header.externalId,
+            invoiceNumber: header.invoiceNumber,
+            receiptDate: header.receiptDate,
+            mode: header.mode,
+            synced: 1, // Mark as synced if API call was successful
+          );
+          debugPrint("Goods Receipt data prepared for API, marked as synced.");
         } else {
-          // API'ye gönderim başarısızsa, senkronize edilmedi olarak kaydet
-          header.synced = 0;
-          final localId = await localDataSource.saveGoodsReceipt(header, items);
-          debugPrint("Goods Receipt (id: $localId) failed to sync to API, saved locally.");
-          return localId;
+          headerToSave = GoodsReceipt(
+            externalId: header.externalId,
+            invoiceNumber: header.invoiceNumber,
+            receiptDate: header.receiptDate,
+            mode: header.mode,
+            synced: 0, // API call failed
+          );
+          debugPrint("Goods Receipt API call failed, marked as not synced.");
         }
       } catch (e) {
-        // API hatası durumunda senkronize edilmedi olarak kaydet
-        debugPrint("API error during saveGoodsReceipt: $e. Saving locally.");
-        header.synced = 0;
-        final localId = await localDataSource.saveGoodsReceipt(header, items);
-        return localId;
+        debugPrint("API error during sendGoodsReceipt: $e. Marked as not synced.");
+        headerToSave = GoodsReceipt(
+          externalId: header.externalId,
+          invoiceNumber: header.invoiceNumber,
+          receiptDate: header.receiptDate,
+          mode: header.mode,
+          synced: 0, // API error
+        );
       }
     } else {
-      // Offline ise, senkronize edilmedi olarak kaydet
-      header.synced = 0;
-      final localId = await localDataSource.saveGoodsReceipt(header, items);
-      debugPrint("Offline: Goods Receipt (id: $localId) saved locally.");
-      return localId;
+      // Offline, mark as not synced
+      headerToSave = GoodsReceipt(
+        externalId: header.externalId,
+        invoiceNumber: header.invoiceNumber,
+        receiptDate: header.receiptDate,
+        mode: header.mode,
+        synced: 0,
+      );
+      debugPrint("Offline: Goods Receipt marked as not synced.");
     }
+
+    // Save locally with the determined sync status
+    final localId = await localDataSource.saveGoodsReceipt(headerToSave, items);
+    debugPrint("Goods Receipt (local id: $localId) saved locally with synced status: ${headerToSave.synced}.");
+
+    // Set initial location for all unique pallet/box IDs in this receipt to "MAL KABUL"
+    final Set<String> uniquePalletOrBoxIds = items.map((item) => item.palletOrBoxId).toSet();
+    for (String pId in uniquePalletOrBoxIds) {
+      await localDataSource.setContainerInitialLocation(pId, "MAL KABUL", header.receiptDate);
+    }
+
+    return localId;
   }
 
   @override
@@ -124,9 +152,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<void> markGoodsReceiptAsSynced(int receiptId) async {
     await localDataSource.markGoodsReceiptAsSynced(receiptId);
+    // Optionally, if you need to re-send to API or confirm, you could do it here.
   }
 
-  // Senkronizasyon metodu
   Future<void> synchronizePendingGoodsReceipts() async {
     if (await networkInfo.isConnected) {
       debugPrint("Starting synchronization of pending goods receipts...");
@@ -138,26 +166,29 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("Found ${unsyncedReceipts.length} unsynced goods receipts.");
 
       for (var header in unsyncedReceipts) {
-        if (header.id == null) continue; // Geçersiz kayıtları atla
-
-        final items = await getItemsForGoodsReceipt(header.id!);
-        if (items.isEmpty && header.id != null) { // Kalemsiz başlıklar için özel durum (isteğe bağlı)
-          debugPrint("Warning: Goods receipt header id ${header.id} has no items. Skipping API send or handle as needed.");
-          // Belki sadece başlığı senkronize et veya logla
-          // await markGoodsReceiptAsSynced(header.id!);
+        if (header.id == null) {
+          debugPrint("Skipping sync for header with null ID (externalId: ${header.externalId}).");
           continue;
         }
 
+        final items = await getItemsForGoodsReceipt(header.id!);
+        // API expects items, if items list is empty for a valid header, decide how to handle.
+        // For now, we'll attempt to send even if items are empty, API might reject or accept.
+        // if (items.isEmpty) {
+        //   debugPrint("Warning: Goods receipt header id ${header.id} has no items. Behavior depends on API.");
+        // }
+
         try {
+          // Pass the original header which might have a local ID and externalID
           bool success = await remoteDataSource.sendGoodsReceipt(header, items);
           if (success) {
             await markGoodsReceiptAsSynced(header.id!);
-            debugPrint("Successfully synced goods receipt id: ${header.id}");
+            debugPrint("Successfully synced goods receipt id: ${header.id} (externalId: ${header.externalId})");
           } else {
-            debugPrint("Failed to sync goods receipt id: ${header.id} (API returned false).");
+            debugPrint("Failed to sync goods receipt id: ${header.id} (externalId: ${header.externalId}) (API returned false).");
           }
         } catch (e) {
-          debugPrint("Error syncing goods receipt id: ${header.id}. Error: $e");
+          debugPrint("Error syncing goods receipt id: ${header.id} (externalId: ${header.externalId}). Error: $e");
         }
       }
       debugPrint("Goods receipts synchronization process finished.");

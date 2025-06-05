@@ -1,5 +1,5 @@
 // lib/features/pallet_assignment/presentation/pallet_assignment_screen.dart
-import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
+import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:provider/provider.dart';

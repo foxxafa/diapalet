@@ -3,7 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/local/database_helper.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
-import '../../domain/entities/product_info.dart'; // ProductInfo için
+import '../../domain/entities/product_info.dart';
 
 abstract class GoodsReceivingLocalDataSource {
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
@@ -12,9 +12,10 @@ abstract class GoodsReceivingLocalDataSource {
   Future<void> markGoodsReceiptAsSynced(int receiptId);
   Future<ProductInfo?> getProductInfoById(String productId);
   Future<List<String>> getInvoiceNumbers();
-  Future<List<String>> getPalletIds();
-  Future<List<String>> getBoxIds();
+  Future<List<String>> getPalletIds(); // IDs of pallets available for receiving (e.g., at MAL KABUL)
+  Future<List<String>> getBoxIds();    // IDs of boxes available for receiving (e.g., at MAL KABUL)
   Future<List<ProductInfo>> getProductsForDropdown();
+  Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -32,21 +33,42 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         header.toMap()..remove('id'),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      debugPrint("Saved goods_receipt header with id: $headerId");
+      debugPrint("Saved goods_receipt header with id: $headerId, external_id: ${header.externalId}");
 
       for (var item in items) {
         final itemMap = item.toMap()..remove('id');
-        itemMap['receipt_id'] = headerId;
+        itemMap['receipt_id'] = headerId; // Link item to the header
         await txn.insert(
           'goods_receipt_item',
           itemMap,
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
-        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}");
+        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, pallet/box: ${item.palletOrBoxId}");
       }
     });
     return headerId;
   }
+
+  @override
+  Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate) async {
+    final db = await dbHelper.database;
+    try {
+      await db.insert(
+        'container_location',
+        {
+          'container_id': containerId,
+          'location': location,
+          'last_updated': receivedDate.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace, // If it already exists, update its location
+      );
+      debugPrint("Set initial location for container $containerId to $location.");
+    } catch (e) {
+      debugPrint("Error setting initial location for $containerId: $e");
+      // Handle error as appropriate, maybe it's not critical if location update fails
+    }
+  }
+
 
   @override
   Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts() async {
@@ -70,19 +92,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
       whereArgs: [receiptId],
     );
     if (maps.isEmpty) return [];
-
-    List<GoodsReceiptItem> items = [];
-    for (var map in maps) {
-      // GoodsReceiptItem.fromMap fabrika kurucu metodu artık ProductInfo oluşturmayı kendi içinde hallediyor.
-      // Bu yüzden buradaki yerel 'product' değişkenine fromMap çağrısı için gerek kalmadı.
-      // final product = ProductInfo(
-      //   id: map['product_id'] as String,
-      //   name: map['product_name'] as String,
-      //   stockCode: map['product_code'] as String,
-      // );
-      items.add(GoodsReceiptItem.fromMap(map)); // Sadece map'i gönderin
-    }
-    return items;
+    return List.generate(maps.length, (i) => GoodsReceiptItem.fromMap(maps[i]));
   }
 
   @override
@@ -99,15 +109,23 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
   @override
   Future<ProductInfo?> getProductInfoById(String productId) async {
+    // This might query a separate 'products' master table if you have one.
+    // For now, assuming product info is denormalized or comes from remote.
     debugPrint("LocalDataSource: getProductInfoById for $productId (not fully implemented for separate table).");
+    // Example: if you have a products table
+    // final db = await dbHelper.database;
+    // final List<Map<String, dynamic>> maps = await db.query('products', where: 'id = ?', whereArgs: [productId]);
+    // if (maps.isNotEmpty) return ProductInfo.fromMap(maps.first);
     return null;
   }
 
   @override
   Future<List<String>> getInvoiceNumbers() async {
     final db = await dbHelper.database;
+    // Fetch distinct invoice numbers that might be pending or available
+    // This could come from a specific table or based on existing goods_receipts
     final rows = await db.rawQuery(
-      'SELECT DISTINCT invoice_number FROM goods_receipt ORDER BY invoice_number',
+      'SELECT DISTINCT invoice_number FROM goods_receipt ORDER BY invoice_number DESC LIMIT 50', // Example limit
     );
     return rows.map((e) => e['invoice_number'] as String).toList();
   }
@@ -115,43 +133,79 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   @override
   Future<List<String>> getPalletIds() async {
     final db = await dbHelper.database;
+    // This should ideally fetch pallets that are known to be in 'MAL KABUL' or are available.
+    // For simplicity, if using test data that sets them to MAL KABUL, this query can be adapted.
+    // Or, if you have a master list of pallets, query that.
+    // Current query gets pallets that *have already received items*.
+    // Let's fetch from container_location where location is 'MAL KABUL'
     final rows = await db.rawQuery('''
-      SELECT DISTINCT gri.pallet_or_box_id
-      FROM goods_receipt_item gri
-      JOIN goods_receipt gr ON gri.receipt_id = gr.id
-      WHERE gr.mode = ?
-      ORDER BY gri.pallet_or_box_id
-    ''', [ReceiveMode.palet.name]);
-    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+      SELECT DISTINCT cl.container_id
+      FROM container_location cl
+      LEFT JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
+      LEFT JOIN goods_receipt gr ON gr.id = gri.receipt_id AND gr.mode = ?
+      WHERE cl.location = ? 
+      -- AND (gr.mode = ? OR gr.mode IS NULL) -- Ensure it's a pallet or not yet classified by goods_receipt
+      ORDER BY cl.container_id
+    ''', [ReceiveMode.palet.name, 'MAL KABUL']);
+
+    // Fallback or alternative: Get pallets that have previously been part of pallet-mode receipts.
+    // This is not ideal for "available for new receipt" but provides some data if container_location is not populated.
+    if (rows.isEmpty) {
+      debugPrint("No pallets found in 'MAL KABUL', trying existing pallet IDs from goods_receipt_item.");
+      final fallbackRows = await db.rawQuery('''
+            SELECT DISTINCT gri.pallet_or_box_id
+            FROM goods_receipt_item gri
+            INNER JOIN goods_receipt gr ON gri.receipt_id = gr.id
+            WHERE gr.mode = ?
+            ORDER BY gri.pallet_or_box_id
+        ''', [ReceiveMode.palet.name]);
+      return fallbackRows.map((e) => e['pallet_or_box_id'] as String).toList();
+    }
+    return rows.map((e) => e['container_id'] as String).toList();
   }
 
   @override
   Future<List<String>> getBoxIds() async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT DISTINCT gri.pallet_or_box_id
-      FROM goods_receipt_item gri
-      JOIN goods_receipt gr ON gri.receipt_id = gr.id
-      WHERE gr.mode = ?
-      ORDER BY gri.pallet_or_box_id
-    ''', [ReceiveMode.kutu.name]);
-    return rows.map((e) => e['pallet_or_box_id'] as String).toList();
+      SELECT DISTINCT cl.container_id
+      FROM container_location cl
+      LEFT JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
+      LEFT JOIN goods_receipt gr ON gr.id = gri.receipt_id AND gr.mode = ?
+      WHERE cl.location = ? 
+      ORDER BY cl.container_id
+    ''', [ReceiveMode.kutu.name, 'MAL KABUL']);
+
+    if (rows.isEmpty) {
+      debugPrint("No boxes found in 'MAL KABUL', trying existing box IDs from goods_receipt_item.");
+      final fallbackRows = await db.rawQuery('''
+            SELECT DISTINCT gri.pallet_or_box_id
+            FROM goods_receipt_item gri
+            INNER JOIN goods_receipt gr ON gri.receipt_id = gr.id
+            WHERE gr.mode = ?
+            ORDER BY gri.pallet_or_box_id
+        ''', [ReceiveMode.kutu.name]);
+      return fallbackRows.map((e) => e['pallet_or_box_id'] as String).toList();
+    }
+    return rows.map((e) => e['container_id'] as String).toList();
   }
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
     final db = await dbHelper.database;
+    // This should ideally come from a master product table.
+    // For now, fetching distinct products from past receipts.
     final rows = await db.rawQuery('''
       SELECT DISTINCT product_id, product_name, product_code
       FROM goods_receipt_item
-      ORDER BY product_name
-    ''');
+      ORDER BY product_name LIMIT 100 
+    '''); // Example limit
     return rows
         .map((e) => ProductInfo(
-              id: e['product_id'] as String,
-              name: e['product_name'] as String,
-              stockCode: e['product_code'] as String,
-            ))
+      id: e['product_id'] as String,
+      name: e['product_name'] as String,
+      stockCode: e['product_code'] as String,
+    ))
         .toList();
   }
 }

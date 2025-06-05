@@ -1,8 +1,8 @@
 // lib/features/pallet_assignment/data/mock_pallet_service.dart
-import 'package:diapalet/features/pallet_assignment/domain/pallet_repository.dart';
 import 'package:flutter/foundation.dart';
 
 // Ensure all imports use the absolute package path for consistency
+import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
@@ -40,6 +40,16 @@ class MockPalletService implements PalletAssignmentRepository {
     ]
   };
 
+  // For getContainerIdsAtLocation mock
+  final Map<String, List<String>> _locationContainerPallets = {
+    "RAF-A1-01": ["PALET-A001", "PALET-C003"],
+    "SEVKİYAT-ALANI-1": ["PALET-B001"],
+  };
+  final Map<String, List<String>> _locationContainerBoxes = {
+    "DEPO-GİRİŞ-A": ["KUTU-X01", "KUTU-Z05"],
+    "URETIM-HATTI-1": ["KUTU-Y01"],
+  };
+
   final List<TransferOperationHeader> _savedTransferHeaders = [];
   final Map<int, List<TransferItemDetail>> _savedTransferItems = {};
   int _nextTransferOpId = 1;
@@ -70,6 +80,17 @@ class MockPalletService implements PalletAssignmentRepository {
     if (containerId == "PALET-EMPTY" || containerId == "KUTU-EMPTY") return [];
     debugPrint("MockPalletService: No content found for $containerId, returning empty list.");
     return [];
+  }
+
+  @override
+  Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode) async {
+    debugPrint("MockPalletService: Fetching container IDs at location: $location for mode: ${mode.displayName}");
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mode == AssignmentMode.palet) {
+      return _locationContainerPallets[location] ?? [];
+    } else {
+      return _locationContainerBoxes[location] ?? [];
+    }
   }
 
   @override
@@ -156,8 +177,11 @@ class MockPalletService implements PalletAssignmentRepository {
     await Future.delayed(const Duration(milliseconds: 50));
     for (final header in _savedTransferHeaders.where((op) => op.synced == 0)) {
       if (header.id != null) {
+        // Simulate API call success for synchronization
+        debugPrint("MockPalletService: Simulating API sync for transfer ID ${header.id}");
         await markTransferOperationAsSynced(header.id!);
       }
     }
+    debugPrint("MockPalletService: Synchronization complete.");
   }
 }
