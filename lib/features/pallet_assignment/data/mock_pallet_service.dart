@@ -29,7 +29,6 @@ class MockPalletService implements PalletAssignmentRepository {
     ],
     "KUTU-X01": [
       const ProductItem(id: 'prod1', name: 'Coca-Cola 1L', productCode: 'COLA1L', currentQuantity: 10),
-      const ProductItem(id: 'prod5', name: 'Super Widget (Demo)', productCode: 'SWIDGET', currentQuantity: 5),
     ],
     "KUTU-Y01": [
       const ProductItem(id: 'prod2', name: 'Fanta 1L', productCode: 'FANTA1L', currentQuantity: 12),

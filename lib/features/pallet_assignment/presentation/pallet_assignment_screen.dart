@@ -37,6 +37,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
+  final TextEditingController _transferQuantityController = TextEditingController();
 
   List<String> _availableTargetLocations = [];
   String? _selectedTargetLocation;
@@ -58,6 +59,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       if (mounted) {
         setState(() {
           _productsInContainer = [];
+          _transferQuantityController.clear();
         });
       }
     }
@@ -79,6 +81,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     _scannedContainerIdController.dispose();
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
+    _transferQuantityController.dispose();
     super.dispose();
   }
 
@@ -137,6 +140,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
+        if (_selectedMode == AssignmentMode.kutu && contents.isNotEmpty) {
+          _transferQuantityController.text = contents.first.currentQuantity.toString();
+        } else {
+          _transferQuantityController.clear();
+        }
         if (contents.isEmpty && containerId.isNotEmpty) {
           _showSnackBar("$containerId ID'li ${_selectedMode.displayName} bulunamadı veya içi boş.", isError: true);
         }
@@ -154,6 +162,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     if (mounted) {
       setState(() {
         _productsInContainer = [];
+        _transferQuantityController.clear();
         if (resetAll) {
           _selectedMode = AssignmentMode.palet;
           _selectedSourceLocation = null;
@@ -220,14 +229,32 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       return;
     }
 
-    List<TransferItemDetail> itemsToTransferDetails = _productsInContainer
-        .map((p) => TransferItemDetail(
-      operationId: 0, // Will be updated by repository after header is saved
-      productCode: p.productCode,
-      productName: p.name,
-      quantity: p.currentQuantity,
-    ))
-        .toList();
+    List<TransferItemDetail> itemsToTransferDetails;
+    if (_selectedMode == AssignmentMode.kutu) {
+      if (_productsInContainer.isEmpty) {
+        _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı.", isError: true);
+        return;
+      }
+      final product = _productsInContainer.first;
+      final qty = int.tryParse(_transferQuantityController.text) ?? 0;
+      itemsToTransferDetails = [
+        TransferItemDetail(
+          operationId: 0,
+          productCode: product.productCode,
+          productName: product.name,
+          quantity: qty,
+        )
+      ];
+    } else {
+      itemsToTransferDetails = _productsInContainer
+          .map((p) => TransferItemDetail(
+        operationId: 0, // Will be updated by repository after header is saved
+        productCode: p.productCode,
+        productName: p.name,
+        quantity: p.currentQuantity,
+      ))
+          .toList();
+    }
 
     if (itemsToTransferDetails.isEmpty) {
       _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı.", isError: true);
@@ -543,6 +570,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _selectedMode = newSelection.first;
               _scannedContainerIdController.clear();
               _productsInContainer = [];
+              _transferQuantityController.clear();
               _formKey.currentState?.reset(); // Reset form fields when mode changes
               // Also consider resetting _selectedSourceLocation, _selectedTargetLocation if needed
             });
@@ -626,60 +654,117 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildProductsList() {
+    final bool isBox = _selectedMode == AssignmentMode.kutu;
+    final ProductItem? boxProduct = isBox && _productsInContainer.isNotEmpty ? _productsInContainer.first : null;
+
     return Container(
       margin: const EdgeInsets.only(top: _smallGap),
       decoration: BoxDecoration(
-        // border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)), // LINT FIX: withOpacity
         border: Border.all(color: Theme.of(context).dividerColor.withAlpha((255 * 0.5).round())),
         borderRadius: _borderRadius,
-        // color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.2), // LINT FIX: surfaceVariant and withOpacity
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.2).round()),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min, // Important for Column inside scrollable
+        mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
-              "${_scannedContainerIdController.text} İçeriği (${_productsInContainer.length} ürün):",
+              isBox
+                  ? "${_scannedContainerIdController.text} İçeriği:"
+                  : "${_scannedContainerIdController.text} İçeriği (${_productsInContainer.length} ürün):",
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          const Divider(height:1, thickness: 0.5), // Visual separation
-          Flexible( // Allows ListView to scroll if it exceeds available space
+          const Divider(height: 1, thickness: 0.5),
+          Flexible(
             child: _productsInContainer.isEmpty
                 ? Padding(
-              padding: const EdgeInsets.all(_gap), // Add padding for empty message
-              child: Center(child: Text("${_selectedMode.displayName} içeriği boş.", style: TextStyle(color: Theme.of(context).hintColor))),
-            )
-                : ListView.separated(
-              shrinkWrap: true, // Important for ListView inside Column/Flexible
-              physics: const ClampingScrollPhysics(), // Good for potentially short lists
-              padding: const EdgeInsets.symmetric(vertical: _smallGap), // Padding for items
-              itemCount: _productsInContainer.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16, thickness: 0.5), // Subtle separator
-              itemBuilder: (context, index) {
-                final product = _productsInContainer[index];
-                return Padding( // Padding for each list item
-                  padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: _smallGap / 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
+                    padding: const EdgeInsets.all(_gap),
+                    child: Center(
+                        child: Text("${_selectedMode.displayName} içeriği boş.",
+                            style: TextStyle(color: Theme.of(context).hintColor))),
+                  )
+                : isBox
+                    ? Padding(
+                        padding: const EdgeInsets.all(_smallGap),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(product.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
-                            Text("Miktar: ${product.currentQuantity}", style: Theme.of(context).textTheme.bodySmall),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(boxProduct!.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(fontWeight: FontWeight.w500)),
+                                  Text("Mevcut: ${boxProduct.currentQuantity}",
+                                      style: Theme.of(context).textTheme.bodySmall),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: _smallGap),
+                            SizedBox(
+                              width: 100,
+                              child: TextFormField(
+                                controller: _transferQuantityController,
+                                keyboardType: TextInputType.number,
+                                decoration: _inputDecoration('Miktar', filled: true),
+                                validator: (value) {
+                                  if (!isBox) return null;
+                                  if (value == null || value.isEmpty) {
+                                    return 'Miktar gerekli';
+                                  }
+                                  final qty = int.tryParse(value);
+                                  if (qty == null) return 'Geçersiz';
+                                  if (qty <= 0) return 'Miktar > 0 olmalı';
+                                  if (qty > boxProduct.currentQuantity) {
+                                    return 'En fazla ${boxProduct.currentQuantity}';
+                                  }
+                                  return null;
+                                },
+                                autovalidateMode: AutovalidateMode.onUserInteraction,
+                              ),
+                            ),
                           ],
                         ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        physics: const ClampingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(vertical: _smallGap),
+                        itemCount: _productsInContainer.length,
+                        separatorBuilder: (context, index) => const Divider(
+                            height: 1, indent: 16, endIndent: 16, thickness: 0.5),
+                        itemBuilder: (context, index) {
+                          final product = _productsInContainer[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: _smallGap, vertical: _smallGap / 2),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(product.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall
+                                              ?.copyWith(fontWeight: FontWeight.w500)),
+                                      Text("Miktar: ${product.currentQuantity}",
+                                          style: Theme.of(context).textTheme.bodySmall),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                      // Optionally add an icon or action button here
-                    ],
-                  ),
-                );
-              },
-            ),
           ),
         ],
       ),
