@@ -33,6 +33,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   String? _selectedSourceLocation;
   final TextEditingController _sourceLocationController = TextEditingController();
 
+  List<String> _availableContainerIds = [];
+  bool _isLoadingContainerIds = false;
+
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
   Map<String, TextEditingController> _quantityControllers = {};
@@ -110,10 +113,27 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _availableSourceLocations = List<String>.from(results[0]);
         _availableTargetLocations = List<String>.from(results[1]);
       });
+      await _loadContainerIdsForLocation();
     } catch (e) {
       if (mounted) _showSnackBar("Veri yüklenirken hata: ${e.toString()}", isError: true);
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
+    }
+  }
+
+  Future<void> _loadContainerIdsForLocation() async {
+    if (_selectedSourceLocation == null) {
+      if (mounted) setState(() => _availableContainerIds = []);
+      return;
+    }
+    setState(() => _isLoadingContainerIds = true);
+    try {
+      final ids = await _repo.getContainerIdsAtLocation(_selectedSourceLocation!, _selectedMode);
+      if (mounted) setState(() => _availableContainerIds = ids);
+    } catch (e) {
+      if (mounted) _showSnackBar("ID'ler yüklenemedi: ${e.toString()}", isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingContainerIds = false);
     }
   }
 
@@ -164,6 +184,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           _sourceLocationController.clear();
           _selectedTargetLocation = null;
           _targetLocationController.clear();
+          _availableContainerIds = [];
         }
       });
     }
@@ -184,9 +205,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           setState(() {
             _selectedSourceLocation = result;
             _sourceLocationController.text = result;
+            _scannedContainerIdController.clear();
           });
           successMessage = "Kaynak QR ile seçildi: $result";
           found = true;
+          await _loadContainerIdsForLocation();
         } else {
           _showSnackBar("Taranan QR ($result) geçerli bir Kaynak Lokasyonu değil.", isError: true);
         }
@@ -479,7 +502,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         setState(() {
                           _selectedSourceLocation = val;
                           _sourceLocationController.text = val ?? "";
+                          _scannedContainerIdController.clear();
                         });
+                        _loadContainerIdsForLocation();
                       }
                     },
                     onQrTap: () => _scanQrAndUpdateField('source'),
@@ -490,17 +515,12 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 ),
                 const SizedBox(height: _gap),
                 _buildScannedIdSection(),
-                const SizedBox(height: _smallGap),
-                if (_scannedContainerIdController.text.isNotEmpty)
-                  ElevatedButton.icon(
-                    icon: _isLoadingContainerContents
-                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary ))
-                        : const Icon(Icons.search),
-                    label: Text(_isLoadingContainerContents? "Yükleniyor..." : "${_selectedMode.displayName} İçeriğini Getir"),
-                    onPressed: _isLoadingContainerContents ? null : _fetchContainerContents,
-                    style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, _fieldHeight * 0.85)),
+                if (_isLoadingContainerIds)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: _smallGap),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
-
+                const SizedBox(height: _smallGap),
                 if (_isLoadingContainerContents)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: _gap),
@@ -571,6 +591,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _clearQuantityControllers();
               _formKey.currentState?.reset();
             });
+            _loadContainerIdsForLocation();
           }
         },
         style: SegmentedButton.styleFrom(
@@ -624,31 +645,26 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildScannedIdSection() {
-    return SizedBox(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _scannedContainerIdController,
-              decoration: _inputDecoration('${_selectedMode.displayName} ID Okut/Yaz'),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return '${_selectedMode.displayName} ID boş olamaz.';
-                }
-                return null;
-              },
-              onFieldSubmitted: (_) => _fetchContainerContents(),
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-            ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(
-            onTap: () => _scanQrAndUpdateField('scannedId'),
-            size: _fieldHeight,
-          ),
-        ],
-      ),
+    return _buildSearchableDropdownWithQr(
+      controller: _scannedContainerIdController,
+      label: '${_selectedMode.displayName} ID Seç',
+      value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
+      items: _availableContainerIds,
+      onSelected: (val) async {
+        if (mounted) {
+          setState(() {
+            _scannedContainerIdController.text = val ?? '';
+          });
+          if (val != null) await _fetchContainerContents();
+        }
+      },
+      onQrTap: () => _scanQrAndUpdateField('scannedId'),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return '${_selectedMode.displayName} ID boş olamaz.';
+        }
+        return null;
+      },
     );
   }
 

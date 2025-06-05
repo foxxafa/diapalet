@@ -64,19 +64,31 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   }
 
   @override
+  Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode) async {
+    if (await networkInfo.isConnected) {
+      // There is no remote API in this example; fall back immediately if any error occurs
+      try {
+        return await remoteDataSource.fetchContainerIds(location, mode);
+      } catch (e) {
+        debugPrint("API getContainerIds error for $location: $e. Falling back to local.");
+      }
+    }
+
+    return await localDataSource.getContainerIdsByLocation(location, mode.name);
+  }
+
+  @override
   Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode) async {
     if (await networkInfo.isConnected) {
       try {
         return await remoteDataSource.fetchContainerContents(containerId, mode);
       } catch (e) {
-        debugPrint("API getContentsOfContainer error for $containerId: $e. Returning empty list.");
-        return [];
+        debugPrint("API getContentsOfContainer error for $containerId: $e. Falling back to local.");
       }
-    } else {
-      // Implement local fetching if needed
-      debugPrint("No connection, cannot fetch container contents for $containerId from API. Returning empty list.");
-      return [];
     }
+
+    final contents = await localDataSource.getContainerContents(containerId);
+    return contents;
   }
 
   @override

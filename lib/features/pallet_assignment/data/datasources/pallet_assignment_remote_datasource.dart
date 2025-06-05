@@ -10,6 +10,7 @@ abstract class PalletAssignmentRemoteDataSource {
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
   Future<List<String>> fetchSourceLocations();
   Future<List<String>> fetchTargetLocations();
+  Future<List<String>> fetchContainerIds(String location, AssignmentMode mode);
   Future<List<ProductItem>> fetchContainerContents(String containerId, AssignmentMode mode);
 // Future<void> updateContainerLocationOnApi(String containerId, String newLocation); // Example
 }
@@ -43,6 +44,13 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
     debugPrint("API: Fetching target locations (mock)...");
     await Future.delayed(const Duration(milliseconds: 300));
     return ["API-TGT-LOC-X", "API-TGT-LOC-Y", "API-TGT-SHIPPING_DOCK"];
+  }
+
+  @override
+  Future<List<String>> fetchContainerIds(String location, AssignmentMode mode) async {
+    debugPrint("API: Fetching container IDs at $location for ${mode.displayName} (mock)...");
+    await Future.delayed(const Duration(milliseconds: 300));
+    return ["API-MOCK-ID-1", "API-MOCK-ID-2"];
   }
 
   @override
