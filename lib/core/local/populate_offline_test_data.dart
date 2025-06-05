@@ -4,121 +4,147 @@ Future<void> populateTestData() async {
   final dbHelper = DatabaseHelper();
   final db = await dbHelper.database;
 
-  // UNIQUE constraint'i korumak için eklemeden önce bak!
-  const externalId = 'GR-001';
+  // Tek seferlik ekleme kontrolü
+  const sentinelId = 'OFFLINE-INIT';
   final check = await db.query(
     'goods_receipt',
     where: 'external_id = ?',
-    whereArgs: [externalId],
+    whereArgs: [sentinelId],
   );
   if (check.isNotEmpty) {
-    // Test datası zaten eklenmiş.
+    // Daha önce test verisi eklenmiş
     return;
   }
 
-  // Goods receipt
-  final receiptId = await db.insert('goods_receipt', {
-    'external_id': externalId,
-    'invoice_number': 'INV-TEST',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'palet',
-    'synced': 0,
-  });
+  DateTime now = DateTime.now();
 
+  Future<int> addReceipt(String extId, String invoice, String mode) async {
+    return await db.insert('goods_receipt', {
+      'external_id': extId,
+      'invoice_number': invoice,
+      'receipt_date': now.toIso8601String(),
+      'mode': mode,
+      'synced': 0,
+    });
+  }
+
+  // Pallet 1 - MAL KABUL
+  final r1 = await addReceipt(sentinelId, 'INV-PAL1', 'palet');
   await db.insert('goods_receipt_item', {
-    'receipt_id': receiptId,
-    'pallet_or_box_id': 'PALET-123',
-    'product_id': 'PROD-1',
-    'product_name': 'Test Ürün A',
+    'receipt_id': r1,
+    'pallet_or_box_id': 'PALET-001',
+    'product_id': 'PROD-A',
+    'product_name': 'Ürün A',
     'product_code': 'A100',
-    'quantity': 5,
-  });
-
-  await db.insert('goods_receipt_item', {
-    'receipt_id': receiptId,
-    'pallet_or_box_id': 'PALET-123',
-    'product_id': 'PROD-2',
-    'product_name': 'Test Ürün B',
-    'product_code': 'B200',
     'quantity': 10,
   });
-
-  // Palet transferi
-  final transferId = await db.insert('transfer_operation', {
-    'operation_type': 'transfer',
-    'source_location': 'Giris',
-    'container_id': 'PALET-123',
-    'target_location': 'Raf-10',
-    'transfer_date': DateTime.now().toIso8601String(),
-    'synced': 0,
-  });
-
-  await db.insert('transfer_item', {
-    'operation_id': transferId,
-    'product_code': 'A100',
-    'product_name': 'Test Ürün A',
-    'quantity': 2,
-  });
-
-  await db.insert('transfer_item', {
-    'operation_id': transferId,
+  await db.insert('goods_receipt_item', {
+    'receipt_id': r1,
+    'pallet_or_box_id': 'PALET-001',
+    'product_id': 'PROD-B',
+    'product_name': 'Ürün B',
     'product_code': 'B200',
-    'product_name': 'Test Ürün B',
+    'quantity': 15,
+  });
+  await db.insert('container_location', {
+    'container_id': 'PALET-001',
+    'location': 'MAL KABUL',
+    'last_updated': now.toIso8601String(),
+  });
+
+  // Pallet 2 - 10A21
+  final r2 = await addReceipt('OFFLINE-PAL2', 'INV-PAL2', 'palet');
+  await db.insert('goods_receipt_item', {
+    'receipt_id': r2,
+    'pallet_or_box_id': 'PALET-002',
+    'product_id': 'PROD-B',
+    'product_name': 'Ürün B',
+    'product_code': 'B200',
+    'quantity': 20,
+  });
+  await db.insert('goods_receipt_item', {
+    'receipt_id': r2,
+    'pallet_or_box_id': 'PALET-002',
+    'product_id': 'PROD-C',
+    'product_name': 'Ürün C',
+    'product_code': 'C300',
+    'quantity': 30,
+  });
+  await db.insert('container_location', {
+    'container_id': 'PALET-002',
+    'location': '10A21',
+    'last_updated': now.toIso8601String(),
+  });
+
+  // Pallet 3 - KASA
+  final r3 = await addReceipt('OFFLINE-PAL3', 'INV-PAL3', 'palet');
+  await db.insert('goods_receipt_item', {
+    'receipt_id': r3,
+    'pallet_or_box_id': 'PALET-003',
+    'product_id': 'PROD-D',
+    'product_name': 'Ürün D',
+    'product_code': 'D400',
+    'quantity': 12,
+  });
+  await db.insert('goods_receipt_item', {
+    'receipt_id': r3,
+    'pallet_or_box_id': 'PALET-003',
+    'product_id': 'PROD-A',
+    'product_name': 'Ürün A',
+    'product_code': 'A100',
+    'quantity': 25,
+  });
+  await db.insert('container_location', {
+    'container_id': 'PALET-003',
+    'location': 'KASA',
+    'last_updated': now.toIso8601String(),
+  });
+
+  // Box 1 - MAL KABUL (single product)
+  final b1 = await addReceipt('OFFLINE-BOX1', 'INV-BOX1', 'kutu');
+  await db.insert('goods_receipt_item', {
+    'receipt_id': b1,
+    'pallet_or_box_id': 'BOX-001',
+    'product_id': 'PROD-E',
+    'product_name': 'Ürün E',
+    'product_code': 'E500',
     'quantity': 5,
   });
-
-  // Container location
   await db.insert('container_location', {
-    'container_id': 'PALET-123',
-    'location': 'Raf-10',
-    'last_updated': DateTime.now().toIso8601String(),
+    'container_id': 'BOX-001',
+    'location': 'MAL KABUL',
+    'last_updated': now.toIso8601String(),
   });
 
-  // Additional pallet located at MAL KABUL
-  final palletReceiptId = await db.insert('goods_receipt', {
-    'external_id': 'GR-002',
-    'invoice_number': 'INV-PAL',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'palet',
-    'synced': 0,
-  });
-
+  // Box 2 - KASA
+  final b2 = await addReceipt('OFFLINE-BOX2', 'INV-BOX2', 'kutu');
   await db.insert('goods_receipt_item', {
-    'receipt_id': palletReceiptId,
-    'pallet_or_box_id': 'PALET-MK1',
-    'product_id': 'PROD-3',
-    'product_name': 'Test Ürün C',
+    'receipt_id': b2,
+    'pallet_or_box_id': 'BOX-002',
+    'product_id': 'PROD-F',
+    'product_name': 'Ürün F',
+    'product_code': 'F600',
+    'quantity': 8,
+  });
+  await db.insert('container_location', {
+    'container_id': 'BOX-002',
+    'location': 'KASA',
+    'last_updated': now.toIso8601String(),
+  });
+
+  // Box 3 - 5C3
+  final b3 = await addReceipt('OFFLINE-BOX3', 'INV-BOX3', 'kutu');
+  await db.insert('goods_receipt_item', {
+    'receipt_id': b3,
+    'pallet_or_box_id': 'BOX-003',
+    'product_id': 'PROD-C',
+    'product_name': 'Ürün C',
     'product_code': 'C300',
-    'quantity': 7,
+    'quantity': 50,
   });
-
   await db.insert('container_location', {
-    'container_id': 'PALET-MK1',
-    'location': 'MAL KABUL',
-    'last_updated': DateTime.now().toIso8601String(),
-  });
-
-  // Box located at MAL KABUL
-  final boxReceiptId = await db.insert('goods_receipt', {
-    'external_id': 'GR-003',
-    'invoice_number': 'INV-BOX',
-    'receipt_date': DateTime.now().toIso8601String(),
-    'mode': 'kutu',
-    'synced': 0,
-  });
-
-  await db.insert('goods_receipt_item', {
-    'receipt_id': boxReceiptId,
-    'pallet_or_box_id': 'KUTU-MK1',
-    'product_id': 'PROD-4',
-    'product_name': 'Test Ürün D',
-    'product_code': 'D400',
-    'quantity': 3,
-  });
-
-  await db.insert('container_location', {
-    'container_id': 'KUTU-MK1',
-    'location': 'MAL KABUL',
-    'last_updated': DateTime.now().toIso8601String(),
+    'container_id': 'BOX-003',
+    'location': '5C3',
+    'last_updated': now.toIso8601String(),
   });
 }
