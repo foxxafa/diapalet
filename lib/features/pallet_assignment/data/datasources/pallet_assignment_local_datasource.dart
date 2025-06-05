@@ -249,43 +249,87 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       ) async {
     final db = await dbHelper.database;
     await db.transaction((txn) async {
-      String externalReceiptId = 'TRANSFER_${originalContainerId}_${DateTime.now().millisecondsSinceEpoch}';
-      String invoiceNumber = 'FROM_$originalContainerId';
-
-      final receiptData = {
-        'external_id': externalReceiptId,
-        'invoice_number': invoiceNumber,
-        'receipt_date': transferDate.toIso8601String(),
-        'mode': mode.name,
-        'synced': 0,
-      };
-      int newReceiptId = await txn.insert('goods_receipt', receiptData);
-      debugPrint("Hedef lokasyon için yeni goods_receipt oluşturuldu ID: $newReceiptId");
-
       for (var item in transferredItems) {
-        String targetInstanceContainerId = '${originalContainerId}_${item.productCode}_TARGET_${DateTime.now().microsecondsSinceEpoch}';
+        final existing = await txn.rawQuery('''
+          SELECT gri.id, gri.quantity, gri.pallet_or_box_id
+          FROM goods_receipt_item gri
+          JOIN container_location cl ON cl.container_id = gri.pallet_or_box_id
+          WHERE cl.location = ?
+            AND gri.pallet_or_box_id LIKE ?
+            AND gri.product_code = ?
+          ORDER BY gri.id DESC
+          LIMIT 1
+        ''', [
+          targetLocation,
+          '${originalContainerId}_${item.productCode}_TARGET_%',
+          item.productCode
+        ]);
 
-        final itemData = {
-          'receipt_id': newReceiptId,
-          'pallet_or_box_id': targetInstanceContainerId,
-          'product_id': item.productId,
-          'product_name': item.productName,
-          'product_code': item.productCode,
-          'quantity': item.quantity,
-        };
-        await txn.insert('goods_receipt_item', itemData);
-        debugPrint("Hedef lokasyon için yeni goods_receipt_item oluşturuldu: ${item.productName}, Miktar: ${item.quantity}, Sanal Kutu ID: $targetInstanceContainerId");
+        if (existing.isNotEmpty) {
+          final row = existing.first;
+          final currentQty = row['quantity'] as int? ?? 0;
+          final itemId = row['id'] as int;
+          final containerId = row['pallet_or_box_id'] as String;
 
-        await txn.insert(
-          'container_location',
-          {
-            'container_id': targetInstanceContainerId,
-            'location': targetLocation,
-            'last_updated': transferDate.toIso8601String()
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-        debugPrint("Sanal container $targetInstanceContainerId, $targetLocation lokasyonuna eklendi.");
+          await txn.update(
+            'goods_receipt_item',
+            {'quantity': currentQty + item.quantity},
+            where: 'id = ?',
+            whereArgs: [itemId],
+          );
+
+          await txn.update(
+            'container_location',
+            {'last_updated': transferDate.toIso8601String()},
+            where: 'container_id = ?',
+            whereArgs: [containerId],
+          );
+
+          debugPrint(
+              "Hedefte mevcut kutu $containerId miktarı ${item.quantity} arttırıldı. Yeni miktar: ${currentQty + item.quantity}");
+        } else {
+          String externalReceiptId =
+              'TRANSFER_${originalContainerId}_${DateTime.now().millisecondsSinceEpoch}';
+          String invoiceNumber = 'FROM_$originalContainerId';
+
+          final receiptData = {
+            'external_id': externalReceiptId,
+            'invoice_number': invoiceNumber,
+            'receipt_date': transferDate.toIso8601String(),
+            'mode': mode.name,
+            'synced': 0,
+          };
+          int newReceiptId = await txn.insert('goods_receipt', receiptData);
+          debugPrint(
+              "Hedef lokasyon için yeni goods_receipt oluşturuldu ID: $newReceiptId");
+
+          String targetInstanceContainerId =
+              '${originalContainerId}_${item.productCode}_TARGET_${DateTime.now().microsecondsSinceEpoch}';
+
+          final itemData = {
+            'receipt_id': newReceiptId,
+            'pallet_or_box_id': targetInstanceContainerId,
+            'product_id': item.productId,
+            'product_name': item.productName,
+            'product_code': item.productCode,
+            'quantity': item.quantity,
+          };
+          await txn.insert('goods_receipt_item', itemData);
+          debugPrint(
+              "Hedef lokasyon için yeni goods_receipt_item oluşturuldu: ${item.productName}, Miktar: ${item.quantity}, Sanal Kutu ID: $targetInstanceContainerId");
+
+          await txn.insert(
+            'container_location',
+            {
+              'container_id': targetInstanceContainerId,
+              'location': targetLocation,
+              'last_updated': transferDate.toIso8601String()
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+          debugPrint(
+              "Sanal container $targetInstanceContainerId, $targetLocation lokasyonuna eklendi.");
+        }
       }
     });
   }
