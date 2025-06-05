@@ -134,11 +134,21 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
             transferredItem.productCode, // Transfer edilen ürünün kodu
             transferredItem.quantity // Transfer edilen miktar
         );
-        debugPrint("KUTU TRANSFERİ: ${headerToSave.containerId} ID'li kutudan ${transferredItem.productName} ürünü için ${transferredItem.quantity} adet miktar düşüldü.");
+        debugPrint(
+            "KUTU TRANSFERİ: ${headerToSave.containerId} ID'li kutudan ${transferredItem.productName} ürünü için ${transferredItem.quantity} adet miktar düşüldü.");
+
+        await localDataSource.addReceivedPortionAtTarget(
+          headerToSave.containerId,
+          headerToSave.targetLocation,
+          headerToSave.operationType,
+          headerToSave.transferDate,
+          [transferredItem],
+        );
+        debugPrint(
+            "KUTU TRANSFERİ: ${transferredItem.quantity} adet ${transferredItem.productName} hedef lokasyon ${headerToSave.targetLocation} altına eklendi.");
 
         // İsteğe bağlı: Eğer kutudaki ürün tamamen biterse (getContainerContents ile kontrol edilebilir),
         // container_location tablosundan kaydı silinebilir veya 'EMPTY' gibi bir lokasyona atanabilir.
-        // Şimdilik sadece miktarı azaltıyoruz.
       }
     } else if (headerToSave.operationType == AssignmentMode.palet) {
       // Palet transferinde, paletin tamamı yeni lokasyona taşınır.
