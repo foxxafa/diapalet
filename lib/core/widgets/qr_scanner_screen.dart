@@ -1,6 +1,7 @@
 // lib/core/widgets/qr_scanner_screen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});

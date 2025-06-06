@@ -6,7 +6,7 @@ import 'product_info.dart';
 enum ReceiveMode { palet, kutu }
 
 extension ReceiveModeExtension on ReceiveMode {
-  String get displayName => tr('receive_mode.${name}');
+  String get displayName => tr('receive_mode.$name');
 }
 
 class GoodsReceipt {
