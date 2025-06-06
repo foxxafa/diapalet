@@ -1,0 +1,102 @@
+{
+  "app": {
+    "title": "Diapalet"
+  },
+  "language": {
+    "turkish": "Turkish",
+    "english": "English"
+  },
+  "home": {
+    "title": "Dia Pallet Tracking",
+    "reset_db": "Reset Database",
+    "db_reset_complete": "Database reset complete",
+    "populate_test": "Populate Test Data",
+    "test_data_populated": "Test data populated",
+    "goods_receiving": "Goods Receiving",
+    "pallet_transfer": "Pallet/Box Transfer"
+  },
+  "receive_mode": {
+    "palet": "Pallet",
+    "kutu": "Box"
+  },
+  "assignment_mode": {
+    "palet": "Pallet",
+    "kutu": "Box"
+  },
+  "goods_receiving": {
+    "title": "Goods Receiving",
+    "select_invoice": "Select Invoice",
+    "select_pallet": "Select Pallet",
+    "select_box": "Select Box",
+    "select_product": "Select Product",
+    "enter_qty": "Enter Quantity",
+    "add_to_list": "Add to List",
+    "items_added": "Added Items ({count})",
+    "no_items": "No items added yet.",
+    "delete_item": "Delete Item",
+    "not_specified": "Not specified",
+    "qty_unit": "{qty} pcs",
+    "mode_switched": "{mode} mode activated. List cleared.",
+    "confirm_title": "Confirm",
+    "confirm_message": "{count} items will be saved. Continue?",
+    "save_and_confirm": "Save and Confirm",
+    "errors": {
+      "load_initial": "Error loading initial data: {error}",
+      "required_fields": "Please fill all required fields (Pallet/Box, Product, Quantity).",
+      "invalid_pallet": "Select a valid Pallet/Box (none selected).",
+      "empty_pallet": "Pallet/Box ID cannot be empty.",
+      "invalid_product": "Select a valid Product (none selected).",
+      "invalid_qty": "Invalid quantity entered.",
+      "no_items": "No items to save.",
+      "select_invoice": "Please select an invoice.",
+      "save_error": "Error while saving: {error}",
+      "invalid_qr_pallet": "Scanned QR ({qr}) is not a valid {mode} option.",
+      "invalid_qr_product": "Scanned QR ({qr}) is not a valid product option."
+    },
+    "success": {
+      "item_added": "{product} added to list.",
+      "item_removed": "{product} removed from list.",
+      "saved": "Items saved successfully!"
+    },
+    "search_hint": "Search...",
+    "search_no_result": "No results found"
+  },
+  "pallet_assignment": {
+    "title": "Pallet/Box Transfer",
+    "save": "Save",
+    "saving": "Saving...",
+    "select_source": "Select Source Location",
+    "select_target": "Select Target Location",
+    "source_required": "Source location is required.",
+    "target_required": "Target location is required.",
+    "load_error": "Error loading data: {error}",
+    "form_invalid": "Please fill all required fields and correct errors.",
+    "container_select": "Select {mode} ID",
+    "container_empty": "{mode} ID cannot be empty.",
+    "contents_empty": "{mode} contents empty.",
+    "qr_source_selected": "Source selected via QR: {val}",
+    "qr_target_selected": "Target selected via QR: {val}",
+    "qr_container_selected": "{mode} ID scanned: {val}",
+    "invalid_source_qr": "Scanned QR ({qr}) is not a valid Source Location.",
+    "invalid_target_qr": "Scanned QR ({qr}) is not a valid Target Location.",
+    "no_items_for_id": "No items found for {id} {mode} or ID not loaded.",
+    "content_of": "{id} Contents",
+    "content_of_count": "{id} Contents ({count} items)",
+    "current_qty": "Quantity: {qty}",
+    "amount": "Amount",
+    "amount_required": "Amount required",
+    "amount_invalid": "Invalid",
+    "amount_positive": "Amount must be > 0",
+    "amount_max": "Max {max}",
+    "mode_switched": "{mode} mode activated.",
+    "transfer_saved_box": "{product} box transfer recorded",
+    "transfer_saved": "{mode} transfer saved successfully!"
+  },
+  "qr_scanner": {
+    "title": "Scan QR Code",
+    "tip": "Align the QR code within the frame"
+  },
+  "common": {
+    "cancel": "Cancel"
+  }
+}

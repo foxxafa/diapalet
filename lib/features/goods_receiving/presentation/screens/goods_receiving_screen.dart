@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
+import 'package:easy_localization/easy_localization.dart';
 
 import '../../domain/entities/product_info.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
@@ -91,7 +92,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       });
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar("Başlangıç verileri yüklenirken hata: ${e.toString()}");
+        _showErrorSnackBar(
+            tr('goods_receiving.errors.load_initial', namedArgs: {'error': e.toString()}));
       }
     } finally {
       if (mounted) {
@@ -140,30 +142,30 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     // First, validate the form fields (TextFormFields)
     if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
-      _showErrorSnackBar("Lütfen ürün eklemek için tüm zorunlu alanları (Palet/Kutu, Ürün, Miktar) doğru doldurun.");
+      _showErrorSnackBar(tr('goods_receiving.errors.required_fields'));
       return;
     }
 
     // After text field validation, explicitly check if the backing state variables are set.
     if (_selectedPalletOrBoxId == null) { // Check for null first
-      _showErrorSnackBar("Lütfen geçerli bir Palet/Kutu seçin veya okutun (seçim yapılmamış).");
+      _showErrorSnackBar(tr('goods_receiving.errors.invalid_pallet'));
       return;
     }
     // Since _selectedPalletOrBoxId is now confirmed not null, we can safely check if it's empty.
     if (_selectedPalletOrBoxId!.isEmpty) { // Then check for empty
-      _showErrorSnackBar("Palet/Kutu ID boş olamaz.");
+      _showErrorSnackBar(tr('goods_receiving.errors.empty_pallet'));
       return;
     }
 
     if (_selectedProduct == null) {
-      _showErrorSnackBar("Lütfen geçerli bir Ürün seçin veya okutun (seçim yapılmamış).");
+      _showErrorSnackBar(tr('goods_receiving.errors.invalid_product'));
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text);
     // The form validator for the quantity field already ensures it's a positive number.
     if (quantity == null) {
-      _showErrorSnackBar("Miktar geçersiz veya sayısal değil.");
+      _showErrorSnackBar(tr('goods_receiving.errors.invalid_qty'));
       return;
     }
     // Validator also checks if quantity <= 0
@@ -183,7 +185,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _productController.clear();
         _quantityController.clear();
       });
-      _showSuccessSnackBar("${newItem.product.name} listeye eklendi.");
+      _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': newItem.product.name}));
     }
   }
 
@@ -191,7 +193,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (mounted) {
       setState(() {
         final removedItem = _addedItems.removeAt(index);
-        _showSuccessSnackBar("${removedItem.product.name} listeden silindi.", isError: true);
+        _showSuccessSnackBar(tr('goods_receiving.success.item_removed', namedArgs: {'product': removedItem.product.name}), isError: true);
       });
     }
   }
@@ -199,12 +201,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
     if (_addedItems.isEmpty) {
-      _showErrorSnackBar("Kaydedilecek ürün bulunmuyor.");
+      _showErrorSnackBar(tr('goods_receiving.errors.no_items'));
       return;
     }
 
     if (_selectedInvoice == null || _selectedInvoice!.isEmpty) {
-      _showErrorSnackBar("Lütfen bir irsaliye seçin.");
+      _showErrorSnackBar(tr('goods_receiving.errors.select_invoice'));
       return;
     }
 
@@ -212,15 +214,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Onay'),
-          content: Text('${_addedItems.length} kalem ürün sisteme kaydedilecek. Emin misiniz?'),
+          title: Text('goods_receiving.confirm_title'.tr()),
+          content: Text('goods_receiving.confirm_message'.tr(namedArgs: {'count': _addedItems.length.toString()})),
           actions: <Widget>[
             TextButton(
-              child: const Text('İptal'),
+              child: Text('common.cancel'.tr()),
               onPressed: () => Navigator.of(dialogContext).pop(false),
             ),
             ElevatedButton(
-              child: const Text('Kaydet ve Onayla'),
+              child: Text('goods_receiving.save_and_confirm'.tr()),
               onPressed: () => Navigator.of(dialogContext).pop(true),
             ),
           ],
@@ -239,12 +241,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         );
         await _repository.saveGoodsReceipt(header, _addedItems);
         if (mounted) {
-          _showSuccessSnackBar("Ürünler başarıyla kaydedildi!");
+          _showSuccessSnackBar(tr('goods_receiving.success.saved'));
           _resetInputFields(resetAll: true);
         }
       } catch (e) {
         if (mounted) {
-          _showErrorSnackBar("Kaydetme sırasında hata: ${e.toString()}");
+          _showErrorSnackBar(tr('goods_receiving.errors.save_error', namedArgs: {'error': e.toString()}));
         }
       } finally {
         if (mounted) {
@@ -269,10 +271,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           if (currentOptions.contains(result)) {
             _selectedPalletOrBoxId = result;
             _palletOrBoxController.text = result;
-            successMessage = "${_selectedMode.displayName} QR ile seçildi: $result";
+            successMessage = tr('goods_receiving.success.item_added', namedArgs: {'product': result});
             found = true;
           } else {
-            _showErrorSnackBar("Taranan QR ($result) geçerli bir ${_selectedMode.displayName} seçeneği değil.");
+            _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_pallet', namedArgs: {
+              'qr': result,
+              'mode': _selectedMode.displayName,
+            }));
             _selectedPalletOrBoxId = null; // Clear state variable
             _palletOrBoxController.clear(); // Clear text field
           }
@@ -284,10 +289,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           if (matchedProduct != ProductInfo.empty) {
             _selectedProduct = matchedProduct;
             _productController.text = "${matchedProduct.name} (${matchedProduct.stockCode})";
-            successMessage = "Ürün QR ile seçildi: ${matchedProduct.name}";
+            successMessage = tr('goods_receiving.success.item_added', namedArgs: {'product': matchedProduct.name});
             found = true;
           } else {
-            _showErrorSnackBar("Taranan QR ($result) geçerli bir ürün seçeneği değil.");
+            _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_product', namedArgs: {'qr': result}));
             _selectedProduct = null; // Clear state variable
             _productController.clear(); // Clear text field
           }
@@ -373,7 +378,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     TextField(
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Ara...',
+                        hintText: tr('goods_receiving.search_hint'),
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(borderRadius: _borderRadius),
                       ),
@@ -386,7 +391,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     const SizedBox(height: _gap),
                     Expanded(
                       child: filteredItems.isEmpty
-                          ? const Center(child: Text("Sonuç bulunamadı"))
+                          ? Center(child: Text('goods_receiving.search_no_result'.tr()))
                           : ListView.builder(
                         shrinkWrap: true,
                         itemCount: filteredItems.length,
@@ -406,7 +411,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
               actions: <Widget>[
                 TextButton(
-                  child: const Text('İptal'),
+                  child: Text('common.cancel'.tr()),
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                   },
@@ -426,7 +431,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mal Kabul'),
+        title: Text('goods_receiving.title'.tr()),
         centerTitle: true,
       ),
       resizeToAvoidBottomInset: true,
@@ -438,7 +443,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         child: ElevatedButton.icon(
           onPressed: _addedItems.isEmpty ? null : _onConfirmSave,
           icon: const Icon(Icons.check_circle_outline),
-          label: const Text('Kaydet ve Onayla'),
+          label: Text('goods_receiving.save_and_confirm'.tr()),
           style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
               shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -479,9 +484,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<ReceiveMode>(
-        segments: const [
-          ButtonSegment(value: ReceiveMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
-          ButtonSegment(value: ReceiveMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
+        segments: [
+          ButtonSegment(value: ReceiveMode.palet, label: Text('receive_mode.palet'.tr()), icon: const Icon(Icons.pallet)),
+          ButtonSegment(value: ReceiveMode.kutu, label: Text('receive_mode.kutu'.tr()), icon: const Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_selectedMode},
         onSelectionChanged: (Set<ReceiveMode> newSelection) {
@@ -495,7 +500,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               _formKey.currentState?.reset();
             });
             _showSuccessSnackBar(
-                "${_selectedMode.displayName} moduna geçildi. Liste temizlendi.");
+                'goods_receiving.mode_switched'.tr(namedArgs: {'mode': _selectedMode.displayName}));
           }
         },
         style: SegmentedButton.styleFrom(
@@ -513,11 +518,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       child: TextFormField(
         controller: _invoiceController,
         readOnly: true,
-        decoration: _inputDecoration('İrsaliye Seç', filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
+        decoration: _inputDecoration('goods_receiving.select_invoice'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
         onTap: () async {
           final String? selected = await _showSearchableDropdownDialog<String>(
             context: context,
-            title: 'İrsaliye Seç',
+            title: 'goods_receiving.select_invoice'.tr(),
             items: _availableInvoices,
             itemToString: (item) => item,
             filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
@@ -530,14 +535,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             });
           }
         },
-        validator: (value) => (value == null || value.isEmpty) ? 'Lütfen bir irsaliye seçin.' : null,
+        validator: (value) => (value == null || value.isEmpty) ? 'goods_receiving.errors.select_invoice'.tr() : null,
         autovalidateMode: AutovalidateMode.onUserInteraction,
       ),
     );
   }
 
   Widget _buildSearchablePalletOrBoxInputRow() {
-    final label = _selectedMode == ReceiveMode.palet ? 'Palet Seç' : 'Kutu Seç';
+    final label = _selectedMode == ReceiveMode.palet
+        ? tr('goods_receiving.select_pallet')
+        : tr('goods_receiving.select_box');
     final currentOptions = _selectedMode == ReceiveMode.palet ? _availablePallets : _availableBoxes;
 
     return SizedBox(
@@ -565,7 +572,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   });
                 }
               },
-              validator: (value) => (value == null || value.isEmpty) ? 'Lütfen bir $label.' : null,
+              validator: (value) => (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_pallet') : null,
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
@@ -588,11 +595,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             child: TextFormField(
               controller: _productController,
               readOnly: true,
-              decoration: _inputDecoration('Ürün Seç', filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
+              decoration: _inputDecoration('goods_receiving.select_product'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
               onTap: () async {
                 final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
                   context: context,
-                  title: 'Ürün Seç',
+                  title: 'goods_receiving.select_product'.tr(),
                   items: _availableProducts,
                   itemToString: (product) => "${product.name} (${product.stockCode})",
                   filterCondition: (product, query) =>
@@ -607,7 +614,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   });
                 }
               },
-              validator: (value) => (value == null || value.isEmpty) ? 'Lütfen bir ürün seçin.' : null,
+              validator: (value) => (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_product') : null,
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
@@ -627,12 +634,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         controller: _quantityController,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: _inputDecoration('Miktar Girin'),
+        decoration: _inputDecoration('goods_receiving.enter_qty'.tr()),
         validator: (value) {
-          if (value == null || value.isEmpty) return 'Miktar girin.';
+          if (value == null || value.isEmpty) return tr('goods_receiving.enter_qty');
           final number = int.tryParse(value);
-          if (number == null) return 'Lütfen sayı girin.';
-          if (number <= 0) return 'Miktar 0\'dan büyük olmalı.';
+          if (number == null) return tr('goods_receiving.errors.invalid_qty');
+          if (number <= 0) return tr('goods_receiving.errors.invalid_qty');
           return null;
         },
         autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -646,7 +653,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       child: ElevatedButton.icon(
         onPressed: _isSaving ? null : _addItemToList,
         icon: const Icon(Icons.add_circle_outline),
-        label: const Text('Listeye Ekle'),
+        label: Text('goods_receiving.add_to_list'.tr()),
         style: ElevatedButton.styleFrom(
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -668,7 +675,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
-              'Eklenen Kalemler (${_addedItems.length})',
+              tr('goods_receiving.items_added', namedArgs: {'count': _addedItems.length.toString()}),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
@@ -679,7 +686,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Text(
-                  'Henüz listeye kalem eklenmedi veya liste temizlendi.',
+                  'goods_receiving.no_items'.tr(),
                   style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
                   textAlign: TextAlign.center,
                 ),
@@ -697,16 +704,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   child: ListTile(
                     title: Text("${item.product.name} (${item.product.stockCode})", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
                     subtitle: Text(
-                        '${_selectedMode.displayName}: ${item.palletOrBoxId}\nİrsaliye: ${_selectedInvoice ?? 'Belirtilmedi'}'),
+                        '${_selectedMode.displayName}: ${item.palletOrBoxId}\n${'goods_receiving.select_invoice'.tr()}: ${_selectedInvoice ?? tr('goods_receiving.not_specified')}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('${item.quantity} Adet', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
+                        Text(tr('goods_receiving.qty_unit', namedArgs: {'qty': item.quantity.toString()}), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
                         const SizedBox(width: _smallGap),
                         IconButton(
                           icon: Icon(Icons.delete_outline, color: Colors.redAccent[700]),
                           onPressed: () => _removeItemFromList(index),
-                          tooltip: 'Bu Kalemi Sil',
+                          tooltip: 'goods_receiving.delete_item'.tr(),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),

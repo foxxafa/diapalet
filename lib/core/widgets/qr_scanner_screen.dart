@@ -33,7 +33,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('QR Kodu Tara'),
+        title: Text('qr_scanner.title'.tr()),
         actions: [
           /// Flaş düğmesi – state.torchState
           ValueListenableBuilder<MobileScannerState>(
@@ -118,9 +118,9 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                 color: Colors.black.withAlpha((255 * 0.5).round()),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: const Text(
-                'QR kodu çerçevenin içine getirin',
-                style: TextStyle(color: Colors.white, fontSize: 15),
+              child: Text(
+                'qr_scanner.tip'.tr(),
+                style: const TextStyle(color: Colors.white, fontSize: 15),
                 textAlign: TextAlign.center,
               ),
             ),
