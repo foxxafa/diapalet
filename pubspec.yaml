@@ -20,6 +20,7 @@ dependencies:
   path: ^1.8.3
   connectivity_plus: ^6.0.0
   uuid: ^3.0.7
+  easy_localization: ^3.0.4
 
 dev_dependencies:
   flutter_test:
@@ -30,3 +31,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/lang/

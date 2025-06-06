@@ -16,6 +16,7 @@ import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignme
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -27,7 +28,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dia Palet Takip'),
+        title: Text('home.title'.tr()),
         centerTitle: true,
       ),
       body: Padding(
@@ -39,7 +40,7 @@ class HomeScreen extends StatelessWidget {
             if (isDebug) ...[
               ElevatedButton.icon(
                 icon: const Icon(Icons.delete_forever, color: Colors.red),
-                label: const Text('Reset Database'),
+                label: Text('home.reset_db'.tr()),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.red,
@@ -52,7 +53,7 @@ class HomeScreen extends StatelessWidget {
                   await DatabaseHelper().resetDatabase();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Database reset complete')),
+                      SnackBar(content: Text('home.db_reset_complete'.tr())),
                     );
                   }
                 },
@@ -60,7 +61,7 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 icon: const Icon(Icons.bug_report, color: Colors.deepPurple),
-                label: const Text('Populate Test Data'),
+                label: Text('home.populate_test'.tr()),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.yellow[100],
                   foregroundColor: Colors.black,
@@ -73,7 +74,7 @@ class HomeScreen extends StatelessWidget {
                   await populateTestData();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Test data populated')),
+                      SnackBar(content: Text('home.test_data_populated'.tr())),
                     );
                   }
                 },
@@ -82,7 +83,7 @@ class HomeScreen extends StatelessWidget {
             ],
             _HomeButton(
               icon: Icons.input_outlined,
-              label: "Mal Kabul",
+              label: 'home.goods_receiving'.tr(),
               onTap: () {
                 Navigator.push(
                   context,
@@ -102,7 +103,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 24),
             _HomeButton(
               icon: Icons.warehouse_outlined,
-              label: "Palet/Kutu Taşıma",
+              label: 'home.pallet_transfer'.tr(),
               onTap: () {
                 Navigator.push(
                   context,
@@ -121,6 +122,35 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (_) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: Text('language.turkish'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('tr'));
+                    Navigator.pop(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: Text('language.english'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('en'));
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+        child: const Icon(Icons.language),
       ),
     );
   }

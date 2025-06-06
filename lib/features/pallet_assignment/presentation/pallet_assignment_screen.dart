@@ -2,6 +2,7 @@
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 // Corrected entity and repository imports using your project name 'diapalet'
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
@@ -101,7 +102,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       });
       await _loadContainerIdsForLocation();
     } catch (e) {
-      if (mounted) _showSnackBar("Veri yüklenirken hata: ${e.toString()}", isError: true);
+      if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
     }
@@ -131,7 +132,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         });
       }
     } catch (e) {
-      if (mounted) _showSnackBar("ID'ler yüklenemedi: ${e.toString()}", isError: true);
+      if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
       if (mounted) setState(() => _isLoadingContainerIds = false);
     }
@@ -141,7 +142,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     FocusScope.of(context).unfocus();
     final containerId = _scannedContainerIdController.text.trim();
     if (containerId.isEmpty) {
-      _showSnackBar("${_selectedMode.displayName} ID boş olamaz.", isError: true);
+      _showSnackBar(tr('pallet_assignment.container_empty', namedArgs: {
+        'mode': _selectedMode.displayName
+      }), isError: true);
       return;
     }
     if (!mounted) return;
@@ -161,11 +164,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           _transferQuantityController.clear();
         }
         if (contents.isEmpty && containerId.isNotEmpty) {
-          _showSnackBar("$containerId ID'li ${_selectedMode.displayName} bulunamadı veya içi boş.", isError: true);
+          _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
+            'mode': _selectedMode.displayName
+          }), isError: true);
         }
       });
     } catch (e) {
-      if (mounted) _showSnackBar("İçerik yüklenirken hata: ${e.toString()}", isError: true);
+      if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
     }
@@ -207,17 +212,17 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             _sourceLocationController.text = result;
             _scannedContainerIdController.clear();
           });
-          successMessage = "Kaynak QR ile seçildi: $result";
+          successMessage = tr('pallet_assignment.qr_source_selected', namedArgs: {'val': result});
           found = true;
           await _loadContainerIdsForLocation();
         } else {
-          _showSnackBar("Taranan QR ($result) geçerli bir Kaynak Lokasyonu değil.", isError: true);
+          _showSnackBar(tr('pallet_assignment.invalid_source_qr', namedArgs: {'qr': result}), isError: true);
         }
       } else if (fieldIdentifier == 'scannedId') {
         setState(() {
           _scannedContainerIdController.text = result;
         });
-        successMessage = "${_selectedMode.displayName} ID QR ile okundu: $result";
+        successMessage = tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result});
         found = true;
         await _fetchContainerContents();
       } else if (fieldIdentifier == 'target') {
@@ -226,10 +231,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             _selectedTargetLocation = result;
             _targetLocationController.text = result;
           });
-          successMessage = "Hedef QR ile seçildi: $result";
+          successMessage = tr('pallet_assignment.qr_target_selected', namedArgs: {'val': result});
           found = true;
         } else {
-          _showSnackBar("Taranan QR ($result) geçerli bir Hedef Lokasyonu değil.", isError: true);
+          _showSnackBar(tr('pallet_assignment.invalid_target_qr', namedArgs: {'qr': result}), isError: true);
         }
       }
       if (found && successMessage.isNotEmpty) _showSnackBar(successMessage);
@@ -240,14 +245,14 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _showSnackBar("Lütfen tüm zorunlu alanları doldurun ve hataları düzeltin.", isError: true);
+      _showSnackBar(tr('pallet_assignment.form_invalid'), isError: true);
       return;
     }
 
     List<TransferItemDetail> itemsToTransferDetails;
     if (_selectedMode == AssignmentMode.kutu) {
       if (_productsInContainer.isEmpty) {
-        _showSnackBar("Kaynak ${_selectedMode.displayName} için ürün bulunamadı.", isError: true);
+        _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
         return;
       }
       final product = _productsInContainer.first; // Kutu modunda listede tek ürün olmalı
@@ -255,12 +260,12 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
       // Transfer edilecek miktar sıfırdan büyük olmalı
       if (qty <= 0) {
-        _showSnackBar("Transfer miktarı 0'dan büyük olmalıdır.", isError: true);
+        _showSnackBar(tr('pallet_assignment.amount_positive'), isError: true);
         return;
       }
       // Transfer edilecek miktar mevcut miktarı aşmamalı
       if (qty > product.currentQuantity) {
-        _showSnackBar("Transfer miktarı mevcut miktarı (${product.currentQuantity}) aşamaz.", isError: true);
+        _showSnackBar(tr('pallet_assignment.amount_max', namedArgs: {'max': product.currentQuantity.toString()}), isError: true);
         return;
       }
 
@@ -286,7 +291,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
 
     if (itemsToTransferDetails.isEmpty) {
-      _showSnackBar("Kaynak ${_selectedMode.displayName} için transfer edilecek ürün bulunamadı.", isError: true);
+      _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
       return;
     }
 
@@ -306,15 +311,15 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       if (mounted) {
         String msg;
         if (_selectedMode == AssignmentMode.kutu && _productsInContainer.isNotEmpty) {
-          msg = "${_productsInContainer.first.name} kutu transferi kaydedildi";
+          msg = tr('pallet_assignment.transfer_saved_box', namedArgs: {'product': _productsInContainer.first.name});
         } else {
-          msg = "${_selectedMode.displayName} transferi başarıyla kaydedildi!";
+          msg = tr('pallet_assignment.transfer_saved', namedArgs: {'mode': _selectedMode.displayName});
         }
         _showSnackBar(msg);
         _resetForm(resetAll: true);
       }
     } catch (e) {
-      if (mounted) _showSnackBar("Kaydetme sırasında hata: ${e.toString()}", isError: true);
+      if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -399,7 +404,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     TextField(
                       autofocus: true,
                       decoration: InputDecoration(
-                        hintText: 'Ara...',
+                        hintText: tr('goods_receiving.search_hint'),
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(borderRadius: _borderRadius),
                       ),
@@ -412,7 +417,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     const SizedBox(height: _gap),
                     Expanded(
                       child: filteredItems.isEmpty
-                          ? const Center(child: Text("Sonuç bulunamadı"))
+                          ? Center(child: Text('goods_receiving.search_no_result'.tr()))
                           : ListView.builder(
                         shrinkWrap: true,
                         itemCount: filteredItems.length,
@@ -432,7 +437,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               ),
               actions: <Widget>[
                 TextButton(
-                  child: const Text('İptal'),
+                  child: Text('common.cancel'.tr()),
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                   },
@@ -453,7 +458,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Palet/Kutu Taşıma'),
+        title: Text('pallet_assignment.title'.tr()),
         centerTitle: true,
       ),
       resizeToAvoidBottomInset: true,
@@ -467,7 +472,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           icon: _isSaving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.save_alt_outlined),
-          label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet'),
+          label: Text(_isSaving ? 'pallet_assignment.saving'.tr() : 'pallet_assignment.save'.tr()),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -489,7 +494,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 const SizedBox(height: _gap),
                 _buildSearchableDropdownWithQr(
                     controller: _sourceLocationController,
-                    label: 'Kaynak Lokasyon Seç',
+                    label: tr('pallet_assignment.select_source'),
                     value: _selectedSourceLocation,
                     items: _availableSourceLocations,
                     onSelected: (val) {
@@ -504,7 +509,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     },
                     onQrTap: () => _scanQrAndUpdateField('source'),
                     validator: (val) {
-                      if (val == null || val.isEmpty) return 'Kaynak lokasyon seçimi zorunludur.';
+                      if (val == null || val.isEmpty) return tr('pallet_assignment.source_required');
                       return null;
                     }
                 ),
@@ -531,7 +536,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: _gap),
-                            child: Center(child: Text("${_scannedContainerIdController.text} ID'li ${_selectedMode.displayName} için ürün bulunamadı veya ID henüz getirilmedi.", textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
+                          child: Center(child: Text(tr('pallet_assignment.no_items_for_id', namedArgs: {'id': _scannedContainerIdController.text, 'mode': _selectedMode.displayName}), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
                           ),
                         )
                       else
@@ -539,7 +544,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                       const SizedBox(height: _gap),
                       _buildSearchableDropdownWithQr(
                           controller: _targetLocationController,
-                          label: 'Hedef Lokasyon Seç',
+                          label: tr('pallet_assignment.select_target'),
                           value: _selectedTargetLocation,
                           items: _availableTargetLocations,
                           onSelected: (val) {
@@ -552,7 +557,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           },
                           onQrTap: () => _scanQrAndUpdateField('target'),
                           validator: (val) {
-                            if (val == null || val.isEmpty) return 'Hedef lokasyon seçimi zorunludur.';
+                            if (val == null || val.isEmpty) return tr('pallet_assignment.target_required');
                             return null;
                           }
                       ),
@@ -570,9 +575,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<AssignmentMode>(
-        segments: const [
-          ButtonSegment(value: AssignmentMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
-          ButtonSegment(value: AssignmentMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
+        segments: [
+          ButtonSegment(value: AssignmentMode.palet, label: Text('assignment_mode.palet'.tr()), icon: const Icon(Icons.pallet)),
+          ButtonSegment(value: AssignmentMode.kutu, label: Text('assignment_mode.kutu'.tr()), icon: const Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_selectedMode},
         onSelectionChanged: (Set<AssignmentMode> newSelection) {
@@ -644,7 +649,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildScannedIdSection() {
     return _buildSearchableDropdownWithQr(
       controller: _scannedContainerIdController,
-      label: '${_selectedMode.displayName} ID Seç',
+      label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
       value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
       items: _availableContainerIds,
       itemLabelBuilder: (id) =>
@@ -664,7 +669,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       onQrTap: () => _scanQrAndUpdateField('scannedId'),
       validator: (value) {
         if (value == null || value.isEmpty) {
-          return '${_selectedMode.displayName} ID boş olamaz.';
+          return tr('pallet_assignment.container_empty', namedArgs: {'mode': _selectedMode.displayName});
         }
         return null;
       },
@@ -690,8 +695,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
               isBox
-                  ? "${_scannedContainerIdController.text} İçeriği:"
-                  : "${_scannedContainerIdController.text} İçeriği (${_productsInContainer.length} ürün):",
+                  ? tr('pallet_assignment.content_of', namedArgs: {'id': _scannedContainerIdController.text})
+                  : tr('pallet_assignment.content_of_count', namedArgs: {
+                      'id': _scannedContainerIdController.text,
+                      'count': _productsInContainer.length.toString()
+                    }),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
@@ -701,7 +709,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                 ? Padding(
               padding: const EdgeInsets.all(_gap),
               child: Center(
-                  child: Text("${_selectedMode.displayName} içeriği boş.",
+                  child: Text(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}),
                       style: TextStyle(color: Theme.of(context).hintColor))),
             )
                 : isBox && boxProduct != null
@@ -720,7 +728,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                                 .textTheme
                                 .titleSmall
                                 ?.copyWith(fontWeight: FontWeight.w500)),
-                        Text("Mevcut: ${boxProduct.currentQuantity}",
+                        Text(tr('pallet_assignment.current_qty', namedArgs: {'qty': boxProduct.currentQuantity.toString()}),
                             style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),
@@ -731,17 +739,17 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                     child: TextFormField(
                       controller: _transferQuantityController,
                       keyboardType: TextInputType.number,
-                      decoration: _inputDecoration('Miktar', filled: true),
+                      decoration: _inputDecoration('pallet_assignment.amount'.tr(), filled: true),
                       validator: (value) {
                         if (!isBox) return null;
                         if (value == null || value.isEmpty) {
-                          return 'Miktar gerekli';
+                          return tr('pallet_assignment.amount_required');
                         }
                         final qty = int.tryParse(value);
-                        if (qty == null) return 'Geçersiz';
-                        if (qty <= 0) return 'Miktar > 0 olmalı';
+                        if (qty == null) return tr('pallet_assignment.amount_invalid');
+                        if (qty <= 0) return tr('pallet_assignment.amount_positive');
                         if (boxProduct.currentQuantity < qty ) { // Check against the current quantity of the product in the box
-                          return 'En fazla ${boxProduct.currentQuantity}';
+                          return tr('pallet_assignment.amount_max', namedArgs: {'max': boxProduct.currentQuantity.toString()});
                         }
                         return null;
                       },
@@ -774,7 +782,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                                     .textTheme
                                     .titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w500)),
-                            Text("Miktar: ${product.currentQuantity}",
+                            Text(tr('pallet_assignment.current_qty', namedArgs: {'qty': product.currentQuantity.toString()}),
                                 style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),

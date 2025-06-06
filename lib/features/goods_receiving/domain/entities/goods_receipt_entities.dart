@@ -1,18 +1,12 @@
 // features/goods_receiving/domain/entities/goods_receipt_entities.dart
 import 'package:uuid/uuid.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'product_info.dart';
 
 enum ReceiveMode { palet, kutu }
 
 extension ReceiveModeExtension on ReceiveMode {
-  String get displayName {
-    switch (this) {
-      case ReceiveMode.palet:
-        return 'Palet';
-      case ReceiveMode.kutu:
-        return 'Kutu';
-    }
-  }
+  String get displayName => tr('receive_mode.${name}');
 }
 
 class GoodsReceipt {

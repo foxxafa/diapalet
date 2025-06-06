@@ -1,0 +1,102 @@
+{
+  "app": {
+    "title": "Diapalet"
+  },
+  "language": {
+    "turkish": "Türkçe",
+    "english": "İngilizce"
+  },
+  "home": {
+    "title": "Dia Palet Takip",
+    "reset_db": "Veritabanını Sıfırla",
+    "db_reset_complete": "Veritabanı sıfırlandı",
+    "populate_test": "Test Verisi Yükle",
+    "test_data_populated": "Test verisi yüklendi",
+    "goods_receiving": "Mal Kabul",
+    "pallet_transfer": "Palet/Kutu Taşıma"
+  },
+  "receive_mode": {
+    "palet": "Palet",
+    "kutu": "Kutu"
+  },
+  "assignment_mode": {
+    "palet": "Palet",
+    "kutu": "Kutu"
+  },
+  "goods_receiving": {
+    "title": "Mal Kabul",
+    "select_invoice": "İrsaliye Seç",
+    "select_pallet": "Palet Seç",
+    "select_box": "Kutu Seç",
+    "select_product": "Ürün Seç",
+    "enter_qty": "Miktar Girin",
+    "add_to_list": "Listeye Ekle",
+    "items_added": "Eklenen Kalemler ({count})",
+    "no_items": "Henüz listeye kalem eklenmedi veya liste temizlendi.",
+    "delete_item": "Bu Kalemi Sil",
+    "not_specified": "Belirtilmedi",
+    "qty_unit": "{qty} Adet",
+    "mode_switched": "{mode} moduna geçildi. Liste temizlendi.",
+    "confirm_title": "Onay",
+    "confirm_message": "{count} kalem ürün sisteme kaydedilecek. Emin misiniz?",
+    "save_and_confirm": "Kaydet ve Onayla",
+    "errors": {
+      "load_initial": "Başlangıç verileri yüklenirken hata: {error}",
+      "required_fields": "Lütfen ürün eklemek için tüm zorunlu alanları (Palet/Kutu, Ürün, Miktar) doğru doldurun.",
+      "invalid_pallet": "Lütfen geçerli bir Palet/Kutu seçin veya okutun (seçim yapılmamış).",
+      "empty_pallet": "Palet/Kutu ID boş olamaz.",
+      "invalid_product": "Lütfen geçerli bir Ürün seçin veya okutun (seçim yapılmamış).",
+      "invalid_qty": "Miktar geçersiz veya sayısal değil.",
+      "no_items": "Kaydedilecek ürün bulunmuyor.",
+      "select_invoice": "Lütfen bir irsaliye seçin.",
+      "save_error": "Kaydetme sırasında hata: {error}",
+      "invalid_qr_pallet": "Taranan QR ({qr}) geçerli bir {mode} seçeneği değil.",
+      "invalid_qr_product": "Taranan QR ({qr}) geçerli bir ürün seçeneği değil."
+    },
+    "success": {
+      "item_added": "{product} listeye eklendi.",
+      "item_removed": "{product} listeden silindi.",
+      "saved": "Ürünler başarıyla kaydedildi!"
+    },
+    "search_hint": "Ara...",
+    "search_no_result": "Sonuç bulunamadı"
+  },
+  "pallet_assignment": {
+    "title": "Palet/Kutu Taşıma",
+    "save": "Kaydet",
+    "saving": "Kaydediliyor...",
+    "select_source": "Kaynak Lokasyon Seç",
+    "select_target": "Hedef Lokasyon Seç",
+    "source_required": "Kaynak lokasyon seçimi zorunludur.",
+    "target_required": "Hedef lokasyon seçimi zorunludur.",
+    "load_error": "Veri yüklenirken hata: {error}",
+    "form_invalid": "Lütfen tüm zorunlu alanları doldurun ve hataları düzeltin.",
+    "container_select": "{mode} ID Seç",
+    "container_empty": "{mode} ID boş olamaz.",
+    "contents_empty": "{mode} içeriği boş.",
+    "qr_source_selected": "Kaynak QR ile seçildi: {val}",
+    "qr_target_selected": "Hedef QR ile seçildi: {val}",
+    "qr_container_selected": "{mode} ID QR ile okundu: {val}",
+    "invalid_source_qr": "Taranan QR ({qr}) geçerli bir Kaynak Lokasyonu değil.",
+    "invalid_target_qr": "Taranan QR ({qr}) geçerli bir Hedef Lokasyonu değil.",
+    "no_items_for_id": "{id} ID'li {mode} için ürün bulunamadı veya ID henüz getirilemedi.",
+    "content_of": "{id} İçeriği:",
+    "content_of_count": "{id} İçeriği ({count} ürün):",
+    "current_qty": "Miktar: {qty}",
+    "amount": "Miktar",
+    "amount_required": "Miktar gerekli",
+    "amount_invalid": "Geçersiz",
+    "amount_positive": "Miktar > 0 olmalı",
+    "amount_max": "En fazla {max}",
+    "mode_switched": "{mode} moduna geçildi.",
+    "transfer_saved_box": "{product} kutu transferi kaydedildi",
+    "transfer_saved": "{mode} transferi başarıyla kaydedildi!"
+  },
+  "qr_scanner": {
+    "title": "QR Kodu Tara",
+    "tip": "QR kodu çerçevenin içine getirin"
+  },
+  "common": {
+    "cancel": "İptal"
+  }
+}
