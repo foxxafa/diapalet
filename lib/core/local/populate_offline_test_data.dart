@@ -34,7 +34,7 @@ Future<void> populateTestData() async {
     'receipt_id': r1,
     'pallet_or_box_id': 'PALET-001',
     'product_id': 'PROD-A',
-    'product_name': 'Ürün A',
+    'product_name': 'Coca Cola 1L',
     'product_code': 'A100',
     'quantity': 10,
   });
@@ -42,7 +42,7 @@ Future<void> populateTestData() async {
     'receipt_id': r1,
     'pallet_or_box_id': 'PALET-001',
     'product_id': 'PROD-B',
-    'product_name': 'Ürün B',
+    'product_name': 'Pepsi 330ml',
     'product_code': 'B200',
     'quantity': 15,
   });
@@ -58,7 +58,7 @@ Future<void> populateTestData() async {
     'receipt_id': r2,
     'pallet_or_box_id': 'PALET-002',
     'product_id': 'PROD-B',
-    'product_name': 'Ürün B',
+    'product_name': 'Pepsi 330ml',
     'product_code': 'B200',
     'quantity': 20,
   });
@@ -66,7 +66,7 @@ Future<void> populateTestData() async {
     'receipt_id': r2,
     'pallet_or_box_id': 'PALET-002',
     'product_id': 'PROD-C',
-    'product_name': 'Ürün C',
+    'product_name': 'Fanta 1L',
     'product_code': 'C300',
     'quantity': 30,
   });
@@ -82,7 +82,7 @@ Future<void> populateTestData() async {
     'receipt_id': r3,
     'pallet_or_box_id': 'PALET-003',
     'product_id': 'PROD-D',
-    'product_name': 'Ürün D',
+    'product_name': 'Sprite 1.5L',
     'product_code': 'D400',
     'quantity': 12,
   });
@@ -90,7 +90,7 @@ Future<void> populateTestData() async {
     'receipt_id': r3,
     'pallet_or_box_id': 'PALET-003',
     'product_id': 'PROD-A',
-    'product_name': 'Ürün A',
+    'product_name': 'Coca Cola 1L',
     'product_code': 'A100',
     'quantity': 25,
   });
@@ -106,7 +106,7 @@ Future<void> populateTestData() async {
     'receipt_id': b1,
     'pallet_or_box_id': 'BOX-001',
     'product_id': 'PROD-E',
-    'product_name': 'Ürün E',
+    'product_name': 'Coca Cola 1L',
     'product_code': 'E500',
     'quantity': 5,
   });
@@ -122,7 +122,7 @@ Future<void> populateTestData() async {
     'receipt_id': b2,
     'pallet_or_box_id': 'BOX-002',
     'product_id': 'PROD-F',
-    'product_name': 'Ürün F',
+    'product_name': 'Pepsi 330ml',
     'product_code': 'F600',
     'quantity': 8,
   });
@@ -138,7 +138,7 @@ Future<void> populateTestData() async {
     'receipt_id': b3,
     'pallet_or_box_id': 'BOX-003',
     'product_id': 'PROD-C',
-    'product_name': 'Ürün C',
+    'product_name': 'Fanta 1L',
     'product_code': 'C300',
     'quantity': 50,
   });

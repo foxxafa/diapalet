@@ -34,6 +34,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   List<String> _availableContainerIds = [];
   bool _isLoadingContainerIds = false;
+  Map<String, String> _boxIdToName = {}; // boxId -> product name mapping
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
@@ -114,7 +115,21 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     setState(() => _isLoadingContainerIds = true);
     try {
       final ids = await _repo.getContainerIdsAtLocation(_selectedSourceLocation!, _selectedMode);
-      if (mounted) setState(() => _availableContainerIds = ids);
+      Map<String, String> nameMap = {};
+      if (_selectedMode == AssignmentMode.kutu) {
+        for (final id in ids) {
+          final contents = await _repo.getContentsOfContainer(id, _selectedMode);
+          if (contents.isNotEmpty) {
+            nameMap[id] = contents.first.name;
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _availableContainerIds = ids;
+          _boxIdToName = nameMap;
+        });
+      }
     } catch (e) {
       if (mounted) _showSnackBar("ID'ler yüklenemedi: ${e.toString()}", isError: true);
     } finally {
@@ -289,7 +304,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       await _repo.recordTransferOperation(header, itemsToTransferDetails);
 
       if (mounted) {
-        _showSnackBar("${_selectedMode.displayName} transferi başarıyla kaydedildi!");
+        String msg;
+        if (_selectedMode == AssignmentMode.kutu && _productsInContainer.isNotEmpty) {
+          msg = "${_productsInContainer.first.name} kutu transferi kaydedildi";
+        } else {
+          msg = "${_selectedMode.displayName} transferi başarıyla kaydedildi!";
+        }
+        _showSnackBar(msg);
         _resetForm(resetAll: true);
       }
     } catch (e) {
@@ -582,6 +603,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     required String? value,
     required List<String> items,
     required ValueChanged<String?> onSelected,
+    String Function(String)? itemLabelBuilder,
+    bool Function(String, String)? filterFn,
     required VoidCallback onQrTap,
     required FormFieldValidator<String>? validator,
   }) {
@@ -599,8 +622,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                   context: context,
                   title: label,
                   items: items,
-                  itemToString: (item) => item,
-                  filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                  itemToString: (item) => itemLabelBuilder != null ? itemLabelBuilder(item) : item,
+                  filterCondition: (item, query) => filterFn != null
+                      ? filterFn(item, query)
+                      : item.toLowerCase().contains(query.toLowerCase()),
                   initialValue: value,
                 );
                 onSelected(selected);
@@ -622,6 +647,12 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       label: '${_selectedMode.displayName} ID Seç',
       value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
       items: _availableContainerIds,
+      itemLabelBuilder: (id) =>
+          _selectedMode == AssignmentMode.kutu ? (_boxIdToName[id] ?? id) : id,
+      filterFn: (id, query) {
+        final label = _selectedMode == AssignmentMode.kutu ? (_boxIdToName[id] ?? id) : id;
+        return label.toLowerCase().contains(query.toLowerCase());
+      },
       onSelected: (val) async {
         if (mounted) {
           setState(() {

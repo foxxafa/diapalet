@@ -60,7 +60,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           itemToSave.toMap()..remove('id'),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
-        debugPrint("Saved transfer_item for operation_id: $operationId, product: ${item.productCode}, productId: ${item.productId}");
+        debugPrint("Saved transfer_item for operation_id: $operationId, product: ${item.productName} (${item.productCode}), productId: ${item.productId}");
       }
     });
     return operationId;
