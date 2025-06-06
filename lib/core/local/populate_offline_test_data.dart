@@ -52,7 +52,7 @@ Future<void> populateTestData() async {
     'last_updated': now.toIso8601String(),
   });
 
-  // Pallet 2 - 10A21
+  // Pallet 2 - MAL KABUL
   final r2 = await addReceipt('OFFLINE-PAL2', 'INV-PAL2', 'palet');
   await db.insert('goods_receipt_item', {
     'receipt_id': r2,
@@ -72,11 +72,11 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'PALET-002',
-    'location': '10A21',
+    'location': 'MAL KABUL',
     'last_updated': now.toIso8601String(),
   });
 
-  // Pallet 3 - KASA
+  // Pallet 3 - MAL KABUL
   final r3 = await addReceipt('OFFLINE-PAL3', 'INV-PAL3', 'palet');
   await db.insert('goods_receipt_item', {
     'receipt_id': r3,
@@ -96,7 +96,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'PALET-003',
-    'location': 'KASA',
+    'location': 'MAL KABUL',
     'last_updated': now.toIso8601String(),
   });
 
@@ -116,7 +116,7 @@ Future<void> populateTestData() async {
     'last_updated': now.toIso8601String(),
   });
 
-  // Box 2 - KASA
+  // Box 2 - MAL KABUL
   final b2 = await addReceipt('OFFLINE-BOX2', 'INV-BOX2', 'kutu');
   await db.insert('goods_receipt_item', {
     'receipt_id': b2,
@@ -128,11 +128,11 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'BOX-002',
-    'location': 'KASA',
+    'location': 'MAL KABUL',
     'last_updated': now.toIso8601String(),
   });
 
-  // Box 3 - 5C3
+  // Box 3 - MAL KABUL
   final b3 = await addReceipt('OFFLINE-BOX3', 'INV-BOX3', 'kutu');
   await db.insert('goods_receipt_item', {
     'receipt_id': b3,
@@ -144,7 +144,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'BOX-003',
-    'location': '5C3',
+    'location': 'MAL KABUL',
     'last_updated': now.toIso8601String(),
   });
 }

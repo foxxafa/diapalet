@@ -147,4 +147,37 @@ class DatabaseHelper {
     _database = null;
     debugPrint("Database closed.");
   }
+
+  /// Deletes the database file if possible. If deletion fails, all
+  /// tables are cleared as a fallback. The next access to [database]
+  /// will recreate it lazily.
+  Future<void> resetDatabase() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, _dbName);
+
+    try {
+      if (_database != null) {
+        await _database!.close();
+        _database = null;
+      }
+      await deleteDatabase(path);
+      debugPrint('Database file deleted at $path');
+    } catch (e) {
+      debugPrint('Could not delete database file: $e. Clearing tables instead.');
+      final db = await _initDB();
+      await _clearAllTables(db);
+      await db.close();
+    }
+
+    _database = null;
+  }
+
+  Future<void> _clearAllTables(Database db) async {
+    await db.delete('goods_receipt_item');
+    await db.delete('goods_receipt');
+    await db.delete('transfer_item');
+    await db.delete('transfer_operation');
+    await db.delete('container_location');
+    debugPrint('All tables cleared.');
+  }
 }
