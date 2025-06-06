@@ -51,7 +51,8 @@
       "select_invoice": "Lütfen bir irsaliye seçin.",
       "save_error": "Kaydetme sırasında hata: {error}",
       "invalid_qr_pallet": "Taranan QR ({qr}) geçerli bir {mode} seçeneği değil.",
-      "invalid_qr_product": "Taranan QR ({qr}) geçerli bir ürün seçeneği değil."
+      "invalid_qr_product": "Taranan QR ({qr}) geçerli bir ürün seçeneği değil.",
+      "already_received": "{id} ID'li palet/kutu zaten alınmış."
     },
     "success": {
       "item_added": "{product} listeye eklendi.",

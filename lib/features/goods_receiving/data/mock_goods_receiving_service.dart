@@ -110,4 +110,12 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
       _savedReceipts[index].synced = 1;
     }
   }
+
+  @override
+  Future<bool> containerExists(String containerId) async {
+    await Future.delayed(const Duration(milliseconds: 50));
+    return _savedReceiptItems.values
+        .expand((list) => list)
+        .any((item) => item.palletOrBoxId == containerId);
+  }
 }

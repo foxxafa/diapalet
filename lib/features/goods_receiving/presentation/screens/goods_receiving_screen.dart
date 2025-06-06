@@ -30,8 +30,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   String? _selectedInvoice;
   final TextEditingController _invoiceController = TextEditingController();
 
-  List<String> _availablePallets = [];
-  List<String> _availableBoxes = [];
   String? _selectedPalletOrBoxId;
   final TextEditingController _palletOrBoxController = TextEditingController();
 
@@ -77,18 +75,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     try {
       final results = await Future.wait([
         _repository.getInvoices(),
-        _repository.getPalletsForDropdown(),
-        _repository.getBoxesForDropdown(),
         _repository.getProductsForDropdown(),
       ]);
       if (!mounted) return;
 
       setState(() {
         _availableInvoices = List<String>.from(results[0]);
-        _availablePallets = List<String>.from(results[1]);
-        _availableBoxes = List<String>.from(results[2]);
-        _availableProducts = List<ProductInfo>.from(results[3]);
-        _updatePalletOrBoxOptions(setDefault: false);
+        _availableProducts = List<ProductInfo>.from(results[1]);
       });
     } catch (e) {
       if (mounted) {
@@ -102,19 +95,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  void _updatePalletOrBoxOptions({bool setDefault = false}) {
-    setState(() {
-      final currentOptions = _selectedMode == ReceiveMode.palet ? _availablePallets : _availableBoxes;
-      if (setDefault && currentOptions.isNotEmpty) {
-        // Default selection logic can be re-enabled if needed
-        // _selectedPalletOrBoxId = currentOptions.first;
-        // _palletOrBoxController.text = _selectedPalletOrBoxId ?? "";
-      } else if (!currentOptions.contains(_selectedPalletOrBoxId)) {
-        _selectedPalletOrBoxId = null;
-        _palletOrBoxController.clear();
-      }
-    });
-  }
 
   void _resetInputFields({bool resetAll = false}) {
     _productController.clear();
@@ -129,7 +109,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           _selectedMode = ReceiveMode.palet;
           _selectedPalletOrBoxId = null;
           _palletOrBoxController.clear();
-          _updatePalletOrBoxOptions(setDefault: false);
           _addedItems.clear();
           _formKey.currentState?.reset();
         }
@@ -137,7 +116,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  void _addItemToList() {
+  Future<void> _addItemToList() async {
     FocusScope.of(context).unfocus();
 
     // First, validate the form fields (TextFormFields)
@@ -159,6 +138,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     if (_selectedProduct == null) {
       _showErrorSnackBar(tr('goods_receiving.errors.invalid_product'));
+      return;
+    }
+
+    final exists = await _repository.containerExists(_selectedPalletOrBoxId!);
+    if (exists) {
+      _showErrorSnackBar(tr('goods_receiving.errors.already_received', namedArgs: {'id': _selectedPalletOrBoxId!}));
       return;
     }
 
@@ -263,43 +248,31 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       MaterialPageRoute(builder: (context) => const QrScannerScreen()),
     );
     if (result != null && result.isNotEmpty && mounted) {
-      String successMessage = "";
-      bool found = false;
-      setState(() {
-        if (fieldType == 'palletOrBox') {
-          final currentOptions = _selectedMode == ReceiveMode.palet ? _availablePallets : _availableBoxes;
-          if (currentOptions.contains(result)) {
-            _selectedPalletOrBoxId = result;
-            _palletOrBoxController.text = result;
-            successMessage = tr('goods_receiving.success.item_added', namedArgs: {'product': result});
-            found = true;
-          } else {
-            _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_pallet', namedArgs: {
-              'qr': result,
-              'mode': _selectedMode.displayName,
-            }));
-            _selectedPalletOrBoxId = null; // Clear state variable
-            _palletOrBoxController.clear(); // Clear text field
-          }
-        } else if (fieldType == 'product') {
-          final matchedProduct = _availableProducts.firstWhere(
-                (p) => p.id == result || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
-            orElse: () => ProductInfo.empty,
-          );
-          if (matchedProduct != ProductInfo.empty) {
+      if (fieldType == 'palletOrBox') {
+        final exists = await _repository.containerExists(result);
+        if (exists) {
+          _showErrorSnackBar(tr('goods_receiving.errors.already_received', namedArgs: {'id': result}));
+          return;
+        }
+        setState(() {
+          _selectedPalletOrBoxId = result;
+          _palletOrBoxController.text = result;
+        });
+        _showSuccessSnackBar(tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result}));
+      } else if (fieldType == 'product') {
+        final matchedProduct = _availableProducts.firstWhere(
+              (p) => p.id == result || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
+          orElse: () => ProductInfo.empty,
+        );
+        if (matchedProduct != ProductInfo.empty) {
+          setState(() {
             _selectedProduct = matchedProduct;
             _productController.text = "${matchedProduct.name} (${matchedProduct.stockCode})";
-            successMessage = tr('goods_receiving.success.item_added', namedArgs: {'product': matchedProduct.name});
-            found = true;
-          } else {
-            _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_product', namedArgs: {'qr': result}));
-            _selectedProduct = null; // Clear state variable
-            _productController.clear(); // Clear text field
-          }
+          });
+          _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': matchedProduct.name}));
+        } else {
+          _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_product', namedArgs: {'qr': result}));
         }
-      });
-      if (found && mounted && successMessage.isNotEmpty) {
-        _showSuccessSnackBar(successMessage);
       }
     }
   }
@@ -464,7 +437,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 const SizedBox(height: _gap),
                 _buildSearchableInvoiceDropdown(),
                 const SizedBox(height: _gap),
-                _buildSearchablePalletOrBoxInputRow(),
+                _buildPalletOrBoxInputRow(),
                 const SizedBox(height: _gap),
                 _buildSearchableProductInputRow(),
                 const SizedBox(height: _gap),
@@ -493,7 +466,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           if (mounted && newSelection.first != _selectedMode) {
             setState(() {
               _selectedMode = newSelection.first;
-              _updatePalletOrBoxOptions();
               _selectedPalletOrBoxId = null;
               _palletOrBoxController.clear();
               _addedItems.clear();
@@ -541,11 +513,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildSearchablePalletOrBoxInputRow() {
+  Widget _buildPalletOrBoxInputRow() {
     final label = _selectedMode == ReceiveMode.palet
         ? tr('goods_receiving.select_pallet')
         : tr('goods_receiving.select_box');
-    final currentOptions = _selectedMode == ReceiveMode.palet ? _availablePallets : _availableBoxes;
 
     return SizedBox(
       child: Row(
@@ -554,25 +525,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           Expanded(
             child: TextFormField(
               controller: _palletOrBoxController,
-              readOnly: true,
-              decoration: _inputDecoration(label, filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
-              onTap: () async {
-                final String? selected = await _showSearchableDropdownDialog<String>(
-                  context: context,
-                  title: label,
-                  items: currentOptions,
-                  itemToString: (item) => item,
-                  filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                  initialValue: _selectedPalletOrBoxId,
-                );
-                if (selected != null) {
-                  setState(() {
-                    _selectedPalletOrBoxId = selected;
-                    _palletOrBoxController.text = selected;
-                  });
-                }
-              },
-              validator: (value) => (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_pallet') : null,
+              decoration: _inputDecoration(label, filled: true),
+              onChanged: (val) => _selectedPalletOrBoxId = val.trim(),
+              validator: (value) => (value == null || value.isEmpty)
+                  ? tr('goods_receiving.errors.invalid_pallet')
+                  : null,
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),

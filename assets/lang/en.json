@@ -51,7 +51,8 @@
       "select_invoice": "Please select an invoice.",
       "save_error": "Error while saving: {error}",
       "invalid_qr_pallet": "Scanned QR ({qr}) is not a valid {mode} option.",
-      "invalid_qr_product": "Scanned QR ({qr}) is not a valid product option."
+      "invalid_qr_product": "Scanned QR ({qr}) is not a valid product option.",
+      "already_received": "Container {id} already received."
     },
     "success": {
       "item_added": "{product} added to list.",

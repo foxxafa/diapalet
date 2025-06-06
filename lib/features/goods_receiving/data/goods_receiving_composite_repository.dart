@@ -72,6 +72,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<bool> containerExists(String containerId) async {
+    return await localDataSource.containerExists(containerId);
+  }
+
+  @override
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
     bool isOnline = await networkInfo.isConnected;
     GoodsReceipt headerToSave;
