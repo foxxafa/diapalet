@@ -8,6 +8,8 @@ abstract class GoodsReceivingRepository {
   Future<List<String>> getBoxesForDropdown();
   Future<List<ProductInfo>> getProductsForDropdown();
 
+  Future<bool> containerExists(String containerId);
+
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
 
   Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts();

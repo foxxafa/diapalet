@@ -17,6 +17,7 @@ abstract class GoodsReceivingLocalDataSource {
   Future<List<ProductInfo>> getProductsForDropdown();
   // Added missing method signature to the interface
   Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate);
+  Future<bool> containerExists(String containerId);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -180,7 +181,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     final rows = await db.rawQuery('''
       SELECT DISTINCT product_id, product_name, product_code
       FROM goods_receipt_item
-      ORDER BY product_name LIMIT 100 
+      ORDER BY product_name LIMIT 100
     ''');
     return rows
         .map((e) => ProductInfo(
@@ -189,5 +190,17 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
       stockCode: e['product_code'] as String,
     ))
         .toList();
+  }
+
+  @override
+  Future<bool> containerExists(String containerId) async {
+    final db = await dbHelper.database;
+    final rows = await db.query(
+      'container_location',
+      where: 'container_id = ?',
+      whereArgs: [containerId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
   }
 }

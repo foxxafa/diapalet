@@ -72,7 +72,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'PALET-002',
-    'location': 'MAL KABUL',
+    'location': '10A21',
     'last_updated': now.toIso8601String(),
   });
 
@@ -96,7 +96,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'PALET-003',
-    'location': 'MAL KABUL',
+    'location': '5C2',
     'last_updated': now.toIso8601String(),
   });
 
@@ -128,7 +128,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'BOX-002',
-    'location': 'MAL KABUL',
+    'location': '5B3',
     'last_updated': now.toIso8601String(),
   });
 
@@ -144,7 +144,7 @@ Future<void> populateTestData() async {
   });
   await db.insert('container_location', {
     'container_id': 'BOX-003',
-    'location': 'MAL KABUL',
+    'location': 'KASA',
     'last_updated': now.toIso8601String(),
   });
 }
