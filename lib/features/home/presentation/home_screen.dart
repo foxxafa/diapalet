@@ -38,8 +38,29 @@ class HomeScreen extends StatelessWidget {
           children: [
             if (isDebug) ...[
               ElevatedButton.icon(
+                icon: const Icon(Icons.delete_forever, color: Colors.red),
+                label: const Text('Reset Database'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () async {
+                  await DatabaseHelper().resetDatabase();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Database reset complete')),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
                 icon: const Icon(Icons.bug_report, color: Colors.deepPurple),
-                label: const Text("Test Verisi Ekle (Sadece Debug)"),
+                label: const Text('Populate Test Data'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.yellow[100],
                   foregroundColor: Colors.black,
@@ -52,7 +73,7 @@ class HomeScreen extends StatelessWidget {
                   await populateTestData();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Test verisi başarıyla eklendi!")),
+                      const SnackBar(content: Text('Test data populated')),
                     );
                   }
                 },
