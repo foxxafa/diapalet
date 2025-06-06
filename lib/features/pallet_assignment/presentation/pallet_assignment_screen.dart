@@ -36,6 +36,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   List<String> _availableContainerIds = [];
   bool _isLoadingContainerIds = false;
   Map<String, String> _boxIdToName = {}; // boxId -> product name mapping
+  String? _selectedContainerId; // stores the actual container ID
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
   List<ProductItem> _productsInContainer = [];
@@ -62,6 +63,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         setState(() {
           _productsInContainer = [];
           _transferQuantityController.clear();
+          _selectedContainerId = null;
         });
       }
     }
@@ -140,7 +142,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Future<void> _fetchContainerContents() async {
     FocusScope.of(context).unfocus();
-    final containerId = _scannedContainerIdController.text.trim();
+    final containerId = _selectedContainerId ?? '';
     if (containerId.isEmpty) {
       _showSnackBar(tr('pallet_assignment.container_empty', namedArgs: {
         'mode': _selectedMode.displayName
@@ -160,6 +162,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _productsInContainer = contents;
         if (_selectedMode == AssignmentMode.kutu && contents.isNotEmpty) {
           _transferQuantityController.text = contents.first.currentQuantity.toString();
+          _scannedContainerIdController.text = contents.first.name;
+          _boxIdToName[containerId] = contents.first.name;
         } else {
           _transferQuantityController.clear();
         }
@@ -183,6 +187,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       setState(() {
         _productsInContainer = [];
         _transferQuantityController.clear();
+        _selectedContainerId = null;
         if (resetAll) {
           _selectedMode = AssignmentMode.palet;
           _selectedSourceLocation = null;
@@ -211,6 +216,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             _selectedSourceLocation = result;
             _sourceLocationController.text = result;
             _scannedContainerIdController.clear();
+            _selectedContainerId = null;
           });
           successMessage = tr('pallet_assignment.qr_source_selected', namedArgs: {'val': result});
           found = true;
@@ -219,8 +225,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           _showSnackBar(tr('pallet_assignment.invalid_source_qr', namedArgs: {'qr': result}), isError: true);
         }
       } else if (fieldIdentifier == 'scannedId') {
+        _selectedContainerId = result;
         setState(() {
-          _scannedContainerIdController.text = result;
+          _scannedContainerIdController.text =
+              _selectedMode == AssignmentMode.kutu ? (_boxIdToName[result] ?? result) : result;
         });
         successMessage = tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result});
         found = true;
@@ -301,7 +309,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       final header = TransferOperationHeader(
         operationType: _selectedMode,
         sourceLocation: _selectedSourceLocation!,
-        containerId: _scannedContainerIdController.text,
+        containerId: _selectedContainerId ?? '',
         targetLocation: _selectedTargetLocation!,
         transferDate: DateTime.now(),
       );
@@ -503,6 +511,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           _selectedSourceLocation = val;
                           _sourceLocationController.text = val ?? "";
                           _scannedContainerIdController.clear();
+                          _selectedContainerId = null;
                         });
                         _loadContainerIdsForLocation();
                       }
@@ -585,6 +594,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             setState(() {
               _selectedMode = newSelection.first;
               _scannedContainerIdController.clear();
+              _selectedContainerId = null;
               _productsInContainer = [];
               _transferQuantityController.clear();
               _formKey.currentState?.reset();
@@ -650,7 +660,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     return _buildSearchableDropdownWithQr(
       controller: _scannedContainerIdController,
       label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
-      value: _scannedContainerIdController.text.isEmpty ? null : _scannedContainerIdController.text,
+      value: _selectedContainerId,
       items: _availableContainerIds,
       itemLabelBuilder: (id) =>
           _selectedMode == AssignmentMode.kutu ? (_boxIdToName[id] ?? id) : id,
@@ -660,8 +670,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       },
       onSelected: (val) async {
         if (mounted) {
+          _selectedContainerId = val;
           setState(() {
-            _scannedContainerIdController.text = val ?? '';
+            _scannedContainerIdController.text = val == null
+                ? ''
+                : _selectedMode == AssignmentMode.kutu
+                    ? (_boxIdToName[val] ?? val)
+                    : val;
           });
           if (val != null) await _fetchContainerContents();
         }
@@ -695,7 +710,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
               isBox
-                  ? tr('pallet_assignment.content_of', namedArgs: {'id': _scannedContainerIdController.text})
+                  ? tr('pallet_assignment.content_of', namedArgs: {'id': boxProduct?.name ?? _scannedContainerIdController.text})
                   : tr('pallet_assignment.content_of_count', namedArgs: {
                       'id': _scannedContainerIdController.text,
                       'count': _productsInContainer.length.toString()
