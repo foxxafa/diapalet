@@ -101,8 +101,9 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT gri.id, gri.receipt_id, gri.pallet_or_box_id, gri.product_id,
-             p.name AS product_name, p.code AS product_code, gri.quantity
+      SELECT gri.id, gri.receipt_id, gri.product_id,
+             p.name AS product_name, p.code AS product_code,
+             gri.quantity, gri.location
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
       WHERE gri.receipt_id = ?

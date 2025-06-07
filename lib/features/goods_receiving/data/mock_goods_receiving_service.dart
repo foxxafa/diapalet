@@ -44,9 +44,9 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
 
     final newHeader = GoodsReceipt(
       id: _nextReceiptId,
+      externalId: header.externalId,
       invoiceNumber: header.invoiceNumber,
       receiptDate: header.receiptDate,
-      mode: header.mode,
       synced: header.synced,
     );
     _savedReceipts.add(newHeader);
@@ -56,9 +56,9 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
       newItemsWithId.add(GoodsReceiptItem(
         id: _nextItemId++,
         goodsReceiptId: newHeader.id!,
-        palletOrBoxId: item.palletOrBoxId,
         product: item.product,
         quantity: item.quantity,
+        location: item.location,
       ));
     }
     _savedReceiptItems[newHeader.id!] = newItemsWithId;

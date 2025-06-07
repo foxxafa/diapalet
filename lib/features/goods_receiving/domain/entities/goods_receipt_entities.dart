@@ -1,6 +1,5 @@
 // features/goods_receiving/domain/entities/goods_receipt_entities.dart
 import 'package:uuid/uuid.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'product_info.dart';
 
 // Mode concept removed; receipts simply track products at locations
