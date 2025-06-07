@@ -65,7 +65,7 @@ class GoodsReceiptItem {
       'product_id': product.id,
       'quantity': quantity,
       'location': location,
-      'container_id': containerId,
+      'pallet_id': containerId,
     };
   }
 
@@ -83,7 +83,7 @@ class GoodsReceiptItem {
       ),
       quantity: map['quantity'] as int,
       location: map['location'] as String? ?? '',
-      containerId: map['container_id'] as String?,
+      containerId: map['pallet_id'] as String?,
     );
   }
 }
