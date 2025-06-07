@@ -117,14 +117,12 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
     setState(() => _isLoadingContainerIds = true);
     try {
-      final ids = await _repo.getContainerIdsAtLocation(_selectedSourceLocation!, _selectedMode);
+      final ids = await _repo.getProductIdsAtLocation(_selectedSourceLocation!);
       Map<String, String> nameMap = {};
-      if (_selectedMode == AssignmentMode.kutu) {
-        for (final id in ids) {
-          final contents = await _repo.getContentsOfContainer(id, _selectedMode);
-          if (contents.isNotEmpty) {
-            nameMap[id] = contents.first.name;
-          }
+      for (final id in ids) {
+        final info = await _repo.getProductInfo(id, _selectedSourceLocation!);
+        if (info.isNotEmpty) {
+          nameMap[id] = info.first.name;
         }
       }
       if (mounted) {
@@ -155,8 +153,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       _productsInContainer = [];
     });
     try {
-      // Ensure _selectedMode is passed correctly
-      final contents = await _repo.getContentsOfContainer(containerId, _selectedMode);
+      final contents = await _repo.getProductInfo(containerId, _selectedSourceLocation!);
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
@@ -309,7 +306,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       final header = TransferOperationHeader(
         operationType: _selectedMode,
         sourceLocation: _selectedSourceLocation!,
-        containerId: _selectedContainerId ?? '',
         targetLocation: _selectedTargetLocation!,
         transferDate: DateTime.now(),
       );
