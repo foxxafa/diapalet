@@ -32,30 +32,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<String>> getPalletsForDropdown() async {
-    if (await networkInfo.isConnected) {
-      try {
-        return await remoteDataSource.fetchPalletsForDropdown();
-      } catch (e) {
-        debugPrint("API getPalletsForDropdown error: $e. Falling back to local.");
-        return await localDataSource.getPalletIds();
-      }
-    }
-    return await localDataSource.getPalletIds();
-  }
-
-  @override
-  Future<List<String>> getBoxesForDropdown() async {
-    if (await networkInfo.isConnected) {
-      try {
-        return await remoteDataSource.fetchBoxesForDropdown();
-      } catch (e) {
-        debugPrint("API getBoxesForDropdown error: $e. Falling back to local.");
-        return await localDataSource.getBoxIds();
-      }
-    }
-    return await localDataSource.getBoxIds();
-  }
+  // Container based dropdowns removed
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
@@ -69,11 +46,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
     }
     return await localDataSource.getProductsForDropdown();
-  }
-
-  @override
-  Future<bool> containerExists(String containerId) async {
-    return await localDataSource.containerExists(containerId);
   }
 
   @override
@@ -93,7 +65,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             externalId: header.externalId, // Preserve original or newly generated externalId
             invoiceNumber: header.invoiceNumber,
             receiptDate: header.receiptDate,
-            mode: header.mode,
             synced: 1, // Mark as synced
           );
           debugPrint("Goods Receipt data prepared for API, marked as synced.");
@@ -103,7 +74,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             externalId: header.externalId,
             invoiceNumber: header.invoiceNumber,
             receiptDate: header.receiptDate,
-            mode: header.mode,
             synced: 0, // API call failed
           );
           debugPrint("Goods Receipt API call failed, marked as not synced.");
@@ -115,7 +85,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           externalId: header.externalId,
           invoiceNumber: header.invoiceNumber,
           receiptDate: header.receiptDate,
-          mode: header.mode,
           synced: 0, // API error
         );
       }
@@ -126,7 +95,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         externalId: header.externalId,
         invoiceNumber: header.invoiceNumber,
         receiptDate: header.receiptDate,
-        mode: header.mode,
         synced: 0,
       );
       debugPrint("Offline: Goods Receipt marked as not synced.");
@@ -134,11 +102,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     final localId = await localDataSource.saveGoodsReceipt(headerToSave, items);
     debugPrint("Goods Receipt (local id: $localId) saved locally with synced status: ${headerToSave.synced}. ExternalId: ${headerToSave.externalId}");
-
-    final Set<String> uniquePalletOrBoxIds = items.map((item) => item.palletOrBoxId).toSet();
-    for (String pId in uniquePalletOrBoxIds) {
-      await localDataSource.setContainerInitialLocation(pId, "MAL KABUL", headerToSave.receiptDate);
-    }
 
     return localId;
   }
