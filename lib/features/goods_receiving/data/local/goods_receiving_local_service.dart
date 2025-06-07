@@ -13,7 +13,6 @@ abstract class GoodsReceivingLocalDataSource {
   Future<ProductInfo?> getProductInfoById(String productId);
   Future<List<String>> getInvoiceNumbers();
   Future<List<ProductInfo>> getProductsForDropdown();
-  Future<void> updateStock(String productId, String location, int qty);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -21,20 +20,50 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
   GoodsReceivingLocalDataSourceImpl({required this.dbHelper});
 
+  /// Veritabanı transaction'ı veya direkt bağlantı üzerinde stok güncellemesi yapan genel bir metod.
+  /// Hem `db.transaction` bloğu içinden `txn` nesnesi ile hem de direkt `db` nesnesi ile çağrılabilir.
+  Future<void> _updateStock(DatabaseExecutor dbOrTxn, String productId, String location, int qty) async {
+    final existing = await dbOrTxn.query('stock_location',
+        where: 'product_id = ? AND location = ?',
+        whereArgs: [productId, location],
+        limit: 1);
+
+    if (existing.isEmpty) {
+      await dbOrTxn.insert('stock_location', {
+        'product_id': productId,
+        'location': location,
+        'quantity': qty,
+      });
+    } else {
+      final currentQty = existing.first['quantity'] as int? ?? 0;
+      await dbOrTxn.update(
+        'stock_location',
+        {'quantity': currentQty + qty},
+        where: 'id = ?',
+        whereArgs: [existing.first['id']],
+      );
+    }
+  }
+
   @override
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
     final db = await dbHelper.database;
     late int headerId;
+
+    // Tüm veritabanı yazma işlemlerini tek bir transaction içinde toplayarak
+    // veri bütünlüğünü sağlıyor ve kilitlenmeleri önlüyoruz.
     await db.transaction((txn) async {
+      // 1. Mal kabul başlığını (header) veritabanına ekle ve ID'sini al.
       headerId = await txn.insert(
         'goods_receipt',
-        header.toMap()..remove('id'),
+        header.toMap()..remove('id'), // id'yi kaldırarak otomatik artmasını sağlıyoruz.
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      // Assuming externalId is part of GoodsReceipt and its toMap() method
       debugPrint("Saved goods_receipt header with id: $headerId, external_id: ${header.externalId}");
 
+      // 2. Her bir ürün kalemi için işlemleri yap.
       for (var item in items) {
+        // a. Ürün bilgisini 'product' tablosuna ekle (varsa görmezden gel).
         await txn.insert(
           'product',
           {
@@ -45,8 +74,9 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
 
+        // b. Mal kabul kalemini (item) veritabanına ekle.
         final itemMap = {
-          'receipt_id': headerId,
+          'receipt_id': headerId, // Yeni oluşturulan başlık ID'sini kullan.
           'product_id': item.product.id,
           'quantity': item.quantity,
           'location': item.location,
@@ -56,32 +86,22 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           itemMap,
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
-        await updateStock(item.product.id, item.location, item.quantity);
+
+        // c. Stok miktarını, aynı transaction'ı kullanarak güncelle.
+        // ÖNEMLİ DÜZELTME: `_updateStock` metodu artık `DatabaseExecutor` kabul ettiği için `txn` ile çalışır.
+        await _updateStock(txn, item.product.id, item.location, item.quantity);
         debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location: ${item.location}");
       }
     });
     return headerId;
   }
 
-  @override
+  /// Stok güncellemek için kullanılan public metod.
+  /// Kendi başına bir işlem olarak çalışır.
   Future<void> updateStock(String productId, String location, int qty) async {
     final db = await dbHelper.database;
-    final existing = await db.query('stock_location',
-        where: 'product_id = ? AND location = ?',
-        whereArgs: [productId, location],
-        limit: 1);
-    if (existing.isEmpty) {
-      await db.insert('stock_location', {
-        'product_id': productId,
-        'location': location,
-        'quantity': qty,
-      });
-    } else {
-      final current = existing.first['quantity'] as int? ?? 0;
-      await db.update('stock_location', {
-        'quantity': current + qty,
-      }, where: 'id = ?', whereArgs: [existing.first['id']]);
-    }
+    // _updateStock metodu DatabaseExecutor kabul ettiği için 'db' nesnesi ile direkt çalışabilir.
+    await _updateStock(db, productId, location, qty);
   }
 
   @override
@@ -127,6 +147,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   @override
   Future<ProductInfo?> getProductInfoById(String productId) async {
     debugPrint("LocalDataSource: getProductInfoById for $productId (not fully implemented for separate table).");
+    // Gerekirse burada 'product' tablosundan sorgu yapılabilir.
     return null;
   }
 
@@ -138,8 +159,6 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     );
     return rows.map((e) => e['invoice_number'] as String).toList();
   }
-
-  @override
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
@@ -157,5 +176,4 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     ))
         .toList();
   }
-
 }

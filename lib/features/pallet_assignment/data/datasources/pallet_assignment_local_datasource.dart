@@ -1,6 +1,5 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart
 import 'package:sqflite/sqflite.dart';
-import 'package:flutter/foundation.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';

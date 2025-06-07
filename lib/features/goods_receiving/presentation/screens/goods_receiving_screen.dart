@@ -9,6 +9,9 @@ import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/repositories/goods_receiving_repository.dart';
 import '../../../../core/widgets/qr_scanner_screen.dart';
 
+// Palet ve Kutu modları için enum tanımı
+enum ReceivingMode { palet, kutu }
+
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
 
@@ -17,18 +20,25 @@ class GoodsReceivingScreen extends StatefulWidget {
 }
 
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
+  // Sabit lokasyon kuralı: Fiziksel olarak tüm ürünler bu lokasyona girer.
+  static const String _defaultLocation = "MAL KABUL";
+
   late GoodsReceivingRepository _repository;
   bool _isRepoInitialized = false;
   bool _isLoading = true;
   bool _isSaving = false;
 
-  final _formKey = GlobalKey<FormState>(); // For validating inputs before adding to list
+  final _formKey = GlobalKey<FormState>();
+
+  // Yeni state: Palet/Kutu modu
+  ReceivingMode _selectedMode = ReceivingMode.palet;
 
   List<String> _availableInvoices = [];
   String? _selectedInvoice;
   final TextEditingController _invoiceController = TextEditingController();
-  String? _selectedLocation;
-  final TextEditingController _locationController = TextEditingController();
+
+  // Palet ID'si için controller
+  final TextEditingController _palletIdController = TextEditingController();
 
   List<ProductInfo> _availableProducts = [];
   ProductInfo? _selectedProduct;
@@ -61,8 +71,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void dispose() {
     _quantityController.dispose();
     _invoiceController.dispose();
-    _locationController.dispose();
     _productController.dispose();
+    _palletIdController.dispose();
     super.dispose();
   }
 
@@ -97,14 +107,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _productController.clear();
     _quantityController.clear();
     _selectedProduct = null;
+    if(_selectedMode == ReceivingMode.palet) {
+      _palletIdController.clear();
+    }
+
 
     if (mounted) {
       setState(() {
         if (resetAll) {
           _selectedInvoice = null;
           _invoiceController.clear();
-          _selectedLocation = null;
-          _locationController.clear();
           _addedItems.clear();
           _formKey.currentState?.reset();
         }
@@ -115,19 +127,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Future<void> _addItemToList() async {
     FocusScope.of(context).unfocus();
 
-    // First, validate the form fields (TextFormFields)
     if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
       _showErrorSnackBar(tr('goods_receiving.errors.required_fields'));
-      return;
-    }
-
-    // After text field validation, explicitly check if the backing state variables are set.
-    if (_selectedLocation == null) { // Check for null first
-      _showErrorSnackBar(tr('goods_receiving.errors.invalid_location'));
-      return;
-    }
-    if (_selectedLocation!.isEmpty) {
-      _showErrorSnackBar(tr('goods_receiving.errors.invalid_location'));
       return;
     }
 
@@ -136,27 +137,36 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-
-
     final quantity = int.tryParse(_quantityController.text);
-    // The form validator for the quantity field already ensures it's a positive number.
-    if (quantity == null) {
+    if (quantity == null || quantity <= 0) {
       _showErrorSnackBar(tr('goods_receiving.errors.invalid_qty'));
       return;
     }
-    // Validator also checks if quantity <= 0
 
+    // DÜZELTİLEN MANTIK:
+    // Palet modunda, ürünlerin stok konumu paletin barkodudur.
+    // Kutu modunda ise ürünlerin stok konumu varsayılan "MAL KABUL" alanıdır.
+    final String itemLocation = (_selectedMode == ReceivingMode.palet)
+        ? _palletIdController.text
+        : _defaultLocation;
+
+    // Kutu modunda sadece tek çeşit ürün eklenmesine izin ver.
+    if (_selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty) {
+      _showErrorSnackBar("Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.");
+      return;
+    }
+
+    // GoodsReceiptItem nesnesi artık 'palletId' olmadan, sadece 'location' ile oluşturuluyor.
     final newItem = GoodsReceiptItem(
       goodsReceiptId: -1,
       product: _selectedProduct!,
       quantity: quantity,
-      location: _selectedLocation!,
+      location: itemLocation,
     );
 
     if (mounted) {
       setState(() {
         _addedItems.insert(0, newItem);
-        // Reset for next item entry
         _selectedProduct = null;
         _productController.clear();
         _quantityController.clear();
@@ -183,6 +193,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     if (_selectedInvoice == null || _selectedInvoice!.isEmpty) {
       _showErrorSnackBar(tr('goods_receiving.errors.select_invoice'));
+      return;
+    }
+
+    if (_selectedMode == ReceivingMode.palet && _palletIdController.text.isEmpty) {
+      _showErrorSnackBar("Lütfen bir palet barkodu girin veya okutun.");
       return;
     }
 
@@ -237,14 +252,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       context,
       MaterialPageRoute(builder: (context) => const QrScannerScreen()),
     );
-    if (result != null && result.isNotEmpty && mounted) {
-      if (fieldType == 'location') {
+    if (result == null || result.isEmpty || !mounted) return;
+
+    switch (fieldType) {
+      case 'pallet':
         setState(() {
-          _selectedLocation = result;
-          _locationController.text = result;
+          _palletIdController.text = result;
         });
-        _showSuccessSnackBar(tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': 'loc', 'val': result}));
-      } else if (fieldType == 'product') {
+        _showSuccessSnackBar("Palet barkodu okundu: $result");
+        break;
+      case 'product':
         final matchedProduct = _availableProducts.firstWhere(
               (p) => p.id == result || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
           orElse: () => ProductInfo.empty,
@@ -258,9 +275,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         } else {
           _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_product', namedArgs: {'qr': result}));
         }
-      }
+        break;
     }
   }
+
 
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
@@ -290,12 +308,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {bool filled = false, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration(String label, {bool filled = false, Widget? suffixIcon, bool enabled = true}) {
     return InputDecoration(
       labelText: label,
       filled: filled,
       fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
       border: OutlineInputBorder(borderRadius: _borderRadius),
+      enabled: enabled,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
@@ -386,6 +405,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
     final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
+    final bool isKutuModeLocked = _selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -421,14 +441,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
                 _buildSearchableInvoiceDropdown(),
+                if (_selectedMode == ReceivingMode.palet) ...[
+                  const SizedBox(height: _gap),
+                  _buildPalletIdInput(),
+                ],
                 const SizedBox(height: _gap),
-                _buildPalletOrBoxInputRow(),
+                _buildSearchableProductInputRow(isLocked: isKutuModeLocked),
                 const SizedBox(height: _gap),
-                _buildSearchableProductInputRow(),
+                _buildQuantityInput(isLocked: isKutuModeLocked),
                 const SizedBox(height: _gap),
-                _buildQuantityInput(),
-                const SizedBox(height: _gap),
-                _buildAddToListButton(),
+                _buildAddToListButton(isLocked: isKutuModeLocked),
                 const SizedBox(height: _smallGap + 4),
                 Expanded(child: _buildAddedItemsList()),
               ],
@@ -440,7 +462,37 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildModeSelector() {
-    return const SizedBox.shrink();
+    return Center(
+      child: SegmentedButton<ReceivingMode>(
+        segments: const [
+          ButtonSegment(
+              value: ReceivingMode.palet,
+              label: Text('Palet'), // L10n key: 'goods_receiving.modes.pallet'
+              icon: Icon(Icons.pallet)),
+          ButtonSegment(
+              value: ReceivingMode.kutu,
+              label: Text('Kutu'), // L10n key: 'goods_receiving.modes.box'
+              icon: Icon(Icons.inventory_2_outlined)),
+        ],
+        selected: {_selectedMode},
+        onSelectionChanged: (Set<ReceivingMode> newSelection) {
+          if (mounted) {
+            setState(() {
+              _selectedMode = newSelection.first;
+              // Mod değiştiğinde listeyi ve giriş alanlarını temizle
+              _addedItems.clear();
+              _resetInputFields();
+            });
+          }
+        },
+        style: SegmentedButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
+          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+        ),
+      ),
+    );
   }
 
   Widget _buildSearchableInvoiceDropdown() {
@@ -471,27 +523,27 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildPalletOrBoxInputRow() {
-    final label = tr('goods_receiving.select_location');
-
+  Widget _buildPalletIdInput() {
     return SizedBox(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: TextFormField(
-              controller: _locationController,
-              decoration: _inputDecoration(label, filled: true),
-              onChanged: (val) => _selectedLocation = val.trim(),
-              validator: (value) => (value == null || value.isEmpty)
-                  ? tr('goods_receiving.errors.invalid_location')
-                  : null,
+              controller: _palletIdController,
+              decoration: _inputDecoration('Palet Barkodu Girin/Okutun', filled: false),
+              validator: (value) {
+                if (_selectedMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+                  return "Palet barkodu zorunludur.";
+                }
+                return null;
+              },
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
           _QrButton(
-            onTap: () => _scanQrAndUpdateSelection('location'),
+            onTap: () => _scanQrAndUpdateSelection('pallet'),
             size: _fieldHeight,
           ),
         ],
@@ -499,7 +551,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildSearchableProductInputRow() {
+  Widget _buildSearchableProductInputRow({required bool isLocked}) {
     return SizedBox(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,8 +560,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             child: TextFormField(
               controller: _productController,
               readOnly: true,
-              decoration: _inputDecoration('goods_receiving.select_product'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
-              onTap: () async {
+              enabled: !isLocked,
+              decoration: _inputDecoration('goods_receiving.select_product'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down), enabled: !isLocked),
+              onTap: isLocked ? null : () async {
                 final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
                   context: context,
                   title: 'goods_receiving.select_product'.tr(),
@@ -527,28 +580,34 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   });
                 }
               },
-              validator: (value) => (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_product') : null,
+              validator: (value) {
+                if(isLocked) return null;
+                return (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_product') : null;
+              },
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
           _QrButton(
-            onTap: () => _scanQrAndUpdateSelection('product'),
+            onTap: isLocked ? (){} : () => _scanQrAndUpdateSelection('product'),
             size: _fieldHeight,
+            isEnabled: !isLocked,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildQuantityInput() {
+  Widget _buildQuantityInput({required bool isLocked}) {
     return SizedBox(
       child: TextFormField(
         controller: _quantityController,
         keyboardType: TextInputType.number,
+        enabled: !isLocked,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: _inputDecoration('goods_receiving.enter_qty'.tr()),
+        decoration: _inputDecoration('goods_receiving.enter_qty'.tr(), enabled: !isLocked),
         validator: (value) {
+          if (isLocked) return null; // Do not validate if locked
           if (value == null || value.isEmpty) return tr('goods_receiving.enter_qty');
           final number = int.tryParse(value);
           if (number == null) return tr('goods_receiving.errors.invalid_qty');
@@ -560,11 +619,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildAddToListButton() {
+  Widget _buildAddToListButton({required bool isLocked}) {
     return SizedBox(
       height: _fieldHeight,
       child: ElevatedButton.icon(
-        onPressed: _isSaving ? null : _addItemToList,
+        onPressed: isLocked || _isSaving ? null : _addItemToList,
         icon: const Icon(Icons.add_circle_outline),
         label: Text('goods_receiving.add_to_list'.tr()),
         style: ElevatedButton.styleFrom(
@@ -610,14 +669,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               itemCount: _addedItems.length,
               itemBuilder: (context, index) {
                 final item = _addedItems[index];
+                final bool isPalletItem = _selectedMode == ReceivingMode.palet;
+
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
                   elevation: 1.5,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   child: ListTile(
                     title: Text("${item.product.name} (${item.product.stockCode})", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
-                    subtitle: Text(
-                        '${tr('goods_receiving.select_location')}: ${item.location}\n${'goods_receiving.select_invoice'.tr()}: ${_selectedInvoice ?? tr('goods_receiving.not_specified')}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("İrsaliye: ${_selectedInvoice ?? 'N/A'}"),
+                        if (isPalletItem)
+                          Text("Palet: ${item.location}") // Sistem konumu palet barkodudur.
+                        else
+                          Text("Konum: ${item.location}"), // Sistem konumu "MAL KABUL"
+                      ],
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -647,7 +716,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
-  const _QrButton({required this.onTap, required this.size}); // Removed super.key and Key? key
+  final bool isEnabled;
+
+  const _QrButton({required this.onTap, required this.size, this.isEnabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -655,12 +726,21 @@ class _QrButton extends StatelessWidget {
       width: size,
       height: size,
       child: ElevatedButton(
-        onPressed: onTap,
+        onPressed: isEnabled ? onTap : null,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
           backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
           foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+        ).copyWith(
+          backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+                (Set<WidgetState> states) {
+              if (states.contains(WidgetState.disabled)) {
+                return Colors.grey.shade300;
+              }
+              return Theme.of(context).colorScheme.secondaryContainer;
+            },
+          ),
         ),
         child: const Icon(Icons.qr_code_scanner, size: 28),
       ),

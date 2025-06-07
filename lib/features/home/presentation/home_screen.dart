@@ -1,19 +1,7 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/populate_offline_test_data.dart';
-import 'package:diapalet/core/network/network_info.dart';
-import 'package:diapalet/features/goods_receiving/data/goods_receiving_composite_repository.dart';
-import 'package:diapalet/features/goods_receiving/data/local/goods_receiving_local_service.dart';
-import 'package:diapalet/features/goods_receiving/data/remote/goods_receiving_api_service.dart';
-import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
-import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart';
-import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart';
-import 'package:diapalet/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart';
-import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
-
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -24,7 +12,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bool isDebug = kDebugMode; // LINT FIX: prefer_const_declarations
+    const bool isDebug = kDebugMode;
 
     return Scaffold(
       appBar: AppBar(
@@ -50,7 +38,8 @@ class HomeScreen extends StatelessWidget {
                   textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () async {
-                  await DatabaseHelper().resetDatabase();
+                  // Provider'dan DatabaseHelper'ı alıp kullanıyoruz.
+                  await context.read<DatabaseHelper>().resetDatabase();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('home.db_reset_complete'.tr())),
@@ -85,17 +74,11 @@ class HomeScreen extends StatelessWidget {
               icon: Icons.input_outlined,
               label: 'home.goods_receiving'.tr(),
               onTap: () {
+                // Provider artık main.dart'da olduğu için burada tekrar oluşturmaya gerek yok.
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Provider<GoodsReceivingRepository>(
-                      create: (_) => GoodsReceivingRepositoryImpl(
-                        localDataSource: GoodsReceivingLocalDataSourceImpl(dbHelper: DatabaseHelper()),
-                        remoteDataSource: GoodsReceivingRemoteDataSourceImpl(),
-                        networkInfo: NetworkInfoImpl(Connectivity()),
-                      ),
-                      child: const GoodsReceivingScreen(),
-                    ),
+                    builder: (context) => const GoodsReceivingScreen(),
                   ),
                 );
               },
@@ -105,17 +88,11 @@ class HomeScreen extends StatelessWidget {
               icon: Icons.warehouse_outlined,
               label: 'home.pallet_transfer'.tr(),
               onTap: () {
+                // Provider artık main.dart'da olduğu için burada tekrar oluşturmaya gerek yok.
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Provider<PalletAssignmentRepository>(
-                      create: (_) => PalletAssignmentRepositoryImpl(
-                        localDataSource: PalletAssignmentLocalDataSourceImpl(dbHelper: DatabaseHelper()),
-                        remoteDataSource: PalletAssignmentRemoteDataSourceImpl(),
-                        networkInfo: NetworkInfoImpl(Connectivity()),
-                      ),
-                      child: const PalletAssignmentScreen(),
-                    ),
+                    builder: (context) => const PalletAssignmentScreen(),
                   ),
                 );
               },
