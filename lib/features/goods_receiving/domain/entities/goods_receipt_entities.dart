@@ -73,8 +73,6 @@ class GoodsReceiptItem {
       'receipt_id': goodsReceiptId,
       'pallet_or_box_id': palletOrBoxId,
       'product_id': product.id,
-      'product_name': product.name,
-      'product_code': product.stockCode,
       'quantity': quantity,
     };
   }
@@ -89,8 +87,8 @@ class GoodsReceiptItem {
       palletOrBoxId: map['pallet_or_box_id'] as String,
       product: ProductInfo(
         id: map['product_id'] as String,
-        name: map['product_name'] as String,
-        stockCode: map['product_code'] as String,
+        name: map['product_name'] as String? ?? '',
+        stockCode: map['product_code'] as String? ?? '',
       ),
       quantity: map['quantity'] as int,
     );
