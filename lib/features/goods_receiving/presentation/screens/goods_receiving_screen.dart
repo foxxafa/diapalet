@@ -24,14 +24,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   final _formKey = GlobalKey<FormState>(); // For validating inputs before adding to list
 
-  ReceiveMode _selectedMode = ReceiveMode.palet;
-
   List<String> _availableInvoices = [];
   String? _selectedInvoice;
   final TextEditingController _invoiceController = TextEditingController();
-
-  String? _selectedPalletOrBoxId;
-  final TextEditingController _palletOrBoxController = TextEditingController();
+  String? _selectedLocation;
+  final TextEditingController _locationController = TextEditingController();
 
   List<ProductInfo> _availableProducts = [];
   ProductInfo? _selectedProduct;
@@ -64,7 +61,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void dispose() {
     _quantityController.dispose();
     _invoiceController.dispose();
-    _palletOrBoxController.dispose();
+    _locationController.dispose();
     _productController.dispose();
     super.dispose();
   }
@@ -106,9 +103,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         if (resetAll) {
           _selectedInvoice = null;
           _invoiceController.clear();
-          _selectedMode = ReceiveMode.palet;
-          _selectedPalletOrBoxId = null;
-          _palletOrBoxController.clear();
+          _selectedLocation = null;
+          _locationController.clear();
           _addedItems.clear();
           _formKey.currentState?.reset();
         }
@@ -126,13 +122,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
 
     // After text field validation, explicitly check if the backing state variables are set.
-    if (_selectedPalletOrBoxId == null) { // Check for null first
-      _showErrorSnackBar(tr('goods_receiving.errors.invalid_pallet'));
+    if (_selectedLocation == null) { // Check for null first
+      _showErrorSnackBar(tr('goods_receiving.errors.invalid_location'));
       return;
     }
-    // Since _selectedPalletOrBoxId is now confirmed not null, we can safely check if it's empty.
-    if (_selectedPalletOrBoxId!.isEmpty) { // Then check for empty
-      _showErrorSnackBar(tr('goods_receiving.errors.empty_pallet'));
+    if (_selectedLocation!.isEmpty) {
+      _showErrorSnackBar(tr('goods_receiving.errors.invalid_location'));
       return;
     }
 
@@ -141,11 +136,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    final exists = await _repository.containerExists(_selectedPalletOrBoxId!);
-    if (exists) {
-      _showErrorSnackBar(tr('goods_receiving.errors.already_received', namedArgs: {'id': _selectedPalletOrBoxId!}));
-      return;
-    }
+
 
     final quantity = int.tryParse(_quantityController.text);
     // The form validator for the quantity field already ensures it's a positive number.
@@ -157,9 +148,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final newItem = GoodsReceiptItem(
       goodsReceiptId: -1,
-      palletOrBoxId: _selectedPalletOrBoxId!, // Now safe due to the explicit null & empty checks above
-      product: _selectedProduct!,           // Now safe due to the explicit null check above
+      product: _selectedProduct!,
       quantity: quantity,
+      location: _selectedLocation!,
     );
 
     if (mounted) {
@@ -222,7 +213,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         final header = GoodsReceipt(
           invoiceNumber: _selectedInvoice!,
           receiptDate: DateTime.now(),
-          mode: _selectedMode,
         );
         await _repository.saveGoodsReceipt(header, _addedItems);
         if (mounted) {
@@ -248,17 +238,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       MaterialPageRoute(builder: (context) => const QrScannerScreen()),
     );
     if (result != null && result.isNotEmpty && mounted) {
-      if (fieldType == 'palletOrBox') {
-        final exists = await _repository.containerExists(result);
-        if (exists) {
-          _showErrorSnackBar(tr('goods_receiving.errors.already_received', namedArgs: {'id': result}));
-          return;
-        }
+      if (fieldType == 'location') {
         setState(() {
-          _selectedPalletOrBoxId = result;
-          _palletOrBoxController.text = result;
+          _selectedLocation = result;
+          _locationController.text = result;
         });
-        _showSuccessSnackBar(tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result}));
+        _showSuccessSnackBar(tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': 'loc', 'val': result}));
       } else if (fieldType == 'product') {
         final matchedProduct = _availableProducts.firstWhere(
               (p) => p.id == result || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
@@ -455,34 +440,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildModeSelector() {
-    return Center(
-      child: SegmentedButton<ReceiveMode>(
-        segments: [
-          ButtonSegment(value: ReceiveMode.palet, label: Text('receive_mode.palet'.tr()), icon: const Icon(Icons.pallet)),
-          ButtonSegment(value: ReceiveMode.kutu, label: Text('receive_mode.kutu'.tr()), icon: const Icon(Icons.inventory_2_outlined)),
-        ],
-        selected: {_selectedMode},
-        onSelectionChanged: (Set<ReceiveMode> newSelection) {
-          if (mounted && newSelection.first != _selectedMode) {
-            setState(() {
-              _selectedMode = newSelection.first;
-              _selectedPalletOrBoxId = null;
-              _palletOrBoxController.clear();
-              _addedItems.clear();
-              _formKey.currentState?.reset();
-            });
-            _showSuccessSnackBar(
-                'goods_receiving.mode_switched'.tr(namedArgs: {'mode': _selectedMode.displayName}));
-          }
-        },
-        style: SegmentedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildSearchableInvoiceDropdown() {
@@ -514,9 +472,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildPalletOrBoxInputRow() {
-    final label = _selectedMode == ReceiveMode.palet
-        ? tr('goods_receiving.select_pallet')
-        : tr('goods_receiving.select_box');
+    final label = tr('goods_receiving.select_location');
 
     return SizedBox(
       child: Row(
@@ -524,18 +480,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         children: [
           Expanded(
             child: TextFormField(
-              controller: _palletOrBoxController,
+              controller: _locationController,
               decoration: _inputDecoration(label, filled: true),
-              onChanged: (val) => _selectedPalletOrBoxId = val.trim(),
+              onChanged: (val) => _selectedLocation = val.trim(),
               validator: (value) => (value == null || value.isEmpty)
-                  ? tr('goods_receiving.errors.invalid_pallet')
+                  ? tr('goods_receiving.errors.invalid_location')
                   : null,
               autovalidateMode: AutovalidateMode.onUserInteraction,
             ),
           ),
           const SizedBox(width: _smallGap),
           _QrButton(
-            onTap: () => _scanQrAndUpdateSelection('palletOrBox'),
+            onTap: () => _scanQrAndUpdateSelection('location'),
             size: _fieldHeight,
           ),
         ],
@@ -661,7 +617,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   child: ListTile(
                     title: Text("${item.product.name} (${item.product.stockCode})", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
                     subtitle: Text(
-                        '${_selectedMode.displayName}: ${item.palletOrBoxId}\n${'goods_receiving.select_invoice'.tr()}: ${_selectedInvoice ?? tr('goods_receiving.not_specified')}'),
+                        '${tr('goods_receiving.select_location')}: ${item.location}\n${'goods_receiving.select_invoice'.tr()}: ${_selectedInvoice ?? tr('goods_receiving.not_specified')}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

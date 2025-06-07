@@ -12,12 +12,8 @@ abstract class GoodsReceivingLocalDataSource {
   Future<void> markGoodsReceiptAsSynced(int receiptId);
   Future<ProductInfo?> getProductInfoById(String productId);
   Future<List<String>> getInvoiceNumbers();
-  Future<List<String>> getPalletIds();
-  Future<List<String>> getBoxIds();
   Future<List<ProductInfo>> getProductsForDropdown();
-  // Added missing method signature to the interface
-  Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate);
-  Future<bool> containerExists(String containerId);
+  Future<void> updateStock(String productId, String location, int qty);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -49,52 +45,42 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
 
-        await txn.insert(
-          'container',
-          {
-            'container_id': item.palletOrBoxId,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
-
         final itemMap = {
           'receipt_id': headerId,
-          'pallet_or_box_id': item.palletOrBoxId,
           'product_id': item.product.id,
           'quantity': item.quantity,
+          'location': item.location,
         };
         await txn.insert(
           'goods_receipt_item',
           itemMap,
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
-        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, pallet/box: ${item.palletOrBoxId}");
+        await updateStock(item.product.id, item.location, item.quantity);
+        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location: ${item.location}");
       }
     });
     return headerId;
   }
 
   @override
-  Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate) async {
+  Future<void> updateStock(String productId, String location, int qty) async {
     final db = await dbHelper.database;
-    try {
-      await db.insert(
-        'container',
-        {'container_id': containerId},
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-      await db.insert(
-        'container_location',
-        {
-          'container_id': containerId,
-          'location': location,
-          'last_updated': receivedDate.toIso8601String(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      debugPrint("Set initial location for container $containerId to $location.");
-    } catch (e) {
-      debugPrint("Error setting initial location for $containerId: $e");
+    final existing = await db.query('stock_location',
+        where: 'product_id = ? AND location = ?',
+        whereArgs: [productId, location],
+        limit: 1);
+    if (existing.isEmpty) {
+      await db.insert('stock_location', {
+        'product_id': productId,
+        'location': location,
+        'quantity': qty,
+      });
+    } else {
+      final current = existing.first['quantity'] as int? ?? 0;
+      await db.update('stock_location', {
+        'quantity': current + qty,
+      }, where: 'id = ?', whereArgs: [existing.first['id']]);
     }
   }
 
@@ -115,8 +101,9 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT gri.id, gri.receipt_id, gri.pallet_or_box_id, gri.product_id,
-             p.name AS product_name, p.code AS product_code, gri.quantity
+      SELECT gri.id, gri.receipt_id, gri.product_id,
+             p.name AS product_name, p.code AS product_code,
+             gri.quantity, gri.location
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
       WHERE gri.receipt_id = ?
@@ -153,56 +140,6 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   }
 
   @override
-  Future<List<String>> getPalletIds() async {
-    final db = await dbHelper.database;
-    final rows = await db.rawQuery('''
-      SELECT DISTINCT cl.container_id
-      FROM container_location cl
-      LEFT JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
-      LEFT JOIN goods_receipt gr ON gr.id = gri.receipt_id AND gr.mode = ?
-      WHERE cl.location = ? 
-      ORDER BY cl.container_id
-    ''', [ReceiveMode.palet.name, 'MAL KABUL']);
-
-    if (rows.isEmpty) {
-      debugPrint("No pallets found in 'MAL KABUL', trying existing pallet IDs from goods_receipt_item.");
-      final fallbackRows = await db.rawQuery('''
-            SELECT DISTINCT gri.pallet_or_box_id
-            FROM goods_receipt_item gri
-            INNER JOIN goods_receipt gr ON gri.receipt_id = gr.id
-            WHERE gr.mode = ?
-            ORDER BY gri.pallet_or_box_id
-        ''', [ReceiveMode.palet.name]);
-      return fallbackRows.map((e) => e['pallet_or_box_id'] as String).toList();
-    }
-    return rows.map((e) => e['container_id'] as String).toList();
-  }
-
-  @override
-  Future<List<String>> getBoxIds() async {
-    final db = await dbHelper.database;
-    final rows = await db.rawQuery('''
-      SELECT DISTINCT cl.container_id
-      FROM container_location cl
-      LEFT JOIN goods_receipt_item gri ON gri.pallet_or_box_id = cl.container_id
-      LEFT JOIN goods_receipt gr ON gr.id = gri.receipt_id AND gr.mode = ?
-      WHERE cl.location = ? 
-      ORDER BY cl.container_id
-    ''', [ReceiveMode.kutu.name, 'MAL KABUL']);
-
-    if (rows.isEmpty) {
-      debugPrint("No boxes found in 'MAL KABUL', trying existing box IDs from goods_receipt_item.");
-      final fallbackRows = await db.rawQuery('''
-            SELECT DISTINCT gri.pallet_or_box_id
-            FROM goods_receipt_item gri
-            INNER JOIN goods_receipt gr ON gri.receipt_id = gr.id
-            WHERE gr.mode = ?
-            ORDER BY gri.pallet_or_box_id
-        ''', [ReceiveMode.kutu.name]);
-      return fallbackRows.map((e) => e['pallet_or_box_id'] as String).toList();
-    }
-    return rows.map((e) => e['container_id'] as String).toList();
-  }
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
@@ -221,15 +158,4 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         .toList();
   }
 
-  @override
-  Future<bool> containerExists(String containerId) async {
-    final db = await dbHelper.database;
-    final rows = await db.query(
-      'container_location',
-      where: 'container_id = ?',
-      whereArgs: [containerId],
-      limit: 1,
-    );
-    return rows.isNotEmpty;
-  }
 }

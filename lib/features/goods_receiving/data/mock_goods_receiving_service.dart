@@ -9,13 +9,6 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     "INV-MOCK-001", "INV-MOCK-002", "INV-MOCK-003"
   ];
 
-  final List<String> _mockPallets = [
-    "MOCK-PALET-A01", "MOCK-PALET-B02", "MOCK-PALET-C03"
-  ];
-
-  final List<String> _mockBoxes = [
-    "MOCK-KUTU-X1", "MOCK-KUTU-Y2", "MOCK-KUTU-Z3"
-  ];
 
   final List<ProductInfo> _mockProductsForDropdown = [
     ProductInfo(id: "mock_prod_1", name: "Mock Ürün A (Kola)", stockCode: "MOCKA001"),
@@ -36,18 +29,6 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<String>> getPalletsForDropdown() async {
-    debugPrint("MockGoodsReceivingService: Fetching pallets for dropdown.");
-    await Future.delayed(const Duration(milliseconds: 100));
-    return List.from(_mockPallets);
-  }
-
-  @override
-  Future<List<String>> getBoxesForDropdown() async {
-    debugPrint("MockGoodsReceivingService: Fetching boxes for dropdown.");
-    await Future.delayed(const Duration(milliseconds: 100));
-    return List.from(_mockBoxes);
-  }
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
@@ -63,9 +44,9 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
 
     final newHeader = GoodsReceipt(
       id: _nextReceiptId,
+      externalId: header.externalId,
       invoiceNumber: header.invoiceNumber,
       receiptDate: header.receiptDate,
-      mode: header.mode,
       synced: header.synced,
     );
     _savedReceipts.add(newHeader);
@@ -75,9 +56,9 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
       newItemsWithId.add(GoodsReceiptItem(
         id: _nextItemId++,
         goodsReceiptId: newHeader.id!,
-        palletOrBoxId: item.palletOrBoxId,
         product: item.product,
         quantity: item.quantity,
+        location: item.location,
       ));
     }
     _savedReceiptItems[newHeader.id!] = newItemsWithId;
@@ -111,11 +92,4 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     }
   }
 
-  @override
-  Future<bool> containerExists(String containerId) async {
-    await Future.delayed(const Duration(milliseconds: 50));
-    return _savedReceiptItems.values
-        .expand((list) => list)
-        .any((item) => item.palletOrBoxId == containerId);
-  }
 }

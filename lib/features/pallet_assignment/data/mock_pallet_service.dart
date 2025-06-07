@@ -69,27 +69,25 @@ class MockPalletService implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<ProductItem>> getContentsOfContainer(String containerId, AssignmentMode mode) async {
-    debugPrint("MockPalletService: Fetching contents for ${mode.displayName} ID: $containerId");
+  Future<List<ProductItem>> getProductInfo(String productId, String location) async {
+    debugPrint("MockPalletService: Fetching product info for $productId at $location");
     await Future.delayed(const Duration(milliseconds: 300));
 
-    if (_containerContents.containsKey(containerId)) {
-      return List.from(_containerContents[containerId]!);
+    if (_containerContents.containsKey(productId)) {
+      return List.from(_containerContents[productId]!);
     }
-    if (containerId == "PALET-EMPTY" || containerId == "KUTU-EMPTY") return [];
-    debugPrint("MockPalletService: No content found for $containerId, returning empty list.");
+    if (productId == "PALET-EMPTY" || productId == "KUTU-EMPTY") return [];
+    debugPrint("MockPalletService: No content found for $productId, returning empty list.");
     return [];
   }
 
   @override
-  Future<List<String>> getContainerIdsAtLocation(String location, AssignmentMode mode) async {
-    debugPrint("MockPalletService: Fetching container IDs at location: $location for mode: ${mode.displayName}");
+  Future<List<String>> getProductIdsAtLocation(String location) async {
+    debugPrint("MockPalletService: Fetching product IDs at location: $location");
     await Future.delayed(const Duration(milliseconds: 200));
-    if (mode == AssignmentMode.palet) {
-      return _locationContainerPallets[location] ?? [];
-    } else {
-      return _locationContainerBoxes[location] ?? [];
-    }
+    final pallets = _locationContainerPallets[location] ?? [];
+    final boxes = _locationContainerBoxes[location] ?? [];
+    return [...pallets, ...boxes];
   }
 
   @override
@@ -120,7 +118,7 @@ class MockPalletService implements PalletAssignmentRepository {
     _savedTransferItems[newHeader.id!] = newItemsWithCorrectOpId;
 
     debugPrint('Mock Saved Transfer - ID: ${newHeader.id}, Mode: ${newHeader.operationType.displayName}, Synced: ${newHeader.synced}');
-    debugPrint('  Source: ${newHeader.sourceLocation} -> ${newHeader.containerId}');
+    debugPrint('  Source: ${newHeader.sourceLocation}');
     debugPrint('  Target: ${newHeader.targetLocation}');
     debugPrint('  Items (${newItemsWithCorrectOpId.length}):');
     for (var item in newItemsWithCorrectOpId) {
@@ -130,15 +128,15 @@ class MockPalletService implements PalletAssignmentRepository {
     // Eğer kutu transferi ise, kaynak kutudaki miktarı azalt (mock için)
     if (header.operationType == AssignmentMode.kutu && items.isNotEmpty) {
       final transferredItemDetail = items.first;
-      final sourceContainerId = header.containerId;
-      if (_containerContents.containsKey(sourceContainerId)) {
-        final productInSource = _containerContents[sourceContainerId]!.firstWhere(
+      final sourceId = header.sourceLocation;
+      if (_containerContents.containsKey(sourceId)) {
+        final productInSource = _containerContents[sourceId]!.firstWhere(
                 (p) => p.productCode == transferredItemDetail.productCode,
             orElse: () => const ProductItem(id: 'not-found', name: 'Not Found', productCode: 'N/A', currentQuantity: 0) // Dummy item
         );
         if (productInSource.productCode != 'N/A') {
           final newQuantity = productInSource.currentQuantity - transferredItemDetail.quantity;
-          _containerContents[sourceContainerId] = [
+          _containerContents[sourceId] = [
             ProductItem(
                 id: productInSource.id, // Orjinal product id'sini koru
                 name: productInSource.name,
@@ -146,7 +144,7 @@ class MockPalletService implements PalletAssignmentRepository {
                 currentQuantity: newQuantity >= 0 ? newQuantity : 0
             )
           ];
-          debugPrint("Mock Kutu Transferi: Kaynak $sourceContainerId içindeki ${productInSource.name} miktarı ${transferredItemDetail.quantity} azaltıldı. Yeni miktar: ${newQuantity >= 0 ? newQuantity : 0}");
+          debugPrint("Mock Kutu Transferi: Kaynak $sourceId içindeki ${productInSource.name} miktarı ${transferredItemDetail.quantity} azaltıldı. Yeni miktar: ${newQuantity >= 0 ? newQuantity : 0}");
         }
       }
     }
@@ -182,57 +180,6 @@ class MockPalletService implements PalletAssignmentRepository {
     }
   }
 
-  @override
-  Future<void> updateContainerLocation(String containerId, String newLocation) async {
-    debugPrint("MockPalletService: Updating container $containerId location to $newLocation (mock).");
-    // Gerçek DB'de container_location tablosu güncellenir. Mock'ta,
-    // bu durum _containerContents veya ayrı bir lokasyon map'inde yönetilebilir.
-    // Kutu transferleri için bu metodun çağrılmaması gerekir.
-    // Bu metod şimdilik sadece palet tam transferleri için anlamlı.
-    await Future.delayed(const Duration(milliseconds: 100));
-  }
-
-  @override
-  Future<String?> getContainerLocation(String containerId) async {
-    debugPrint("MockPalletService: Getting container $containerId location (mock).");
-    await Future.delayed(const Duration(milliseconds: 50));
-    // Bu mock, basit bir lokasyon döndürür. Kısmi transfer edilen kutuların
-    // "sanal" container ID'leri için bir mantık eklenmesi gerekebilir.
-    if (containerId == "PALET-A001") return "RAF-A1-01";
-    if (containerId.startsWith("KUTU-X01_TARGET_") || containerId.startsWith("BOX-001_PROD-E_TARGET_")) { // Sanal hedef kutu ID'leri için
-      // Transfer edilmiş bir kutu parçasının lokasyonunu döndürmek için _savedTransferHeaders'a bakılabilir.
-      final transfer = _savedTransferHeaders.lastWhere(
-        // DÜZELTME: Hatalı anonim fonksiyon çağrısı kaldırıldı ve koşul basitleştirildi.
-        // Orijinal hatalı kısım:
-        // (h) => h.targetLocation.isNotEmpty && (items) {
-        //   // ... comments ...
-        //   return true; // Basitleştirilmiş
-        // }(),
-        // Düzeltilmiş hali:
-              (h) => h.targetLocation.isNotEmpty,
-          orElse: () => TransferOperationHeader(
-              operationType: AssignmentMode.kutu,
-              sourceLocation: '',
-              containerId: '',
-              targetLocation: '', // orElse, geçerli bir varsayılan başlık sağlamalıdır
-              transferDate: DateTime.now()
-          )
-      );
-      if (transfer.targetLocation.isNotEmpty) return transfer.targetLocation;
-    }
-    if (containerId == "KUTU-X01" && _savedTransferHeaders.any((h) => h.containerId == "KUTU-X01" && h.targetLocation == "SEVKİYAT-ALANI-1")) {
-      // Bu koşul, KUTU-X01'in tamamının taşındığı senaryolar için kalabilir, ama kısmi transferler farklı ele alınmalı.
-      // return "SEVKİYAT-ALANI-1";
-    }
-    // Basitçe, eğer _containerContents'de varsa ve bir lokasyonla eşleşiyorsa:
-    if (_locationContainerBoxes.entries.any((entry) => entry.value.contains(containerId))) {
-      return _locationContainerBoxes.entries.firstWhere((entry) => entry.value.contains(containerId)).key;
-    }
-    if (_locationContainerPallets.entries.any((entry) => entry.value.contains(containerId))) {
-      return _locationContainerPallets.entries.firstWhere((entry) => entry.value.contains(containerId)).key;
-    }
-    return null;
-  }
 
   @override
   Future<void> synchronizePendingTransfers() async {
