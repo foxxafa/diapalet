@@ -127,24 +127,56 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<String>> getProductIdsByLocation(String location) async {
     final db = await dbHelper.database;
-    final rows = await db.rawQuery('SELECT id FROM pallet WHERE location = ? ORDER BY id', [location]);
-    return rows.map((e) => e['id'] as String).toList();
+    final palletRows =
+        await db.rawQuery('SELECT id FROM pallet WHERE location = ? ORDER BY id', [location]);
+    final boxRows = await db.rawQuery(
+        'SELECT DISTINCT product_id FROM stock_location WHERE location = ? ORDER BY product_id',
+        [location]);
+
+    final ids = <String>[];
+    ids.addAll(palletRows.map((e) => e['id'] as String));
+    ids.addAll(boxRows.map((e) => e['product_id'] as String));
+    return ids;
   }
 
   @override
   Future<List<ProductItem>> getProductInfo(String productId, String location) async {
     final db = await dbHelper.database;
+
+    // Check if the id corresponds to a pallet first
+    final pallet = await db.query('pallet', where: 'id = ?', whereArgs: [productId], limit: 1);
+    if (pallet.isNotEmpty) {
+      final rows = await db.rawQuery('''
+        SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, pi.quantity
+        FROM pallet_item pi
+        JOIN product p ON p.id = pi.product_id
+        WHERE pi.pallet_id = ?
+      ''', [productId]);
+      return rows
+          .map((e) => ProductItem(
+                id: e['product_id'] as String,
+                name: e['product_name'] as String,
+                productCode: e['product_code'] as String,
+                currentQuantity: e['quantity'] as int? ?? 0,
+              ))
+          .toList();
+    }
+
+    // Otherwise treat it as a box (stock by product/location)
     final rows = await db.rawQuery('''
-      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, pi.quantity
-      FROM pallet_item pi
-      JOIN product p ON p.id = pi.product_id
-      WHERE pi.pallet_id = ?
-    ''', [productId]);
-    return rows.map((e) => ProductItem(
-          id: e['product_id'] as String,
-          name: e['product_name'] as String,
-          productCode: e['product_code'] as String,
-          currentQuantity: e['quantity'] as int? ?? 0,
-        )).toList();
+      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, sl.quantity
+      FROM stock_location sl
+      JOIN product p ON p.id = sl.product_id
+      WHERE sl.product_id = ? AND sl.location = ?
+    ''', [productId, location]);
+
+    return rows
+        .map((e) => ProductItem(
+              id: e['product_id'] as String,
+              name: e['product_name'] as String,
+              productCode: e['product_code'] as String,
+              currentQuantity: e['quantity'] as int? ?? 0,
+            ))
+        .toList();
   }
 }
