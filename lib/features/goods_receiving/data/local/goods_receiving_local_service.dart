@@ -82,21 +82,8 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         );
 
         // b. Mal kabul kalemini (item) veritabanına ekle.
-        final itemMap = {
-          'receipt_id': headerId,
-          'product_id': item.product.id,
-          'quantity': item.quantity,
-          'location': item.location,
-          'pallet_id': item.containerId,
-        };
-        await txn.insert(
-          'goods_receipt_item',
-          itemMap,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-
         if (item.containerId != null && item.containerId!.isNotEmpty) {
-          // Palet kaydı
+          // Palet kaydı - önce palet tablosunda var olduğundan emin ol
           await _ensureLocation(txn, item.location);
           await txn.insert(
             'pallet',
@@ -124,7 +111,22 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
               whereArgs: [item.containerId, item.product.id],
             );
           }
-        } else {
+        }
+
+        final itemMap = {
+          'receipt_id': headerId,
+          'product_id': item.product.id,
+          'quantity': item.quantity,
+          'location': item.location,
+          'pallet_id': item.containerId,
+        };
+        await txn.insert(
+          'goods_receipt_item',
+          itemMap,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+
+        if (item.containerId == null || item.containerId!.isEmpty) {
           // Kutu akışı
           await _updateStock(txn, item.product.id, item.location, item.quantity);
         }
