@@ -1,4 +1,3 @@
-// core/local/database_helper.dart
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
@@ -9,9 +8,8 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static Database? _database;
-  static const String _dbName = 'app_main_database.db'; // Veritabanı adı
-  // Bump version to recreate schema without container abstraction
-  static const int _dbVersion = 7; // Version 7: add container tables
+  static const String _dbName = 'app_main_database.db';
+  static const int _dbVersion = 8;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -28,14 +26,16 @@ class DatabaseHelper {
       version: _dbVersion,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
-        debugPrint('Foreign keys enabled.');
       },
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await _dropAllTables(db);
+        await _onCreate(db, newVersion);
+      },
     );
   }
 
-  Future<void> _createGoodsReceiptTables(DatabaseExecutor db) async {
+  Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS product (
         id TEXT PRIMARY KEY,
@@ -43,7 +43,6 @@ class DatabaseHelper {
         code TEXT NOT NULL
       )
     ''');
-    debugPrint("Table 'product' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS stock_location (
@@ -53,23 +52,21 @@ class DatabaseHelper {
         quantity INTEGER NOT NULL
       )
     ''');
-    debugPrint("Table 'stock_location' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS goods_receipt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         external_id TEXT NOT NULL UNIQUE,
         invoice_number TEXT NOT NULL,
-        receipt_date TEXT NOT NULL, -- ISO8601 format
-        synced INTEGER NOT NULL DEFAULT 0 -- 0 for false, 1 for true
+        receipt_date TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
-    debugPrint("Table 'goods_receipt' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS goods_receipt_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        receipt_id INTEGER NOT NULL, -- FK to goods_receipt
+        receipt_id INTEGER NOT NULL,
         product_id TEXT NOT NULL REFERENCES product(id),
         quantity INTEGER NOT NULL,
         location TEXT NOT NULL,
@@ -77,10 +74,7 @@ class DatabaseHelper {
         FOREIGN KEY (receipt_id) REFERENCES goods_receipt (id) ON DELETE CASCADE
       )
     ''');
-    debugPrint("Table 'goods_receipt_item' created.");
-  }
 
-  Future<void> _createTransferTables(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +86,6 @@ class DatabaseHelper {
         synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
-    debugPrint("Table 'transfer_operation' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS transfer_item (
@@ -103,17 +96,13 @@ class DatabaseHelper {
         FOREIGN KEY (operation_id) REFERENCES transfer_operation (id) ON DELETE CASCADE
       )
     ''');
-    debugPrint("Table 'transfer_item' created.");
-  }
 
-  Future<void> _createContainerTables(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS container (
         id TEXT PRIMARY KEY,
         location TEXT NOT NULL
       )
     ''');
-    debugPrint("Table 'container' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS container_item (
@@ -123,79 +112,42 @@ class DatabaseHelper {
         PRIMARY KEY (container_id, product_id)
       )
     ''');
-    debugPrint("Table 'container_item' created.");
+
+    // (Optional) Lokasyon tablosu:
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS location (
+        name TEXT PRIMARY KEY
+      )
+    ''');
+
+    debugPrint("All tables created.");
   }
 
-
-  Future<void> _onCreate(Database db, int version) async {
-    debugPrint("Creating database tables for version $version...");
-    await _createGoodsReceiptTables(db);
-    await _createTransferTables(db);
-    await _createContainerTables(db);
-  }
-
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    debugPrint("Upgrading database from version $oldVersion to $newVersion...");
-    if (oldVersion < 2) {
-      // Bu blok genellikle eski, artık desteklenmeyen versiyonlar için kalır.
-      // V1'den V2'ye geçişte spesifik bir işlem yoksa, log yeterlidir.
-      debugPrint("DB Upgrade: (No specific schema changes for v1 to v2 in this example, assuming onCreate handles all tables if DB is new at v2)");
-    }
-    if (oldVersion < 3) {
-      // V2'den V3'e geçiş
+  Future<void> _dropAllTables(Database db) async {
+    for (final table in [
+      'goods_receipt_item',
+      'goods_receipt',
+      'transfer_item',
+      'transfer_operation',
+      'stock_location',
+      'container_item',
+      'container',
+      'location',
+      'product',
+    ]) {
       try {
-        await db.execute("ALTER TABLE goods_receipt ADD COLUMN external_id TEXT");
-        debugPrint("DB Upgrade: Added external_id column to goods_receipt table (for V3)");
-      } catch (e) {
-        debugPrint("DB Upgrade: Could not add external_id to goods_receipt (maybe already exists or other error): $e");
-        // external_id UNIQUE olmalı, bu yüzden default değer atamak yerine null bırakılabilir veya NOT NULL UNIQUE yapılabilir.
-        // Eğer NOT NULL UNIQUE yapılıyorsa ve varolan satırlar varsa, onlara benzersiz değerler atanmalıdır.
-        // Şimdilik TEXT olarak bırakıldı, UNIQUE constraint onCreate'de var.
-      }
-    }
-    if (oldVersion < 4) {
-      // V3'ten V4'e geçiş
-      try {
-        await db.execute("ALTER TABLE transfer_item ADD COLUMN product_id TEXT");
-        debugPrint("DB Upgrade: Added product_id column to transfer_item table (for V4)");
-        // Varolan satırlar için product_id'nin nasıl doldurulacağı burada ele alınabilir,
-        // ancak genellikle bu tür sütunlar başlangıçta NULL olabilir veya bir default değeri olabilir.
-        // Entity'miz NOT NULL gerektirdiği için, aslında bu sütun eklendikten sonra
-        // varolan transfer_item kayıtları için product_id doldurulmalı ya da NOT NULL constraint'i daha sonra eklenmeli.
-        // Şimdilik TEXT olarak ekliyoruz. Entity'deki fromMap null kontrolü yapıyor.
-      } catch (e) {
-        debugPrint("DB Upgrade: Could not add product_id to transfer_item (maybe already exists or other error): $e");
-      }
-    }
-    if (oldVersion < 5) {
-      await _createGoodsReceiptTables(db);
-      await _createTransferTables(db);
-    }
-    if (oldVersion < 6) {
-      await _createGoodsReceiptTables(db);
-      await _createTransferTables(db);
-    }
-    if (oldVersion < 7) {
-      try {
-        await db.execute("ALTER TABLE goods_receipt_item ADD COLUMN container_id TEXT");
+        await db.execute('DROP TABLE IF EXISTS $table');
       } catch (_) {}
-      try {
-        await db.execute("ALTER TABLE transfer_operation ADD COLUMN container_id TEXT");
-      } catch (_) {}
-      await _createContainerTables(db);
     }
+    debugPrint('All tables dropped for full reset.');
   }
 
   Future<void> close() async {
     final db = await database;
     db.close();
     _database = null;
-    debugPrint("Database closed.");
   }
 
-  /// Deletes the database file if possible. If deletion fails, all
-  /// tables are cleared as a fallback. The next access to [database]
-  /// will recreate it lazily.
   Future<void> resetDatabase() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbName);
@@ -206,26 +158,11 @@ class DatabaseHelper {
         _database = null;
       }
       await deleteDatabase(path);
-      debugPrint('Database file deleted at $path');
     } catch (e) {
-      debugPrint('Could not delete database file: $e. Clearing tables instead.');
       final db = await _initDB();
-      await _clearAllTables(db);
+      await _dropAllTables(db);
       await db.close();
     }
-
     _database = null;
-  }
-
-  Future<void> _clearAllTables(Database db) async {
-    await db.delete('goods_receipt_item');
-    await db.delete('goods_receipt');
-    await db.delete('transfer_item');
-    await db.delete('transfer_operation');
-    await db.delete('stock_location');
-    await db.delete('container_item');
-    await db.delete('container');
-    await db.delete('product');
-    debugPrint('All tables cleared.');
   }
 }

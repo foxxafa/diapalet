@@ -13,7 +13,6 @@ Future<void> populateTestData() async {
     whereArgs: [sentinelId],
   );
   if (check.isNotEmpty) {
-    // Daha önce test verisi eklenmiş
     return;
   }
 
@@ -25,6 +24,10 @@ Future<void> populateTestData() async {
       'name': name,
       'code': code,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<void> addLocation(String name) async {
+    await db.insert('location', {'name': name}, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<int> addReceipt(String extId, String invoice) async {
@@ -58,7 +61,12 @@ Future<void> populateTestData() async {
     }
   }
 
-  // Products
+  // Lokasyonları ekle
+  for (final loc in ['MAL KABUL', 'KASA', '10A21', '5C2', '5B3']) {
+    await addLocation(loc);
+  }
+
+  // Ürünler
   await addProduct('PROD-A', 'Coca Cola 1L', 'A100');
   await addProduct('PROD-B', 'Pepsi 330ml', 'B200');
   await addProduct('PROD-C', 'Fanta 1L', 'C300');
@@ -83,7 +91,7 @@ Future<void> populateTestData() async {
   });
   await updateStock('PROD-B', 'MAL KABUL', 15);
 
-  // Receipt 2 - Location 10A21
+  // Receipt 2 - 10A21
   final r2 = await addReceipt('OFFLINE-R2', 'INV-002');
   await db.insert('goods_receipt_item', {
     'receipt_id': r2,
@@ -100,7 +108,7 @@ Future<void> populateTestData() async {
   });
   await updateStock('PROD-C', '10A21', 30);
 
-  // Receipt 3 - Location 5C2
+  // Receipt 3 - 5C2
   final r3 = await addReceipt('OFFLINE-R3', 'INV-003');
   await db.insert('goods_receipt_item', {
     'receipt_id': r3,
