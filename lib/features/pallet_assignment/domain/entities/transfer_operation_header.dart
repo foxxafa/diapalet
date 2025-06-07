@@ -28,7 +28,7 @@ class TransferOperationHeader {
       'operation_type': operationType.name,
       'source_location': sourceLocation,
       'target_location': targetLocation,
-      'container_id': containerId,
+      'pallet_id': containerId,
       'transfer_date': transferDate.toIso8601String(),
       'synced': synced,
     };
@@ -43,7 +43,7 @@ class TransferOperationHeader {
       ),
       sourceLocation: map['source_location'] as String? ?? '',
       targetLocation: map['target_location'] as String? ?? '',
-      containerId: map['container_id'] as String? ?? '',
+      containerId: map['pallet_id'] as String? ?? '',
       transferDate: DateTime.parse(map['transfer_date'] as String),
       synced: map['synced'] as int? ?? 0,
     );

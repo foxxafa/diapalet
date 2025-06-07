@@ -61,7 +61,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         'operation_type': header.operationType.name,
         'source_location': header.sourceLocation,
         'target_location': header.targetLocation,
-        'container_id': header.containerId,
+        'pallet_id': header.containerId,
         'transfer_date': header.transferDate.toIso8601String(),
         'synced': header.synced,
       });
@@ -71,27 +71,14 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           'product_id': item.productId,
           'quantity': item.quantity,
         });
-        await _updateStock(txn, item.productId, header.sourceLocation, -item.quantity);
-        await _updateStock(txn, item.productId, header.targetLocation, item.quantity);
-
-        final existing = await txn.query(
-          'container_item',
-          where: 'container_id = ? AND product_id = ?',
-          whereArgs: [header.containerId, item.productId],
-        );
-        if (existing.isNotEmpty) {
-          final qty = existing.first['quantity'] as int? ?? 0;
-          final newQty = qty - item.quantity;
-          if (newQty <= 0) {
-            await txn.delete('container_item', where: 'container_id = ? AND product_id = ?', whereArgs: [header.containerId, item.productId]);
-          } else {
-            await txn.update('container_item', {'quantity': newQty}, where: 'container_id = ? AND product_id = ?', whereArgs: [header.containerId, item.productId]);
-          }
+        if (header.operationType == AssignmentMode.kutu) {
+          await _updateStock(txn, item.productId, header.sourceLocation, -item.quantity);
+          await _updateStock(txn, item.productId, header.targetLocation, item.quantity);
         }
       }
 
       if (header.operationType == AssignmentMode.palet) {
-        await txn.update('container', {'location': header.targetLocation},
+        await txn.update('pallet', {'location': header.targetLocation},
             where: 'id = ?', whereArgs: [header.containerId]);
       }
     });
@@ -140,7 +127,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<String>> getProductIdsByLocation(String location) async {
     final db = await dbHelper.database;
-    final rows = await db.rawQuery('SELECT id FROM container WHERE location = ? ORDER BY id', [location]);
+    final rows = await db.rawQuery('SELECT id FROM pallet WHERE location = ? ORDER BY id', [location]);
     return rows.map((e) => e['id'] as String).toList();
   }
 
@@ -148,11 +135,10 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   Future<List<ProductItem>> getProductInfo(String productId, String location) async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, ci.quantity
-      FROM container_item ci
-      JOIN product p ON p.id = ci.product_id
-      JOIN container c ON c.id = ci.container_id
-      WHERE ci.container_id = ?
+      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, pi.quantity
+      FROM pallet_item pi
+      JOIN product p ON p.id = pi.product_id
+      WHERE pi.pallet_id = ?
     ''', [productId]);
     return rows.map((e) => ProductItem(
           id: e['product_id'] as String,

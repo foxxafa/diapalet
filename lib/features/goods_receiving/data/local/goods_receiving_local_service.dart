@@ -87,7 +87,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           'product_id': item.product.id,
           'quantity': item.quantity,
           'location': item.location,
-          'container_id': item.containerId,
+          'pallet_id': item.containerId,
         };
         await txn.insert(
           'goods_receipt_item',
@@ -96,37 +96,39 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         );
 
         if (item.containerId != null && item.containerId!.isNotEmpty) {
+          // Palet kaydı
           await _ensureLocation(txn, item.location);
           await txn.insert(
-            'container',
+            'pallet',
             {'id': item.containerId, 'location': item.location},
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
+
           final existing = await txn.query(
-            'container_item',
-            where: 'container_id = ? AND product_id = ?',
+            'pallet_item',
+            where: 'pallet_id = ? AND product_id = ?',
             whereArgs: [item.containerId, item.product.id],
           );
           if (existing.isEmpty) {
-            await txn.insert('container_item', {
-              'container_id': item.containerId,
+            await txn.insert('pallet_item', {
+              'pallet_id': item.containerId,
               'product_id': item.product.id,
               'quantity': item.quantity,
             });
           } else {
             final qty = existing.first['quantity'] as int? ?? 0;
             await txn.update(
-              'container_item',
+              'pallet_item',
               {'quantity': qty + item.quantity},
-              where: 'container_id = ? AND product_id = ?',
+              where: 'pallet_id = ? AND product_id = ?',
               whereArgs: [item.containerId, item.product.id],
             );
           }
+        } else {
+          // Kutu akışı
+          await _updateStock(txn, item.product.id, item.location, item.quantity);
         }
 
-        // c. Stok miktarını, aynı transaction'ı kullanarak güncelle.
-        // ÖNEMLİ DÜZELTME: `_updateStock` metodu artık `DatabaseExecutor` kabul ettiği için `txn` ile çalışır.
-        await _updateStock(txn, item.product.id, item.location, item.quantity);
         debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location: ${item.location}");
       }
     });
@@ -160,7 +162,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT gri.id, gri.receipt_id, gri.product_id,
              p.name AS product_name, p.code AS product_code,
-             gri.quantity, gri.location, gri.container_id
+             gri.quantity, gri.location, gri.pallet_id
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
       WHERE gri.receipt_id = ?
