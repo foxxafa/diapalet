@@ -20,9 +20,15 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
   GoodsReceivingLocalDataSourceImpl({required this.dbHelper});
 
+  Future<void> _ensureLocation(DatabaseExecutor txn, String location) async {
+    await txn.insert('location', {'name': location},
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
   /// Veritabanı transaction'ı veya direkt bağlantı üzerinde stok güncellemesi yapan genel bir metod.
   /// Hem `db.transaction` bloğu içinden `txn` nesnesi ile hem de direkt `db` nesnesi ile çağrılabilir.
   Future<void> _updateStock(DatabaseExecutor dbOrTxn, String productId, String location, int qty) async {
+    await _ensureLocation(dbOrTxn, location);
     final existing = await dbOrTxn.query('stock_location',
         where: 'product_id = ? AND location = ?',
         whereArgs: [productId, location],
@@ -63,6 +69,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
       // 2. Her bir ürün kalemi için işlemleri yap.
       for (var item in items) {
+        await _ensureLocation(txn, item.location);
         // a. Ürün bilgisini 'product' tablosuna ekle (varsa görmezden gel).
         await txn.insert(
           'product',
@@ -89,6 +96,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         );
 
         if (item.containerId != null && item.containerId!.isNotEmpty) {
+          await _ensureLocation(txn, item.location);
           await txn.insert(
             'container',
             {'id': item.containerId, 'location': item.location},

@@ -21,7 +21,13 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
 
   PalletAssignmentLocalDataSourceImpl({required this.dbHelper});
 
+  Future<void> _ensureLocation(DatabaseExecutor txn, String location) async {
+    await txn.insert('location', {'name': location},
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
   Future<void> _updateStock(DatabaseExecutor txn, String productId, String location, int delta) async {
+    await _ensureLocation(txn, location);
     final existing = await txn.query('stock_location', where: 'product_id = ? AND location = ?', whereArgs: [productId, location]);
     if (existing.isEmpty) {
       if (delta > 0) {
@@ -48,6 +54,8 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     final db = await dbHelper.database;
     late int opId;
     await db.transaction((txn) async {
+      await _ensureLocation(txn, header.sourceLocation);
+      await _ensureLocation(txn, header.targetLocation);
       opId = await txn.insert('transfer_operation', {
         'operation_type': header.operationType.name,
         'source_location': header.sourceLocation,
@@ -121,8 +129,8 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<String>> getDistinctLocations() async {
     final db = await dbHelper.database;
-    final rows = await db.rawQuery('SELECT DISTINCT location FROM container ORDER BY location');
-    return rows.map((e) => e['location'] as String).toList();
+    final rows = await db.rawQuery('SELECT name FROM location ORDER BY name');
+    return rows.map((e) => e['name'] as String).toList();
   }
 
   @override

@@ -41,6 +41,8 @@ void main() {
       'code': 'P1',
     });
 
+    await db.insert('location', {'name': 'LOC1'});
+
     await db.insert('goods_receipt_item', {
       'receipt_id': receiptId,
       'product_id': 'PR1',
