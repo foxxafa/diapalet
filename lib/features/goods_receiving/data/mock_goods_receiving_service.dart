@@ -59,6 +59,7 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
         product: item.product,
         quantity: item.quantity,
         location: item.location,
+        containerId: item.containerId,
       ));
     }
     _savedReceiptItems[newHeader.id!] = newItemsWithId;

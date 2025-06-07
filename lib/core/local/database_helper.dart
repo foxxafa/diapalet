@@ -11,7 +11,7 @@ class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'app_main_database.db'; // Veritabanı adı
   // Bump version to recreate schema without container abstraction
-  static const int _dbVersion = 6; // Version 6: simplified stock schema
+  static const int _dbVersion = 7; // Version 7: add container tables
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -73,6 +73,7 @@ class DatabaseHelper {
         product_id TEXT NOT NULL REFERENCES product(id),
         quantity INTEGER NOT NULL,
         location TEXT NOT NULL,
+        container_id TEXT,
         FOREIGN KEY (receipt_id) REFERENCES goods_receipt (id) ON DELETE CASCADE
       )
     ''');
@@ -86,6 +87,7 @@ class DatabaseHelper {
         operation_type TEXT NOT NULL,
         source_location TEXT NOT NULL,
         target_location TEXT NOT NULL,
+        container_id TEXT,
         transfer_date TEXT NOT NULL,
         synced INTEGER NOT NULL DEFAULT 0
       )
@@ -104,11 +106,32 @@ class DatabaseHelper {
     debugPrint("Table 'transfer_item' created.");
   }
 
+  Future<void> _createContainerTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS container (
+        id TEXT PRIMARY KEY,
+        location TEXT NOT NULL
+      )
+    ''');
+    debugPrint("Table 'container' created.");
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS container_item (
+        container_id TEXT NOT NULL REFERENCES container(id) ON DELETE CASCADE,
+        product_id TEXT NOT NULL REFERENCES product(id),
+        quantity INTEGER NOT NULL,
+        PRIMARY KEY (container_id, product_id)
+      )
+    ''');
+    debugPrint("Table 'container_item' created.");
+  }
+
 
   Future<void> _onCreate(Database db, int version) async {
     debugPrint("Creating database tables for version $version...");
     await _createGoodsReceiptTables(db);
     await _createTransferTables(db);
+    await _createContainerTables(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -152,6 +175,15 @@ class DatabaseHelper {
       await _createGoodsReceiptTables(db);
       await _createTransferTables(db);
     }
+    if (oldVersion < 7) {
+      try {
+        await db.execute("ALTER TABLE goods_receipt_item ADD COLUMN container_id TEXT");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE transfer_operation ADD COLUMN container_id TEXT");
+      } catch (_) {}
+      await _createContainerTables(db);
+    }
   }
 
   Future<void> close() async {
@@ -191,6 +223,8 @@ class DatabaseHelper {
     await db.delete('transfer_item');
     await db.delete('transfer_operation');
     await db.delete('stock_location');
+    await db.delete('container_item');
+    await db.delete('container');
     await db.delete('product');
     debugPrint('All tables cleared.');
   }

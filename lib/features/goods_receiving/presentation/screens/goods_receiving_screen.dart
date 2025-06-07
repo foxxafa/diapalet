@@ -143,12 +143,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    // DÜZELTİLEN MANTIK:
-    // Palet modunda, ürünlerin stok konumu paletin barkodudur.
-    // Kutu modunda ise ürünlerin stok konumu varsayılan "MAL KABUL" alanıdır.
-    final String itemLocation = (_selectedMode == ReceivingMode.palet)
-        ? _palletIdController.text
-        : _defaultLocation;
+    // Tüm konteynerler varsayılan fiziksel lokasyonda başlar.
+    const String itemLocation = _defaultLocation;
 
     // Kutu modunda sadece tek çeşit ürün eklenmesine izin ver.
     if (_selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty) {
@@ -156,12 +152,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    // GoodsReceiptItem nesnesi artık 'palletId' olmadan, sadece 'location' ile oluşturuluyor.
     final newItem = GoodsReceiptItem(
       goodsReceiptId: -1,
       product: _selectedProduct!,
       quantity: quantity,
       location: itemLocation,
+      containerId: _selectedMode == ReceivingMode.palet ? _palletIdController.text : null,
     );
 
     if (mounted) {
@@ -669,7 +665,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               itemCount: _addedItems.length,
               itemBuilder: (context, index) {
                 final item = _addedItems[index];
-                final bool isPalletItem = _selectedMode == ReceivingMode.palet;
+                final bool isPalletItem = item.containerId != null;
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
@@ -681,10 +677,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text("İrsaliye: ${_selectedInvoice ?? 'N/A'}"),
+                        Text("Konum: ${item.location}"),
                         if (isPalletItem)
-                          Text("Palet: ${item.location}") // Sistem konumu palet barkodudur.
-                        else
-                          Text("Konum: ${item.location}"), // Sistem konumu "MAL KABUL"
+                          Text("Palet: ${item.containerId}"),
                       ],
                     ),
                     trailing: Row(
