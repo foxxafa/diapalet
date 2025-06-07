@@ -10,7 +10,8 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db'; // Veritabanı adı
-  static const int _dbVersion = 5; // Versiyon 5: product and container tables, FKs
+  // Bump version to recreate schema without container abstraction
+  static const int _dbVersion = 6; // Version 6: simplified stock schema
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -45,11 +46,14 @@ class DatabaseHelper {
     debugPrint("Table 'product' created.");
 
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS container (
-        container_id TEXT PRIMARY KEY
+      CREATE TABLE IF NOT EXISTS stock_location (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id TEXT NOT NULL REFERENCES product(id),
+        location TEXT NOT NULL,
+        quantity INTEGER NOT NULL
       )
     ''');
-    debugPrint("Table 'container' created.");
+    debugPrint("Table 'stock_location' created.");
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS goods_receipt (
@@ -57,7 +61,6 @@ class DatabaseHelper {
         external_id TEXT NOT NULL UNIQUE,
         invoice_number TEXT NOT NULL,
         receipt_date TEXT NOT NULL, -- ISO8601 format
-        mode TEXT NOT NULL, -- 'palet' or 'kutu'
         synced INTEGER NOT NULL DEFAULT 0 -- 0 for false, 1 for true
       )
     ''');
@@ -67,9 +70,9 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS goods_receipt_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         receipt_id INTEGER NOT NULL, -- FK to goods_receipt
-        pallet_or_box_id TEXT NOT NULL REFERENCES container(container_id),
         product_id TEXT NOT NULL REFERENCES product(id),
         quantity INTEGER NOT NULL,
+        location TEXT NOT NULL,
         FOREIGN KEY (receipt_id) REFERENCES goods_receipt (id) ON DELETE CASCADE
       )
     ''');
@@ -81,9 +84,8 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_type TEXT NOT NULL,
-        source_location TEXT,
-        container_id TEXT NOT NULL REFERENCES container(container_id),
-        target_location TEXT,
+        source_location TEXT NOT NULL,
+        target_location TEXT NOT NULL,
         transfer_date TEXT NOT NULL,
         synced INTEGER NOT NULL DEFAULT 0
       )
@@ -100,15 +102,6 @@ class DatabaseHelper {
       )
     ''');
     debugPrint("Table 'transfer_item' created.");
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS container_location (
-        container_id TEXT PRIMARY KEY REFERENCES container(container_id),
-        location TEXT NOT NULL,
-        last_updated TEXT NOT NULL
-      )
-    ''');
-    debugPrint("Table 'container_location' created.");
   }
 
 
@@ -155,6 +148,10 @@ class DatabaseHelper {
       await _createGoodsReceiptTables(db);
       await _createTransferTables(db);
     }
+    if (oldVersion < 6) {
+      await _createGoodsReceiptTables(db);
+      await _createTransferTables(db);
+    }
   }
 
   Future<void> close() async {
@@ -193,8 +190,7 @@ class DatabaseHelper {
     await db.delete('goods_receipt');
     await db.delete('transfer_item');
     await db.delete('transfer_operation');
-    await db.delete('container_location');
-    await db.delete('container');
+    await db.delete('stock_location');
     await db.delete('product');
     debugPrint('All tables cleared.');
   }

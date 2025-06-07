@@ -32,7 +32,6 @@ void main() {
     final receiptId = await db.insert('goods_receipt', {
       'invoice_number': 'INV1',
       'receipt_date': DateTime.now().toIso8601String(),
-      'mode': 'palet',
       'synced': 0,
     });
 
@@ -42,15 +41,11 @@ void main() {
       'code': 'P1',
     });
 
-    await db.insert('container', {
-      'container_id': 'P1',
-    });
-
     await db.insert('goods_receipt_item', {
       'receipt_id': receiptId,
-      'pallet_or_box_id': 'P1',
       'product_id': 'PR1',
       'quantity': 1,
+      'location': 'LOC1',
     });
 
     final before = firstIntValue(await db.rawQuery(
