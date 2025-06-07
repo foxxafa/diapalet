@@ -307,6 +307,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         operationType: _selectedMode,
         sourceLocation: _selectedSourceLocation!,
         targetLocation: _selectedTargetLocation!,
+        containerId: _selectedContainerId!,
         transferDate: DateTime.now(),
       );
 

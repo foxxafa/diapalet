@@ -8,6 +8,7 @@ class TransferOperationHeader {
   final AssignmentMode operationType;
   final String sourceLocation;
   final String targetLocation;
+  final String containerId;
   final DateTime transferDate;
   final int synced;
 
@@ -16,6 +17,7 @@ class TransferOperationHeader {
     required this.operationType,
     required this.sourceLocation,
     required this.targetLocation,
+    required this.containerId,
     required this.transferDate,
     this.synced = 0,
   });
@@ -26,6 +28,7 @@ class TransferOperationHeader {
       'operation_type': operationType.name,
       'source_location': sourceLocation,
       'target_location': targetLocation,
+      'container_id': containerId,
       'transfer_date': transferDate.toIso8601String(),
       'synced': synced,
     };
@@ -40,6 +43,7 @@ class TransferOperationHeader {
       ),
       sourceLocation: map['source_location'] as String? ?? '',
       targetLocation: map['target_location'] as String? ?? '',
+      containerId: map['container_id'] as String? ?? '',
       transferDate: DateTime.parse(map['transfer_date'] as String),
       synced: map['synced'] as int? ?? 0,
     );
@@ -50,6 +54,7 @@ class TransferOperationHeader {
     AssignmentMode? operationType,
     String? sourceLocation,
     String? targetLocation,
+    String? containerId,
     DateTime? transferDate,
     int? synced,
   }) {
@@ -58,6 +63,7 @@ class TransferOperationHeader {
       operationType: operationType ?? this.operationType,
       sourceLocation: sourceLocation ?? this.sourceLocation,
       targetLocation: targetLocation ?? this.targetLocation,
+      containerId: containerId ?? this.containerId,
       transferDate: transferDate ?? this.transferDate,
       synced: synced ?? this.synced,
     );
@@ -72,6 +78,7 @@ class TransferOperationHeader {
               operationType == other.operationType &&
               sourceLocation == other.sourceLocation &&
               targetLocation == other.targetLocation &&
+              containerId == other.containerId &&
               transferDate.isAtSameMomentAs(other.transferDate) && // For DateTime comparison
               synced == other.synced;
 
@@ -81,6 +88,7 @@ class TransferOperationHeader {
       operationType.hashCode ^
       sourceLocation.hashCode ^
       targetLocation.hashCode ^
+      containerId.hashCode ^
       transferDate.hashCode ^
       synced.hashCode;
 }

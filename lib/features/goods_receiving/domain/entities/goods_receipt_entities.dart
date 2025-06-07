@@ -47,6 +47,7 @@ class GoodsReceiptItem {
   final ProductInfo product;
   final int quantity;
   final String location;
+  final String? containerId;
 
   GoodsReceiptItem({
     this.id,
@@ -54,6 +55,7 @@ class GoodsReceiptItem {
     required this.product,
     required this.quantity,
     required this.location,
+    this.containerId,
   });
 
   Map<String, dynamic> toMap() {
@@ -63,6 +65,7 @@ class GoodsReceiptItem {
       'product_id': product.id,
       'quantity': quantity,
       'location': location,
+      'container_id': containerId,
     };
   }
 
@@ -80,6 +83,7 @@ class GoodsReceiptItem {
       ),
       quantity: map['quantity'] as int,
       location: map['location'] as String? ?? '',
+      containerId: map['container_id'] as String?,
     );
   }
 }

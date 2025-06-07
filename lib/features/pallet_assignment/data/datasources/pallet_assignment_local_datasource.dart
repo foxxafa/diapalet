@@ -52,6 +52,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         'operation_type': header.operationType.name,
         'source_location': header.sourceLocation,
         'target_location': header.targetLocation,
+        'container_id': header.containerId,
         'transfer_date': header.transferDate.toIso8601String(),
         'synced': header.synced,
       });
@@ -63,7 +64,24 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         });
         await _updateStock(txn, item.productId, header.sourceLocation, -item.quantity);
         await _updateStock(txn, item.productId, header.targetLocation, item.quantity);
+
+        final existing = await txn.query(
+          'container_item',
+          where: 'container_id = ? AND product_id = ?',
+          whereArgs: [header.containerId, item.productId],
+        );
+        if (existing.isNotEmpty) {
+          final qty = existing.first['quantity'] as int? ?? 0;
+          final newQty = qty - item.quantity;
+          if (newQty <= 0) {
+            await txn.delete('container_item', where: 'container_id = ? AND product_id = ?', whereArgs: [header.containerId, item.productId]);
+          } else {
+            await txn.update('container_item', {'quantity': newQty}, where: 'container_id = ? AND product_id = ?', whereArgs: [header.containerId, item.productId]);
+          }
+        }
       }
+
+      await txn.update('container', {'location': header.targetLocation}, where: 'id = ?', whereArgs: [header.containerId]);
     });
     return opId;
   }
@@ -103,26 +121,27 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<String>> getDistinctLocations() async {
     final db = await dbHelper.database;
-    final rows = await db.rawQuery('SELECT DISTINCT location FROM stock_location ORDER BY location');
+    final rows = await db.rawQuery('SELECT DISTINCT location FROM container ORDER BY location');
     return rows.map((e) => e['location'] as String).toList();
   }
 
   @override
   Future<List<String>> getProductIdsByLocation(String location) async {
     final db = await dbHelper.database;
-    final rows = await db.rawQuery('SELECT DISTINCT product_id FROM stock_location WHERE location = ? ORDER BY product_id', [location]);
-    return rows.map((e) => e['product_id'] as String).toList();
+    final rows = await db.rawQuery('SELECT id FROM container WHERE location = ? ORDER BY id', [location]);
+    return rows.map((e) => e['id'] as String).toList();
   }
 
   @override
   Future<List<ProductItem>> getProductInfo(String productId, String location) async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, sl.quantity
-      FROM stock_location sl
-      JOIN product p ON p.id = sl.product_id
-      WHERE sl.product_id = ? AND sl.location = ?
-    ''', [productId, location]);
+      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, ci.quantity
+      FROM container_item ci
+      JOIN product p ON p.id = ci.product_id
+      JOIN container c ON c.id = ci.container_id
+      WHERE ci.container_id = ?
+    ''', [productId]);
     return rows.map((e) => ProductItem(
           id: e['product_id'] as String,
           name: e['product_name'] as String,

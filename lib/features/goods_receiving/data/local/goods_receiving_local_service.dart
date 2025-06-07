@@ -76,16 +76,45 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
         // b. Mal kabul kalemini (item) veritabanına ekle.
         final itemMap = {
-          'receipt_id': headerId, // Yeni oluşturulan başlık ID'sini kullan.
+          'receipt_id': headerId,
           'product_id': item.product.id,
           'quantity': item.quantity,
           'location': item.location,
+          'container_id': item.containerId,
         };
         await txn.insert(
           'goods_receipt_item',
           itemMap,
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
+
+        if (item.containerId != null && item.containerId!.isNotEmpty) {
+          await txn.insert(
+            'container',
+            {'id': item.containerId, 'location': item.location},
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          final existing = await txn.query(
+            'container_item',
+            where: 'container_id = ? AND product_id = ?',
+            whereArgs: [item.containerId, item.product.id],
+          );
+          if (existing.isEmpty) {
+            await txn.insert('container_item', {
+              'container_id': item.containerId,
+              'product_id': item.product.id,
+              'quantity': item.quantity,
+            });
+          } else {
+            final qty = existing.first['quantity'] as int? ?? 0;
+            await txn.update(
+              'container_item',
+              {'quantity': qty + item.quantity},
+              where: 'container_id = ? AND product_id = ?',
+              whereArgs: [item.containerId, item.product.id],
+            );
+          }
+        }
 
         // c. Stok miktarını, aynı transaction'ı kullanarak güncelle.
         // ÖNEMLİ DÜZELTME: `_updateStock` metodu artık `DatabaseExecutor` kabul ettiği için `txn` ile çalışır.
@@ -123,7 +152,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT gri.id, gri.receipt_id, gri.product_id,
              p.name AS product_name, p.code AS product_code,
-             gri.quantity, gri.location
+             gri.quantity, gri.location, gri.container_id
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
       WHERE gri.receipt_id = ?
