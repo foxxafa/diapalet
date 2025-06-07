@@ -5,6 +5,9 @@ import 'package:path/path.dart';
 import 'package:test/test.dart';
 
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/features/goods_receiving/data/local/goods_receiving_local_service.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 
 void main() {
   sqfliteFfiInit();
@@ -61,5 +64,28 @@ void main() {
         'SELECT COUNT(*) FROM goods_receipt_item WHERE receipt_id=?',
         [receiptId]));
     expect(after, 0);
+  });
+
+  test('goods_receipt_item with pallet references succeeds', () async {
+    final localDataSource = GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper);
+
+    final header = GoodsReceipt(
+      invoiceNumber: 'INV-PAL',
+      receiptDate: DateTime.now(),
+    );
+
+    final item = GoodsReceiptItem(
+      goodsReceiptId: -1,
+      product: ProductInfo(id: 'PROD-X', name: 'Prod X', stockCode: 'PX'),
+      quantity: 5,
+      location: 'MAL KABUL',
+      containerId: 'PAL-1',
+    );
+
+    final id = await localDataSource.saveGoodsReceipt(header, [item]);
+
+    final db = await dbHelper.database;
+    final rows = await db.query('goods_receipt_item', where: 'receipt_id = ?', whereArgs: [id]);
+    expect(rows.length, 1);
   });
 }
