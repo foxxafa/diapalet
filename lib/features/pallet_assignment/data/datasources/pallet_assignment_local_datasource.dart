@@ -4,6 +4,7 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 
 abstract class PalletAssignmentLocalDataSource {
   Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
@@ -89,7 +90,10 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         }
       }
 
-      await txn.update('container', {'location': header.targetLocation}, where: 'id = ?', whereArgs: [header.containerId]);
+      if (header.operationType == AssignmentMode.palet) {
+        await txn.update('container', {'location': header.targetLocation},
+            where: 'id = ?', whereArgs: [header.containerId]);
+      }
     });
     return opId;
   }
