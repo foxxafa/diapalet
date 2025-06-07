@@ -5,8 +5,6 @@ import '../../domain/entities/product_info.dart';
 
 abstract class GoodsReceivingRemoteDataSource {
   Future<List<String>> fetchInvoices();
-  Future<List<String>> fetchPalletsForDropdown();
-  Future<List<String>> fetchBoxesForDropdown();
   Future<List<ProductInfo>> fetchProductsForDropdown();
   Future<bool> sendGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
 // Future<ProductInfo?> fetchProductDetailsByBarcode(String barcode); // Opsiyonel
@@ -23,19 +21,6 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
     return ["API-INV-001", "API-INV-002", "API-INV-003"];
   }
 
-  @override
-  Future<List<String>> fetchPalletsForDropdown() async {
-    debugPrint("API: Fetching pallets for dropdown...");
-    await Future.delayed(const Duration(milliseconds: 300));
-    return ["API-PALET-X1", "API-PALET-Y2", "API-PALET-Z3"];
-  }
-
-  @override
-  Future<List<String>> fetchBoxesForDropdown() async {
-    debugPrint("API: Fetching boxes for dropdown...");
-    await Future.delayed(const Duration(milliseconds: 300));
-    return ["API-KUTU-S1", "API-KUTU-M2", "API-KUTU-L3"];
-  }
 
   @override
   Future<List<ProductInfo>> fetchProductsForDropdown() async {

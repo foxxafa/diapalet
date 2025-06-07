@@ -3,18 +3,13 @@ import 'package:uuid/uuid.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'product_info.dart';
 
-enum ReceiveMode { palet, kutu }
-
-extension ReceiveModeExtension on ReceiveMode {
-  String get displayName => tr('receive_mode.$name');
-}
+// Mode concept removed; receipts simply track products at locations
 
 class GoodsReceipt {
   final int? id;
   final String externalId;
   final String invoiceNumber;
   final DateTime receiptDate;
-  final ReceiveMode mode;
   int synced;
 
   GoodsReceipt({
@@ -22,7 +17,6 @@ class GoodsReceipt {
     String? externalId,
     required this.invoiceNumber,
     required this.receiptDate,
-    required this.mode,
     this.synced = 0,
   }) : externalId = externalId ?? const Uuid().v4();
 
@@ -32,7 +26,6 @@ class GoodsReceipt {
       'external_id': externalId,
       'invoice_number': invoiceNumber,
       'receipt_date': receiptDate.toIso8601String(),
-      'mode': mode.name,
       'synced': synced,
     };
   }
@@ -43,10 +36,7 @@ class GoodsReceipt {
       externalId: map['external_id'] as String? ?? const Uuid().v4(),
       invoiceNumber: map['invoice_number'] as String,
       receiptDate: DateTime.parse(map['receipt_date'] as String),
-      mode: ReceiveMode.values.firstWhere(
-            (e) => e.name == map['mode'],
-        orElse: () => ReceiveMode.palet,
-      ),
+      // mode column removed
       synced: map['synced'] as int? ?? 0,
     );
   }
@@ -55,25 +45,25 @@ class GoodsReceipt {
 class GoodsReceiptItem {
   final int? id;
   final int goodsReceiptId;
-  final String palletOrBoxId;
   final ProductInfo product;
   final int quantity;
+  final String location;
 
   GoodsReceiptItem({
     this.id,
     required this.goodsReceiptId,
-    required this.palletOrBoxId,
     required this.product,
     required this.quantity,
+    required this.location,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'receipt_id': goodsReceiptId,
-      'pallet_or_box_id': palletOrBoxId,
       'product_id': product.id,
       'quantity': quantity,
+      'location': location,
     };
   }
 
@@ -84,13 +74,13 @@ class GoodsReceiptItem {
     return GoodsReceiptItem(
       id: map['id'] as int?,
       goodsReceiptId: map['receipt_id'] as int,
-      palletOrBoxId: map['pallet_or_box_id'] as String,
       product: ProductInfo(
         id: map['product_id'] as String,
         name: map['product_name'] as String? ?? '',
         stockCode: map['product_code'] as String? ?? '',
       ),
       quantity: map['quantity'] as int,
+      location: map['location'] as String? ?? '',
     );
   }
 }
