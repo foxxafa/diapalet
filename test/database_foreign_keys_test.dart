@@ -88,4 +88,30 @@ void main() {
     final rows = await db.query('goods_receipt_item', where: 'receipt_id = ?', whereArgs: [id]);
     expect(rows.length, 1);
   });
+
+  test('box receipt updates stock_location and is visible via pallet datasource', () async {
+    final receivingDS = GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper);
+    final palletDS = PalletAssignmentLocalDataSourceImpl(dbHelper: dbHelper);
+
+    final header = GoodsReceipt(
+      invoiceNumber: 'INV-BOX',
+      receiptDate: DateTime.now(),
+    );
+
+    final item = GoodsReceiptItem(
+      goodsReceiptId: -1,
+      product: ProductInfo(id: 'BOX-P1', name: 'Box Prod', stockCode: 'BP1'),
+      quantity: 3,
+      location: 'MAL KABUL',
+    );
+
+    await receivingDS.saveGoodsReceipt(header, [item]);
+
+    final ids = await palletDS.getProductIdsByLocation('MAL KABUL');
+    expect(ids.contains('BOX-P1'), isTrue);
+
+    final info = await palletDS.getProductInfo('BOX-P1', 'MAL KABUL');
+    expect(info.length, 1);
+    expect(info.first.currentQuantity, 3);
+  });
 }
