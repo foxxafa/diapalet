@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db'; // Veritabanı adı
-  static const int _dbVersion = 4; // Versiyon 4: product_id added to transfer_item
+  static const int _dbVersion = 5; // Versiyon 5: product and container tables, FKs
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -36,7 +36,23 @@ class DatabaseHelper {
 
   Future<void> _createGoodsReceiptTables(DatabaseExecutor db) async {
     await db.execute('''
-      CREATE TABLE goods_receipt (
+      CREATE TABLE IF NOT EXISTS product (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL
+      )
+    ''');
+    debugPrint("Table 'product' created.");
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS container (
+        container_id TEXT PRIMARY KEY
+      )
+    ''');
+    debugPrint("Table 'container' created.");
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS goods_receipt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         external_id TEXT NOT NULL UNIQUE,
         invoice_number TEXT NOT NULL,
@@ -48,13 +64,11 @@ class DatabaseHelper {
     debugPrint("Table 'goods_receipt' created.");
 
     await db.execute('''
-      CREATE TABLE goods_receipt_item (
+      CREATE TABLE IF NOT EXISTS goods_receipt_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         receipt_id INTEGER NOT NULL, -- FK to goods_receipt
-        pallet_or_box_id TEXT NOT NULL,
-        product_id TEXT NOT NULL, 
-        product_name TEXT NOT NULL,
-        product_code TEXT NOT NULL,
+        pallet_or_box_id TEXT NOT NULL REFERENCES container(container_id),
+        product_id TEXT NOT NULL REFERENCES product(id),
         quantity INTEGER NOT NULL,
         FOREIGN KEY (receipt_id) REFERENCES goods_receipt (id) ON DELETE CASCADE
       )
@@ -64,36 +78,34 @@ class DatabaseHelper {
 
   Future<void> _createTransferTables(DatabaseExecutor db) async {
     await db.execute('''
-      CREATE TABLE transfer_operation (
+      CREATE TABLE IF NOT EXISTS transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        operation_type TEXT NOT NULL, 
+        operation_type TEXT NOT NULL,
         source_location TEXT,
-        container_id TEXT NOT NULL,
+        container_id TEXT NOT NULL REFERENCES container(container_id),
         target_location TEXT,
-        transfer_date TEXT NOT NULL, 
-        synced INTEGER NOT NULL DEFAULT 0 
+        transfer_date TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
     debugPrint("Table 'transfer_operation' created.");
 
     await db.execute('''
-      CREATE TABLE transfer_item (
+      CREATE TABLE IF NOT EXISTS transfer_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL,
-        product_id TEXT NOT NULL, -- YENİ EKLENDİ
-        product_code TEXT NOT NULL,
-        product_name TEXT NOT NULL,
+        product_id TEXT NOT NULL REFERENCES product(id),
         quantity INTEGER NOT NULL,
         FOREIGN KEY (operation_id) REFERENCES transfer_operation (id) ON DELETE CASCADE
       )
     ''');
-    debugPrint("Table 'transfer_item' created with product_id.");
+    debugPrint("Table 'transfer_item' created.");
 
     await db.execute('''
-      CREATE TABLE container_location (
-        container_id TEXT PRIMARY KEY,
+      CREATE TABLE IF NOT EXISTS container_location (
+        container_id TEXT PRIMARY KEY REFERENCES container(container_id),
         location TEXT NOT NULL,
-        last_updated TEXT NOT NULL 
+        last_updated TEXT NOT NULL
       )
     ''');
     debugPrint("Table 'container_location' created.");
@@ -139,6 +151,10 @@ class DatabaseHelper {
         debugPrint("DB Upgrade: Could not add product_id to transfer_item (maybe already exists or other error): $e");
       }
     }
+    if (oldVersion < 5) {
+      await _createGoodsReceiptTables(db);
+      await _createTransferTables(db);
+    }
   }
 
   Future<void> close() async {
@@ -178,6 +194,8 @@ class DatabaseHelper {
     await db.delete('transfer_item');
     await db.delete('transfer_operation');
     await db.delete('container_location');
+    await db.delete('container');
+    await db.delete('product');
     debugPrint('All tables cleared.');
   }
 }

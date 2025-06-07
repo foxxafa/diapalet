@@ -23,9 +23,7 @@ class TransferItemDetail {
     return {
       'id': id,
       'operation_id': operationId,
-      'product_id': productId, // YENİ EKLENDİ
-      'product_code': productCode,
-      'product_name': productName,
+      'product_id': productId,
       'quantity': quantity,
     };
   }
@@ -34,7 +32,7 @@ class TransferItemDetail {
     return TransferItemDetail(
       id: map['id'] as int?,
       operationId: map['operation_id'] as int? ?? 0,
-      productId: map['product_id'] as String? ?? '', // YENİ EKLENDİ
+      productId: map['product_id'] as String? ?? '',
       productCode: map['product_code'] as String? ?? '',
       productName: map['product_name'] as String? ?? '',
       quantity: map['quantity'] as int? ?? 0,

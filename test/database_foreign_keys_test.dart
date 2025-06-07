@@ -36,12 +36,20 @@ void main() {
       'synced': 0,
     });
 
+    await db.insert('product', {
+      'id': 'PR1',
+      'name': 'Prod 1',
+      'code': 'P1',
+    });
+
+    await db.insert('container', {
+      'container_id': 'P1',
+    });
+
     await db.insert('goods_receipt_item', {
       'receipt_id': receiptId,
       'pallet_or_box_id': 'P1',
       'product_id': 'PR1',
-      'product_name': 'Prod 1',
-      'product_code': 'P1',
       'quantity': 1,
     });
 

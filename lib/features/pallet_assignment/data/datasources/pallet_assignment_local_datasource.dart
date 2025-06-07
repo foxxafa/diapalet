@@ -6,6 +6,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ope
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:uuid/uuid.dart';
 
 
 abstract class PalletAssignmentLocalDataSource {
@@ -40,6 +41,11 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     late int operationId;
 
     await db.transaction((txn) async {
+      await txn.insert(
+        'container',
+        {'container_id': header.containerId},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
       operationId = await txn.insert(
         'transfer_operation',
         header.toMap()..remove('id'),
@@ -84,11 +90,13 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId) async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'transfer_item',
-      where: 'operation_id = ?',
-      whereArgs: [operationId],
-    );
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT ti.id, ti.operation_id, ti.product_id, ti.quantity,
+             p.name AS product_name, p.code AS product_code
+      FROM transfer_item ti
+      JOIN product p ON p.id = ti.product_id
+      WHERE ti.operation_id = ?
+    ''', [operationId]);
     if (maps.isEmpty) return [];
     return List.generate(maps.length, (i) {
       return TransferItemDetail.fromMap(maps[i]);
@@ -110,6 +118,11 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<void> updateContainerLocation(String containerId, String newLocation, DateTime updateTime) async {
     final db = await dbHelper.database;
+    await db.insert(
+      'container',
+      {'container_id': containerId},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
     await db.insert(
       'container_location',
       {'container_id': containerId, 'location': newLocation, 'last_updated': updateTime.toIso8601String()},
@@ -171,11 +184,12 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   Future<List<ProductItem>> getContainerContents(String containerId) async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT product_id, product_name, product_code, SUM(quantity) as qty
-      FROM goods_receipt_item
-      WHERE pallet_or_box_id = ? AND quantity > 0 
-      GROUP BY product_id, product_name, product_code
-      ORDER BY product_name
+      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, SUM(gri.quantity) as qty
+      FROM goods_receipt_item gri
+      JOIN product p ON p.id = gri.product_id
+      WHERE gri.pallet_or_box_id = ? AND gri.quantity > 0
+      GROUP BY p.id, p.name, p.code
+      ORDER BY p.name
     ''', [containerId]);
     return rows
         .map((e) => ProductItem(
@@ -192,12 +206,13 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     final db = await dbHelper.database;
     if (quantityToDecrease <= 0) return;
 
-    List<Map<String, dynamic>> itemsInContainer = await db.query(
-      'goods_receipt_item',
-      where: 'pallet_or_box_id = ? AND product_code = ? AND quantity > 0',
-      whereArgs: [containerId, productCode],
-      orderBy: 'id ASC',
-    );
+    List<Map<String, dynamic>> itemsInContainer = await db.rawQuery('''
+      SELECT gri.id, gri.quantity
+      FROM goods_receipt_item gri
+      JOIN product p ON p.id = gri.product_id
+      WHERE gri.pallet_or_box_id = ? AND p.code = ? AND gri.quantity > 0
+      ORDER BY gri.id ASC
+    ''', [containerId, productCode]);
 
     if (itemsInContainer.isEmpty) {
       debugPrint("UYARI: Miktar azaltılacak ürün ($productCode) $containerId içinde bulunamadı veya miktarı zaten sıfır.");
@@ -254,14 +269,15 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           SELECT gri.id, gri.quantity, gri.pallet_or_box_id
           FROM goods_receipt_item gri
           JOIN container_location cl ON cl.container_id = gri.pallet_or_box_id
+          JOIN product p ON p.id = gri.product_id
           WHERE cl.location = ?
             AND gri.pallet_or_box_id LIKE ?
-            AND gri.product_code = ?
+            AND p.code = ?
           ORDER BY gri.id DESC
           LIMIT 1
         ''', [
           targetLocation,
-          '${originalContainerId}_${item.productCode}_TARGET_%',
+          '${originalContainerId}_${item.productCode}_%',
           item.productCode
         ]);
 
@@ -304,14 +320,28 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
               "Hedef lokasyon için yeni goods_receipt oluşturuldu ID: $newReceiptId");
 
           String targetInstanceContainerId =
-              '${originalContainerId}_${item.productCode}_TARGET_${DateTime.now().microsecondsSinceEpoch}';
+              '${originalContainerId}_${item.productCode}_${const Uuid().v4().substring(0,8)}';
+
+          await txn.insert(
+            'product',
+            {
+              'id': item.productId,
+              'name': item.productName,
+              'code': item.productCode,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+
+          await txn.insert(
+            'container',
+            {'container_id': targetInstanceContainerId},
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
 
           final itemData = {
             'receipt_id': newReceiptId,
             'pallet_or_box_id': targetInstanceContainerId,
             'product_id': item.productId,
-            'product_name': item.productName,
-            'product_code': item.productCode,
             'quantity': item.quantity,
           };
           await txn.insert('goods_receipt_item', itemData);

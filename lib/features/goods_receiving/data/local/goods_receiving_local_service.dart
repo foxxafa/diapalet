@@ -39,8 +39,30 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
       debugPrint("Saved goods_receipt header with id: $headerId, external_id: ${header.externalId}");
 
       for (var item in items) {
-        final itemMap = item.toMap()..remove('id');
-        itemMap['receipt_id'] = headerId; // Link item to the header
+        await txn.insert(
+          'product',
+          {
+            'id': item.product.id,
+            'name': item.product.name,
+            'code': item.product.stockCode,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+
+        await txn.insert(
+          'container',
+          {
+            'container_id': item.palletOrBoxId,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+
+        final itemMap = {
+          'receipt_id': headerId,
+          'pallet_or_box_id': item.palletOrBoxId,
+          'product_id': item.product.id,
+          'quantity': item.quantity,
+        };
         await txn.insert(
           'goods_receipt_item',
           itemMap,
@@ -56,6 +78,11 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   Future<void> setContainerInitialLocation(String containerId, String location, DateTime receivedDate) async {
     final db = await dbHelper.database;
     try {
+      await db.insert(
+        'container',
+        {'container_id': containerId},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
       await db.insert(
         'container_location',
         {
@@ -87,11 +114,13 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   @override
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'goods_receipt_item',
-      where: 'receipt_id = ?',
-      whereArgs: [receiptId],
-    );
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT gri.id, gri.receipt_id, gri.pallet_or_box_id, gri.product_id,
+             p.name AS product_name, p.code AS product_code, gri.quantity
+      FROM goods_receipt_item gri
+      JOIN product p ON p.id = gri.product_id
+      WHERE gri.receipt_id = ?
+    ''', [receiptId]);
     if (maps.isEmpty) return [];
     return List.generate(maps.length, (i) => GoodsReceiptItem.fromMap(maps[i]));
   }
@@ -179,15 +208,15 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   Future<List<ProductInfo>> getProductsForDropdown() async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT DISTINCT product_id, product_name, product_code
-      FROM goods_receipt_item
-      ORDER BY product_name LIMIT 100
+      SELECT id, name, code
+      FROM product
+      ORDER BY name LIMIT 100
     ''');
     return rows
         .map((e) => ProductInfo(
-      id: e['product_id'] as String,
-      name: e['product_name'] as String,
-      stockCode: e['product_code'] as String,
+      id: e['id'] as String,
+      name: e['name'] as String,
+      stockCode: e['code'] as String,
     ))
         .toList();
   }
