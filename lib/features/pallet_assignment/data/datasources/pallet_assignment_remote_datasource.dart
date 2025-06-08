@@ -1,12 +1,24 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 // Corrected entity imports
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/pallet_item.dart';
 
 abstract class PalletAssignmentRemoteDataSource {
+  /// **YENİ: Mal kabul için yeni bir palet oluşturur.**
+  /// Sunucu tarafında yeni bir palet kaydı oluşturur ve benzersiz ID'sini döner.
+  /// Bu, 'mal_kabul_paletleri' gibi bir tabloya yeni bir satır ekler.
+  Future<String> createNewPallet(String locationId);
+
+  /// **YENİ: Belirtilen palete ürünler atar.**
+  /// `items` listesindeki ürünleri `palletId` ile belirtilen palete ekler.
+  /// Bu, 'mal_kabul_palet_icerik' gibi bir ilişki tablosuna kayıtlar ekler.
+  Future<bool> assignItemsToPallet(String palletId, List<PalletItem> items);
+
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
   Future<List<String>> fetchSourceLocations();
   Future<List<String>> fetchTargetLocations();
@@ -16,6 +28,51 @@ abstract class PalletAssignmentRemoteDataSource {
 }
 
 class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteDataSource {
+  final Dio _dio;
+
+  PalletAssignmentRemoteDataSourceImpl({Dio? dio})
+      : _dio = dio ?? Dio(BaseOptions(baseUrl: "https://api.rowhub.com/v1"));
+
+  @override
+  Future<String> createNewPallet(String locationId) async {
+    debugPrint("API: Creating a new pallet at location: $locationId on remote...");
+    try {
+      final response = await _dio.post('/pallets', data: {'location_id': locationId});
+      
+      if (response.statusCode == 201 && response.data['pallet_id'] != null) {
+        final newPalletId = response.data['pallet_id'];
+        debugPrint("API: Pallet created with ID: $newPalletId");
+        return newPalletId;
+      } else {
+        throw Exception('Failed to create pallet. Invalid response from server.');
+      }
+    } on DioError catch (e) {
+      debugPrint("API Error creating pallet: $e");
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> assignItemsToPallet(String palletId, List<PalletItem> items) async {
+    debugPrint("API: Assigning ${items.length} items to pallet ID: $palletId on remote...");
+    try {
+      final payload = {
+        'items': items.map((item) => item.toJson()).toList(),
+      };
+      final response = await _dio.post('/pallets/$palletId/items', data: payload);
+      
+      if (response.statusCode == 200) {
+        debugPrint("API: Items assigned to pallet successfully.");
+        return true;
+      } else {
+        debugPrint("API: Failed to assign items to pallet. Status: ${response.statusCode}");
+        return false;
+      }
+    } on DioError catch (e) {
+      debugPrint("API Error assigning items to pallet: $e");
+      return false;
+    }
+  }
 
   @override
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
