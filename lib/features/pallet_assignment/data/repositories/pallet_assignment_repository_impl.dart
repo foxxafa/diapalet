@@ -6,6 +6,7 @@ import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assi
 import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
@@ -94,6 +95,11 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
       }
     }
     return await localDataSource.getProductInfo(productId, location);
+  }
+
+  @override
+  Future<List<BoxItem>> getBoxesAtLocation(String location) async {
+    return await localDataSource.getBoxesAtLocation(location);
   }
 
   @override

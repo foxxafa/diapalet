@@ -7,6 +7,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_m
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 
 class MockPalletService implements PalletAssignmentRepository {
   final List<String> _mockSourceLocations = [
@@ -88,6 +89,31 @@ class MockPalletService implements PalletAssignmentRepository {
     final pallets = _locationContainerPallets[location] ?? [];
     final boxes = _locationContainerBoxes[location] ?? [];
     return [...pallets, ...boxes];
+  }
+
+  @override
+  Future<List<BoxItem>> getBoxesAtLocation(String location) async {
+    debugPrint("MockPalletService: Fetching boxes at location: $location");
+    await Future.delayed(const Duration(milliseconds: 150));
+    final ids = _locationContainerBoxes[location] ?? [];
+    int i = 1;
+    return ids.map((id) {
+      final items = _containerContents[id] ?? [];
+      final prod = items.isNotEmpty
+          ? items.first
+          : const ProductItem(
+              id: 'unknown',
+              name: 'Unknown',
+              productCode: 'UNK',
+              currentQuantity: 0,
+            );
+      return BoxItem(
+        boxId: i++,
+        productName: prod.name,
+        productCode: prod.productCode,
+        quantity: prod.currentQuantity,
+      );
+    }).toList();
   }
 
   @override
