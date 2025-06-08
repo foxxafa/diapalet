@@ -4,13 +4,16 @@ import 'package:dio/dio.dart';
 // Bu import yolları projenize göre farklılık gösterebilir, doğruluğunu kontrol edin.
 import '../../domain/entities/purchase_order.dart';
 import '../../domain/entities/purchase_order_item.dart';
-import '../models/goods_receipt_payload.dart';
+import '../../domain/entities/goods_receipt_entities.dart';
+import '../../domain/entities/product_info.dart';
 
 /// Mal kabulü ile ilgili uzak sunucu (API) işlemlerini tanımlar.
 abstract class GoodsReceivingRemoteDataSource {
+  Future<List<String>> fetchInvoices();
+  Future<List<ProductInfo>> fetchProductsForDropdown();
+  Future<bool> sendGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
   Future<List<PurchaseOrder>> fetchOpenPurchaseOrders();
   Future<List<PurchaseOrderItem>> fetchPurchaseOrderItems(int orderId);
-  Future<bool> postGoodsReceipt(GoodsReceiptPayload payload);
 }
 
 /// [GoodsReceivingRemoteDataSource] arayüzünün canlı API ile çalışan gerçeklemesi.
@@ -26,6 +29,42 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
     connectTimeout: const Duration(seconds: 10), // Bağlantı zaman aşımı eklendi
     receiveTimeout: const Duration(seconds: 10), // Cevap zaman aşımı eklendi
   ));
+
+  @override
+  Future<List<String>> fetchInvoices() async {
+    debugPrint("API: Fetching invoices from remote...");
+    try {
+      // Varsayılan endpoint: /invoices
+      final response = await _dio.get('/invoices');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List).map((item) => item.toString()).toList();
+      } else {
+        throw Exception('Failed to load invoices. Invalid data format.');
+      }
+    } on DioException catch (e) {
+      debugPrint("API Error fetching invoices: ${e.message}");
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<ProductInfo>> fetchProductsForDropdown() async {
+    debugPrint("API: Fetching products for dropdown from remote...");
+    try {
+      // Varsayılan endpoint: /products/dropdown
+      final response = await _dio.get('/products/dropdown');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List)
+            .map((json) => ProductInfo.fromJson(json))
+            .toList();
+      } else {
+        throw Exception('Failed to load products for dropdown. Invalid data format.');
+      }
+    } on DioException catch (e) {
+      debugPrint("API Error fetching products for dropdown: ${e.message}");
+      rethrow;
+    }
+  }
 
   @override
   Future<List<PurchaseOrder>> fetchOpenPurchaseOrders() async {
@@ -71,10 +110,14 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
   }
 
   @override
-  Future<bool> postGoodsReceipt(GoodsReceiptPayload payload) async {
-    debugPrint("API: Sending goods receipt for order ID: ${payload.purchaseOrderId} to remote...");
+  Future<bool> sendGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
+    debugPrint("API: Sending goods receipt (external ID: ${header.externalId}) to remote...");
     try {
-      final response = await _dio.post('/goods-receipts', data: payload.toJson());
+      final payload = {
+        'header': header.toMap(),
+        'items': items.map((item) => item.toMap()).toList(),
+      };
+      final response = await _dio.post('/goods-receipts', data: payload);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         debugPrint("API: Goods receipt sent successfully.");

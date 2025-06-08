@@ -32,6 +32,24 @@ class ProductItem {
       productCode.hashCode ^
       currentQuantity.hashCode;
 
+  factory ProductItem.fromJson(Map<String, dynamic> json) {
+    return ProductItem(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      productCode: json['productCode'] as String,
+      currentQuantity: json['currentQuantity'] as int,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'productCode': productCode,
+      'currentQuantity': currentQuantity,
+    };
+  }
+
 // Optional: toMap and fromMap if needed for local storage directly with this model
 // For now, assuming local datasource might handle its own mapping if structure differs.
 }
