@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/populate_offline_test_data.dart';
+import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +11,51 @@ import 'package:flutter/foundation.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _isConnected = true;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialConnectivity();
+    _listenConnectivityChanges();
+  }
+
+  Future<void> _checkInitialConnectivity() async {
+    final networkInfo = Provider.of<NetworkInfo>(context, listen: false);
+    final isConnected = await networkInfo.isConnected;
+    if (mounted) {
+      setState(() {
+        _isConnected = isConnected;
+      });
+    }
+  }
+
+  void _listenConnectivityChanges() {
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen((connectivityResult) {
+      final isConnected = !(connectivityResult.contains(ConnectivityResult.none));
+      if (mounted) {
+        setState(() {
+          _isConnected = isConnected;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +65,15 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text('home.title'.tr()),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 20.0),
+            child: Icon(
+              _isConnected ? Icons.wifi : Icons.wifi_off,
+              color: _isConnected ? Colors.green : Colors.red,
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
