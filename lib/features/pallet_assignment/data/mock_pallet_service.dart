@@ -109,6 +109,7 @@ class MockPalletService implements PalletAssignmentRepository {
             );
       return BoxItem(
         boxId: i++,
+        productId: prod.id,
         productName: prod.name,
         productCode: prod.productCode,
         quantity: prod.currentQuantity,
