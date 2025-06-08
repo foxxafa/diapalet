@@ -177,7 +177,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           setState(() {
             _productsInContainer = [
               ProductItem(
-                id: box.boxId.toString(),
+                id: box.productId,
                 name: box.productName,
                 productCode: box.productCode,
                 currentQuantity: box.quantity,
