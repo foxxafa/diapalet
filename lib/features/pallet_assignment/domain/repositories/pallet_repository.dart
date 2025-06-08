@@ -1,5 +1,6 @@
 // lib/features/pallet_assignment/domain/repositories/pallet_repository.dart
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 
@@ -8,6 +9,7 @@ abstract class PalletAssignmentRepository {
   Future<List<String>> getTargetLocations();
   Future<List<String>> getProductIdsAtLocation(String location);
   Future<List<ProductItem>> getProductInfo(String productId, String location);
+  Future<List<BoxItem>> getBoxesAtLocation(String location);
 
   Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
 
