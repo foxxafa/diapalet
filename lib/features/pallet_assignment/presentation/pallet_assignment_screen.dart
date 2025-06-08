@@ -7,6 +7,7 @@ import 'package:easy_localization/easy_localization.dart';
 // Corrected entity and repository imports using your project name 'diapalet'
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart'; // Assuming 'diapalet'
@@ -35,7 +36,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   List<String> _availableContainerIds = [];
   bool _isLoadingContainerIds = false;
-  Map<String, String> _boxIdToName = {}; // boxId -> product name mapping
+  Map<String, BoxItem> _boxItems = {}; // boxId -> BoxItem mapping
   String? _selectedContainerId; // stores the actual container ID
 
   final TextEditingController _scannedContainerIdController = TextEditingController();
@@ -112,24 +113,31 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Future<void> _loadContainerIdsForLocation() async {
     if (_selectedSourceLocation == null) {
-      if (mounted) setState(() => _availableContainerIds = []);
+      if (mounted) setState(() {
+        _availableContainerIds = [];
+        _boxItems = {};
+      });
       return;
     }
     setState(() => _isLoadingContainerIds = true);
     try {
-      final ids = await _repo.getProductIdsAtLocation(_selectedSourceLocation!);
-      Map<String, String> nameMap = {};
-      for (final id in ids) {
-        final info = await _repo.getProductInfo(id, _selectedSourceLocation!);
-        if (info.isNotEmpty) {
-          nameMap[id] = info.first.name;
+      if (_selectedMode == AssignmentMode.kutu) {
+        final boxes = await _repo.getBoxesAtLocation(_selectedSourceLocation!);
+        if (mounted) {
+          setState(() {
+            _availableContainerIds =
+                boxes.map((b) => b.boxId.toString()).toList();
+            _boxItems = {for (var b in boxes) b.boxId.toString(): b};
+          });
         }
-      }
-      if (mounted) {
-        setState(() {
-          _availableContainerIds = ids;
-          _boxIdToName = nameMap;
-        });
+      } else {
+        final ids = await _repo.getProductIdsAtLocation(_selectedSourceLocation!);
+        if (mounted) {
+          setState(() {
+            _availableContainerIds = ids;
+            _boxItems = {};
+          });
+        }
       }
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
@@ -153,23 +161,41 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       _productsInContainer = [];
     });
     try {
-      final contents = await _repo.getProductInfo(containerId, _selectedSourceLocation!);
-      if (!mounted) return;
-      setState(() {
-        _productsInContainer = contents;
-        if (_selectedMode == AssignmentMode.kutu && contents.isNotEmpty) {
-          _transferQuantityController.text = contents.first.currentQuantity.toString();
-          _scannedContainerIdController.text = contents.first.name;
-          _boxIdToName[containerId] = contents.first.name;
-        } else {
-          _transferQuantityController.clear();
-        }
-        if (contents.isEmpty && containerId.isNotEmpty) {
+      if (_selectedMode == AssignmentMode.kutu) {
+        final box = _boxItems[containerId];
+        if (box == null) {
           _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
             'mode': _selectedMode.displayName
           }), isError: true);
+        } else {
+          setState(() {
+            _productsInContainer = [
+              ProductItem(
+                id: box.boxId.toString(),
+                name: box.productName,
+                productCode: box.productCode,
+                currentQuantity: box.quantity,
+              )
+            ];
+            _transferQuantityController.text = box.quantity.toString();
+            _scannedContainerIdController.text =
+                '${box.productName} • ${box.productCode} • ${box.quantity} pcs';
+          });
         }
-      });
+      } else {
+        final contents =
+            await _repo.getProductInfo(containerId, _selectedSourceLocation!);
+        if (!mounted) return;
+        setState(() {
+          _productsInContainer = contents;
+          _transferQuantityController.clear();
+          if (contents.isEmpty && containerId.isNotEmpty) {
+            _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
+              'mode': _selectedMode.displayName
+            }), isError: true);
+          }
+        });
+      }
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
@@ -185,6 +211,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _productsInContainer = [];
         _transferQuantityController.clear();
         _selectedContainerId = null;
+        _boxItems = {};
         if (resetAll) {
           _selectedMode = AssignmentMode.palet;
           _selectedSourceLocation = null;
@@ -224,8 +251,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       } else if (fieldIdentifier == 'scannedId') {
         _selectedContainerId = result;
         setState(() {
-          _scannedContainerIdController.text =
-              _selectedMode == AssignmentMode.kutu ? (_boxIdToName[result] ?? result) : result;
+          _scannedContainerIdController.text = _selectedMode == AssignmentMode.kutu
+              ? (_boxItems[result] != null
+                  ? '${_boxItems[result]!.productName} • ${_boxItems[result]!.productCode} • ${_boxItems[result]!.quantity} pcs'
+                  : result)
+              : result;
         });
         successMessage = tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result});
         found = true;
@@ -509,6 +539,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                           _sourceLocationController.text = val ?? "";
                           _scannedContainerIdController.clear();
                           _selectedContainerId = null;
+                          _boxItems = {};
                         });
                         _loadContainerIdsForLocation();
                       }
@@ -594,6 +625,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               _selectedContainerId = null;
               _productsInContainer = [];
               _transferQuantityController.clear();
+              _boxItems = {};
               _formKey.currentState?.reset();
             });
             _loadContainerIdsForLocation();
@@ -659,11 +691,19 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
       value: _selectedContainerId,
       items: _availableContainerIds,
-      itemLabelBuilder: (id) =>
-          _selectedMode == AssignmentMode.kutu ? (_boxIdToName[id] ?? id) : id,
+      itemLabelBuilder: (id) => _selectedMode == AssignmentMode.kutu
+          ? (_boxItems[id] != null
+              ? '${_boxItems[id]!.productName} • ${_boxItems[id]!.productCode} • ${_boxItems[id]!.quantity} pcs'
+              : id)
+          : id,
       filterFn: (id, query) {
-        final label = _selectedMode == AssignmentMode.kutu ? (_boxIdToName[id] ?? id) : id;
-        return label.toLowerCase().contains(query.toLowerCase());
+        final label = _selectedMode == AssignmentMode.kutu
+            ? (_boxItems[id] != null
+                ? '${_boxItems[id]!.productName} ${_boxItems[id]!.productCode} ${_boxItems[id]!.quantity}'
+                : id)
+            : id;
+        return label.toLowerCase().contains(query.toLowerCase()) ||
+            id.toLowerCase().contains(query.toLowerCase());
       },
       onSelected: (val) async {
         if (mounted) {
@@ -672,7 +712,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
             _scannedContainerIdController.text = val == null
                 ? ''
                 : _selectedMode == AssignmentMode.kutu
-                    ? (_boxIdToName[val] ?? val)
+                    ? (_boxItems[val] != null
+                        ? '${_boxItems[val]!.productName} • ${_boxItems[val]!.productCode} • ${_boxItems[val]!.quantity} pcs'
+                        : val)
                     : val;
           });
           if (val != null) await _fetchContainerContents();

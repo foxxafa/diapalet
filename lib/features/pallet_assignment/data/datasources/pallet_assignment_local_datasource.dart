@@ -5,6 +5,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ope
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 
 abstract class PalletAssignmentLocalDataSource {
   Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
@@ -15,6 +16,7 @@ abstract class PalletAssignmentLocalDataSource {
   Future<List<String>> getDistinctLocations();
   Future<List<String>> getProductIdsByLocation(String location);
   Future<List<ProductItem>> getProductInfo(String productId, String location);
+  Future<List<BoxItem>> getBoxesAtLocation(String location);
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -176,6 +178,26 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
               name: e['product_name'] as String,
               productCode: e['product_code'] as String,
               currentQuantity: e['quantity'] as int? ?? 0,
+            ))
+        .toList();
+  }
+
+  @override
+  Future<List<BoxItem>> getBoxesAtLocation(String location) async {
+    final db = await dbHelper.database;
+    final rows = await db.rawQuery('''
+      SELECT gri.id AS box_id, p.name AS product_name, p.code AS product_code, gri.quantity
+      FROM goods_receipt_item gri
+      JOIN product p ON p.id = gri.product_id
+      WHERE gri.location = ? AND gri.pallet_id IS NULL
+      ORDER BY gri.id DESC
+    ''', [location]);
+    return rows
+        .map((e) => BoxItem(
+              boxId: e['box_id'] as int,
+              productName: e['product_name'] as String,
+              productCode: e['product_code'] as String,
+              quantity: e['quantity'] as int? ?? 0,
             ))
         .toList();
   }
