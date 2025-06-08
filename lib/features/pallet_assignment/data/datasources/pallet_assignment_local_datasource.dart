@@ -186,7 +186,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   Future<List<BoxItem>> getBoxesAtLocation(String location) async {
     final db = await dbHelper.database;
     final rows = await db.rawQuery('''
-      SELECT gri.id AS box_id, p.name AS product_name, p.code AS product_code, gri.quantity
+      SELECT gri.id AS box_id, gri.product_id, p.name AS product_name, p.code AS product_code, gri.quantity
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
       WHERE gri.location = ? AND gri.pallet_id IS NULL
@@ -195,6 +195,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     return rows
         .map((e) => BoxItem(
               boxId: e['box_id'] as int,
+              productId: e['product_id'] as String,
               productName: e['product_name'] as String,
               productCode: e['product_code'] as String,
               quantity: e['quantity'] as int? ?? 0,
