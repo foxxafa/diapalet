@@ -29,29 +29,6 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
-  Future<void> _updateStock(DatabaseExecutor txn, String productId, String location, int delta) async {
-    await _ensureLocation(txn, location);
-    final existing = await txn.query('stock_location', where: 'product_id = ? AND location = ?', whereArgs: [productId, location]);
-    if (existing.isEmpty) {
-      if (delta > 0) {
-        await txn.insert('stock_location', {
-          'product_id': productId,
-          'location': location,
-          'quantity': delta,
-        });
-      }
-    } else {
-      final id = existing.first['id'] as int;
-      final qty = existing.first['quantity'] as int? ?? 0;
-      final newQty = qty + delta;
-      if (newQty <= 0) {
-        await txn.delete('stock_location', where: 'id = ?', whereArgs: [id]);
-      } else {
-        await txn.update('stock_location', {'quantity': newQty}, where: 'id = ?', whereArgs: [id]);
-      }
-    }
-  }
-
   @override
   Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
     final db = await dbHelper.database;
@@ -74,8 +51,52 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           'quantity': item.quantity,
         });
         if (header.operationType == AssignmentMode.kutu) {
-          await _updateStock(txn, item.productId, header.sourceLocation, -item.quantity);
-          await _updateStock(txn, item.productId, header.targetLocation, item.quantity);
+          final sourceBoxId = int.tryParse(header.containerId);
+          if (sourceBoxId == null) {
+            throw Exception("Invalid source box ID: ${header.containerId}");
+          }
+
+          final sourceBox = await txn.query('goods_receipt_item', where: 'id = ?', whereArgs: [sourceBoxId]);
+
+          if (sourceBox.isEmpty) {
+            throw Exception("Source box not found with ID: $sourceBoxId");
+          }
+
+          final sourceQuantity = sourceBox.first['quantity'] as int;
+          final newSourceQuantity = sourceQuantity - item.quantity;
+
+          if (newSourceQuantity < 0) {
+            throw Exception("Transfer quantity is greater than source quantity.");
+          }
+
+          if (newSourceQuantity == 0) {
+            await txn.delete('goods_receipt_item', where: 'id = ?', whereArgs: [sourceBoxId]);
+          } else {
+            await txn.update('goods_receipt_item', {'quantity': newSourceQuantity}, where: 'id = ?', whereArgs: [sourceBoxId]);
+          }
+
+          final targetBoxes = await txn.query(
+            'goods_receipt_item',
+            where: 'location = ? AND product_id = ? AND pallet_id IS NULL',
+            whereArgs: [header.targetLocation, item.productId],
+          );
+
+          if (targetBoxes.isNotEmpty) {
+            final targetBox = targetBoxes.first;
+            final targetBoxId = targetBox['id'] as int;
+            final targetQuantity = targetBox['quantity'] as int;
+            final newTargetQuantity = targetQuantity + item.quantity;
+            await txn.update('goods_receipt_item', {'quantity': newTargetQuantity}, where: 'id = ?', whereArgs: [targetBoxId]);
+          } else {
+            final sourceReceiptId = sourceBox.first['receipt_id'];
+            await txn.insert('goods_receipt_item', {
+              'receipt_id': sourceReceiptId,
+              'product_id': item.productId,
+              'quantity': item.quantity,
+              'location': header.targetLocation,
+              'pallet_id': null,
+            });
+          }
         }
       }
 
@@ -131,13 +152,8 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     final db = await dbHelper.database;
     final palletRows =
         await db.rawQuery('SELECT id FROM pallet WHERE location = ? ORDER BY id', [location]);
-    final boxRows = await db.rawQuery(
-        'SELECT DISTINCT product_id FROM stock_location WHERE location = ? ORDER BY product_id',
-        [location]);
-
     final ids = <String>[];
     ids.addAll(palletRows.map((e) => e['id'] as String));
-    ids.addAll(boxRows.map((e) => e['product_id'] as String));
     return ids;
   }
 
@@ -145,7 +161,6 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   Future<List<ProductItem>> getProductInfo(String productId, String location) async {
     final db = await dbHelper.database;
 
-    // Check if the id corresponds to a pallet first
     final pallet = await db.query('pallet', where: 'id = ?', whereArgs: [productId], limit: 1);
     if (pallet.isNotEmpty) {
       final rows = await db.rawQuery('''
@@ -164,13 +179,12 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           .toList();
     }
 
-    // Otherwise treat it as a box (stock by product/location)
     final rows = await db.rawQuery('''
-      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, sl.quantity
-      FROM stock_location sl
-      JOIN product p ON p.id = sl.product_id
-      WHERE sl.product_id = ? AND sl.location = ?
-    ''', [productId, location]);
+      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, gri.quantity
+      FROM goods_receipt_item gri
+      JOIN product p ON p.id = gri.product_id
+      WHERE gri.id = ? AND gri.location = ? 
+    ''', [int.tryParse(productId), location]);
 
     return rows
         .map((e) => ProductItem(
