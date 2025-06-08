@@ -107,16 +107,20 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) setState(() => _isLoadingInitialData = false);
+      if (mounted) {
+        setState(() => _isLoadingInitialData = false);
+      }
     }
   }
 
   Future<void> _loadContainerIdsForLocation() async {
     if (_selectedSourceLocation == null) {
-      if (mounted) setState(() {
-        _availableContainerIds = [];
-        _boxItems = {};
-      });
+      if (mounted) {
+        setState(() {
+          _availableContainerIds = [];
+          _boxItems = {};
+        });
+      }
       return;
     }
     setState(() => _isLoadingContainerIds = true);
@@ -142,7 +146,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) setState(() => _isLoadingContainerIds = false);
+      if (mounted) {
+        setState(() => _isLoadingContainerIds = false);
+      }
     }
   }
 
@@ -199,7 +205,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) setState(() => _isLoadingContainerContents = false);
+      if (mounted) {
+        setState(() => _isLoadingContainerContents = false);
+      }
     }
   }
 
@@ -356,7 +364,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 

@@ -41,15 +41,18 @@ Future<void> populateTestData() async {
   // ---------- master data ----------
   for (final p in [
     ['PROD-A', 'Coca Cola 1L', 'A100'],
-    ['PROD-B', 'Pepsi 330ml',  'B200'],
-    ['PROD-C', 'Fanta 1L',     'C300'],
-    ['PROD-D', 'Sprite 1.5L',  'D400'],
+    ['PROD-B', 'Pepsi 330ml', 'B200'],
+    ['PROD-C', 'Fanta 1L', 'C300'],
+    ['PROD-D', 'Sprite 1.5L', 'D400'],
     ['PROD-E', 'Coca Cola 1L', 'E500'],
-    ['PROD-F', 'Pepsi 330ml',  'F600'],
-  ]) await addProduct(p[0], p[1], p[2]);
+    ['PROD-F', 'Pepsi 330ml', 'F600'],
+  ]) {
+    await addProduct(p[0], p[1], p[2]);
+  }
 
-  for (final l in ['MAL KABUL','KASA','10A21','5C2','5B3'])
+  for (final l in ['MAL KABUL', 'KASA', '10A21', '5C2', '5B3']) {
     await addLocation(l);
+  }
 
   // ---------- pallet example ----------
   await db.insert('pallet', {'id': 'PALET-001', 'location': 'MAL KABUL'});
