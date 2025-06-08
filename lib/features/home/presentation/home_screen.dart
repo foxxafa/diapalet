@@ -1,9 +1,5 @@
-import 'dart:async';
-
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/populate_offline_test_data.dart';
-import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
