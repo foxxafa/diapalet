@@ -1,4 +1,5 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
+import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
@@ -404,9 +405,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final bool isKutuModeLocked = _selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('goods_receiving.title'.tr()),
-        centerTitle: true,
+      appBar: SharedAppBar(
+        title: 'goods_receiving.title'.tr(),
       ),
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: _isLoading || _isSaving

@@ -1,4 +1,5 @@
 // lib/features/pallet_assignment/presentation/pallet_assignment_screen.dart
+import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -502,9 +503,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('pallet_assignment.title'.tr()),
-        centerTitle: true,
+      appBar: SharedAppBar(
+        title: 'pallet_assignment.title'.tr(),
       ),
       resizeToAvoidBottomInset: true,
       bottomNavigationBar: _isLoadingInitialData || _isSaving
