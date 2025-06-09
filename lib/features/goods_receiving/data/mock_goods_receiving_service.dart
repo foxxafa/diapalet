@@ -30,8 +30,6 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
   }
 
   @override
-
-  @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
     debugPrint("MockGoodsReceivingService: Fetching products for dropdown.");
     await Future.delayed(const Duration(milliseconds: 100));
@@ -94,7 +92,6 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     }
   }
 
-  @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     await Future.delayed(const Duration(milliseconds: 100));
     return [
