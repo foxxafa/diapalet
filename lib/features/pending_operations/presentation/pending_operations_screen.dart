@@ -159,8 +159,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
       padding: const EdgeInsets.all(16.0),
       margin: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: color.withValues(opacity: 0.1),
+        border: Border.all(color: color.withValues(opacity: 0.3)),
         borderRadius: BorderRadius.circular(8.0),
       ),
       child: Row(
@@ -226,7 +226,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
         leading: Container(
           padding: const EdgeInsets.all(8.0),
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(opacity: 0.1),
             borderRadius: BorderRadius.circular(8.0),
           ),
           child: Icon(icon, color: iconColor),
@@ -275,15 +275,19 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                   style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                 ),
               ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text('common.close'.tr()),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('common.close'.tr()),
-          ),
-        ],
       ),
     );
   }
