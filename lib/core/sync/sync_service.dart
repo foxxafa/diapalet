@@ -21,7 +21,7 @@ class SyncService {
   
   // Configuration
   static const Duration syncInterval = Duration(seconds: 30);
-  static final String baseUrl = ApiConfig.baseUrl;
+  static final String baseUrl = ApiConfig.host;
   
   String? _deviceId;
   bool _isInitialized = false;

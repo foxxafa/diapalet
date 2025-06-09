@@ -158,8 +158,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
       padding: const EdgeInsets.all(16.0),
       margin: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: color.withAlpha(26),
+        border: Border.all(color: color.withAlpha(77)),
         borderRadius: BorderRadius.circular(8.0),
       ),
       child: Row(
@@ -225,7 +225,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
         leading: Container(
           padding: const EdgeInsets.all(8.0),
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withAlpha(26),
             borderRadius: BorderRadius.circular(8.0),
           ),
           child: Icon(icon, color: iconColor),
