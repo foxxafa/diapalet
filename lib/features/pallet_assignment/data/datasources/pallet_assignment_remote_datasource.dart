@@ -7,6 +7,7 @@ import '../../domain/entities/transfer_item_detail.dart';
 import '../../domain/entities/product_item.dart';
 import '../../domain/entities/assignment_mode.dart';
 import '../../domain/entities/pallet_item.dart';
+import '../../../../core/network/api_config.dart';
 
 abstract class PalletAssignmentRemoteDataSource {
   Future<String> createNewPallet(String locationId);
@@ -25,7 +26,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   // "YOUR_PC_IP_ADDRESS" kısmını kendi bilgisayarınızın IP adresi ile değiştirin.
   PalletAssignmentRemoteDataSourceImpl({Dio? dio})
       : _dio = dio ?? Dio(BaseOptions(
-    baseUrl: "http://YOUR_PC_IP_ADDRESS:5000/v1",
+    baseUrl: "${ApiConfig.baseUrl}/v1",
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));

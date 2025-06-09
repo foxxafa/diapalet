@@ -6,6 +6,7 @@ import '../../domain/entities/purchase_order.dart';
 import '../../domain/entities/purchase_order_item.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/entities/product_info.dart';
+import '../../../../core/network/api_config.dart';
 
 /// Mal kabulü ile ilgili uzak sunucu (API) işlemlerini tanımlar.
 abstract class GoodsReceivingRemoteDataSource {
@@ -25,7 +26,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
   // "YOUR_PC_IP_ADDRESS" kısmını kendi bilgisayarınızın IP adresi ile değiştirin.
   GoodsReceivingRemoteDataSourceImpl({Dio? dio})
       : _dio = dio ?? Dio(BaseOptions(
-    baseUrl: "http://YOUR_PC_IP_ADDRESS:5000/v1",
+    baseUrl: "${ApiConfig.baseUrl}/v1",
     connectTimeout: const Duration(seconds: 10), // Bağlantı zaman aşımı eklendi
     receiveTimeout: const Duration(seconds: 10), // Cevap zaman aşımı eklendi
   ));

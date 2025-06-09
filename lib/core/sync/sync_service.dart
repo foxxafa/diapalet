@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../local/database_helper.dart';
 import '../network/network_info.dart';
+import '../network/api_config.dart';
 import 'pending_operation.dart';
 
 class SyncService {
@@ -19,8 +20,8 @@ class SyncService {
   Timer? _syncTimer;
   
   // Configuration
-  static const String baseUrl = 'http://localhost:5000'; // Change this to your server URL
   static const Duration syncInterval = Duration(seconds: 30);
+  static const String baseUrl = ApiConfig.baseUrl;
   
   String? _deviceId;
   bool _isInitialized = false;
