@@ -11,4 +11,6 @@ abstract class GoodsReceivingRepository {
   Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts();
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId);
   Future<void> markGoodsReceiptAsSynced(int receiptId);
+
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders();
 }

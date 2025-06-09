@@ -163,4 +163,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("Cannot synchronize goods receipts, no network connection.");
     }
   }
+
+  @override
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
+    if (await networkInfo.isConnected) {
+      try {
+        return await remoteDataSource.fetchOpenPurchaseOrders();
+      } catch (e) {
+        debugPrint("API getOpenPurchaseOrders error: $e. Returning empty list.");
+        return [];
+      }
+    }
+    // Offline için localden sipariş desteği eklenebilir.
+    return [];
+  }
 }

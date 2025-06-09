@@ -8,6 +8,7 @@ import 'package:easy_localization/easy_localization.dart';
 import '../../domain/entities/product_info.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/repositories/goods_receiving_repository.dart';
+import '../../domain/entities/purchase_order.dart';
 import '../../../../core/widgets/qr_scanner_screen.dart';
 
 // Palet ve Kutu modları için enum tanımı
@@ -34,9 +35,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // Yeni state: Palet/Kutu modu
   ReceivingMode _selectedMode = ReceivingMode.palet;
 
-  List<String> _availableInvoices = [];
-  String? _selectedInvoice;
-  final TextEditingController _invoiceController = TextEditingController();
+  List<PurchaseOrder> _availableOrders = [];
+  PurchaseOrder? _selectedOrder;
+  final TextEditingController _orderController = TextEditingController();
 
   // Palet ID'si için controller
   final TextEditingController _palletIdController = TextEditingController();
@@ -71,9 +72,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   @override
   void dispose() {
     _quantityController.dispose();
-    _invoiceController.dispose();
     _productController.dispose();
     _palletIdController.dispose();
+    _orderController.dispose();
     super.dispose();
   }
 
@@ -82,13 +83,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
-        _repository.getInvoices(),
+        _repository.getOpenPurchaseOrders(),
         _repository.getProductsForDropdown(),
       ]);
       if (!mounted) return;
 
       setState(() {
-        _availableInvoices = List<String>.from(results[0]);
+        _availableOrders = List<PurchaseOrder>.from(results[0]);
         _availableProducts = List<ProductInfo>.from(results[1]);
       });
     } catch (e) {
@@ -116,8 +117,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (mounted) {
       setState(() {
         if (resetAll) {
-          _selectedInvoice = null;
-          _invoiceController.clear();
+          _selectedOrder = null;
+          _orderController.clear();
           _addedItems.clear();
           _formKey.currentState?.reset();
         }
@@ -188,8 +189,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    if (_selectedInvoice == null || _selectedInvoice!.isEmpty) {
-      _showErrorSnackBar(tr('goods_receiving.errors.select_invoice'));
+    if (_selectedOrder == null) {
+      _showErrorSnackBar(tr('goods_receiving.errors.select_order'));
       return;
     }
 
@@ -223,7 +224,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       setState(() => _isSaving = true);
       try {
         final header = GoodsReceipt(
-          invoiceNumber: _selectedInvoice!,
+          invoiceNumber: _selectedOrder!.poId ?? _selectedOrder!.id.toString(),
           receiptDate: DateTime.now(),
         );
         await _repository.saveGoodsReceipt(header, _addedItems);
@@ -436,7 +437,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               children: [
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
-                _buildSearchableInvoiceDropdown(),
+                _buildSearchableOrderDropdown(),
                 if (_selectedMode == ReceivingMode.palet) ...[
                   const SizedBox(height: _gap),
                   _buildPalletIdInput(),
@@ -491,29 +492,29 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildSearchableInvoiceDropdown() {
+  Widget _buildSearchableOrderDropdown() {
     return SizedBox(
       child: TextFormField(
-        controller: _invoiceController,
+        controller: _orderController,
         readOnly: true,
-        decoration: _inputDecoration('goods_receiving.select_invoice'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
+        decoration: _inputDecoration('goods_receiving.select_order'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
         onTap: () async {
-          final String? selected = await _showSearchableDropdownDialog<String>(
+          final PurchaseOrder? selected = await _showSearchableDropdownDialog<PurchaseOrder>(
             context: context,
-            title: 'goods_receiving.select_invoice'.tr(),
-            items: _availableInvoices,
-            itemToString: (item) => item,
-            filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-            initialValue: _selectedInvoice,
+            title: 'goods_receiving.select_order'.tr(),
+            items: _availableOrders,
+            itemToString: (item) => item.id,
+            filterCondition: (item, query) => item.id.toLowerCase().contains(query.toLowerCase()),
+            initialValue: _selectedOrder,
           );
           if (selected != null) {
             setState(() {
-              _selectedInvoice = selected;
-              _invoiceController.text = selected;
+              _selectedOrder = selected;
+              _orderController.text = selected.id;
             });
           }
         },
-        validator: (value) => (value == null || value.isEmpty) ? 'goods_receiving.errors.select_invoice'.tr() : null,
+        validator: (value) => (value == null || value.isEmpty) ? 'goods_receiving.errors.select_order'.tr() : null,
         autovalidateMode: AutovalidateMode.onUserInteraction,
       ),
     );
@@ -676,7 +677,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("İrsaliye: ${_selectedInvoice ?? 'N/A'}"),
+                        Text("Sipariş: ${_selectedOrder?.id ?? 'N/A'}"),
                         Text("Konum: ${item.location}"),
                         if (isPalletItem)
                           Text("Palet: ${item.containerId}"),
