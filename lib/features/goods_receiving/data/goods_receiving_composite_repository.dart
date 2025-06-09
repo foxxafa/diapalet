@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/network/network_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
 import '../domain/entities/product_info.dart';
+import '../domain/entities/purchase_order.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
 import './local/goods_receiving_local_service.dart';
 import './remote/goods_receiving_api_service.dart';

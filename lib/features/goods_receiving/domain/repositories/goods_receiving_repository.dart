@@ -1,6 +1,7 @@
 // features/goods_receiving/domain/repositories/goods_receiving_repository.dart
 import '../entities/product_info.dart';
 import '../entities/goods_receipt_entities.dart';
+import '../entities/purchase_order.dart';
 
 abstract class GoodsReceivingRepository {
   Future<List<String>> getInvoices();
