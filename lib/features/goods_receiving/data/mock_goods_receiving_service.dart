@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/entities/product_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
+import '../domain/entities/purchase_order.dart';
 
 class MockGoodsReceivingService implements GoodsReceivingRepository {
   final List<String> _mockInvoices = [
@@ -91,6 +92,15 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     if (index != -1) {
       _savedReceipts[index].synced = 1;
     }
+  }
+
+  @override
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
+    await Future.delayed(const Duration(milliseconds: 100));
+    return [
+      PurchaseOrder(id: 1, poId: 'PO-MOCK-001', date: DateTime.now(), notes: 'Mock sipariş', status: 0, supplierName: 'Tedarikçi A', supplierId: 1),
+      PurchaseOrder(id: 2, poId: 'PO-MOCK-002', date: DateTime.now(), notes: 'Mock sipariş 2', status: 0, supplierName: 'Tedarikçi B', supplierId: 2),
+    ];
   }
 
 }

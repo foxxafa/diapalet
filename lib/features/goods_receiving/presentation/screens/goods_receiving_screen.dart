@@ -503,14 +503,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             context: context,
             title: 'goods_receiving.select_order'.tr(),
             items: _availableOrders,
-            itemToString: (item) => item.id,
-            filterCondition: (item, query) => item.id.toLowerCase().contains(query.toLowerCase()),
+            itemToString: (item) => item.poId ?? item.id.toString(),
+            filterCondition: (item, query) => (item.poId ?? item.id.toString()).toLowerCase().contains(query.toLowerCase()),
             initialValue: _selectedOrder,
           );
           if (selected != null) {
             setState(() {
               _selectedOrder = selected;
-              _orderController.text = selected.id;
+              _orderController.text = selected.poId ?? selected.id.toString();
             });
           }
         },
