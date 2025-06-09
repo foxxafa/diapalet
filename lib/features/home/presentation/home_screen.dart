@@ -3,6 +3,8 @@ import 'package:diapalet/core/local/populate_offline_test_data.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
+import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -16,6 +18,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeSync();
+  }
+  
+  Future<void> _initializeSync() async {
+    try {
+      final syncService = context.read<SyncService>();
+      await syncService.initialize();
+    } catch (e) {
+      debugPrint('Failed to initialize sync service: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const bool isDebug = kDebugMode;
@@ -98,6 +115,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => const PalletAssignmentScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            _HomeButton(
+              icon: Icons.sync_alt,
+              label: 'home.pending_operations'.tr(),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PendingOperationsScreen(),
                   ),
                 );
               },

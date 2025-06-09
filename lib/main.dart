@@ -9,6 +9,7 @@ import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assi
 import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart';
 import 'package:diapalet/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart';
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +45,11 @@ class DiapaletApp extends StatelessWidget {
         ),
         Provider<NetworkInfo>(
           create: (_) => NetworkInfoImpl(Connectivity()),
+        ),
+        
+        // Sync Service
+        Provider<SyncService>(
+          create: (_) => SyncService(),
         ),
 
         // Veri Kaynakları (DataSources)

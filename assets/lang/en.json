@@ -13,7 +13,8 @@
     "populate_test": "Populate Test Data",
     "test_data_populated": "Test data populated",
     "goods_receiving": "Goods Receiving",
-    "pallet_transfer": "Pallet/Box Transfer"
+    "pallet_transfer": "Pallet/Box Transfer",
+    "pending_operations": "Pending Operations"
   },
   "receive_mode": {
     "palet": "Pallet",
@@ -98,6 +99,27 @@
     "tip": "Align the QR code within the frame"
   },
   "common": {
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "pending_operations": {
+    "title": "Pending Operations",
+    "no_pending": "No Pending Operations",
+    "all_synced": "All operations are synchronized",
+    "operations_count": "{args} pending operations",
+    "sync_now": "Sync Now",
+    "syncing": "Syncing...",
+    "refresh": "Refresh",
+    "download_master_data": "Download Master Data",
+    "operation_details": "Operation Details",
+    "type": "Type:",
+    "created": "Created:",
+    "data": "Data:",
+    "status": {
+      "offline": "Offline",
+      "syncing": "Syncing",
+      "up_to_date": "Up to Date",
+      "error": "Error"
+    }
   }
 }

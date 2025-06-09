@@ -22,6 +22,8 @@ dependencies:
   uuid: ^3.0.7
   easy_localization: ^3.0.4
   dio: ^5.4.0
+  device_info_plus: ^10.1.2
+  http: ^1.2.2
 
 
 dev_dependencies:

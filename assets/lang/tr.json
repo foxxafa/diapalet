@@ -13,7 +13,8 @@
     "populate_test": "Test Verisi Yükle",
     "test_data_populated": "Test verisi yüklendi",
     "goods_receiving": "Mal Kabul",
-    "pallet_transfer": "Palet/Kutu Taşıma"
+    "pallet_transfer": "Palet/Kutu Taşıma",
+    "pending_operations": "Bekleyen İşlemler"
   },
   "receive_mode": {
     "palet": "Palet",
@@ -98,6 +99,27 @@
     "tip": "QR kodu çerçevenin içine getirin"
   },
   "common": {
-    "cancel": "İptal"
+    "cancel": "İptal",
+    "close": "Kapat"
+  },
+  "pending_operations": {
+    "title": "Bekleyen İşlemler",
+    "no_pending": "Bekleyen İşlem Yok",
+    "all_synced": "Tüm işlemler senkronize edilmiş",
+    "operations_count": "{args} bekleyen işlem",
+    "sync_now": "Şimdi Senkronize Et",
+    "syncing": "Senkronize Ediliyor...",
+    "refresh": "Yenile",
+    "download_master_data": "Ana Verileri İndir",
+    "operation_details": "İşlem Detayları",
+    "type": "Tür:",
+    "created": "Oluşturulma:",
+    "data": "Veri:",
+    "status": {
+      "offline": "Çevrimdışı",
+      "syncing": "Senkronize Ediliyor",
+      "up_to_date": "Güncel",
+      "error": "Hata"
+    }
   }
 }
