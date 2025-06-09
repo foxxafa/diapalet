@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../core/sync/sync_service.dart';
 import '../../../core/sync/pending_operation.dart';
-import '../../../core/widgets/shared_app_bar.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
   const PendingOperationsScreen({super.key});
@@ -159,8 +158,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
       padding: const EdgeInsets.all(16.0),
       margin: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: color.withValues(opacity: 0.1),
-        border: Border.all(color: color.withValues(opacity: 0.3)),
+        color: color.withOpacity(0.1),
+        border: Border.all(color: color.withOpacity(0.3)),
         borderRadius: BorderRadius.circular(8.0),
       ),
       child: Row(
@@ -226,7 +225,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
         leading: Container(
           padding: const EdgeInsets.all(8.0),
           decoration: BoxDecoration(
-            color: iconColor.withValues(opacity: 0.1),
+            color: iconColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8.0),
           ),
           child: Icon(icon, color: iconColor),
@@ -314,8 +313,9 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SharedAppBar(
-        title: 'pending_operations.title'.tr(),
+      appBar: AppBar(
+        title: Text('pending_operations.title'.tr()),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.download),
@@ -326,6 +326,14 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: _loadPendingOperations,
             tooltip: 'pending_operations.refresh'.tr(),
+          ),
+          // Add connectivity indicator like SharedAppBar
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: Icon(
+              _syncStatus == SyncStatus.offline ? Icons.wifi_off : Icons.wifi,
+              color: _syncStatus == SyncStatus.offline ? Colors.red : Colors.green,
+            ),
           ),
         ],
       ),
