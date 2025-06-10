@@ -354,7 +354,7 @@ def sync_download():
 
 @app.route("/v1/containers/<string:location>/ids", methods=["GET"])
 def get_container_ids(location):
-    mode = request.args.get("mode", "pallet")
+    mode = request.args.get("mode", "pallet").strip()
     loc_row = query_one("SELECT id FROM locations WHERE name = %s", (location,))
     if not loc_row:
         return jsonify({"error": "Location not found"}), 404
@@ -369,12 +369,12 @@ def get_container_ids(location):
             "SELECT DISTINCT urun_id AS id FROM inventory_stock WHERE location_id = %s AND pallet_barcode IS NULL",
             (loc_id,),
         )
-    return jsonify([r["id"] for r in rows])
+    return jsonify([str(r["id"]) for r in rows])
 
 
 @app.route("/v1/containers/<string:container_id>/contents", methods=["GET"])
 def get_container_contents(container_id):
-    mode = request.args.get("mode", "pallet")
+    mode = request.args.get("mode", "pallet").strip()
     if mode == "pallet":
         rows = query_all(
             """
