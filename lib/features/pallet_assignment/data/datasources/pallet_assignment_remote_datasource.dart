@@ -110,7 +110,8 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<String>> fetchContainerIds(String location, AssignmentMode mode) async {
     debugPrint("API: Fetching container IDs at $location for ${mode.displayName} from API...");
     try {
-      final response = await _dio.get('/containers/$location/ids', queryParameters: {'mode': mode.name});
+      final encodedLocation = Uri.encodeComponent(location);
+      final response = await _dio.get('/containers/$encodedLocation/ids', queryParameters: {'mode': mode.name});
       if (response.statusCode == 200 && response.data is List) {
         // Gelen ID'ler integer (box mode) veya string (pallet mode) olabilir.
         // Hepsini string'e çevirerek统一laştırıyoruz.
@@ -127,7 +128,8 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<ProductItem>> fetchContainerContents(String containerId, AssignmentMode mode) async {
     debugPrint("API: Fetching contents for ${mode.displayName} ID: $containerId from API...");
     try {
-      final response = await _dio.get('/containers/$containerId/contents', queryParameters: {'mode': mode.name});
+      final encodedContainer = Uri.encodeComponent(containerId);
+      final response = await _dio.get('/containers/$encodedContainer/contents', queryParameters: {'mode': mode.name});
       if (response.statusCode == 200 && response.data is List) {
         return (response.data as List).map((json) => ProductItem.fromJson(json)).toList();
       }

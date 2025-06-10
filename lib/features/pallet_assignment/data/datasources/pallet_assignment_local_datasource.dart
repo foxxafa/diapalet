@@ -153,7 +153,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     final palletRows =
         await db.rawQuery('SELECT id FROM pallet WHERE location = ? ORDER BY id', [location]);
     final ids = <String>[];
-    ids.addAll(palletRows.map((e) => e['id'] as String));
+    ids.addAll(palletRows.map((e) => e['id'].toString()));
     return ids;
   }
 
@@ -171,10 +171,10 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       ''', [productId]);
       return rows
           .map((e) => ProductItem(
-                id: e['product_id'] as String,
-                name: e['product_name'] as String,
-                productCode: e['product_code'] as String,
-                currentQuantity: e['quantity'] as int? ?? 0,
+                id: e['product_id'].toString(),
+                name: (e['product_name'] ?? '').toString(),
+                productCode: (e['product_code'] ?? '').toString(),
+                currentQuantity: (e['quantity'] as num?)?.toInt() ?? 0,
               ))
           .toList();
     }
@@ -188,10 +188,10 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
 
     return rows
         .map((e) => ProductItem(
-              id: e['product_id'] as String,
-              name: e['product_name'] as String,
-              productCode: e['product_code'] as String,
-              currentQuantity: e['quantity'] as int? ?? 0,
+              id: e['product_id'].toString(),
+              name: (e['product_name'] ?? '').toString(),
+              productCode: (e['product_code'] ?? '').toString(),
+              currentQuantity: (e['quantity'] as num?)?.toInt() ?? 0,
             ))
         .toList();
   }
@@ -208,11 +208,11 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
     ''', [location]);
     return rows
         .map((e) => BoxItem(
-              boxId: e['box_id'] as int,
-              productId: e['product_id'] as String,
-              productName: e['product_name'] as String,
-              productCode: e['product_code'] as String,
-              quantity: e['quantity'] as int? ?? 0,
+              boxId: (e['box_id'] as int),
+              productId: e['product_id'].toString(),
+              productName: (e['product_name'] ?? '').toString(),
+              productCode: (e['product_code'] ?? '').toString(),
+              quantity: (e['quantity'] as num?)?.toInt() ?? 0,
             ))
         .toList();
   }

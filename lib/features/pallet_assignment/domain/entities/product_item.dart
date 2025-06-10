@@ -33,11 +33,23 @@ class ProductItem {
       currentQuantity.hashCode;
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
+    // Backend may send keys like productId, productName, quantity, etc.
+    final dynamic idValue = json['id'] ?? json['productId'];
+    final dynamic nameValue = json['name'] ?? json['productName'];
+    final dynamic codeValue = json['productCode'] ?? json['code'];
+    final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
+
     return ProductItem(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      productCode: json['productCode'] as String,
-      currentQuantity: json['currentQuantity'] as int,
+      id: idValue?.toString() ?? '',
+      name: nameValue?.toString() ?? '',
+      productCode: codeValue?.toString() ?? '',
+      currentQuantity: (qtyValue is int)
+          ? qtyValue
+          : (qtyValue is String)
+              ? int.tryParse(qtyValue) ?? 0
+              : (qtyValue is num)
+                  ? qtyValue.toInt()
+                  : 0,
     );
   }
 
