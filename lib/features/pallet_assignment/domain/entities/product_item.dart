@@ -39,17 +39,25 @@ class ProductItem {
     final dynamic codeValue = json['productCode'] ?? json['code'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
 
+    int _parseQty(dynamic val) {
+      if (val == null) return 0;
+      if (val is int) return val;
+      if (val is double) return val.round();
+      if (val is num) return val.toInt();
+      if (val is String) {
+        final int? i = int.tryParse(val);
+        if (i != null) return i;
+        final double? d = double.tryParse(val);
+        if (d != null) return d.round();
+      }
+      return 0;
+    }
+
     return ProductItem(
       id: idValue?.toString() ?? '',
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
-      currentQuantity: (qtyValue is int)
-          ? qtyValue
-          : (qtyValue is String)
-              ? int.tryParse(qtyValue) ?? 0
-              : (qtyValue is num)
-                  ? qtyValue.toInt()
-                  : 0,
+      currentQuantity: _parseQty(qtyValue),
     );
   }
 

@@ -7,6 +7,7 @@ import '../../domain/entities/transfer_item_detail.dart';
 import '../../domain/entities/product_item.dart';
 import '../../domain/entities/assignment_mode.dart';
 import '../../domain/entities/pallet_item.dart';
+import '../../domain/entities/box_item.dart';
 import '../../../../core/network/api_config.dart';
 
 abstract class PalletAssignmentRemoteDataSource {
@@ -17,6 +18,7 @@ abstract class PalletAssignmentRemoteDataSource {
   Future<List<String>> fetchTargetLocations();
   Future<List<String>> fetchContainerIds(String location, AssignmentMode mode);
   Future<List<ProductItem>> fetchContainerContents(String containerId, AssignmentMode mode);
+  Future<List<BoxItem>> fetchBoxesAtLocation(String location);
 }
 
 class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteDataSource {
@@ -153,6 +155,50 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
     } on DioException catch (e) {
       debugPrint("API Error sending transfer operation: ${e.message}");
       return false;
+    }
+  }
+
+  @override
+  Future<List<BoxItem>> fetchBoxesAtLocation(String location) async {
+    try {
+      final ids = await fetchContainerIds(location, AssignmentMode.box);
+      final List<BoxItem> boxes = [];
+      for (final id in ids) {
+        final encodedId = Uri.encodeComponent(id);
+        final response = await _dio.get('/containers/$encodedId/contents', queryParameters: {'mode': AssignmentMode.box.name});
+        if (response.statusCode != 200 || response.data is! List) continue;
+
+        // Find the row that matches the requested location
+        final List<dynamic> rows = response.data;
+        final rowForLocation = rows.firstWhere(
+          (r) => (r['locationName'] ?? '').toString() == location,
+          orElse: () => rows.first,
+        );
+
+        final qtyVal = rowForLocation['quantity'];
+        int qty;
+        if (qtyVal is int) {
+          qty = qtyVal;
+        } else if (qtyVal is double) {
+          qty = qtyVal.round();
+        } else if (qtyVal is String) {
+          qty = double.tryParse(qtyVal)?.round() ?? 0;
+        } else {
+          qty = 0;
+        }
+
+        boxes.add(BoxItem(
+          boxId: int.tryParse(id) ?? 0,
+          productId: (rowForLocation['productId'] ?? id).toString(),
+          productName: (rowForLocation['productName'] ?? '').toString(),
+          productCode: (rowForLocation['productCode'] ?? '').toString(),
+          quantity: qty,
+        ));
+      }
+      return boxes;
+    } catch (e) {
+      debugPrint("API Error fetchBoxesAtLocation: $e");
+      rethrow;
     }
   }
 }

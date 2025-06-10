@@ -99,6 +99,13 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
 
   @override
   Future<List<BoxItem>> getBoxesAtLocation(String location) async {
+    if (await networkInfo.isConnected) {
+      try {
+        return await remoteDataSource.fetchBoxesAtLocation(location);
+      } catch (e) {
+        debugPrint("API getBoxesAtLocation error for $location: $e. Falling back to local.");
+      }
+    }
     return await localDataSource.getBoxesAtLocation(location);
   }
 
