@@ -39,7 +39,7 @@ class TransferOperationHeader {
       id: map['id'] as int?,
       operationType: AssignmentMode.values.firstWhere(
             (e) => e.name == map['operation_type'],
-        orElse: () => AssignmentMode.palet, // Defaulting, consider error handling
+        orElse: () => AssignmentMode.pallet, // Defaulting, consider error handling
       ),
       sourceLocation: map['source_location'] as String? ?? '',
       targetLocation: map['target_location'] as String? ?? '',

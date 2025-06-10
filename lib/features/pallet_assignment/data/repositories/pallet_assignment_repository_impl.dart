@@ -71,7 +71,7 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   Future<List<String>> getProductIdsAtLocation(String location) async {
     if (await networkInfo.isConnected) {
       try {
-        return await remoteDataSource.fetchContainerIds(location, AssignmentMode.palet);
+        return await remoteDataSource.fetchContainerIds(location, AssignmentMode.pallet);
       } catch (e) {
         debugPrint("API getProductIds error for $location: $e. Falling back to local.");
       }
@@ -89,7 +89,7 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
     // Ekran tarafında AssignmentMode.kutu ise sadece ilk ürün gösteriliyor.
     if (await networkInfo.isConnected) {
       try {
-        return await remoteDataSource.fetchContainerContents(productId, AssignmentMode.palet);
+        return await remoteDataSource.fetchContainerContents(productId, AssignmentMode.pallet);
       } catch (e) {
         debugPrint("API getProductInfo error for $productId at $location: $e. Falling back to local.");
       }

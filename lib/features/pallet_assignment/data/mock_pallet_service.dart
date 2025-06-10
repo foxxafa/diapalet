@@ -153,7 +153,7 @@ class MockPalletService implements PalletAssignmentRepository {
     }
 
     // Eğer kutu transferi ise, kaynak kutudaki miktarı azalt (mock için)
-    if (header.operationType == AssignmentMode.kutu && items.isNotEmpty) {
+    if (header.operationType == AssignmentMode.box && items.isNotEmpty) {
       final transferredItemDetail = items.first;
       final sourceId = header.sourceLocation;
       if (_containerContents.containsKey(sourceId)) {

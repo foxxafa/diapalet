@@ -29,7 +29,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   bool _isLoadingContainerContents = false;
   bool _isSaving = false;
 
-  AssignmentMode _selectedMode = AssignmentMode.palet;
+  AssignmentMode _selectedMode = AssignmentMode.pallet;
 
   List<String> _availableSourceLocations = [];
   String? _selectedSourceLocation;
@@ -126,7 +126,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
     setState(() => _isLoadingContainerIds = true);
     try {
-      if (_selectedMode == AssignmentMode.kutu) {
+      if (_selectedMode == AssignmentMode.box) {
         final boxes = await _repo.getBoxesAtLocation(_selectedSourceLocation!);
         if (mounted) {
           setState(() {
@@ -168,7 +168,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       _productsInContainer = [];
     });
     try {
-      if (_selectedMode == AssignmentMode.kutu) {
+      if (_selectedMode == AssignmentMode.box) {
         final box = _boxItems[containerId];
         if (box == null) {
           _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
@@ -222,7 +222,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         _selectedContainerId = null;
         _boxItems = {};
         if (resetAll) {
-          _selectedMode = AssignmentMode.palet;
+          _selectedMode = AssignmentMode.pallet;
           _selectedSourceLocation = null;
           _sourceLocationController.clear();
           _selectedTargetLocation = null;
@@ -260,7 +260,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       } else if (fieldIdentifier == 'scannedId') {
         _selectedContainerId = result;
         setState(() {
-          _scannedContainerIdController.text = _selectedMode == AssignmentMode.kutu
+          _scannedContainerIdController.text = _selectedMode == AssignmentMode.box
               ? (_boxItems[result] != null
                   ? '${_boxItems[result]!.productName} • ${_boxItems[result]!.productCode} • ${_boxItems[result]!.quantity} pcs'
                   : result)
@@ -294,7 +294,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
 
     List<TransferItemDetail> itemsToTransferDetails;
-    if (_selectedMode == AssignmentMode.kutu) {
+    if (_selectedMode == AssignmentMode.box) {
       if (_productsInContainer.isEmpty) {
         _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
         return;
@@ -354,7 +354,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
       if (mounted) {
         String msg;
-        if (_selectedMode == AssignmentMode.kutu && _productsInContainer.isNotEmpty) {
+        if (_selectedMode == AssignmentMode.box && _productsInContainer.isNotEmpty) {
           msg = tr('pallet_assignment.transfer_saved_box', namedArgs: {'product': _productsInContainer.first.name});
         } else {
           msg = tr('pallet_assignment.transfer_saved', namedArgs: {'mode': _selectedMode.displayName});
@@ -623,8 +623,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     return Center(
       child: SegmentedButton<AssignmentMode>(
         segments: [
-          ButtonSegment(value: AssignmentMode.palet, label: Text('assignment_mode.palet'.tr()), icon: const Icon(Icons.pallet)),
-          ButtonSegment(value: AssignmentMode.kutu, label: Text('assignment_mode.kutu'.tr()), icon: const Icon(Icons.inventory_2_outlined)),
+          ButtonSegment(value: AssignmentMode.pallet, label: Text('assignment_mode.palet'.tr()), icon: const Icon(Icons.pallet)),
+          ButtonSegment(value: AssignmentMode.box, label: Text('assignment_mode.kutu'.tr()), icon: const Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_selectedMode},
         onSelectionChanged: (Set<AssignmentMode> newSelection) {
@@ -701,13 +701,13 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
       value: _selectedContainerId,
       items: _availableContainerIds,
-      itemLabelBuilder: (id) => _selectedMode == AssignmentMode.kutu
+      itemLabelBuilder: (id) => _selectedMode == AssignmentMode.box
           ? (_boxItems[id] != null
               ? '${_boxItems[id]!.productName} • ${_boxItems[id]!.productCode} • ${_boxItems[id]!.quantity} pcs'
               : id)
           : id,
       filterFn: (id, query) {
-        final label = _selectedMode == AssignmentMode.kutu
+        final label = _selectedMode == AssignmentMode.box
             ? (_boxItems[id] != null
                 ? '${_boxItems[id]!.productName} ${_boxItems[id]!.productCode} ${_boxItems[id]!.quantity}'
                 : id)
@@ -721,7 +721,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           setState(() {
             _scannedContainerIdController.text = val == null
                 ? ''
-                : _selectedMode == AssignmentMode.kutu
+                : _selectedMode == AssignmentMode.box
                     ? (_boxItems[val] != null
                         ? '${_boxItems[val]!.productName} • ${_boxItems[val]!.productCode} • ${_boxItems[val]!.quantity} pcs'
                         : val)
@@ -741,7 +741,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   }
 
   Widget _buildProductsList() {
-    final bool isBox = _selectedMode == AssignmentMode.kutu;
+    final bool isBox = _selectedMode == AssignmentMode.box;
     final ProductItem? boxProduct = isBox && _productsInContainer.isNotEmpty ? _productsInContainer.first : null;
 
     return Container(

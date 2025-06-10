@@ -50,7 +50,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           'product_id': item.productId,
           'quantity': item.quantity,
         });
-        if (header.operationType == AssignmentMode.kutu) {
+        if (header.operationType == AssignmentMode.box) {
           final sourceBoxId = int.tryParse(header.containerId);
           if (sourceBoxId == null) {
             throw Exception("Invalid source box ID: ${header.containerId}");
@@ -100,7 +100,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         }
       }
 
-      if (header.operationType == AssignmentMode.palet) {
+      if (header.operationType == AssignmentMode.pallet) {
         await txn.update('pallet', {'location': header.targetLocation},
             where: 'id = ?', whereArgs: [header.containerId]);
       }
