@@ -112,9 +112,10 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   @override
   Future<int> recordTransferOperation(
       TransferOperationHeader header, List<TransferItemDetail> items) async {
+    final bool isOnline = await networkInfo.isConnected;
     TransferOperationHeader headerToSave = header;
 
-    if (await networkInfo.isConnected) {
+    if (isOnline) {
       try {
         bool remoteSuccess = await remoteDataSource.sendTransferOperation(header, items);
         if (remoteSuccess) {
@@ -133,7 +134,12 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
       debugPrint("Offline. Transfer operation marked as not synced.");
     }
 
-    final localId = await localDataSource.saveTransferOperation(headerToSave, items);
+    // If we are online, skip checking local source box since it may not exist locally.
+    final localId = await localDataSource.saveTransferOperation(
+      headerToSave,
+      items,
+      checkSourceBox: !isOnline,
+    );
     debugPrint("Transfer operation saved locally with ID: $localId and synced status: ${headerToSave.synced}.");
 
     return localId;

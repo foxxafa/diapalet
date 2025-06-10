@@ -8,7 +8,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_m
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 
 abstract class PalletAssignmentLocalDataSource {
-  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
+  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items, {bool checkSourceBox = true});
   Future<List<TransferOperationHeader>> getUnsyncedTransferOperations();
   Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId);
   Future<void> markTransferOperationAsSynced(int operationId);
@@ -30,7 +30,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   }
 
   @override
-  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items, {bool checkSourceBox = true}) async {
     final db = await dbHelper.database;
     late int opId;
     await db.transaction((txn) async {
@@ -50,7 +50,7 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           'product_id': item.productId,
           'quantity': item.quantity,
         });
-        if (header.operationType == AssignmentMode.box) {
+        if (header.operationType == AssignmentMode.box && checkSourceBox) {
           final sourceBoxId = int.tryParse(header.containerId);
           if (sourceBoxId == null) {
             throw Exception("Invalid source box ID: ${header.containerId}");
