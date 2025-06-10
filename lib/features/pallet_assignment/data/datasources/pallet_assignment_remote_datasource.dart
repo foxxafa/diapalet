@@ -148,38 +148,41 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
 
     // Header'ı sunucunun beklediği alan adlarıyla dönüştür.
     final headerMap = {
-      'from_location': header.sourceLocation,
-      'to_location': header.targetLocation,
-      // Sunucudaki kolon adı `pallet_barcode` olduğu için bu ismi kullanıyoruz.
-      'pallet_barcode': header.containerId,
-      'operation_type': header.operationType.name,
-      // İsteğe bağlı ek alanlar (ör. çalışan ID'si) burada eklenebilir.
+      // Flask backend expects exactly these keys
+      'operation_type': header.operationType.name,          // pallet | box
+      'source_location': header.sourceLocation,             // Kaynak lokasyon adı
+      'target_location': header.targetLocation,             // Hedef lokasyon adı
+      'pallet_id': header.containerId,                      // Palet barkodu veya ürün ID'si
+      // Backend'imiz employee_id bekliyor ancak mobil tarafta henüz kullanıcı yönetimi yok.
+      // Şimdilik sabit bir değer (1) gönderiyoruz. Gerektiğinde burada gerçek kullanıcı ID'si kullanılabilir.
+      'employee_id': 1,
+      'transfer_date': header.transferDate.toIso8601String(),
     };
 
-    // Kutu transferi için ürün listesine ihtiyacımız var, palet transferinde ise
-    // sunucu paletin içeriğini kendisi bulup aktarım yapacağı için ürünleri göndermiyoruz.
-    List<Map<String, dynamic>>? itemsList;
-    if (header.operationType == AssignmentMode.box) {
-      itemsList = items.map((item) => {
-        // Sunucudaki kolon adı `urun_id`
-        'urun_id': item.productId,
-        'quantity': item.quantity,
-      }).toList();
-    }
+    // Her iki mod (pallet & box) için de items listesi gönderiyoruz.
+    // Palet transferinde sunucu ürün listesini yok saysa bile boş liste gönderilirse
+    // "Invalid payload" hatasını önleriz.
+    final itemsList = items.map((item) => {
+      // Flask tarafında 'product_id' INT olarak bekleniyor.
+      'product_id': int.tryParse(item.productId) ?? item.productId,
+      'quantity': item.quantity,
+    }).toList();
 
     final payload = {
       'header': headerMap,
-      if (itemsList != null) 'items': itemsList,
+      'items': itemsList,
     };
+
+    debugPrint("API Payload => $payload");
 
     try {
       final response = await _dio.post('/transfers', data: payload);
       final success = response.statusCode == 200 || response.statusCode == 201;
-      debugPrint("API: Transfer operation sent. Status: \\${response.statusCode}");
+      debugPrint("API: Transfer operation sent. Status: ${response.statusCode}");
       return success;
     } on DioException catch (e) {
-      debugPrint("API Error sending transfer operation: \\${e.message}");
-      debugPrint("API Error response: \\${e.response?.data}");
+      debugPrint("API Error sending transfer operation: ${e.message}");
+      debugPrint("API Error response: ${e.response?.data}");
       return false;
     }
   }
