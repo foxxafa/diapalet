@@ -145,15 +145,41 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   @override
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
     debugPrint("API: Sending transfer operation to API...");
+
+    // Header'ı sunucunun beklediği alan adlarıyla dönüştür.
+    final headerMap = {
+      'from_location': header.sourceLocation,
+      'to_location': header.targetLocation,
+      // Sunucudaki kolon adı `pallet_barcode` olduğu için bu ismi kullanıyoruz.
+      'pallet_barcode': header.containerId,
+      'operation_type': header.operationType.name,
+      // İsteğe bağlı ek alanlar (ör. çalışan ID'si) burada eklenebilir.
+    };
+
+    // Kutu transferi için ürün listesine ihtiyacımız var, palet transferinde ise
+    // sunucu paletin içeriğini kendisi bulup aktarım yapacağı için ürünleri göndermiyoruz.
+    List<Map<String, dynamic>>? itemsList;
+    if (header.operationType == AssignmentMode.box) {
+      itemsList = items.map((item) => {
+        // Sunucudaki kolon adı `urun_id`
+        'urun_id': item.productId,
+        'quantity': item.quantity,
+      }).toList();
+    }
+
+    final payload = {
+      'header': headerMap,
+      if (itemsList != null) 'items': itemsList,
+    };
+
     try {
-      final payload = {
-        'header': header.toMap(),
-        'items': items.map((item) => item.toMap()).toList(),
-      };
       final response = await _dio.post('/transfers', data: payload);
-      return response.statusCode == 200;
+      final success = response.statusCode == 200 || response.statusCode == 201;
+      debugPrint("API: Transfer operation sent. Status: \\${response.statusCode}");
+      return success;
     } on DioException catch (e) {
-      debugPrint("API Error sending transfer operation: ${e.message}");
+      debugPrint("API Error sending transfer operation: \\${e.message}");
+      debugPrint("API Error response: \\${e.response?.data}");
       return false;
     }
   }

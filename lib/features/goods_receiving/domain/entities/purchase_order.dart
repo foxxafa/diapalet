@@ -24,14 +24,18 @@ class PurchaseOrder {
 
   // JSON'dan model oluşturma (API'den gelen veri için)
   factory PurchaseOrder.fromJson(Map<String, dynamic> json) {
+    // Flask tarafında alan adları "po_id", "poId" veya "purchaseOrderNumber" gibi 
+    // farklı biçimlerde gelebilir. Tüm olasılıkları kontrol edip ilk bulunanı kullanıyoruz.
+    final dynamic rawPoId = json['po_id'] ?? json['poId'] ?? json['purchaseOrderNumber'];
+
     return PurchaseOrder(
-      id: json['id'],
-      poId: json['po_id'],
-      date: json['tarih'] != null ? DateTime.parse(json['tarih']) : null,
-      notes: json['notlar'],
-      status: json['status'],
-      supplierName: json['tedarikci_adi'], // JOIN sonucu
-      supplierId: json['tedarikci_id'],   // JOIN sonucu
+      id: json['id'] as int,
+      poId: rawPoId?.toString(),
+      date: json['tarih'] != null ? DateTime.parse(json['tarih']) : (json['date'] != null ? DateTime.parse(json['date']) : null),
+      notes: json['notlar'] ?? json['notes'],
+      status: json['status'] as int?,
+      supplierName: json['tedarikci_adi'] ?? json['supplierName'], // JOIN sonucu
+      supplierId: json['tedarikci_id'] ?? json['supplierId'],   // JOIN sonucu
     );
   }
 
