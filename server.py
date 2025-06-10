@@ -213,7 +213,7 @@ def _create_transfer(data):
     operation_type  = header.get("operation_type")  # pallet or box
     src_name        = header.get("source_location")
     dst_name        = header.get("target_location")
-    pallet_barcode  = header.get("pallet_id")
+    pallet_barcode  = header.get("pallet_id")  # Palet barkodu veya None (kutu akışı)
     employee_id     = header.get("employee_id")
     transfer_date   = header.get("transfer_date") or datetime.utcnow().isoformat()
 
@@ -223,20 +223,45 @@ def _create_transfer(data):
     if not src or not dst:
         return {"error": "Invalid source/target location"}, 400
 
-    '''
-    transfer_id = execute(
-        """
-        INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
-        VALUES (0, %s, %s, 0, %s, %s, %s)
-        """,
-        (src["id"], dst["id"], pallet_barcode, employee_id, transfer_date),
-    )
-    '''
+    # ------------------------------------------------------------------
+    # PALET TRANSFERİ – paletin tamamını bir lokasyondan diğerine taşı
+    # ------------------------------------------------------------------
+    if operation_type == "pallet":
+        # 1) Stok tablosunda ilgili paletin tüm satırlarının lokasyonunu güncelle
+        conn = get_db_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            """
+            UPDATE inventory_stock
+            SET location_id = %s, updated_at = NOW()
+            WHERE location_id = %s AND pallet_barcode = %s
+            """,
+            (dst["id"], src["id"], pallet_barcode),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
 
-    # Insert detail lines & adjust stock
+        # 2) Her ürün için transfer hareketi kaydet (raporlama için)
+        for item in items:
+            urun_id = item["product_id"]
+            qty     = item["quantity"]
+            execute(
+                """
+                INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (urun_id, src["id"], dst["id"], qty, pallet_barcode, employee_id, transfer_date),
+            )
+        return {"status": "success"}, 200
+
+    # ------------------------------------------------------------------
+    # KUTU TRANSFERİ – belirli miktar kutuyu taşı
+    # ------------------------------------------------------------------
     for item in items:
         urun_id = item["product_id"]
         qty     = item["quantity"]
+        # Hareket kaydı
         execute(
             """
             INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
@@ -244,8 +269,9 @@ def _create_transfer(data):
             """,
             (urun_id, src["id"], dst["id"], qty, pallet_barcode, employee_id, transfer_date),
         )
-        upsert_stock(urun_id, src["id"], -qty, pallet_barcode)
-        upsert_stock(urun_id, dst["id"],  qty, pallet_barcode)
+        # Stok güncelle – kaynak azalt, hedef artır
+        upsert_stock(urun_id, src["id"], -qty, None)  # kutu akışında pallet_barcode yok
+        upsert_stock(urun_id, dst["id"],  qty, None)
 
     return {"status": "success"}, 200
 
@@ -262,16 +288,59 @@ def post_transfer():
 # -----------------------------------------------------------------------------
 
 def upsert_stock(urun_id: int, location_id: int, qty: float, pallet_barcode: str | None):
+    """Insert / update stock row.
+
+    * Mevcut kayıt varsa, miktarı arttır/azalt.
+    * Yeni miktar 0 veya altına düşerse kayıt silinir.
+    * Kayıt yoksa ve qty > 0 ise yeni kayıt oluşturulur.
+    """
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO inventory_stock (urun_id, location_id, quantity, pallet_barcode)
-        VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), updated_at = NOW()
-        """,
-        (urun_id, location_id, qty, pallet_barcode),
-    )
+    cur  = conn.cursor(dictionary=True)
+
+    # Sorgu, pallet_barcode NULL / NOT NULL durumuna göre farklılık gösterir
+    if pallet_barcode is None:
+        cur.execute(
+            """
+            SELECT id, quantity FROM inventory_stock
+            WHERE urun_id = %s AND location_id = %s AND pallet_barcode IS NULL
+            """,
+            (urun_id, location_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, quantity FROM inventory_stock
+            WHERE urun_id = %s AND location_id = %s AND pallet_barcode = %s
+            """,
+            (urun_id, location_id, pallet_barcode),
+        )
+
+    row = cur.fetchone()
+
+    if row:
+        new_qty = (row["quantity"] or 0) + qty
+        if new_qty <= 0:
+            # Miktar 0 veya negatif olduysa satırı sil
+            cur.execute("DELETE FROM inventory_stock WHERE id = %s", (row["id"],))
+        else:
+            cur.execute(
+                """
+                UPDATE inventory_stock
+                SET quantity = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                (new_qty, row["id"]),
+            )
+    else:
+        # Kayıt yoksa ve pozitif miktar ekleniyorsa yeni satır oluştur
+        if qty > 0:
+            cur.execute(
+                """
+                INSERT INTO inventory_stock (urun_id, location_id, quantity, pallet_barcode)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (urun_id, location_id, qty, pallet_barcode),
+            )
     conn.commit()
     cur.close()
     conn.close()
