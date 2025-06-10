@@ -62,10 +62,10 @@ class GoodsReceiptItem {
     return {
       'id': id,
       'receipt_id': goodsReceiptId,
-      'product_id': product.id,
+      'urun_id': product.id,
       'quantity': quantity,
       'location': location,
-      'pallet_id': containerId,
+      'pallet_barcode': containerId,
     };
   }
 
