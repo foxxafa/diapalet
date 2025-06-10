@@ -22,11 +22,14 @@
   },
   "assignment_mode": {
     "palet": "Palet",
-    "kutu": "Kutu"
+    "kutu": "Kutu",
+    "pallet": "Palet",
+    "box": "Kutu"
   },
   "goods_receiving": {
     "title": "Mal Kabul",
     "select_invoice": "İrsaliye Seç",
+    "select_order": "Sipariş Seç",
     "select_pallet": "Palet Seç",
     "select_box": "Kutu Seç",
     "select_product": "Ürün Seç",
@@ -50,6 +53,7 @@
       "invalid_qty": "Miktar geçersiz veya sayısal değil.",
       "no_items": "Kaydedilecek ürün bulunmuyor.",
       "select_invoice": "Lütfen bir irsaliye seçin.",
+      "select_order": "Lütfen bir sipariş seçin.",
       "save_error": "Kaydetme sırasında hata: {error}",
       "invalid_qr_pallet": "Taranan QR ({qr}) geçerli bir {mode} seçeneği değil.",
       "invalid_qr_product": "Taranan QR ({qr}) geçerli bir ürün seçeneği değil.",
