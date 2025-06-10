@@ -112,7 +112,9 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
     try {
       final response = await _dio.get('/containers/$location/ids', queryParameters: {'mode': mode.name});
       if (response.statusCode == 200 && response.data is List) {
-        return List<String>.from(response.data);
+        // Gelen ID'ler integer (box mode) veya string (pallet mode) olabilir.
+        // Hepsini string'e çevirerek统一laştırıyoruz.
+        return (response.data as List).map((id) => id.toString()).toList();
       }
       throw Exception('Failed to load container IDs');
     } on DioException catch (e) {
