@@ -12,9 +12,9 @@ class ProductInfo {
 
   factory ProductInfo.fromJson(Map<String, dynamic> json) {
     return ProductInfo(
-      id: json['id'] as String,
+      id: json['id'].toString(),
       name: json['name'] as String,
-      stockCode: json['stockCode'] as String,
+      stockCode: json['code'] as String,
     );
   }
 

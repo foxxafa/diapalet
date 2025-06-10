@@ -36,7 +36,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
     debugPrint("API: Fetching invoices from remote...");
     try {
       // Varsayılan endpoint: /invoices
-      final response = await _dio.get('invoices');
+      final response = await _dio.get('/invoices');
       if (response.statusCode == 200 && response.data is List) {
         return (response.data as List).map((item) => item.toString()).toList();
       } else {
@@ -53,7 +53,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
     debugPrint("API: Fetching products for dropdown from remote...");
     try {
       // Varsayılan endpoint: /products/dropdown
-      final response = await _dio.get('products/dropdown');
+      final response = await _dio.get('/products/dropdown');
       if (response.statusCode == 200 && response.data is List) {
         return (response.data as List)
             .map((json) => ProductInfo.fromJson(json))
@@ -71,7 +71,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
   Future<List<PurchaseOrder>> fetchOpenPurchaseOrders() async {
     debugPrint("API: Fetching open purchase orders from remote...");
     try {
-      final response = await _dio.get('purchase-orders');
+      final response = await _dio.get('/purchase-orders');
 
       if (response.statusCode == 200 && response.data is List) {
         // API'den gelen JSON'da 'purchaseOrderNumber' ve 'supplierName' gibi
@@ -93,7 +93,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
   Future<List<PurchaseOrderItem>> fetchPurchaseOrderItems(int orderId) async {
     debugPrint("API: Fetching items for order ID: $orderId from remote...");
     try {
-      final response = await _dio.get('purchase-orders/$orderId/items');
+      final response = await _dio.get('/purchase-orders/$orderId/items');
 
       if (response.statusCode == 200 && response.data is List) {
         // PurchaseOrderItem.fromJson'ın da Flask API'sinden dönen JSON yapısıyla
@@ -118,7 +118,7 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
         'header': header.toMap(),
         'items': items.map((item) => item.toMap()).toList(),
       };
-      final response = await _dio.post('goods-receipts', data: payload);
+      final response = await _dio.post('/goods-receipts', data: payload);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         debugPrint("API: Goods receipt sent successfully.");

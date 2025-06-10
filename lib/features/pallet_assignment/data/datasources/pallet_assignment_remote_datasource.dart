@@ -35,7 +35,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<String> createNewPallet(String locationId) async {
     debugPrint("API: Creating a new pallet at location: $locationId on remote...");
     try {
-      final response = await _dio.post('pallets', data: {'location_id': locationId});
+      final response = await _dio.post('/pallets', data: {'location_id': locationId});
 
       if (response.statusCode == 201 && response.data['pallet_id'] != null) {
         final newPalletId = response.data['pallet_id'].toString(); // Gelen ID int olabilir, string'e çevir.
@@ -58,7 +58,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
       final payload = {
         'items': items.map((item) => item.toJson()).toList(),
       };
-      final response = await _dio.post('pallets/$palletId/items', data: payload);
+      final response = await _dio.post('/pallets/$palletId/items', data: payload);
 
       if (response.statusCode == 200) {
         debugPrint("API: Items assigned to pallet successfully.");
@@ -80,9 +80,9 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<String>> fetchSourceLocations() async {
     debugPrint("API: Fetching source locations from API...");
     try {
-      final response = await _dio.get('locations/source');
+      final response = await _dio.get('/locations/source');
       if (response.statusCode == 200 && response.data is List) {
-        return List<String>.from(response.data);
+        return List<String>.from(response.data.map((item) => item['name'].toString()));
       }
       throw Exception('Failed to load source locations');
     } on DioException catch (e) {
@@ -95,9 +95,9 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<String>> fetchTargetLocations() async {
     debugPrint("API: Fetching target locations from API...");
     try {
-      final response = await _dio.get('locations/target');
+      final response = await _dio.get('/locations/target');
       if (response.statusCode == 200 && response.data is List) {
-        return List<String>.from(response.data);
+        return List<String>.from(response.data.map((item) => item['name'].toString()));
       }
       throw Exception('Failed to load target locations');
     } on DioException catch (e) {
@@ -110,7 +110,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<String>> fetchContainerIds(String location, AssignmentMode mode) async {
     debugPrint("API: Fetching container IDs at $location for ${mode.displayName} from API...");
     try {
-      final response = await _dio.get('containers/$location/ids', queryParameters: {'mode': mode.name});
+      final response = await _dio.get('/containers/$location/ids', queryParameters: {'mode': mode.name});
       if (response.statusCode == 200 && response.data is List) {
         return List<String>.from(response.data);
       }
@@ -125,7 +125,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   Future<List<ProductItem>> fetchContainerContents(String containerId, AssignmentMode mode) async {
     debugPrint("API: Fetching contents for ${mode.displayName} ID: $containerId from API...");
     try {
-      final response = await _dio.get('containers/$containerId/contents', queryParameters: {'mode': mode.name});
+      final response = await _dio.get('/containers/$containerId/contents', queryParameters: {'mode': mode.name});
       if (response.statusCode == 200 && response.data is List) {
         return (response.data as List).map((json) => ProductItem.fromJson(json)).toList();
       }
@@ -144,7 +144,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
         'header': header.toMap(),
         'items': items.map((item) => item.toMap()).toList(),
       };
-      final response = await _dio.post('transfers', data: payload);
+      final response = await _dio.post('/transfers', data: payload);
       return response.statusCode == 200;
     } on DioException catch (e) {
       debugPrint("API Error sending transfer operation: ${e.message}");

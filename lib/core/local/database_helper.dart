@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db';
-  static const int _dbVersion = 9;               // <-- yeni sürüm
+  static const int _dbVersion = 11;               // <-- yeni sürüm
 
   // ==== PUBLIC HANDLE =======================================================
   Future<Database> get database async {
@@ -44,7 +44,7 @@ class DatabaseHelper {
     // 1- Products
     await db.execute('''
       CREATE TABLE product (
-        id   TEXT PRIMARY KEY,
+        id   INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         code TEXT NOT NULL
       )
@@ -53,7 +53,9 @@ class DatabaseHelper {
     // 2- Master location list (optional but handy for dropdowns)
     await db.execute('''
       CREATE TABLE location (
-        name TEXT PRIMARY KEY
+        id   INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        code TEXT
       )
     ''');
 
@@ -61,7 +63,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE stock_location (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id TEXT NOT NULL REFERENCES product(id),
+        product_id INTEGER NOT NULL REFERENCES product(id),
         location   TEXT NOT NULL,
         quantity   INTEGER NOT NULL
       )
@@ -78,7 +80,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE pallet_item (
         pallet_id  TEXT NOT NULL REFERENCES pallet(id) ON DELETE CASCADE,
-        product_id TEXT NOT NULL REFERENCES product(id),
+        product_id INTEGER NOT NULL REFERENCES product(id),
         quantity   INTEGER NOT NULL,
         PRIMARY KEY (pallet_id, product_id)
       )
@@ -99,7 +101,7 @@ class DatabaseHelper {
       CREATE TABLE goods_receipt_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         receipt_id INTEGER NOT NULL REFERENCES goods_receipt(id) ON DELETE CASCADE,
-        product_id TEXT NOT NULL REFERENCES product(id),
+        product_id INTEGER NOT NULL REFERENCES product(id),
         quantity   INTEGER NOT NULL,
         location   TEXT NOT NULL,
         pallet_id  TEXT REFERENCES pallet(id)      -- NULL for box flow
@@ -123,7 +125,7 @@ class DatabaseHelper {
       CREATE TABLE transfer_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_id INTEGER NOT NULL REFERENCES transfer_operation(id) ON DELETE CASCADE,
-        product_id   TEXT NOT NULL REFERENCES product(id),
+        product_id   INTEGER NOT NULL REFERENCES product(id),
         quantity     INTEGER NOT NULL
       )
     ''');
