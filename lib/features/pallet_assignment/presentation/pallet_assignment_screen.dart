@@ -4,6 +4,7 @@ import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_r
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:collection/collection.dart';
 
 // Corrected entity and repository imports using your project name 'diapalet'
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
@@ -389,6 +390,42 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 
+  /// Builds a [TextFormField] that opens a searchable dropdown dialog and supports QR scanning via a suffix icon.
+  ///
+  /// [T] is the type of the list item (e.g. `String`). You must provide a way to convert the item to a label
+  /// with [itemLabelBuilder].
+  Widget _buildSearchableDropdownWithQr<T>({
+    required TextEditingController controller,
+    required String label,
+    required T? value,
+    required List<T> items,
+    required String Function(T) itemLabelBuilder,
+    required bool Function(T, String) filterFn,
+    required ValueChanged<T?> onSelected,
+    required VoidCallback onQrTap,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      readOnly: true,
+      decoration: _inputDecoration(label, filled: true, suffixIcon: IconButton(
+        icon: const Icon(Icons.qr_code_scanner),
+        onPressed: onQrTap,
+      )),
+      onTap: () async {
+        final T? selected = await _showSearchableDropdownDialog<T>(
+          context: context,
+          title: label,
+          items: items,
+          itemToString: itemLabelBuilder,
+          filterCondition: filterFn,
+          initialValue: value,
+        );
+        onSelected(selected);
+      },
+      validator: validator,
+    );
+  }
 
   Future<T?> _showSearchableDropdownDialog<T>({
     required BuildContext context,

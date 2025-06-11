@@ -22,4 +22,6 @@ class LocationInfo extends Equatable {
       code: map['code'] as String? ?? '',
     );
   }
+
+  String get location => name;
 } 

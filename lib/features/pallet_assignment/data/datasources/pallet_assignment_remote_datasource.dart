@@ -155,7 +155,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
         "transfer_date": header.transferDate.toIso8601String(),
       },
       "items": items.map((item) => {
-        "product_id": int.tryParse(item.productId) ?? 0,
+        "product_id": item.productId,
         "quantity": item.quantity,
       }).toList(),
     };
@@ -203,7 +203,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
 
         boxes.add(BoxItem(
           boxId: int.tryParse(id) ?? 0,
-          productId: (rowForLocation['productId'] ?? id).toString(),
+          productId: int.tryParse((rowForLocation['productId'] ?? id).toString()) ?? 0,
           productName: (rowForLocation['productName'] ?? '').toString(),
           productCode: (rowForLocation['productCode'] ?? '').toString(),
           quantity: qty,

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart'; // For @immutable and @override
 class TransferItemDetail {
   final int? id;
   final int operationId; // This ID links it to the TransferOperationHeader
-  final String productId; // YENİ EKLENDİ: Ürünün benzersiz ID'si
+  final int productId; // Changed to int for consistency with backend IDs
   final String productCode;
   final String productName;
   final int quantity;
@@ -13,7 +13,7 @@ class TransferItemDetail {
   const TransferItemDetail({
     this.id,
     required this.operationId,
-    required this.productId, // YENİ EKLENDİ
+    required this.productId,
     required this.productCode,
     required this.productName,
     required this.quantity,
@@ -32,7 +32,7 @@ class TransferItemDetail {
     return TransferItemDetail(
       id: map['id'] as int?,
       operationId: map['operation_id'] as int? ?? 0,
-      productId: map['product_id'] as String? ?? '',
+      productId: (map['product_id'] as num?)?.toInt() ?? 0,
       productCode: map['product_code'] as String? ?? '',
       productName: map['product_name'] as String? ?? '',
       quantity: map['quantity'] as int? ?? 0,
@@ -46,7 +46,7 @@ class TransferItemDetail {
               runtimeType == other.runtimeType &&
               id == other.id &&
               operationId == other.operationId &&
-              productId == other.productId && // YENİ EKLENDİ
+              productId == other.productId &&
               productCode == other.productCode &&
               productName == other.productName &&
               quantity == other.quantity;
@@ -55,7 +55,7 @@ class TransferItemDetail {
   int get hashCode =>
       id.hashCode ^
       operationId.hashCode ^
-      productId.hashCode ^ // YENİ EKLENDİ
+      productId.hashCode ^
       productCode.hashCode ^
       productName.hashCode ^
       quantity.hashCode;
