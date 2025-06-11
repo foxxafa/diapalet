@@ -104,7 +104,7 @@ class DatabaseHelper {
       CREATE TABLE purchase_order_item (
         id INTEGER PRIMARY KEY,
         siparis_id INTEGER NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
-        urun_id INTEGER NOT NULL REFERENCES product(id),
+        urun_id INTEGER NOT NULL,
         miktar REAL,
         birim TEXT,
         productName TEXT
