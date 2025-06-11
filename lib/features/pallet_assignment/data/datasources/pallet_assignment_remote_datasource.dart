@@ -191,44 +191,29 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
 
   @override
   Future<List<BoxItem>> fetchBoxesAtLocation(String location) async {
+    debugPrint("API: Fetching boxes at location: $location");
     try {
-      final ids = await fetchContainerIds(location, AssignmentMode.box);
-      final List<BoxItem> boxes = [];
-      for (final id in ids) {
-        final encodedId = Uri.encodeComponent(id);
-        final response = await _dio.get('/containers/$encodedId/contents', queryParameters: {'mode': AssignmentMode.box.name});
-        if (response.statusCode != 200 || response.data is! List) continue;
-
-        // Find the row that matches the requested location
-        final List<dynamic> rows = response.data;
-        final rowForLocation = rows.firstWhere(
-          (r) => (r['locationName'] ?? '').toString() == location,
-          orElse: () => rows.first,
-        );
-
-        final qtyVal = rowForLocation['quantity'];
-        int qty;
-        if (qtyVal is int) {
-          qty = qtyVal;
-        } else if (qtyVal is double) {
-          qty = qtyVal.round();
-        } else if (qtyVal is String) {
-          qty = double.tryParse(qtyVal)?.round() ?? 0;
-        } else {
-          qty = 0;
-        }
-
-        boxes.add(BoxItem(
-          boxId: int.tryParse(id) ?? 0,
-          productId: int.tryParse((rowForLocation['productId'] ?? id).toString()) ?? 0,
-          productName: (rowForLocation['productName'] ?? '').toString(),
-          productCode: (rowForLocation['productCode'] ?? '').toString(),
-          quantity: qty,
-        ));
+      final encodedLocation = Uri.encodeComponent(location);
+      // Directly call the endpoint that returns box details for a location.
+      final response = await _dio.get('/containers/$encodedLocation/ids', queryParameters: {'mode': 'box'});
+      
+      if (response.statusCode == 200 && response.data is List) {
+        // The server for ?mode=box returns a list of objects with product details.
+        // We map this directly to our BoxItem entity.
+        final boxes = (response.data as List).map((item) {
+          final map = item as Map<String, dynamic>;
+          // The server query for boxes groups by product, so we use productId as the unique boxId for the dropdown.
+          return BoxItem.fromMap({
+            ...map,
+            'box_id': map['productId'], 
+          });
+        }).toList();
+        return boxes;
+      } else {
+        throw Exception('Failed to load boxes. Status: ${response.statusCode}');
       }
-      return boxes;
-    } catch (e) {
-      debugPrint("API Error fetchBoxesAtLocation: $e");
+    } on DioException catch (e) {
+      debugPrint("API Error fetching boxes: ${e.message}");
       rethrow;
     }
   }

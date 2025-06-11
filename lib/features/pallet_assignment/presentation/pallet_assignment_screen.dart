@@ -87,23 +87,33 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Future<void> _loadContainerIdsForLocation() async {
     if (_selectedSourceLocation == null) return;
-    setState(() => _isLoadingContainerIds = true);
+    setState(() {
+      _isLoadingContainerIds = true;
+      _availableContainerIds = [];
+      _selectedContainerId = null;
+      _boxItemsCache = {};
+    });
+    
     try {
       final locationName = _selectedSourceLocation!.name;
       if (_selectedMode == AssignmentMode.box) {
         final boxes = await _repo.getBoxesAtLocation(locationName);
         if (!mounted) return;
         setState(() {
-          _boxItemsCache = {for (var b in boxes) b.productId.toString(): b};
+          _boxItemsCache = { for (var b in boxes) b.productId.toString(): b };
           _availableContainerIds = boxes.map((b) => b.productId.toString()).toList();
         });
       } else {
         final ids = await _repo.getContainerIdsByLocation(locationName, _selectedMode);
         if (!mounted) return;
-        setState(() => _availableContainerIds = ids);
+        setState(() {
+          _availableContainerIds = ids;
+        });
       }
     } catch (e) {
-      _showErrorSnackbar(tr('pallet_assignment.load_error', args: [e.toString()]));
+      if (mounted) {
+        _showErrorSnackbar(tr('pallet_assignment.load_error_container', args: [e.toString()]));
+      }
     } finally {
       if (mounted) setState(() => _isLoadingContainerIds = false);
     }

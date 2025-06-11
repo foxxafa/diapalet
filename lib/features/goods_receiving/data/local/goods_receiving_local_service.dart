@@ -89,6 +89,9 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         );
 
         // b. Mal kabul kalemini (item) veritabanına ekle.
+        /*
+        // PALLET TABLE IS NOT USED ON SERVER and causes foreign key issues if locations are not synced.
+        // Pallet info is stored in inventory_stock and goods_receipt_item via pallet_id/barcode.
         if (item.containerId != null && item.containerId!.isNotEmpty) {
           // Palet kaydı - önce palet tablosunda var olduğundan emin ol
           await txn.insert(
@@ -118,6 +121,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
             );
           }
         }
+        */
 
         final itemMap = {
           'receipt_id': headerId,
