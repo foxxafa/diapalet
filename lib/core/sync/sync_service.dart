@@ -479,14 +479,19 @@ class SyncService {
         final id   = serverRecord['UrunId'];
         final name = serverRecord['UrunAdi'];
         final code = serverRecord['StokKodu'];
-        if (id == null || name == null || code == null) {
-          // Skip invalid product rows to avoid NOT NULL constraint failure
-          return null;
+        if (id == null) {
+          return null; // product id is mandatory
         }
+        final safeName = (name == null || (name as String).trim().isEmpty)
+            ? 'Unnamed Product $id'
+            : name;
+        final safeCode = (code == null || (code as String).trim().isEmpty)
+            ? 'UNKNOWN_$id'
+            : code;
         return {
           'id': id,
-          'name': name,
-          'code': code,
+          'name': safeName,
+          'code': safeCode,
           'is_active': serverRecord['aktif'] ?? 1,
           'created_at': serverRecord['created_at'],
           'updated_at': serverRecord['updated_at'],
