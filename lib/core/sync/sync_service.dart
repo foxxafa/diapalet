@@ -476,11 +476,18 @@ class SyncService {
   Map<String, dynamic>? _mapServerToLocalRecord(String serverTableName, Map<String, dynamic> serverRecord) {
     try {
       if (serverTableName == 'urunler') {
+        final id   = serverRecord['UrunId'];
+        final name = serverRecord['UrunAdi'];
+        final code = serverRecord['StokKodu'];
+        if (id == null || name == null || code == null) {
+          // Skip invalid product rows to avoid NOT NULL constraint failure
+          return null;
+        }
         return {
-          'id': serverRecord['UrunId'],
-          'name': serverRecord['UrunAdi'],
-          'code': serverRecord['StokKodu'],
-          'is_active': serverRecord['aktif'],
+          'id': id,
+          'name': name,
+          'code': code,
+          'is_active': serverRecord['aktif'] ?? 1,
           'created_at': serverRecord['created_at'],
           'updated_at': serverRecord['updated_at'],
         };
