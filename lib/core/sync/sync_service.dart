@@ -389,15 +389,178 @@ class SyncService {
   }
 
   Future<void> resetLocalData() async {
-    debugPrint("Full database reset initiated by user.");
-    _syncTimer?.cancel(); // Stop any background sync
     await _dbHelper.resetDatabase();
-    // After resetting, it's good practice to re-initialize to get a fresh start
-    // Note: The service is a singleton, so re-initializing will affect the whole app.
-    // This is generally the desired behavior after a full reset.
-    await initialize(); 
-    _syncStatusController.add(SyncStatus.upToDate); // Reflect that the state is now clean
-    debugPrint("Database has been reset and SyncService re-initialized.");
+    // After deletion, the DB is null. The next call to `_dbHelper.database`
+    // will automatically re-initialize and call _onCreate.
+    debugPrint("Local database has been reset.");
+  }
+
+  Future<SyncResult> downloadSpecifiedTables(List<String> serverTableNames) async {
+    if (_isSyncingDownload) {
+      return SyncResult(success: false, message: 'Download sync already in progress.');
+    }
+    if (!await _networkInfo.isConnected) {
+      _syncStatusController.add(SyncStatus.offline);
+      return SyncResult(success: false, message: 'No network connection.');
+    }
+
+    _isSyncingDownload = true;
+    _syncStatusController.add(SyncStatus.syncing);
+    debugPrint("Starting specified table download for: ${serverTableNames.join(', ')}");
+
+    final db = await _dbHelper.database;
+
+    try {
+      for (final serverTableName in serverTableNames) {
+        final localTableName = _mapServerToLocalTable(serverTableName);
+        if (localTableName == null) {
+          debugPrint("Skipping unknown table: $serverTableName");
+          continue;
+        }
+
+        debugPrint("Fetching $serverTableName -> $localTableName...");
+        
+        final response = await http.get(
+          Uri.parse('$_baseUrl/api/data/$serverTableName'),
+          headers: {'Content-Type': 'application/json'},
+        );
+
+        if (response.statusCode == 200) {
+          final List<dynamic> data = jsonDecode(response.body);
+          
+          await db.transaction((txn) async {
+            // Clear the local table before inserting new data
+            await txn.delete(localTableName);
+            debugPrint("Cleared local table: $localTableName");
+
+            // Insert new data
+            for (final item in data) {
+              final mappedItem = _mapServerToLocalRecord(serverTableName, item);
+              if (mappedItem != null) {
+                await txn.insert(localTableName, mappedItem, conflictAlgorithm: ConflictAlgorithm.replace);
+              }
+            }
+            debugPrint("Inserted ${data.length} records into $localTableName.");
+          });
+        } else {
+          throw Exception('Failed to download $serverTableName: HTTP ${response.statusCode}');
+        }
+      }
+
+      _syncStatusController.add(SyncStatus.upToDate);
+      debugPrint("Specified table download finished successfully.");
+      return SyncResult(success: true, message: 'Seçilen tablolar başarıyla indirildi.');
+
+    } catch (e) {
+      debugPrint('Download error for specified tables: $e');
+      _syncStatusController.add(SyncStatus.error);
+      return SyncResult(success: false, message: 'Veri indirme hatası: $e');
+    } finally {
+      _isSyncingDownload = false;
+    }
+  }
+
+  String? _mapServerToLocalTable(String serverTableName) {
+    const map = {
+      'urunler': 'product',
+      'locations': 'location',
+      'satin_alma_siparis_fis': 'purchase_order',
+      'satin_alma_siparis_fis_satir': 'purchase_order_item',
+      'goods_receipts': 'goods_receipt',
+      'goods_receipt_items': 'goods_receipt_item',
+      'inventory_stock': 'inventory_stock',
+    };
+    return map[serverTableName];
+  }
+
+  Map<String, dynamic>? _mapServerToLocalRecord(String serverTableName, Map<String, dynamic> serverRecord) {
+    try {
+      if (serverTableName == 'urunler') {
+        return {
+          'id': serverRecord['UrunId'],
+          'name': serverRecord['UrunAdi'],
+          'code': serverRecord['StokKodu'],
+          'is_active': serverRecord['aktif'],
+          'created_at': serverRecord['created_at'],
+          'updated_at': serverRecord['updated_at'],
+        };
+      }
+      if (serverTableName == 'locations') {
+        return {
+          'id': serverRecord['id'],
+          'name': serverRecord['name'],
+          'code': serverRecord['code'],
+          'is_active': serverRecord['is_active'],
+          'latitude': serverRecord['latitude'],
+          'longitude': serverRecord['longitude'],
+          'address': serverRecord['address'],
+          'description': serverRecord['description'],
+          'created_at': serverRecord['created_at'],
+          'updated_at': serverRecord['updated_at'],
+        };
+      }
+      if (serverTableName == 'satin_alma_siparis_fis') {
+        return {
+          'id': serverRecord['id'],
+          'po_id': serverRecord['po_id'],
+          'tarih': serverRecord['tarih'],
+          'status': serverRecord['status'],
+          'notlar': serverRecord['notlar'],
+          'user': serverRecord['user'],
+          'created_at': serverRecord['created_at'],
+          'updated_at': serverRecord['updated_at'],
+          'gun': serverRecord['gun'],
+          'lokasyon_id': serverRecord['lokasyon_id'],
+          'invoice': serverRecord['invoice'],
+          'delivery': serverRecord['delivery'],
+        };
+      }
+      if (serverTableName == 'satin_alma_siparis_fis_satir') {
+        return {
+          'id': serverRecord['id'],
+          'siparis_id': serverRecord['siparis_id'],
+          'urun_id': serverRecord['urun_id'],
+          'miktar': serverRecord['miktar'],
+          'birim': serverRecord['birim'],
+          'productName': serverRecord['productName'] ?? 'N/A',
+        };
+      }
+      if (serverTableName == 'goods_receipts') {
+        return {
+          'id': serverRecord['id'],
+          'siparis_id': serverRecord['siparis_id'],
+          'employee_id': serverRecord['employee_id'],
+          'invoice_number': serverRecord['invoice_number'],
+          'receipt_date': serverRecord['receipt_date'],
+          'created_at': serverRecord['created_at'],
+          'synced': 1,
+        };
+      }
+      if (serverTableName == 'goods_receipt_items') {
+        return {
+          'id': serverRecord['id'],
+          'receipt_id': serverRecord['receipt_id'],
+          'product_id': serverRecord['urun_id'],
+          'quantity': serverRecord['quantity_received'],
+          'location_id': serverRecord['location_id'] ?? 1, // Default to a valid location ID
+          'pallet_id': serverRecord['pallet_barcode'],
+        };
+      }
+      if (serverTableName == 'inventory_stock') {
+        return {
+          'id': serverRecord['id'],
+          'urun_id': serverRecord['urun_id'],
+          'location_id': serverRecord['location_id'],
+          'quantity': serverRecord['quantity'],
+          'pallet_barcode': serverRecord['pallet_barcode'],
+          'updated_at': serverRecord['updated_at'],
+        };
+      }
+      return serverRecord;
+    } catch (e) {
+      debugPrint("Error mapping record for table $serverTableName: $e. Record: $serverRecord");
+      return null;
+    }
   }
 }
 

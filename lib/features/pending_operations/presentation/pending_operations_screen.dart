@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:intl/intl.dart';
 import '../../../core/sync/sync_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 
@@ -141,6 +142,37 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     }
   }
 
+  Future<void> _syncFromServer() async {
+    setState(() {
+      _isSyncing = true;
+    });
+
+    final tablesToSync = [
+      'goods_receipt_items',
+      'goods_receipts',
+      'inventory_stock',
+      'locations',
+      'satin_alma_siparis_fis',
+      'satin_alma_siparis_fis_satir',
+      'urunler',
+    ];
+
+    final result = await _syncService.downloadSpecifiedTables(tablesToSync);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+    
+    setState(() {
+      _isSyncing = false;
+    });
+  }
+
   Future<void> _downloadMasterData({bool fullSync = false}) async {
     final result = await _syncService.downloadMasterData(fullSync: fullSync);
     if (mounted) {
@@ -248,25 +280,34 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      elevation: 2.0,
       child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8.0),
-          decoration: BoxDecoration(
-            color: iconColor.withAlpha((255 * 0.1).round()),
-            borderRadius: BorderRadius.circular(8.0),
-          ),
+        leading: CircleAvatar(
+          backgroundColor: iconColor.withOpacity(0.1),
           child: Icon(icon, color: iconColor),
         ),
         title: Text(
-          operation.displayTitle,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          operation.operationType.replaceAll('_', ' ').capitalize(),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(operation.displaySubtitle),
-        trailing: Icon(
-          Icons.cloud_upload_outlined,
-          color: Colors.grey[400],
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'Tarih: ${DateFormat.yMd().add_Hms().format(operation.createdAt)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Detay: ${operation.payloadSummary}',
+              style: Theme.of(context).textTheme.bodySmall,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
-        onTap: () => _showOperationDetails(operation),
+        isThreeLine: true,
       ),
     );
   }
@@ -337,148 +378,86 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     );
   }
 
+  Widget _buildAdminControls() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton.icon(
+            icon: const Icon(Icons.storage_outlined),
+            label: const Text('Sunucudan Veri Çek'),
+            onPressed: _isSyncing ? null : _syncFromServer,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.delete_forever_outlined, color: Colors.white),
+            label: const Text('Veritabanını Sıfırla', style: TextStyle(color: Colors.white)),
+            onPressed: _isSyncing ? null : _confirmAndResetDatabase,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('pending_operations.title'.tr()),
-        centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _downloadMasterData,
-            tooltip: 'pending_operations.download_master_data'.tr(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadPendingOperations,
-            tooltip: 'pending_operations.refresh'.tr(),
-          ),
-          // Add connectivity indicator like SharedAppBar
+          // Keeping a simple sync status indicator in the AppBar
           Padding(
-            padding: const EdgeInsets.only(right: 12.0),
+            padding: const EdgeInsets.only(right: 16.0),
             child: Icon(
               _syncStatus == SyncStatus.offline ? Icons.wifi_off : Icons.wifi,
-              color: _syncStatus == SyncStatus.offline ? Colors.red : Colors.green,
+              color: _syncStatus == SyncStatus.offline ? Colors.grey : Colors.green,
             ),
-          ),
+          )
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadPendingOperations,
-        child: Column(
-          children: [
-            _buildSyncStatusBanner(),
-            _buildAdminActions(),
+      body: Column(
+        children: [
+          _buildAdminControls(),
+          const Divider(),
+          if (_isLoading)
+            const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (_pendingOperations.isEmpty)
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _pendingOperations.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                size: 64,
-                                color: Colors.green[300],
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'pending_operations.no_pending'.tr(),
-                                style: Theme.of(context).textTheme.headlineSmall,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'pending_operations.all_synced'.tr(),
-                                style: Theme.of(context).textTheme.bodyMedium,
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _pendingOperations.length,
-                          itemBuilder: (context, index) {
-                            return _buildOperationCard(_pendingOperations[index]);
-                          },
-                        ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: _pendingOperations.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: _isSyncing ? null : _performSync,
-              icon: _isSyncing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.sync),
-              label: Text(_isSyncing 
-                  ? 'pending_operations.syncing'.tr()
-                  : 'pending_operations.sync_now'.tr()),
+              child: Center(
+                child: Text('pending_operations.empty'.tr()),
+              ),
             )
-          : null,
-    );
-  }
-
-  Widget _buildAdminActions() {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
-              child: Text(
-                'pending_operations.admin.title'.tr(),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          else
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadPendingOperations,
+                child: ListView.builder(
+                  itemCount: _pendingOperations.length,
+                  itemBuilder: (context, index) {
+                    return _buildOperationCard(_pendingOperations[index]);
+                  },
                 ),
               ),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                    label: Text('pending_operations.admin.reset_db'.tr()),
-                    onPressed: _confirmAndResetDatabase,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange.shade800,
-                      side: BorderSide(color: Colors.orange.shade800),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.cloud_download_outlined),
-                    label: Text('pending_operations.admin.full_sync'.tr()),
-                    onPressed: () => _downloadMasterData(fullSync: true),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.primary,
-                      side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
+  }
+}
+
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1)}";
   }
 } 

@@ -48,6 +48,19 @@ class PendingOperation {
     }
   }
 
+  String get payloadSummary {
+    try {
+      final jsonString = jsonEncode(operationData);
+      // To avoid overly long summaries, we can truncate or simplify.
+      if (jsonString.length > 100) {
+        return '${jsonString.substring(0, 97)}...';
+      }
+      return jsonString;
+    } catch (e) {
+      return 'Invalid payload data';
+    }
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
