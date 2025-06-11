@@ -74,7 +74,28 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_stock_location ON inventory_stock (location_id)');
     await db.execute('CREATE INDEX idx_stock_pallet ON inventory_stock (pallet_barcode)');
 
-    // 4- Pallet header & details
+    // 4- Purchase Orders (from server)
+    await db.execute('''
+      CREATE TABLE purchase_order (
+        id INTEGER PRIMARY KEY,
+        po_id TEXT,
+        tarih TEXT,
+        status INTEGER
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE purchase_order_item (
+        id INTEGER PRIMARY KEY,
+        siparis_id INTEGER NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
+        urun_id INTEGER NOT NULL REFERENCES product(id),
+        miktar REAL,
+        birim TEXT,
+        productName TEXT
+      )
+    ''');
+
+    // 5- Pallet header & details
     await db.execute('''
       CREATE TABLE pallet (
         id       TEXT PRIMARY KEY,
@@ -91,7 +112,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 5- Goods receipt header & lines
+    // 6- Goods receipt header & lines
     await db.execute('''
       CREATE TABLE goods_receipt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +134,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 6- Transfer header & lines
+    // 7- Transfer header & lines
     await db.execute('''
       CREATE TABLE transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +147,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 7- Unified pending queue – each row is a standalone operation waiting
+    // 8- Unified pending queue – each row is a standalone operation waiting
     //    to be synced. We keep JSON payload so that adding new operation types
     //    does not require schema changes.
     await db.execute('''
@@ -154,14 +175,21 @@ class DatabaseHelper {
   // ==== HOUSEKEEPING ========================================================
 
   Future<void> _dropAllTables(Database db) async {
+    // Drop order is critical due to foreign key constraints.
+    // Tables that have foreign keys into other tables must be dropped first.
     for (final t in [
-      'pallet_item','pallet',
-      'goods_receipt_item','goods_receipt',
-      'transfer_item','transfer_operation',
+      'goods_receipt_item',
+      'pallet_item',
+      'transfer_item',
       'inventory_stock',
-      'location',
-      'product',
+      'purchase_order_item',
+      'goods_receipt',
+      'pallet',
+      'transfer_operation',
+      'purchase_order',
       'pending_operation',
+      'product',
+      'location',
     ]) {
       await db.execute('DROP TABLE IF EXISTS $t');
     }
