@@ -1,7 +1,8 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
@@ -10,211 +11,142 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ite
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 
 abstract class PalletAssignmentLocalDataSource {
-  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
-  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations();
-  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId);
+  Future<void> saveTransferOperationToLocalDB(TransferOperationHeader header, List<TransferItemDetail> items);
+  Future<void> queueTransferOperationForSync(TransferOperationHeader header, List<TransferItemDetail> items);
+  
   Future<List<LocationInfo>> getDistinctLocations();
-  Future<List<String>> getContainerIdsByLocation(int locationId);
-  Future<List<ProductItem>> getContainerContent(String containerId);
-  Future<List<BoxItem>> getBoxesAtLocation(int locationId);
-  Future<void> markTransferOperationAsSynced(int operationId);
+  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode);
+  Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode);
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
   final DatabaseHelper dbHelper;
+  final SyncService syncService;
 
-  PalletAssignmentLocalDataSourceImpl({required this.dbHelper});
-
+  PalletAssignmentLocalDataSourceImpl({required this.dbHelper, required this.syncService});
+  
   @override
-  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+  Future<void> saveTransferOperationToLocalDB(TransferOperationHeader header, List<TransferItemDetail> items) async {
     final db = await dbHelper.database;
-    late int opId;
-
     await db.transaction((txn) async {
-      // 1. Save the operation header to get an ID
-      opId = await txn.insert('transfer_operation', {
-        'operation_type': header.operationType.name,
-        'source_location_id': header.sourceLocationId,
-        'target_location_id': header.targetLocationId,
-        'pallet_id': header.containerId,
-        'transfer_date': header.transferDate.toIso8601String(),
-        'synced': 0, // Always start as unsynced
-      });
+      int opId = await txn.insert('transfer_operation', header.toMap());
 
-      // 2. Save the items for this operation
       for (final item in items) {
         await txn.insert('transfer_item', {
+          ...item.toMap(),
           'operation_id': opId,
-          'product_id': item.productId,
-          'quantity': item.quantity,
         });
 
-        // 3. Update local inventory based on transfer type
-        if (header.operationType == AssignmentMode.pallet) {
-          // For pallets, just update the pallet's location
-          await txn.update('pallet', {'location_id': header.targetLocationId},
-              where: 'id = ?', whereArgs: [header.containerId]);
-        } else { // Box transfer
-          // Update inventory quantities for the specific product
-          final int productIdInt = item.productId;
-          await _updateInventory(txn, productIdInt, header.sourceLocationId, -item.quantity);
-          await _updateInventory(txn, productIdInt, header.targetLocationId, item.quantity);
-        }
+        // Update local inventory based on the transfer
+        await _updateInventoryInTransaction(txn, item.productId, header.sourceLocationId, -item.quantity, header.containerId);
+        await _updateInventoryInTransaction(txn, item.productId, header.targetLocationId, item.quantity, header.containerId);
       }
-
-      // 4. Create pending operation for sync service
-      final pendingPayload = {
-        'source_location_id': header.sourceLocationId,
-        'target_location_id': header.targetLocationId,
-        'pallet_id': header.containerId, // Container ID is the pallet ID
-        'transfer_date': header.transferDate.toIso8601String(),
-        'items': items.map((it) => {
-          'product_id': it.productId,
-          'quantity': it.quantity,
-        }).toList(),
-      };
-
-      await txn.insert('pending_operation', {
-        'operation_type': header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer',
-        'payload': jsonEncode(pendingPayload),
-        'created_at': DateTime.now().toIso8601String(),
-      });
     });
-    return opId;
+    debugPrint("Saved transfer operation to local DB (Online Mode).");
   }
-  
-  Future<void> _updateInventory(DatabaseExecutor txn, int productId, int locationId, int quantityChange) async {
-      final existing = await txn.query(
-        'inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL',
-        whereArgs: [productId, locationId],
-        limit: 1,
-      );
 
-      if (existing.isNotEmpty) {
-        final currentQty = existing.first['quantity'] as int;
-        final newQty = currentQty + quantityChange;
-        if (newQty > 0) {
-           await txn.update(
-             'inventory_stock', 
-             {'quantity': newQty}, 
-             where: 'id = ?', 
-             whereArgs: [existing.first['id']]);
-        } else {
-           await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
-        }
-      } else if (quantityChange > 0) {
-        await txn.insert('inventory_stock', {
-          'urun_id': productId,
-          'location_id': locationId,
-          'quantity': quantityChange,
-          'pallet_barcode': null,
-        });
+  @override
+  Future<void> queueTransferOperationForSync(TransferOperationHeader header, List<TransferItemDetail> items) async {
+    final payload = {
+      "header": header.toMap(),
+      "items": items.map((item) => item.toMap()).toList(),
+    };
+    final opType = header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer';
+    await syncService.addPendingOperation(opType, payload);
+    debugPrint("Queued transfer operation for sync (Offline Mode).");
+  }
+
+  Future<void> _updateInventoryInTransaction(DatabaseExecutor txn, int productId, int locationId, int quantityChange, String? palletBarcode) async {
+    // This logic handles stock changes for both pallet and box transfers within a transaction
+    final existing = await txn.query('inventory_stock',
+        where: 'urun_id = ? AND location_id = ? AND pallet_barcode ${palletBarcode == null ? 'IS NULL' : '= ?'}',
+        whereArgs: palletBarcode == null ? [productId, locationId] : [productId, locationId, palletBarcode],
+        limit: 1);
+
+    if (existing.isNotEmpty) {
+      final currentQty = (existing.first['quantity'] as num? ?? 0);
+      final newQty = currentQty + quantityChange;
+      if (newQty > 0) {
+        await txn.update('inventory_stock', {'quantity': newQty}, where: 'id = ?', whereArgs: [existing.first['id']]);
+      } else {
+        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
       }
-  }
-
-
-  @override
-  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations() async {
-    final db = await dbHelper.database;
-    final rows = await db.query('transfer_operation', where: 'synced = 0', orderBy: 'id DESC');
-    return rows.map((e) => TransferOperationHeader.fromMap(e)).toList();
-  }
-
-  @override
-  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId) async {
-    final db = await dbHelper.database;
-    final rows = await db.rawQuery('''
-      SELECT ti.id, ti.operation_id, ti.product_id, ti.quantity,
-             p.name AS product_name, p.code AS product_code
-      FROM transfer_item ti
-      JOIN product p ON p.id = ti.product_id
-      WHERE ti.operation_id = ?
-    ''', [operationId]);
-    return rows.map((e) => TransferItemDetail.fromMap(e)).toList();
+    } else if (quantityChange > 0) {
+      await txn.insert('inventory_stock', {
+        'urun_id': productId,
+        'location_id': locationId,
+        'quantity': quantityChange,
+        'pallet_barcode': palletBarcode,
+      });
+    }
   }
 
   @override
   Future<List<LocationInfo>> getDistinctLocations() async {
     final db = await dbHelper.database;
-    final rows = await db.query('location', orderBy: 'name');
-    return rows.map((e) => LocationInfo.fromMap(e)).toList();
-  }
-
-  @override
-  Future<List<String>> getContainerIdsByLocation(int locationId) async {
-    final db = await dbHelper.database;
-    final ids = <String>[];
-
-    // Get Pallet IDs
-    final palletRows = await db.query('pallet', where: 'location_id = ?', columns: ['id'], whereArgs: [locationId]);
-    ids.addAll(palletRows.map((e) => e['id'] as String));
-
-    // Get Box IDs (from inventory_stock, not goods_receipt_item anymore)
-    final boxRows = await db.query(
-      'inventory_stock',
-      columns: ['id'],
-      where: 'location_id = ? AND pallet_barcode IS NULL AND quantity > 0',
-      whereArgs: [locationId]
-    );
-    // Box IDs are integers, convert them to string to have a unified list
-    ids.addAll(boxRows.map((e) => (e['id'] as int).toString()));
-
-    return ids;
-  }
-
-  @override
-  Future<List<ProductItem>> getContainerContent(String containerId) async {
-    final db = await dbHelper.database;
-
-    // Try to see if it's a pallet ID (string)
-    final palletItems = await db.rawQuery('''
-      SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code, pi.quantity
-      FROM pallet_item pi
-      JOIN product p ON p.id = pi.product_id
-      WHERE pi.pallet_id = ?
-    ''', [containerId]);
-    
-    if (palletItems.isNotEmpty) {
-      return palletItems.map((e) => ProductItem.fromMap(e)).toList();
+    // Query locations that actually have stock
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT l.id, l.name, l.code
+      FROM location l
+      JOIN inventory_stock s ON s.location_id = l.id
+      WHERE s.quantity > 0
+      ORDER BY l.name
+    ''');
+    if (rows.isNotEmpty) {
+      return rows.map((e) => LocationInfo.fromMap(e)).toList();
     }
+    // Fallback to all locations if none have stock
+    final allLocations = await db.query('location', orderBy: 'name');
+    return allLocations.map((e) => LocationInfo.fromMap(e)).toList();
+  }
 
-    // If not a pallet, try to see if it's a box ID (integer) from inventory_stock
-    final boxId = int.tryParse(containerId);
-    if (boxId != null) {
-      final boxItems = await db.rawQuery('''
-        SELECT s.urun_id AS product_id, p.name as product_name, p.code as product_code, s.quantity
+  @override
+  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode) async {
+    final db = await dbHelper.database;
+    if (mode == AssignmentMode.pallet) {
+      // Fetch pallet barcodes for a given location
+      final palletRows = await db.query('inventory_stock',
+        columns: ['pallet_barcode'],
+        distinct: true,
+        where: 'location_id = ? AND pallet_barcode IS NOT NULL AND quantity > 0',
+        whereArgs: [locationId]
+      );
+      return palletRows.map((e) => e['pallet_barcode'] as String).toList();
+    } else { // Box mode
+      // Box items are just stock records without a pallet barcode
+      final boxRows = await db.query('inventory_stock',
+        columns: ['urun_id'], // Using product ID as a representative "box" id
+        where: 'location_id = ? AND pallet_barcode IS NULL AND quantity > 0',
+        whereArgs: [locationId]
+      );
+      // We return product IDs as strings
+      return boxRows.map((e) => (e['urun_id'] as int).toString()).toList();
+    }
+  }
+
+  @override
+  Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode) async {
+    final db = await dbHelper.database;
+    if (mode == AssignmentMode.pallet) {
+      final palletItems = await db.rawQuery('''
+        SELECT s.urun_id as product_id, p.name as product_name, p.code as product_code, s.quantity
         FROM inventory_stock s
         JOIN product p ON p.id = s.urun_id
-        WHERE s.id = ?
-      ''', [boxId]);
-      return boxItems.map((e) => ProductItem.fromMap(e)).toList();
+        WHERE s.pallet_barcode = ?
+      ''', [containerId]);
+      return palletItems.map((e) => ProductItem.fromMap(e)).toList();
+    } else { // Box mode assumes containerId is the product_id
+      final productId = int.tryParse(containerId);
+      if (productId != null) {
+        final boxItems = await db.rawQuery('''
+          SELECT s.urun_id as product_id, p.name as product_name, p.code as product_code, s.quantity
+          FROM inventory_stock s
+          JOIN product p ON p.id = s.urun_id
+          WHERE s.urun_id = ? AND s.pallet_barcode IS NULL
+        ''', [productId]);
+        return boxItems.map((e) => ProductItem.fromMap(e)).toList();
+      }
     }
-
     return [];
-  }
-
-  @override
-  Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
-    final db = await dbHelper.database;
-    final rows = await db.rawQuery('''
-      SELECT s.id AS box_id, s.urun_id, p.name AS product_name, p.code AS product_code, s.quantity
-      FROM inventory_stock s
-      JOIN product p ON p.id = s.urun_id
-      WHERE s.location_id = ? AND s.pallet_barcode IS NULL
-      ORDER BY s.id DESC
-    ''', [locationId]);
-    return rows.map((e) => BoxItem.fromMap(e)).toList();
-  }
-
-  @override
-  Future<void> markTransferOperationAsSynced(int operationId) async {
-    final db = await dbHelper.database;
-    await db.update(
-      'transfer_operation',
-      {'synced': 1},
-      where: 'id = ?',
-      whereArgs: [operationId],
-    );
   }
 }

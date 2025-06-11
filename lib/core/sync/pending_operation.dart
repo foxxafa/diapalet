@@ -1,4 +1,6 @@
 // lib/core/sync/pending_operation.dart
+import 'dart:convert';
+
 class PendingOperation {
   // Primary key inside pending_operation table – handy for deletion
   final int id;
@@ -55,6 +57,23 @@ class PendingOperation {
       'created_at': createdAt.toIso8601String(),
       'table_name': tableName,
     };
+  }
+
+  Map<String, dynamic> toUploadPayload() {
+    return {
+      'operation_type': operationType,
+      'operationData': operationData,
+    };
+  }
+
+  factory PendingOperation.fromMap(Map<String, dynamic> map) {
+    return PendingOperation(
+      id: map['id'] as int,
+      operationType: map['operation_type'] as String,
+      operationData: jsonDecode(map['payload'] as String) as Map<String, dynamic>,
+      createdAt: DateTime.parse(map['created_at'] as String),
+      tableName: 'pending_operation', // This is constant now
+    );
   }
 
   factory PendingOperation.fromJson(Map<String, dynamic> json) {
