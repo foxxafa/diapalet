@@ -85,7 +85,18 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
 
   @override
   Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode) async {
-    return await localDataSource.getContainerContent(containerId, mode);
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching container content from remote for: $containerId");
+        return await remoteDataSource.fetchContainerContents(containerId, mode);
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote container content, falling back to local. Error: $e");
+        return await localDataSource.getContainerContent(containerId, mode);
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching container content from local for: $containerId");
+      return await localDataSource.getContainerContent(containerId, mode);
+    }
   }
 
   @override

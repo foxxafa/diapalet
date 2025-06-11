@@ -4,7 +4,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 class QrScannerScreen extends StatefulWidget {
-  const QrScannerScreen({super.key});
+  final String title;
+
+  const QrScannerScreen({
+    super.key,
+    this.title = 'Scan QR Code',
+  });
+
   @override
   State<QrScannerScreen> createState() => _QrScannerScreenState();
 }
@@ -34,7 +40,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('qr_scanner.title'.tr()),
+        title: Text(widget.title),
         actions: [
           /// Flaş düğmesi – state.torchState
           ValueListenableBuilder<MobileScannerState>(

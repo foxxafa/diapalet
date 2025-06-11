@@ -108,18 +108,36 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     }
   }
 
-  Future<void> _onContainerSelected(String? containerId) async {
-    if (containerId == null) {
-      _clearContainerSelection();
-      return;
+  void _onContainerSelected(String? newValue) {
+    if (newValue == null || newValue.isEmpty) return;
+    setState(() {
+      _selectedContainerId = newValue;
+      _scannedContainerIdController.text = newValue;
+      _loadContainerContents();
+    });
+  }
+
+  Future<void> _scanContainerId() async {
+    // TODO: Localize the title string
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (context) => const QrScannerScreen(title: 'Scan Container Barcode')),
+    );
+
+    if (!mounted || result == null || result.isEmpty) return;
+
+    if (_availableContainerIds.contains(result)) {
+      _onContainerSelected(result);
+    } else {
+      // TODO: Localize the error string
+      _showErrorSnackbar('Scanned container is not in the selected location.');
     }
+  }
 
-    _selectedContainerId = containerId;
-    _scannedContainerIdController.text = _getDisplayLabelForContainer(containerId);
-
+  Future<void> _loadContainerContents() async {
+    if (_selectedContainerId == null) return;
     setState(() => _isLoadingContainerContents = true);
     try {
-      final contents = await _repo.getContainerContent(containerId, _selectedMode);
+      final contents = await _repo.getContainerContent(_selectedContainerId!, _selectedMode);
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
@@ -323,15 +341,34 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: _buildSearchableDropdown(
-          label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
-          selectedValue: _selectedContainerId,
-          items: _availableContainerIds,
-          itemLabelBuilder: _getDisplayLabelForContainer,
-          onSelected: _onContainerSelected,
-          isLoading: _isLoadingContainerIds,
-          isEnabled: _selectedSourceLocation != null,
-          validator: (val) => val == null || val.isEmpty ? tr('pallet_assignment.validation.required') : null,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildSearchableDropdown(
+                label: tr('pallet_assignment.container_select', namedArgs: {'mode': _selectedMode.displayName}),
+                selectedValue: _selectedContainerId,
+                items: _availableContainerIds,
+                itemLabelBuilder: _getDisplayLabelForContainer,
+                onSelected: _onContainerSelected,
+                isLoading: _isLoadingContainerIds,
+                isEnabled: _selectedSourceLocation != null,
+                validator: (val) => val == null || val.isEmpty ? tr('pallet_assignment.validation.required') : null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // TODO: Localize the tooltip string
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              onPressed: _selectedSourceLocation != null ? _scanContainerId : null,
+              iconSize: 40,
+              tooltip: 'Scan container barcode',
+              style: IconButton.styleFrom(
+                padding: const EdgeInsets.all(4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
         ),
       ),
     );
