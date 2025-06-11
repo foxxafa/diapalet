@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db';
-  static const int _dbVersion = 13;
+  static const int _dbVersion = 14;
 
   // ==== PUBLIC HANDLE =======================================================
   Future<Database> get database async {
@@ -30,10 +30,7 @@ class DatabaseHelper {
       version: _dbVersion,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate : _onCreate,
-      onUpgrade: (db, _, __) async {
-        await _dropAllTables(db);
-        await _onCreate(db, _dbVersion);
-      },
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -76,7 +73,8 @@ class DatabaseHelper {
         urun_id INTEGER NOT NULL REFERENCES product(id),
         location_id INTEGER NOT NULL REFERENCES location(id),
         quantity   INTEGER NOT NULL,
-        pallet_barcode TEXT                          -- Can be null
+        pallet_barcode TEXT,                          -- Can be null
+        updated_at TEXT
       )
     ''');
     
@@ -191,6 +189,15 @@ class DatabaseHelper {
     ''');
 
     debugPrint('All tables created (v$_dbVersion).');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    debugPrint("Upgrading database from version $oldVersion to $newVersion");
+
+    if (oldVersion < 14) {
+      await db.execute('ALTER TABLE inventory_stock ADD COLUMN updated_at TEXT');
+      debugPrint("Upgraded: Added updated_at to inventory_stock");
+    }
   }
 
   // ==== HOUSEKEEPING ========================================================
