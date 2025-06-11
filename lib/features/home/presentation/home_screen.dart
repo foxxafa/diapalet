@@ -1,12 +1,9 @@
-import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/local/populate_offline_test_data.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 
@@ -18,14 +15,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   void initState() {
     super.initState();
@@ -36,8 +25,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const bool isDebug = kDebugMode;
-
     return Scaffold(
       appBar: SharedAppBar(
         title: 'home.title'.tr(),

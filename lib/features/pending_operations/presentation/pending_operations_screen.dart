@@ -431,7 +431,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   Widget _buildAdminActions() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(8.0),

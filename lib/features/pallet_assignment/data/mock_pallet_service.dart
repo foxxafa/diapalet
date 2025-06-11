@@ -70,8 +70,8 @@ class MockPalletService implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode) async {
-    debugPrint("MockPalletService: Fetching container IDs at location ID: $locationId");
+  Future<List<String>> getContainerIdsByLocation(String locationName, int locationId, AssignmentMode mode) async {
+    debugPrint("MockPalletService: Fetching container IDs at location ID: $locationId (Name: $locationName)");
     await Future.delayed(const Duration(milliseconds: 200));
     return _locationContainers[locationId] ?? [];
   }

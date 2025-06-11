@@ -14,11 +14,7 @@ class NetworkInfoImpl implements NetworkInfo {
 
   @override
   Stream<ConnectivityResult> get onConnectivityChanged => connectivity.onConnectivityChanged.map((event) {
-        if (event is List<ConnectivityResult>) {
-          return event.isNotEmpty ? event.first : ConnectivityResult.none;
-        } else {
-          return event as ConnectivityResult;
-        }
+        return event.isNotEmpty ? event.first : ConnectivityResult.none;
       });
 
   @override
