@@ -430,14 +430,28 @@ class SyncService {
 
     try {
       final Map<String, dynamic> downloadedData = {};
+      const serverToLocalKeyMap = {
+        'locations': 'location',
+        'urunler': 'product',
+        'satin_alma_siparis_fis': 'purchase_order',
+        'satin_alma_siparis_fis_satir': 'purchase_order_item',
+        'goods_receipts': 'goods_receipt',
+        'goods_receipt_items': 'goods_receipt_item',
+        'inventory_stock': 'inventory_stock',
+      };
+
       for (final tableName in tableNames) {
         final response = await http.get(
           Uri.parse('$_baseUrl/api/data/$tableName'),
           headers: {'Content-Type': 'application/json'},
         );
         if (response.statusCode == 200) {
-          // The server returns a list, we need to map it to the table name key
-          downloadedData[tableName.replaceAll('satin_alma_siparis_fis', 'purchase_order').replaceAll('urunler', 'product')] = jsonDecode(response.body);
+          final localKey = serverToLocalKeyMap[tableName];
+          if (localKey != null) {
+            downloadedData[localKey] = jsonDecode(response.body);
+          } else {
+             debugPrint("Warning: No local key mapping for server table '$tableName'");
+          }
         } else {
           throw Exception('Failed to download table $tableName: HTTP ${response.statusCode}');
         }
