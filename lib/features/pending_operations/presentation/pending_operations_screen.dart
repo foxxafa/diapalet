@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../../../core/sync/sync_service.dart';
-import '../../../core/sync/pending_operation.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
   const PendingOperationsScreen({super.key});

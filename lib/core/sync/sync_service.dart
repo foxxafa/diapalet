@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../local/database_helper.dart';
 import '../network/network_info.dart';
 import '../network/api_config.dart';
-import 'pending_operation.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
