@@ -5,6 +5,7 @@ import '../domain/entities/product_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
 import '../domain/entities/purchase_order.dart';
+import '../domain/entities/purchase_order_item.dart';
 
 class MockGoodsReceivingService implements GoodsReceivingRepository {
   final List<String> _mockInvoices = [
@@ -18,9 +19,9 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
   ];
 
   final List<ProductInfo> _mockProductsForDropdown = [
-    const ProductInfo(id: 101, name: "Mock Ürün A (Kola)", stockCode: "MOCKA001"),
-    const ProductInfo(id: 102, name: "Mock Ürün B (Gofret)", stockCode: "MOCKB002"),
-    const ProductInfo(id: 103, name: "Mock Ürün C (Süt)", stockCode: "MOCKC003"),
+    const ProductInfo(id: 101, name: "Mock Ürün A (Kola)", stockCode: "MOCKA001", isActive: true),
+    const ProductInfo(id: 102, name: "Mock Ürün B (Gofret)", stockCode: "MOCKB002", isActive: true),
+    const ProductInfo(id: 103, name: "Mock Ürün C (Süt)", stockCode: "MOCKC003", isActive: true),
   ];
 
   final List<GoodsReceipt> _savedReceipts = [];
@@ -119,6 +120,15 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     return [
       PurchaseOrder(id: 1, poId: 'PO-MOCK-001', date: DateTime.now(), notes: 'Mock sipariş', status: 0, supplierName: 'Tedarikçi A', supplierId: 1),
       PurchaseOrder(id: 2, poId: 'PO-MOCK-002', date: DateTime.now(), notes: 'Mock sipariş 2', status: 0, supplierName: 'Tedarikçi B', supplierId: 2),
+    ];
+  }
+
+  @override
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
+    await Future.delayed(const Duration(milliseconds: 100));
+    return [
+      PurchaseOrderItem(id: 1, orderId: orderId, productId: 101, expectedQuantity: 10, unit: 'AD', notes: null, productName: 'Mock Ürün A', stockCode: 'MOCKA001', barcode: '123', itemsPerBox: 12, itemsPerPallet: 144),
+      PurchaseOrderItem(id: 2, orderId: orderId, productId: 102, expectedQuantity: 5, unit: 'AD', notes: null, productName: 'Mock Ürün B', stockCode: 'MOCKB002', barcode: '456', itemsPerBox: 24, itemsPerPallet: 240),
     ];
   }
 }

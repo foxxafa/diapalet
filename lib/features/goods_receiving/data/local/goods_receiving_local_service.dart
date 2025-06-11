@@ -229,6 +229,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         id: e['id'] as int,
         name: e['name'] as String,
         stockCode: e['code'] as String,
+        isActive: true,
       );
     }
     return null;
@@ -256,6 +257,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
       id: e['id'] as int,
       name: e['name'] as String,
       stockCode: e['code'] as String,
+      isActive: true,
     ))
         .toList();
   }

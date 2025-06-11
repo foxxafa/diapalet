@@ -36,6 +36,13 @@ class SyncService {
       StreamController<SyncStatus>.broadcast();
   Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
 
+  /// Public wrapper to manually trigger the periodic background sync timer.
+  /// The timer is already started in [initialize], but some UI elements might
+  /// want to restart or force-enable it (e.g., on HomeScreen init).
+  void startPeriodicSync() {
+    _startBackgroundSync();
+  }
+
   Future<void> initialize() async {
     if (_isInitialized) return;
 

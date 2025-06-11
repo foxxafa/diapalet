@@ -114,6 +114,7 @@ class GoodsReceiptItem {
         id: map['product_id'],
         name: map['product_name'],
         stockCode: map['product_code'],
+        isActive: true,
       ),
       quantity: map['quantity'],
       locationId: map['location_id'],
