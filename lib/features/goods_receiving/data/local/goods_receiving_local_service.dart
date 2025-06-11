@@ -35,32 +35,39 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
   /// Veritabanı transaction'ı veya direkt bağlantı üzerinde stok güncellemesi yapan genel bir metod.
   Future<void> _updateStock(DatabaseExecutor dbOrTxn, int productId, int locationId, int qty, {String? palletId}) async {
-    // Paletlenmemiş ürünler için stok güncellemesi
-    if (palletId == null || palletId.isEmpty) {
-      final existing = await dbOrTxn.query('inventory_stock',
-          where: 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL',
-          whereArgs: [productId, locationId],
-          limit: 1);
+    final String whereClause;
+    final List<Object?> whereArgs;
 
-      if (existing.isEmpty) {
-        await dbOrTxn.insert('inventory_stock', {
-          'urun_id': productId,
-          'location_id': locationId,
-          'quantity': qty,
-        });
-      } else {
-        final currentQty = existing.first['quantity'] as int? ?? 0;
-        await dbOrTxn.update(
-          'inventory_stock',
-          {'quantity': currentQty + qty},
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
-      }
+    if (palletId == null || palletId.isEmpty) {
+      whereClause = 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL';
+      whereArgs = [productId, locationId];
+    } else {
+      whereClause = 'urun_id = ? AND location_id = ? AND pallet_barcode = ?';
+      whereArgs = [productId, locationId, palletId];
     }
-    // Paletli ürünler için stok kaydı zaten palet_item tablosunda tutuluyor,
-    // inventory_stock tablosunda ayrıca tutulmasına gerek yok. 
-    // Sunucu tarafında bu ayrım yapılacak.
+
+    final existing = await dbOrTxn.query('inventory_stock',
+        where: whereClause,
+        whereArgs: whereArgs,
+        limit: 1);
+
+    if (existing.isNotEmpty) {
+      final currentQty = (existing.first['quantity'] as num? ?? 0);
+      final newQty = currentQty + qty;
+      if (newQty > 0) {
+        await dbOrTxn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [existing.first['id']]);
+      } else {
+        await dbOrTxn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
+      }
+    } else if (qty > 0) {
+      await dbOrTxn.insert('inventory_stock', {
+        'urun_id': productId,
+        'location_id': locationId,
+        'quantity': qty,
+        'pallet_barcode': palletId,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    }
   }
 
   @override
@@ -93,9 +100,6 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         );
 
         // b. Mal kabul kalemini (item) veritabanına ekle.
-        /*
-        // PALLET TABLE IS NOT USED ON SERVER and causes foreign key issues if locations are not synced.
-        // Pallet info is stored in inventory_stock and goods_receipt_item via pallet_id/barcode.
         if (item.containerId != null && item.containerId!.isNotEmpty) {
           // Palet kaydı - önce palet tablosunda var olduğundan emin ol
           await txn.insert(
@@ -125,7 +129,6 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
             );
           }
         }
-        */
 
         final itemMap = {
           'receipt_id': headerId,
