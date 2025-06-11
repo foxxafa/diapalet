@@ -25,13 +25,40 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
 
   @override
   Future<List<LocationInfo>> getSourceLocations() async {
-    // Data is sourced from the local DB, which is kept in sync.
-    return await localDataSource.getDistinctLocations();
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching source locations from remote.");
+        final locations = await remoteDataSource.fetchSourceLocations();
+        // Optional: Cache to local DB for offline access
+        // await localDataSource.cacheLocations(locations);
+        return locations;
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote source locations, falling back to local. Error: $e");
+        return await localDataSource.getDistinctLocations();
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching source locations from local.");
+      return await localDataSource.getDistinctLocations();
+    }
   }
 
   @override
   Future<List<LocationInfo>> getTargetLocations() async {
-    return await localDataSource.getDistinctLocations();
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching target locations from remote.");
+        final locations = await remoteDataSource.fetchTargetLocations();
+        // Optional: Cache to local DB for offline access
+        // await localDataSource.cacheLocations(locations);
+        return locations;
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote target locations, falling back to local. Error: $e");
+        return await localDataSource.getDistinctLocations();
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching target locations from local.");
+      return await localDataSource.getDistinctLocations();
+    }
   }
 
   @override

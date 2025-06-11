@@ -46,7 +46,10 @@ class DatabaseHelper {
       CREATE TABLE product (
         id   INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        code TEXT NOT NULL
+        code TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
       )
     ''');
 
@@ -55,7 +58,14 @@ class DatabaseHelper {
       CREATE TABLE location (
         id   INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        code TEXT
+        code TEXT,
+        is_active INTEGER DEFAULT 1,
+        latitude REAL,
+        longitude REAL,
+        address TEXT,
+        description TEXT,
+        created_at TEXT,
+        updated_at TEXT
       )
     ''');
 

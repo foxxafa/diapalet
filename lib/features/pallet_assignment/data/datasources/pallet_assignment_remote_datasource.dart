@@ -8,13 +8,14 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_m
 import 'package:diapalet/features/pallet_assignment/domain/entities/pallet_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 import 'package:diapalet/core/network/api_config.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 
 abstract class PalletAssignmentRemoteDataSource {
   Future<String> createNewPallet(String locationId);
   Future<bool> assignItemsToPallet(String palletId, List<PalletItem> items);
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
-  Future<List<String>> fetchSourceLocations();
-  Future<List<String>> fetchTargetLocations();
+  Future<List<LocationInfo>> fetchSourceLocations();
+  Future<List<LocationInfo>> fetchTargetLocations();
   Future<List<String>> fetchContainerIds(String location, AssignmentMode mode);
   Future<List<ProductItem>> fetchContainerContents(String containerId, AssignmentMode mode);
   Future<List<BoxItem>> fetchBoxesAtLocation(String location);
@@ -78,12 +79,15 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   // --- Mock'tan Gerçek API'ye Çevrilen Diğer Fonksiyonlar ---
 
   @override
-  Future<List<String>> fetchSourceLocations() async {
+  Future<List<LocationInfo>> fetchSourceLocations() async {
     debugPrint("API: Fetching source locations from API...");
     try {
       final response = await _dio.get('/locations/source');
       if (response.statusCode == 200 && response.data is List) {
-        return List<String>.from(response.data.map((item) => item['name'].toString()));
+        final locations = (response.data as List)
+            .map((item) => LocationInfo.fromMap(item as Map<String, dynamic>))
+            .toList();
+        return locations;
       }
       throw Exception('Failed to load source locations');
     } on DioException catch (e) {
@@ -93,12 +97,15 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   }
 
   @override
-  Future<List<String>> fetchTargetLocations() async {
+  Future<List<LocationInfo>> fetchTargetLocations() async {
     debugPrint("API: Fetching target locations from API...");
     try {
       final response = await _dio.get('/locations/target');
       if (response.statusCode == 200 && response.data is List) {
-        return List<String>.from(response.data.map((item) => item['name'].toString()));
+        final locations = (response.data as List)
+            .map((item) => LocationInfo.fromMap(item as Map<String, dynamic>))
+            .toList();
+        return locations;
       }
       throw Exception('Failed to load target locations');
     } on DioException catch (e) {
