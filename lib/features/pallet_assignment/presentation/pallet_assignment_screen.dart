@@ -124,6 +124,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     setState(() => _isLoadingContainerIds = true);
     try {
       final locationId = _selectedSourceLocation!.id;
+      final locationName = _selectedSourceLocation!.name;
       if (_selectedMode == AssignmentMode.box) {
         final boxes = await _repo.getBoxesAtLocation(locationId);
         if (mounted) {
@@ -133,7 +134,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           });
         }
       } else {
-        final ids = await _repo.getContainerIdsByLocation(locationId, _selectedMode);
+        final ids = await _repo.getContainerIdsByLocation(locationName, locationId, _selectedMode);
         if (mounted) {
           setState(() {
             _availableContainerIds = ids;

@@ -9,7 +9,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ope
 abstract class PalletAssignmentRepository {
   Future<List<LocationInfo>> getSourceLocations();
   Future<List<LocationInfo>> getTargetLocations();
-  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode);
+  Future<List<String>> getContainerIdsByLocation(String locationName, int locationId, AssignmentMode mode);
   Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode);
   Future<List<BoxItem>> getBoxesAtLocation(int locationId);
 

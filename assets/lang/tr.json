@@ -125,5 +125,67 @@
       "up_to_date": "Güncel",
       "error": "Hata"
     }
+  },
+  "dialog": {
+    "cancel": "İptal",
+    "confirm": "Onayla"
+  },
+  "home": {
+    "title": "DiaPallet WMS",
+    "goods_receiving": "Mal Kabul",
+    "pallet_transfer": "Palet/Kutu Transfer",
+    "pending_operations": "Bekleyen İşlemler"
+  },
+  "pallet_assignment": {
+    "title": "Transfer İşlemi",
+    "mode": {
+      "pallet": "Palet",
+      "box": "Kutu"
+    },
+    "source_location": "Kaynak Konum",
+    "target_location": "Hedef Konum",
+    "container_id": {
+      "pallet": "Palet ID",
+      "box": "Ürün (Kutu)"
+    },
+    "scan_prompt": "Tara veya Seç...",
+    "scan_button": "ID Tara",
+    "contents_title": "İçerik",
+    "contents_empty": "Bu {mode} için ürün bulunamadı.",
+    "quantity_to_transfer": "Transfer Miktarı",
+    "save_button": "Transferi Onayla",
+    "load_error": "Veri yüklenemedi: {error}",
+    "save_success": "Transfer başarıyla kaydedildi!",
+    "save_error": "Transfer kaydedilemedi: {error}",
+    "form_invalid": "Lütfen tüm zorunlu alanları doldurun.",
+    "scan_success": {
+      "source": "Kaynak konum ayarlandı: {location}",
+      "target": "Hedef konum ayarlandı: {location}",
+      "container": "Konteyner tarandı: {id}"
+    },
+    "scan_error": "Taranan değer ({value}) mevcut seçeneklerde bulunamadı."
+  },
+  "pending_operations": {
+    "title": "Bekleyenler & Senkronizasyon",
+    "empty": "Bekleyen işlem yok.",
+    "tooltip": {
+      "refresh": "Listeyi Yenile",
+      "sync": "Sunucuya Yükle"
+    },
+    "status": {
+      "offline": "Çevrimdışı",
+      "syncing": "Senkronize ediliyor...",
+      "up_to_date": "Güncel",
+      "error": "Senkronizasyon Hatası"
+    },
+    "operations_count": "{count} işlem senkronizasyon için bekliyor.",
+    "admin": {
+      "title": "Yönetici Eylemleri",
+      "reset_db": "Temizle ve Sıfırla",
+      "full_sync": "Tam Senkronizasyon Zorla",
+      "reset_confirm_title": "Sıfırlamayı Onayla",
+      "reset_confirm_body": "Bu, tüm yerel verileri ve işlemleri silecek. Bu işlem geri alınamaz. Emin misiniz?",
+      "reset_success": "Yerel veritabanı temizlendi."
+    }
   }
 }

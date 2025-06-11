@@ -125,5 +125,67 @@
       "up_to_date": "Up to Date",
       "error": "Error"
     }
+  },
+  "dialog": {
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "home": {
+    "title": "DiaPallet WMS",
+    "goods_receiving": "Goods Receiving",
+    "pallet_transfer": "Pallet/Box Transfer",
+    "pending_operations": "Pending Operations"
+  },
+  "pallet_assignment": {
+    "title": "Transfer Operation",
+    "mode": {
+      "pallet": "Pallet",
+      "box": "Box"
+    },
+    "source_location": "Source Location",
+    "target_location": "Target Location",
+    "container_id": {
+      "pallet": "Pallet ID",
+      "box": "Product (Box)"
+    },
+    "scan_prompt": "Scan or Select...",
+    "scan_button": "Scan ID",
+    "contents_title": "Contents",
+    "contents_empty": "No items found for this {mode}.",
+    "quantity_to_transfer": "Quantity to Transfer",
+    "save_button": "Confirm Transfer",
+    "load_error": "Failed to load data: {error}",
+    "save_success": "Transfer recorded successfully!",
+    "save_error": "Failed to save transfer: {error}",
+    "form_invalid": "Please fill out all required fields.",
+    "scan_success": {
+      "source": "Source location set: {location}",
+      "target": "Target location set: {location}",
+      "container": "Container scanned: {id}"
+    },
+    "scan_error": "Scanned value {value} not found in available options."
+  },
+  "pending_operations": {
+    "title": "Pending & Sync",
+    "empty": "No pending operations.",
+    "tooltip": {
+      "refresh": "Refresh List",
+      "sync": "Upload to Server"
+    },
+    "status": {
+      "offline": "Offline",
+      "syncing": "Syncing...",
+      "up_to_date": "Up to Date",
+      "error": "Sync Error"
+    },
+    "operations_count": "{count} operations waiting for sync.",
+    "admin": {
+      "title": "Admin Actions",
+      "reset_db": "Clear & Reset",
+      "full_sync": "Force Full Sync",
+      "reset_confirm_title": "Confirm Reset",
+      "reset_confirm_body": "This will delete all local data and operations. This cannot be undone. Are you sure?",
+      "reset_success": "Local database has been cleared."
+    }
   }
 }
