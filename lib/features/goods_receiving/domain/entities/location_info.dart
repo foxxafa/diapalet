@@ -23,5 +23,13 @@ class LocationInfo extends Equatable {
     );
   }
 
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'code': code,
+    };
+  }
+
   String get location => name;
 } 
