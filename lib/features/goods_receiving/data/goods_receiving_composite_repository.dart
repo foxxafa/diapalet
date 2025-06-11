@@ -1,126 +1,108 @@
 // lib/features/goods_receiving/data/goods_receiving_composite_repository.dart
 import 'package:flutter/foundation.dart';
-import '../../../core/network/network_info.dart';
-import '../domain/entities/goods_receipt_entities.dart';
-import '../domain/entities/product_info.dart';
-import '../domain/entities/purchase_order.dart';
-import '../domain/entities/purchase_order_item.dart';
-import '../domain/repositories/goods_receiving_repository.dart';
-import './local/goods_receiving_local_service.dart';
-import './remote/goods_receiving_api_service.dart';
-import '../domain/entities/location_info.dart';
 
+import '../../../core/network/network_info.dart';
+import '../../domain/entities/goods_receipt_entities.dart';
+import '../../domain/entities/location_info.dart';
+import '../../domain/entities/product_info.dart';
+import '../../domain/entities/purchase_order.dart';
+import '../../domain/entities/purchase_order_item.dart';
+import '../../domain/repositories/goods_receiving_repository.dart';
+import 'datasources/goods_receiving_local_datasource.dart';
+import 'datasources/goods_receiving_remote_datasource.dart';
+
+/// A repository that combines a remote and local data source.
+/// It implements an offline-first strategy.
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final GoodsReceivingLocalDataSource localDataSource;
   final GoodsReceivingRemoteDataSource remoteDataSource;
   final NetworkInfo networkInfo;
 
   GoodsReceivingRepositoryImpl({
-    required this.localDataSource,
     required this.remoteDataSource,
+    required this.localDataSource,
     required this.networkInfo,
   });
 
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
-    if (await networkInfo.isConnected) {
-      try {
-        return await remoteDataSource.fetchOpenPurchaseOrders();
-      } catch (e) {
-        debugPrint("API getOpenPurchaseOrders error: $e. Falling back to local.");
-        return await localDataSource.getOpenPurchaseOrders();
-      }
+    try {
+      // Always fetch from remote, as this is for online mode.
+      final remoteOrders = await remoteDataSource.getOpenPurchaseOrders();
+      return remoteOrders;
+    } catch (e) {
+      // In a real-world scenario, you might want to handle network errors gracefully.
+      throw Exception('Failed to fetch open purchase orders: $e');
     }
-    return await localDataSource.getOpenPurchaseOrders();
   }
 
   @override
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
-    if (await networkInfo.isConnected) {
-      try {
-        return await remoteDataSource.fetchPurchaseOrderItems(orderId);
-      } catch (e) {
-        debugPrint("API getPurchaseOrderItems error: $e. Falling back to local.");
-        return await localDataSource.getPurchaseOrderItems(orderId);
-      }
+    try {
+      // Always fetch from remote for this specific feature.
+      final remoteItems = await remoteDataSource.getPurchaseOrderItems(orderId);
+      return remoteItems;
+    } catch (e) {
+      throw Exception('Failed to fetch purchase order items: $e');
     }
-    return await localDataSource.getPurchaseOrderItems(orderId);
   }
-  
+
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
-    if (await networkInfo.isConnected) {
-      try {
-        debugPrint("ONLINE: Fetching products from remote.");
-        return await remoteDataSource.fetchProductsForDropdown();
-      } catch (e) {
-        debugPrint("ONLINE_ERROR: Failed to fetch remote products, falling back to local. Error: $e");
-        return localDataSource.getProductsForDropdown();
-      }
-    } else {
-      debugPrint("OFFLINE: Fetching products from local.");
-      return localDataSource.getProductsForDropdown();
+    try {
+      final products = await remoteDataSource.getProductsForDropdown();
+      return products;
+    } catch (e) {
+      throw Exception('Failed to fetch products: $e');
     }
   }
 
   @override
-  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
-    // Per requirements, all goods receipts go to a fixed "MAL KABUL" location (ID=1)
-    final updatedItems = items.map((item) => item.copyWith(locationId: 1)).toList();
-    
-    if (await networkInfo.isConnected) {
+  Future<int> saveGoodsReceipt(
+      GoodsReceipt receipt, List<GoodsReceiptItem> items) async {
+    // For offline-first, we always save to the local database first.
+    // The synchronization logic will handle uploading later.
+    try {
+      final receiptId = await localDataSource.saveGoodsReceipt(receipt, items);
+      return receiptId;
+    } catch (e) {
+      throw Exception('Failed to save goods receipt locally: $e');
+    }
+  }
+
+  // --- Methods that might need a more complex offline strategy ---
+
+  @override
+  Future<void> syncPendingGoodsReceipts() async {
+    final unsyncedReceipts = await localDataSource.getUnsyncedGoodsReceipts();
+    for (final receipt in unsyncedReceipts) {
+      final items = await localDataSource.getItemsForGoodsReceipt(receipt.id!);
       try {
-        bool apiSuccess = await remoteDataSource.sendGoodsReceipt(header, updatedItems);
-        if (apiSuccess) {
-          // ONLINE: API call was successful. Save to local DB but DO NOT create a pending operation.
-          debugPrint("Online save successful. Saving to local DB without pending op.");
-          final syncedHeader = header.copyWith(synced: 1);
-          return await localDataSource.saveGoodsReceipt(syncedHeader, updatedItems, createPendingOperation: false);
-        } else {
-          // ONLINE but API failed (e.g., validation). Save to local and create pending op.
-          debugPrint("Online save failed at API level. Saving to local DB WITH pending op.");
-          return await localDataSource.saveGoodsReceipt(header, updatedItems, createPendingOperation: true);
+        final success = await remoteDataSource.postGoodsReceipt(receipt, items);
+        if (success) {
+          await localDataSource.markGoodsReceiptAsSynced(receipt.id!);
         }
       } catch (e) {
-        // ONLINE but exception occurred. Save to local and create pending op.
-        debugPrint("Exception during online save. Saving to local DB WITH pending op. Error: $e");
-        return await localDataSource.saveGoodsReceipt(header, updatedItems, createPendingOperation: true);
+        // Handle sync error, maybe log it or retry later.
+        print('Failed to sync receipt ${receipt.id}: $e');
       }
-    } else {
-      // OFFLINE: Save to local DB and create a pending operation.
-      debugPrint("Offline. Saving to local DB WITH pending op.");
-      return await localDataSource.saveGoodsReceipt(header, updatedItems, createPendingOperation: true);
     }
   }
 
-  // These methods are now unused due to the new SyncService logic,
-  // but must be implemented to satisfy the repository interface.
-  // They can be removed if the interface is updated.
-  
-  @override
-  Future<List<String>> getInvoices() async {
-    return localDataSource.getInvoiceNumbers();
-  }
-  
   @override
   Future<List<LocationInfo>> getLocationsForDropdown() async {
-    return localDataSource.getLocationsForDropdown();
+    return await remoteDataSource.getLocations();
   }
-  
+
+  // These methods are primarily for the sync process to check local data.
   @override
-  Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts() async {
-    // This is now handled by SyncService. The UI should use SyncService to get pending operations.
+  Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts() {
     return localDataSource.getUnsyncedGoodsReceipts();
   }
-  
+
   @override
-  Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) async {
+  Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) {
     return localDataSource.getItemsForGoodsReceipt(receiptId);
   }
-  
-  @override
-  Future<void> markGoodsReceiptAsSynced(int receiptId) async {
-    // This is now handled by SyncService when it successfully syncs an item.
-    await localDataSource.markGoodsReceiptAsSynced(receiptId);
-  }
 }
+

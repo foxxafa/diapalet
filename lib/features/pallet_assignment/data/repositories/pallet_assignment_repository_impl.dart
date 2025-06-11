@@ -83,29 +83,39 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
-    return await localDataSource.getBoxesAtLocation(locationId);
+  Future<List<BoxItem>> getBoxesAtLocation(String locationName) async {
+    // This method is online-only for now.
+    // An offline strategy could involve caching.
+    return remoteDataSource.fetchBoxesAtLocation(locationName);
   }
 
   @override
-  Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+  Future<void> recordTransferOperation(
+    TransferOperationHeader header,
+    List<TransferItemDetail> items, {
+    required String sourceLocationName,
+    required String targetLocationName,
+  }) async {
+    // Logic to decide whether to send to remote or save locally
     if (await networkInfo.isConnected) {
       try {
-        final success = await remoteDataSource.sendTransferOperation(header, items);
-        if (success) {
-          debugPrint("Online transfer successful. Saving to local DB without pending op.");
-          return await localDataSource.saveTransferOperation(header, items, createPendingOperation: false);
-        } else {
-          debugPrint("Online transfer failed at API level. Saving to local DB WITH pending op.");
-          return await localDataSource.saveTransferOperation(header, items, createPendingOperation: true);
+        final success = await remoteDataSource.sendTransferOperation(
+          header,
+          items,
+          sourceLocationName: sourceLocationName,
+          targetLocationName: targetLocationName,
+        );
+        if (!success) {
+          // If API fails, save as pending
+          await localDataSource.saveTransferOperation(header, items);
         }
       } catch (e) {
-        debugPrint("Exception during online transfer. Saving to local DB WITH pending op. Error: $e");
-        return await localDataSource.saveTransferOperation(header, items, createPendingOperation: true);
+        // On exception, save as pending
+        await localDataSource.saveTransferOperation(header, items);
       }
     } else {
-      debugPrint("Offline. Saving transfer to local DB WITH pending op.");
-      return await localDataSource.saveTransferOperation(header, items, createPendingOperation: true);
+      // If offline, save as pending
+      await localDataSource.saveTransferOperation(header, items);
     }
   }
 

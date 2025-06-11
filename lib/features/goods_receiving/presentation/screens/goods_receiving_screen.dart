@@ -1,16 +1,18 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:easy_localization/easy_localization.dart';
+import 'package:collection/collection.dart';
 
-import '../../domain/entities/product_info.dart';
-import '../../domain/entities/goods_receipt_entities.dart';
-import '../../domain/repositories/goods_receiving_repository.dart';
-import '../../domain/entities/purchase_order.dart';
-import '../../../../core/widgets/qr_scanner_screen.dart';
-import '../../domain/entities/location_info.dart';
+import 'goods_receipt_item_dialog.dart';
 
 // Palet ve Kutu modları için enum tanımı
 enum ReceivingMode { palet, kutu }

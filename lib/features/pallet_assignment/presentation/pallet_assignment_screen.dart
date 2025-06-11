@@ -3,14 +3,12 @@ import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_r
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:collection/collection.dart';
 
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
-import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 
 class PalletAssignmentScreen extends StatefulWidget {
@@ -51,8 +49,11 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   @override
   void initState() {
     super.initState();
-    _repo = Provider.of<PalletAssignmentRepository>(context, listen: false);
-    _loadInitialData();
+    // initState'de context kullanmaktan kaçının.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _repo = Provider.of<PalletAssignmentRepository>(context, listen: false);
+      _loadInitialData();
+    });
   }
 
   Future<void> _loadInitialData() async {
@@ -89,7 +90,6 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     try {
       final locationName = _selectedSourceLocation!.name;
       if (_selectedMode == AssignmentMode.box) {
-        // This remains inefficient due to backend limitations, but the UI will show progress.
         final boxes = await _repo.getBoxesAtLocation(locationName);
         if (!mounted) return;
         setState(() {
@@ -290,6 +290,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Widget _buildLocationCard() {
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -317,6 +319,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   
   Widget _buildContainerCard() {
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: _buildSearchableDropdown(
@@ -336,6 +340,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   Widget _buildProductsList() {
     return Card(
       margin: const EdgeInsets.only(top: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -343,7 +349,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           children: [
             Text(
               tr('pallet_assignment.content_of', namedArgs: {'id': _scannedContainerIdController.text}),
-              style: Theme.of(context).textTheme.titleLarge,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const Divider(height: 24),
             if (_selectedMode == AssignmentMode.box)
@@ -375,7 +381,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           child: TextFormField(
             controller: _transferQuantityController,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(labelText: tr('pallet_assignment.amount')),
+            decoration: InputDecoration(labelText: tr('pallet_assignment.amount'), border: const OutlineInputBorder()),
             validator: (value) {
               final qty = int.tryParse(value ?? '');
               if (qty == null) return tr('pallet_assignment.amount_invalid');
@@ -414,7 +420,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
         padding: const EdgeInsets.all(8.0),
         child: ElevatedButton.icon(
           onPressed: (_isSaving || _isLoadingContainerIds || _isLoadingContainerContents) ? null : _onConfirmSave,
-          icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white)) : const Icon(Icons.check),
+          icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.0,)) : const Icon(Icons.check),
           label: Text(tr('pallet_assignment.save')),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -464,6 +470,9 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
       backgroundColor: isError ? Theme.of(context).colorScheme.error : Colors.green,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
     ));
   }
 
