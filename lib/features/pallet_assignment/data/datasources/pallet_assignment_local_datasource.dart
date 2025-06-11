@@ -55,13 +55,10 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           await txn.update('pallet', {'location_id': header.targetLocationId},
               where: 'id = ?', whereArgs: [header.containerId]);
         } else { // Box transfer
-          final productIdAsInt = int.tryParse(item.productId);
-          if (productIdAsInt == null) continue; // Skip if product ID is not a valid int
-
-          // Decrement stock from source
-          await _updateInventory(txn, productIdAsInt, header.sourceLocationId, -item.quantity);
-          // Increment stock at target
-          await _updateInventory(txn, productIdAsInt, header.targetLocationId, item.quantity);
+          // Update inventory quantities for the specific product
+          final int productIdInt = item.productId;
+          await _updateInventory(txn, productIdInt, header.sourceLocationId, -item.quantity);
+          await _updateInventory(txn, productIdInt, header.targetLocationId, item.quantity);
         }
       }
 
