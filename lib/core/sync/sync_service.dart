@@ -70,7 +70,7 @@ class SyncService {
 
   Future<void> _registerDevice() async {
     try {
-      if (_networkInfo == null || !(await _networkInfo!.isConnected)) return;
+      if (!await _networkInfo.isConnected) return;
       
       final deviceInfo = DeviceInfoPlugin();
       String platform = 'unknown';
@@ -113,7 +113,7 @@ class SyncService {
   }
 
   Future<void> _performBackgroundSync() async {
-    if (_isSyncing || _networkInfo == null || !(await _networkInfo!.isConnected)) return;
+    if (_isSyncing || !await _networkInfo.isConnected) return;
     
     debugPrint('Performing background sync...');
     await syncPendingOperations();
@@ -141,7 +141,7 @@ class SyncService {
     _syncStatusController.add(SyncStatus.syncing);
 
     try {
-      if (_networkInfo == null || !(await _networkInfo!.isConnected)) {
+      if (!await _networkInfo.isConnected) {
         _syncStatusController.add(SyncStatus.offline);
         return SyncResult(
           success: false,
@@ -265,7 +265,7 @@ class SyncService {
   Future<SyncResult> downloadMasterData() async {
     _syncStatusController.add(SyncStatus.syncing);
     try {
-      if (!(await _networkInfo.isConnected)) {
+      if (!await _networkInfo.isConnected) {
         _syncStatusController.add(SyncStatus.offline);
         return SyncResult(
           success: false,

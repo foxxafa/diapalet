@@ -852,28 +852,3 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 }
-
-class _QrButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final double size;
-  const _QrButton({required this.onTap, required this.size});
-
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          padding: EdgeInsets.zero,
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-        ),
-        child: const Icon(Icons.qr_code_scanner, size: 28),
-      ),
-    );
-  }
-}

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 
 // Ensure all imports use the absolute package path for consistency
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
-import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';

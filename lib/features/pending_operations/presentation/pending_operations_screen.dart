@@ -40,6 +40,12 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _syncStatusSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadPendingOperations() async {
     setState(() {
       _isLoading = true;

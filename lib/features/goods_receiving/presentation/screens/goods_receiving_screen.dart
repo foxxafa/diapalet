@@ -679,8 +679,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               itemCount: _addedItems.length,
               itemBuilder: (context, index) {
                 final item = _addedItems[index];
-                final bool isPalletItem = item.containerId != null;
-
                 return _buildItemCard(item, index);
               },
             ),
