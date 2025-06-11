@@ -10,9 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:easy_localization/easy_localization.dart';
-import 'package:collection/collection.dart';
-
-import 'goods_receipt_item_dialog.dart';
 
 // Palet ve Kutu modları için enum tanımı
 enum ReceivingMode { palet, kutu }
