@@ -393,7 +393,9 @@ class SyncService {
     _syncTimer?.cancel(); // Stop any background sync
     await _dbHelper.resetDatabase();
     // After resetting, it's good practice to re-initialize to get a fresh start
-    await initialize();
+    // Note: The service is a singleton, so re-initializing will affect the whole app.
+    // This is generally the desired behavior after a full reset.
+    await initialize(); 
     _syncStatusController.add(SyncStatus.upToDate); // Reflect that the state is now clean
     debugPrint("Database has been reset and SyncService re-initialized.");
   }
