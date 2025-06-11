@@ -204,12 +204,30 @@ class SyncService {
       // Upsert data using replace algorithm
       final products = data['products'] as List? ?? [];
       for (final item in products) {
-        await txn.insert('product', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('product', {
+          'id': item['id'],
+          'name': item['name'],
+          'code': item['code'],
+          'is_active': item['is_active'],
+          'created_at': item['created_at'],
+          'updated_at': item['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final locations = data['locations'] as List? ?? [];
       for (final item in locations) {
-        await txn.insert('location', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('location', {
+          'id': item['id'],
+          'name': item['name'],
+          'code': item['code'],
+          'is_active': item['is_active'],
+          'latitude': item['latitude'],
+          'longitude': item['longitude'],
+          'address': item['address'],
+          'description': item['description'],
+          'created_at': item['created_at'],
+          'updated_at': item['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final purchaseOrders = data['purchase_orders'] as List? ?? [];

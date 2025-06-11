@@ -49,8 +49,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
-    // This data should primarily come from the local DB, which is kept in sync.
-    return localDataSource.getProductsForDropdown();
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching products from remote.");
+        return await remoteDataSource.fetchProductsForDropdown();
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote products, falling back to local. Error: $e");
+        return localDataSource.getProductsForDropdown();
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching products from local.");
+      return localDataSource.getProductsForDropdown();
+    }
   }
 
   @override
