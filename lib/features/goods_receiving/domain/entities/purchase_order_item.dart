@@ -66,4 +66,25 @@ class PurchaseOrderItem {
       'palletqty': itemsPerPallet,
     };
   }
+
+  // Lokal DB'den (map) model oluşturma
+  factory PurchaseOrderItem.fromMap(Map<String, dynamic> map) {
+    // Veritabanı sütun adları `toJson` metodundaki anahtarlarla eşleşmelidir.
+    return PurchaseOrderItem(
+      id: map['id'] as int,
+      orderId: map['siparis_id'] as int,
+      productId: map['urun_id'] as int,
+      // 'miktar' alanı double veya int olabilir, num'dan çevirmek daha güvenli.
+      expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
+      unit: map['birim'] as String?,
+      notes: map['notes'] as String?,
+      // JOIN ile gelen ürün bilgileri, lokalde ayrı sorguyla eklenebilir.
+      // Bu nedenle burada null olabilirler.
+      productName: map['urun_adi'] as String?,
+      stockCode: map['stok_kodu'] as String?,
+      barcode: map['barcode1'] as String?,
+      itemsPerBox: map['qty'] as int?,
+      itemsPerPallet: map['palletqty'] as int?,
+    );
+  }
 } 

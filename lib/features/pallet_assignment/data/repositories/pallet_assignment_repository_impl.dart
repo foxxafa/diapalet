@@ -35,12 +35,12 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<String>> getContainerIds(int locationId, AssignmentMode mode) async {
+  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode) async {
     return await localDataSource.getContainerIdsByLocation(locationId, mode);
   }
 
   @override
-  Future<List<ProductItem>> getContainerContents(String containerId, AssignmentMode mode) async {
+  Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode) async {
     return await localDataSource.getContainerContent(containerId, mode);
   }
 

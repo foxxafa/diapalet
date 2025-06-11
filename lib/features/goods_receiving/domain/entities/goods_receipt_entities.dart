@@ -39,6 +39,22 @@ class GoodsReceipt {
       synced: map['synced'] as int? ?? 0,
     );
   }
+
+  GoodsReceipt copyWith({
+    int? id,
+    String? externalId,
+    String? invoiceNumber,
+    DateTime? receiptDate,
+    int? synced,
+  }) {
+    return GoodsReceipt(
+      id: id ?? this.id,
+      externalId: externalId ?? this.externalId,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      receiptDate: receiptDate ?? this.receiptDate,
+      synced: synced ?? this.synced,
+    );
+  }
 }
 
 class GoodsReceiptItem {

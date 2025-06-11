@@ -1,14 +1,13 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-// Projenizdeki doğru entity import yollarını kullandığınızdan emin olun.
-import '../../domain/entities/transfer_operation_header.dart';
-import '../../domain/entities/transfer_item_detail.dart';
-import '../../domain/entities/product_item.dart';
-import '../../domain/entities/assignment_mode.dart';
-import '../../domain/entities/pallet_item.dart';
-import '../../domain/entities/box_item.dart';
-import '../../../../core/network/api_config.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/pallet_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
+import 'package:diapalet/core/network/api_config.dart';
 
 abstract class PalletAssignmentRemoteDataSource {
   Future<String> createNewPallet(String locationId);

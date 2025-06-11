@@ -1,6 +1,7 @@
 // lib/features/goods_receiving/data/local/goods_receiving_local_service.dart
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import '../../../../core/local/database_helper.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/entities/location_info.dart';
@@ -24,8 +25,9 @@ abstract class GoodsReceivingLocalDataSource {
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
   final DatabaseHelper dbHelper;
+  final SyncService syncService;
 
-  GoodsReceivingLocalDataSourceImpl({required this.dbHelper});
+  GoodsReceivingLocalDataSourceImpl({required this.dbHelper, required this.syncService});
 
   /// Veritabanı transaction'ı veya direkt bağlantı üzerinde stok güncellemesi yapan genel bir metod.
   Future<void> _updateStock(DatabaseExecutor dbOrTxn, int productId, int locationId, int qty, {String? palletId}) async {

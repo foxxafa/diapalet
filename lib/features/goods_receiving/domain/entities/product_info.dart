@@ -5,21 +5,24 @@ class ProductInfo extends Equatable {
   final int id;
   final String name;
   final String stockCode;
+  final bool isActive;
 
   const ProductInfo({
     required this.id,
     required this.name,
     required this.stockCode,
+    required this.isActive,
   });
 
   @override
-  List<Object?> get props => [id, name, stockCode];
+  List<Object?> get props => [id, name, stockCode, isActive];
 
   factory ProductInfo.fromJson(Map<String, dynamic> json) {
     return ProductInfo(
       id: json['id'] as int,
       name: json['name'] as String,
       stockCode: json['code'] as String,
+      isActive: json['isActive'] as bool,
     );
   }
 
@@ -28,14 +31,15 @@ class ProductInfo extends Equatable {
       'id': id,
       'name': name,
       'stockCode': stockCode,
+      'isActive': isActive,
     };
   }
 
-  static ProductInfo empty = ProductInfo(id: 0, name: '', stockCode: '');
+  static const ProductInfo empty = ProductInfo(id: 0, name: '', stockCode: '', isActive: false);
 
   @override
   String toString() {
-    return 'ProductInfo(id: $id, name: $name, stockCode: $stockCode)';
+    return 'ProductInfo(id: $id, name: $name, stockCode: $stockCode, isActive: $isActive)';
   }
 
   @override

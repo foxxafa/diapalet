@@ -38,7 +38,7 @@ class ProductItem {
     final dynamic codeValue = json['productCode'] ?? json['code'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
 
-    int _parseToInt(dynamic val) {
+    int parseToInt(dynamic val) {
       if (val == null) return 0;
       if (val is int) return val;
       if (val is double) return val.round();
@@ -47,10 +47,10 @@ class ProductItem {
     }
 
     return ProductItem(
-      id: _parseToInt(idValue),
+      id: parseToInt(idValue),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
-      currentQuantity: _parseToInt(qtyValue),
+      currentQuantity: parseToInt(qtyValue),
     );
   }
 

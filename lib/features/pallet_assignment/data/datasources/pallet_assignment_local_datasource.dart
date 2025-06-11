@@ -1,6 +1,5 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
@@ -181,12 +180,18 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   @override
   Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
     final db = await dbHelper.database;
-    final rows = await db.query('inventory_stock',
-      columns: ['urun_id'],
-      where: 'location_id = ? AND pallet_barcode IS NULL AND quantity > 0',
-      whereArgs: [locationId]
-    );
-    return rows.map((e) => BoxItem(productId: e['urun_id'] as int)).toList();
+    final rows = await db.rawQuery('''
+      SELECT
+        s.id as box_id,
+        s.urun_id,
+        p.name as product_name,
+        p.code as product_code,
+        s.quantity
+      FROM inventory_stock s
+      JOIN product p ON p.id = s.urun_id
+      WHERE s.location_id = ? AND s.pallet_barcode IS NULL AND s.quantity > 0
+    ''', [locationId]);
+    return rows.map((e) => BoxItem.fromMap(e)).toList();
   }
 
   @override
