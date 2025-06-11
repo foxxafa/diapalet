@@ -148,13 +148,17 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     });
 
     final tablesToSync = [
-      'goods_receipt_items',
-      'goods_receipts',
-      'inventory_stock',
-      'locations',
+      // Parent tables first
+      'locations',            // referenced by inventory_stock & transfers
+      'urunler',              // products referenced by many tables
+      // Purchase orders
       'satin_alma_siparis_fis',
       'satin_alma_siparis_fis_satir',
-      'urunler',
+      // Goods receipt header before items
+      'goods_receipts',
+      'goods_receipt_items',
+      // Stock last (depends on product & location)
+      'inventory_stock',
     ];
 
     final result = await _syncService.downloadSpecifiedTables(tablesToSync);
