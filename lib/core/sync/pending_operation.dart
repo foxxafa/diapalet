@@ -1,13 +1,18 @@
 // lib/core/sync/pending_operation.dart
 class PendingOperation {
-  final int localId;
+  // Primary key inside pending_operation table – handy for deletion
+  final int id;
+  // Optional reference to another local table (goods_receipt, transfer_operation)
+  // kept for backward-compatibility but may be null if we only use the pending queue.
+  final int? localId;
   final String operationType;
   final Map<String, dynamic> operationData;
   final DateTime createdAt;
   final String tableName;
 
   PendingOperation({
-    required this.localId,
+    required this.id,
+    this.localId,
     required this.operationType,
     required this.operationData,
     required this.createdAt,
@@ -43,6 +48,7 @@ class PendingOperation {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'local_id': localId,
       'operation_type': operationType,
       'operation_data': operationData,
@@ -53,7 +59,8 @@ class PendingOperation {
 
   factory PendingOperation.fromJson(Map<String, dynamic> json) {
     return PendingOperation(
-      localId: json['local_id'] as int,
+      id: json['id'] as int,
+      localId: json['local_id'] as int?,
       operationType: json['operation_type'] as String,
       operationData: Map<String, dynamic>.from(json['operation_data']),
       createdAt: DateTime.parse(json['created_at'] as String),

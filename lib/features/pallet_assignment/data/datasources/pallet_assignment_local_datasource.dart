@@ -6,6 +6,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ite
 import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
+import 'dart:convert';
 
 abstract class PalletAssignmentLocalDataSource {
   Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items, {bool checkSourceBox = true});
@@ -104,6 +105,25 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         await txn.update('pallet', {'location': header.targetLocation},
             where: 'id = ?', whereArgs: [header.containerId]);
       }
+
+      // -------------------- PENDING QUEUE ---------------------------------
+      final pendingPayload = {
+        'operation_type': header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer',
+        'source_location': header.sourceLocation,
+        'target_location': header.targetLocation,
+        'pallet_id'      : header.containerId,
+        'transfer_date'  : header.transferDate.toIso8601String(),
+        'items'          : items.map((it) => {
+          'product_id': it.productId,
+          'quantity'  : it.quantity,
+        }).toList(),
+      };
+
+      await txn.insert('pending_operation', {
+        'operation_type': pendingPayload['operation_type'],
+        'payload'       : jsonEncode(pendingPayload),
+        'created_at'    : DateTime.now().toIso8601String(),
+      });
     });
     return opId;
   }

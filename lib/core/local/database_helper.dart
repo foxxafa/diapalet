@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db';
-  static const int _dbVersion = 11;               // <-- yeni sürüm
+  static const int _dbVersion = 12;
 
   // ==== PUBLIC HANDLE =======================================================
   Future<Database> get database async {
@@ -121,6 +121,19 @@ class DatabaseHelper {
       )
     ''');
 
+    // 7- Unified pending queue – each row is a standalone operation waiting
+    //    to be synced. We keep JSON payload so that adding new operation types
+    //    does not require schema changes.
+    await db.execute('''
+      CREATE TABLE pending_operation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_type TEXT NOT NULL,
+        payload TEXT NOT NULL,                  -- raw JSON encoded string
+        created_at TEXT NOT NULL,
+        attempts   INTEGER NOT NULL DEFAULT 0   -- retry counter
+      )
+    ''');
+
     await db.execute('''
       CREATE TABLE transfer_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,6 +156,7 @@ class DatabaseHelper {
       'stock_location',
       'location',
       'product',
+      'pending_operation',
     ]) {
       await db.execute('DROP TABLE IF EXISTS $t');
     }

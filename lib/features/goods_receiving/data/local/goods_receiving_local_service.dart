@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/local/database_helper.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/entities/product_info.dart';
+import 'dart:convert';
 
 abstract class GoodsReceivingLocalDataSource {
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
@@ -133,6 +134,26 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
         debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location: ${item.location}");
       }
+      // -------------------- PENDING QUEUE ---------------------------------
+      // Pack the entire receipt as JSON and push to unified pending queue so
+      // that SyncService can simply forward without reconstructing.
+      final pendingPayload = {
+        'external_id'   : header.externalId,
+        'invoice_number': header.invoiceNumber,
+        'receipt_date'  : header.receiptDate.toIso8601String(),
+        'items': items.map((i) => {
+          'product_id': i.product.id,
+          'quantity'  : i.quantity,
+          'location'  : i.location,
+          'pallet_id' : i.containerId,
+        }).toList(),
+      };
+
+      await txn.insert('pending_operation', {
+        'operation_type': 'goods_receipt',
+        'payload'       : jsonEncode(pendingPayload),
+        'created_at'    : DateTime.now().toIso8601String(),
+      });
     });
     return headerId;
   }

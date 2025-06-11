@@ -184,75 +184,19 @@ class SyncService {
 
   Future<List<PendingOperation>> _getPendingOperations() async {
     final db = await _dbHelper.database;
-    
-    List<PendingOperation> operations = [];
-    
-    // Get unsynced goods receipts
-    final unsyncedReceipts = await db.query(
-      'goods_receipt',
-      where: 'synced = ?',
-      whereArgs: [0],
-    );
-    
-    for (final receipt in unsyncedReceipts) {
-      final items = await db.query(
-        'goods_receipt_item',
-        where: 'receipt_id = ?',
-        whereArgs: [receipt['id']],
+
+    final rows = await db.query('pending_operation', orderBy: 'id ASC');
+
+    return rows.map((row) {
+      return PendingOperation(
+        id: row['id'] as int,
+        localId: null,
+        operationType: row['operation_type'] as String,
+        operationData: jsonDecode(row['payload'] as String) as Map<String, dynamic>,
+        createdAt: DateTime.parse(row['created_at'] as String),
+        tableName: 'pending_operation',
       );
-      
-      operations.add(PendingOperation(
-        localId: receipt['id'] as int,
-        operationType: 'goods_receipt',
-        operationData: {
-          'external_id': receipt['external_id'],
-          'invoice_number': receipt['invoice_number'],
-          'receipt_date': receipt['receipt_date'],
-          'items': items.map((item) => {
-            'product_id': item['product_id'],
-            'quantity': item['quantity'],
-            'location': item['location'],
-            'pallet_id': item['pallet_id'],
-          }).toList(),
-        },
-        createdAt: DateTime.now(), // You might want to store this in the DB
-        tableName: 'goods_receipt',
-      ));
-    }
-    
-    // Get unsynced transfer operations
-    final unsyncedTransfers = await db.query(
-      'transfer_operation',
-      where: 'synced = ?',
-      whereArgs: [0],
-    );
-    
-    for (final transfer in unsyncedTransfers) {
-      final items = await db.query(
-        'transfer_item',
-        where: 'operation_id = ?',
-        whereArgs: [transfer['id']],
-      );
-      
-      operations.add(PendingOperation(
-        localId: transfer['id'] as int,
-        operationType: transfer['operation_type'] as String,
-        operationData: {
-          'source_location': transfer['source_location'],
-          'target_location': transfer['target_location'],
-          'pallet_id': transfer['pallet_id'],
-          'transfer_date': transfer['transfer_date'],
-          'items': items.map((item) => {
-            'product_id': item['product_id'],
-            'quantity': item['quantity'],
-          }).toList(),
-        },
-        createdAt: DateTime.now(),
-        tableName: 'transfer_operation',
-      ));
-    }
-    
-    return operations;
+    }).toList();
   }
 
   Future<Map<String, dynamic>> _uploadOperations(List<PendingOperation> operations) async {
@@ -264,7 +208,7 @@ class SyncService {
           'device_id': _deviceId,
           'operations': operations.map((op) => {
             'operation_type': op.operationType,
-            'operation_data': {
+            'operationData': {
               ...op.operationData,
               'device_id': _deviceId,
             },
@@ -290,14 +234,9 @@ class SyncService {
 
   Future<void> _markOperationsAsSynced(List<PendingOperation> operations) async {
     final db = await _dbHelper.database;
-    
+
     for (final operation in operations) {
-      await db.update(
-        operation.tableName,
-        {'synced': 1},
-        where: 'id = ?',
-        whereArgs: [operation.localId],
-      );
+      await db.delete('pending_operation', where: 'id = ?', whereArgs: [operation.id]);
     }
   }
 

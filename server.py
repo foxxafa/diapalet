@@ -226,7 +226,7 @@ def _create_transfer(data):
     # ------------------------------------------------------------------
     # PALET TRANSFERİ – paletin tamamını bir lokasyondan diğerine taşı
     # ------------------------------------------------------------------
-    if operation_type == "pallet":
+    if operation_type in ("pallet", "pallet_transfer"):
         # 1) Stok tablosunda ilgili paletin tüm satırlarının lokasyonunu güncelle
         conn = get_db_connection()
         cur  = conn.cursor()
