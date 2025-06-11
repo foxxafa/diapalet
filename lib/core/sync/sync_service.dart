@@ -201,8 +201,8 @@ class SyncService {
         }
       }
 
-      // Upsert data using replace algorithm
-      final products = data['products'] as List? ?? [];
+      // Corrected: Use singular keys as sent by the Python server
+      final products = data['product'] as List? ?? [];
       for (final item in products) {
         await txn.insert('product', {
           'id': item['id'],
@@ -214,7 +214,7 @@ class SyncService {
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final locations = data['locations'] as List? ?? [];
+      final locations = data['location'] as List? ?? [];
       for (final item in locations) {
         await txn.insert('location', {
           'id': item['id'],
@@ -230,7 +230,42 @@ class SyncService {
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final purchaseOrders = data['purchase_orders'] as List? ?? [];
+      // --- Start of Pallet Handling ---
+      // Collect all unique pallet barcodes from inventory and goods receipts to pre-populate the pallet table
+      final Set<String> palletBarcodes = {};
+      final inventoryStock = data['inventory_stock'] as List? ?? [];
+      final goodsReceiptItems = data['goods_receipt_item'] as List? ?? [];
+
+      for (final item in inventoryStock) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty) {
+          palletBarcodes.add(item['pallet_barcode']);
+        }
+      }
+      for (final item in goodsReceiptItems) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty) {
+          palletBarcodes.add(item['pallet_barcode']);
+        }
+      }
+      
+      // Upsert pallets. This ensures foreign key constraints will be met.
+      final Map<String, int> palletLocations = {};
+       for (final item in inventoryStock) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty && palletLocations[item['pallet_barcode']] == null) {
+          palletLocations[item['pallet_barcode']] = item['location_id'];
+        }
+      }
+
+      for (final barcode in palletBarcodes) {
+        final locationId = palletLocations[barcode] ?? 1;
+        await txn.insert('pallet', {
+          'id': barcode,
+          'location_id': locationId,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      debugPrint("Upserted ${palletBarcodes.length} pallets.");
+      // --- End of Pallet Handling ---
+
+      final purchaseOrders = data['purchase_order'] as List? ?? [];
       for (final item in purchaseOrders) {
         await txn.insert('purchase_order', {
           'id': item['id'],
@@ -247,8 +282,8 @@ class SyncService {
           'delivery': item['delivery'],
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      
-      final purchaseOrderItems = data['purchase_order_items'] as List? ?? [];
+
+      final purchaseOrderItems = data['purchase_order_item'] as List? ?? [];
       for (final item in purchaseOrderItems) {
         await txn.insert('purchase_order_item', {
           'id': item['id'],
@@ -256,27 +291,46 @@ class SyncService {
           'urun_id': item['urun_id'],
           'miktar': item['miktar'],
           'birim': item['birim'],
-          'productName': item['productName'] // Populated by server query
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final goodsReceipts = data['goods_receipts'] as List? ?? [];
+      final goodsReceipts = data['goods_receipt'] as List? ?? [];
       for (final item in goodsReceipts) {
-        await txn.insert('goods_receipt', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('goods_receipt', {
+          'id': item['id'],
+          'siparis_id': item['siparis_id'],
+          'employee_id': item['employee_id'],
+          'invoice_number': item['invoice_number'],
+          'receipt_date': item['receipt_date'],
+          'created_at': item['created_at'],
+          'synced': 1,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final goodsReceiptItems = data['goods_receipt_items'] as List? ?? [];
       for (final item in goodsReceiptItems) {
-        await txn.insert('goods_receipt_item', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('goods_receipt_item', {
+          'id': item['id'],
+          'receipt_id': item['receipt_id'],
+          'product_id': item['urun_id'],
+          'quantity': item['quantity_received'],
+          'pallet_id': item['pallet_barcode'],
+          'location_id': palletLocations[item['pallet_barcode']] ?? 1,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-
-      final inventoryStock = data['inventory_stock'] as List? ?? [];
+      
       for (final item in inventoryStock) {
-        await txn.insert('inventory_stock', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('inventory_stock', {
+          'id': item['id'],
+          'urun_id': item['urun_id'],
+          'location_id': item['location_id'],
+          'quantity': item['quantity'],
+          'pallet_barcode': item['pallet_barcode'],
+          'updated_at': item['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-    });
 
-    debugPrint('Local database updated.');
+      debugPrint("Local database updated successfully.");
+    });
   }
 
   Future<List<PendingOperation>> getPendingOperations() async {
