@@ -48,51 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (isDebug) ...[
-              ElevatedButton.icon(
-                icon: const Icon(Icons.delete_forever, color: Colors.red),
-                label: Text('home.reset_db'.tr()),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                onPressed: () async {
-                  // Provider'dan DatabaseHelper'ı alıp kullanıyoruz.
-                  await context.read<DatabaseHelper>().resetDatabase();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('home.db_reset_complete'.tr())),
-                    );
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.bug_report, color: Colors.deepPurple),
-                label: Text('home.populate_test'.tr()),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.yellow[100],
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                onPressed: () async {
-                  await populateTestData();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('home.test_data_populated'.tr())),
-                    );
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
             _HomeButton(
               icon: Icons.input_outlined,
               label: 'home.goods_receiving'.tr(),

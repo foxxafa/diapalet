@@ -105,27 +105,51 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     });
   }
 
-  Future<void> _downloadMasterData() async {
-    try {
-      final result = await _syncService.downloadMasterData();
-      
+  Future<void> _confirmAndResetDatabase() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('pending_operations.admin.reset_confirm_title'.tr()),
+          content: Text('pending_operations.admin.reset_confirm_body'.tr()),
+          actions: <Widget>[
+            TextButton(
+              child: Text('dialog.cancel'.tr()),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: Text('dialog.confirm'.tr()),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _syncService.resetLocalData();
+      await _loadPendingOperations(); // Refresh the list
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.message),
-            backgroundColor: result.success ? Colors.green : Colors.red,
+            content: Text('pending_operations.admin.reset_success'.tr()),
+            backgroundColor: Colors.green,
           ),
         );
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    }
+  }
+
+  Future<void> _downloadMasterData({bool fullSync = false}) async {
+    final result = await _syncService.downloadMasterData(fullSync: fullSync);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? Colors.green : Colors.red,
+        ),
+      );
     }
   }
 
@@ -345,6 +369,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
         child: Column(
           children: [
             _buildSyncStatusBanner(),
+            _buildAdminActions(),
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -400,6 +425,60 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                   : 'pending_operations.sync_now'.tr()),
             )
           : null,
+    );
+  }
+
+  Widget _buildAdminActions() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
+              child: Text(
+                'pending_operations.admin.title'.tr(),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: Text('pending_operations.admin.reset_db'.tr()),
+                    onPressed: _confirmAndResetDatabase,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange.shade800,
+                      side: BorderSide(color: Colors.orange.shade800),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.cloud_download_outlined),
+                    label: Text('pending_operations.admin.full_sync'.tr()),
+                    onPressed: () => _downloadMasterData(fullSync: true),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                      side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 } 

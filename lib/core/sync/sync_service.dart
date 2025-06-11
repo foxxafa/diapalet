@@ -232,7 +232,20 @@ class SyncService {
 
       final purchaseOrders = data['purchase_orders'] as List? ?? [];
       for (final item in purchaseOrders) {
-        await txn.insert('purchase_order', item, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('purchase_order', {
+          'id': item['id'],
+          'po_id': item['po_id'],
+          'tarih': item['tarih'],
+          'status': item['status'],
+          'notlar': item['notlar'],
+          'user': item['user'],
+          'created_at': item['created_at'],
+          'updated_at': item['updated_at'],
+          'gun': item['gun'],
+          'lokasyon_id': item['lokasyon_id'],
+          'invoice': item['invoice'],
+          'delivery': item['delivery'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       
       final purchaseOrderItems = data['purchase_order_items'] as List? ?? [];
@@ -373,6 +386,16 @@ class SyncService {
     _syncTimer?.cancel();
     _connectivitySubscription?.cancel();
     _syncStatusController.close();
+  }
+
+  Future<void> resetLocalData() async {
+    debugPrint("Full database reset initiated by user.");
+    _syncTimer?.cancel(); // Stop any background sync
+    await _dbHelper.resetDatabase();
+    // After resetting, it's good practice to re-initialize to get a fresh start
+    await initialize();
+    _syncStatusController.add(SyncStatus.upToDate); // Reflect that the state is now clean
+    debugPrint("Database has been reset and SyncService re-initialized.");
   }
 }
 

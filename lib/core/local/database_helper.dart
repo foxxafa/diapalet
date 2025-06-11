@@ -90,7 +90,15 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY,
         po_id TEXT,
         tarih TEXT,
-        status INTEGER
+        status INTEGER,
+        notlar TEXT,
+        user TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        gun INTEGER,
+        lokasyon_id INTEGER,
+        invoice TEXT,
+        delivery INTEGER
       )
     ''');
 
