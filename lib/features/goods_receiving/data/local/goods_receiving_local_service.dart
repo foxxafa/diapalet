@@ -21,6 +21,10 @@ abstract class GoodsReceivingLocalDataSource {
   Future<List<LocationInfo>> getLocationsForDropdown();
   Future<List<PurchaseOrder>> getOpenPurchaseOrders();
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId);
+
+  // Caching methods
+  Future<void> cacheProducts(List<ProductInfo> products);
+  Future<void> cacheLocations(List<LocationInfo> locations);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -291,5 +295,40 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     final db = await dbHelper.database;
     final maps = await db.query('purchase_order_item', where: 'siparis_id = ?', whereArgs: [orderId]);
     return maps.map((map) => PurchaseOrderItem.fromMap(map)).toList();
+  }
+
+  @override
+  Future<void> cacheProducts(List<ProductInfo> products) async {
+    final db = await dbHelper.database;
+    final batch = db.batch();
+    for (final product in products) {
+      batch.insert(
+        'product',
+        {
+          'id': product.id,
+          'name': product.name,
+          'code': product.stockCode,
+          'is_active': product.isActive ? 1 : 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    debugPrint("Cached ${products.length} products locally.");
+  }
+
+  @override
+  Future<void> cacheLocations(List<LocationInfo> locations) async {
+    final db = await dbHelper.database;
+    final batch = db.batch();
+    for (final location in locations) {
+      batch.insert(
+        'location',
+        location.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    debugPrint("Cached ${locations.length} locations locally.");
   }
 }

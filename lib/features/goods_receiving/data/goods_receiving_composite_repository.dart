@@ -49,11 +49,19 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
-    try {
-      final products = await remoteDataSource.fetchProductsForDropdown();
-      return products;
-    } catch (e) {
-      throw Exception('Failed to fetch products: $e');
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching products from remote.");
+        final products = await remoteDataSource.fetchProductsForDropdown();
+        await localDataSource.cacheProducts(products); // Cache the results
+        return products;
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote products, falling back to local. Error: $e");
+        return localDataSource.getProductsForDropdown(); // Fallback
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching products from local.");
+      return localDataSource.getProductsForDropdown();
     }
   }
 
@@ -91,7 +99,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<LocationInfo>> getLocationsForDropdown() async {
-    return await remoteDataSource.fetchLocationsForDropdown();
+    if (await networkInfo.isConnected) {
+      try {
+        debugPrint("ONLINE: Fetching locations from remote.");
+        final locations = await remoteDataSource.fetchLocationsForDropdown();
+        await localDataSource.cacheLocations(locations); // Cache the results
+        return locations;
+      } catch (e) {
+        debugPrint("ONLINE_ERROR: Failed to fetch remote locations, falling back to local. Error: $e");
+        return localDataSource.getLocationsForDropdown(); // Fallback
+      }
+    } else {
+      debugPrint("OFFLINE: Fetching locations from local.");
+      return localDataSource.getLocationsForDropdown();
+    }
   }
 
   // These methods are primarily for the sync process to check local data.
