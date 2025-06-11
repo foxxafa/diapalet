@@ -16,19 +16,15 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   bool _isLoading = true;
   bool _isSyncing = false;
   SyncStatus _syncStatus = SyncStatus.offline;
+  StreamSubscription? _syncStatusSubscription;
 
   @override
   void initState() {
     super.initState();
-    _initializeSync();
+    // Initialization is now handled in main.dart, so we just listen for updates.
+    // _syncService.initialize();
     _loadPendingOperations();
-  }
-
-  Future<void> _initializeSync() async {
-    await _syncService.initialize();
-    
-    // Listen to sync status changes
-    _syncService.syncStatusStream.listen((status) {
+    _syncStatusSubscription = _syncService.syncStatusStream.listen((status) {
       if (mounted) {
         setState(() {
           _syncStatus = status;

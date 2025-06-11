@@ -43,47 +43,48 @@ class GoodsReceipt {
 
 class GoodsReceiptItem {
   final int? id;
-  final int goodsReceiptId;
+  final int receiptId;
   final ProductInfo product;
   final int quantity;
-  final String location;
+  final int locationId;
+  final String? locationName;
   final String? containerId;
 
   GoodsReceiptItem({
     this.id,
-    required this.goodsReceiptId,
+    required this.receiptId,
     required this.product,
     required this.quantity,
-    required this.location,
+    required this.locationId,
+    this.locationName,
     this.containerId,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'receipt_id': goodsReceiptId,
+      'receipt_id': receiptId,
       'urun_id': product.id,
       'quantity': quantity,
-      'location': location,
+      'location_id': locationId,
+      'location_name': locationName,
       'pallet_barcode': containerId,
     };
   }
 
-  // fromMap metodu productInfo'nun dışarıdan sağlanmasını bekliyordu.
-  // Eğer product_id, product_name, product_code map içinde geliyorsa,
-  // doğrudan ProductInfo oluşturabiliriz.
   factory GoodsReceiptItem.fromMap(Map<String, dynamic> map) {
     return GoodsReceiptItem(
-      id: map['id'] as int?,
-      goodsReceiptId: map['receipt_id'] as int,
+      id: map['id'],
+      receiptId: map['receipt_id'],
       product: ProductInfo(
-        id: map['product_id'] as String,
-        name: map['product_name'] as String? ?? '',
-        stockCode: map['product_code'] as String? ?? '',
+        id: map['product_id'],
+        name: map['product_name'],
+        stockCode: map['product_code'],
       ),
-      quantity: map['quantity'] as int,
-      location: map['location'] as String? ?? '',
-      containerId: map['pallet_id'] as String?,
+      quantity: map['quantity'],
+      locationId: map['location_id'],
+      locationName: map['location_name'],
+      containerId: map['pallet_id'],
     );
   }
 }

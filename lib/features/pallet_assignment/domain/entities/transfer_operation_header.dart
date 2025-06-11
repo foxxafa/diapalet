@@ -6,18 +6,18 @@ import 'assignment_mode.dart'; // Correct import
 class TransferOperationHeader {
   final int? id;
   final AssignmentMode operationType;
-  final String sourceLocation;
-  final String targetLocation;
-  final String containerId;
+  final int sourceLocationId;
+  final int targetLocationId;
+  final String? containerId;
   final DateTime transferDate;
   final int synced;
 
   const TransferOperationHeader({
     this.id,
     required this.operationType,
-    required this.sourceLocation,
-    required this.targetLocation,
-    required this.containerId,
+    required this.sourceLocationId,
+    required this.targetLocationId,
+    this.containerId,
     required this.transferDate,
     this.synced = 0,
   });
@@ -26,8 +26,8 @@ class TransferOperationHeader {
     return {
       'id': id,
       'operation_type': operationType.name,
-      'source_location': sourceLocation,
-      'target_location': targetLocation,
+      'source_location_id': sourceLocationId,
+      'target_location_id': targetLocationId,
       'pallet_id': containerId,
       'transfer_date': transferDate.toIso8601String(),
       'synced': synced,
@@ -36,24 +36,23 @@ class TransferOperationHeader {
 
   factory TransferOperationHeader.fromMap(Map<String, dynamic> map) {
     return TransferOperationHeader(
-      id: map['id'] as int?,
-      operationType: AssignmentMode.values.firstWhere(
-            (e) => e.name == map['operation_type'],
-        orElse: () => AssignmentMode.pallet, // Defaulting, consider error handling
-      ),
-      sourceLocation: map['source_location'] as String? ?? '',
-      targetLocation: map['target_location'] as String? ?? '',
-      containerId: map['pallet_id'] as String? ?? '',
-      transferDate: DateTime.parse(map['transfer_date'] as String),
-      synced: map['synced'] as int? ?? 0,
+      id: map['id'],
+      operationType: (map['operation_type'] as String) == AssignmentMode.pallet.name
+          ? AssignmentMode.pallet
+          : AssignmentMode.box,
+      sourceLocationId: map['source_location_id'],
+      targetLocationId: map['target_location_id'],
+      containerId: map['pallet_id'],
+      transferDate: DateTime.parse(map['transfer_date']),
+      synced: map['synced'] ?? 0,
     );
   }
 
   TransferOperationHeader copyWith({
     int? id,
     AssignmentMode? operationType,
-    String? sourceLocation,
-    String? targetLocation,
+    int? sourceLocationId,
+    int? targetLocationId,
     String? containerId,
     DateTime? transferDate,
     int? synced,
@@ -61,8 +60,8 @@ class TransferOperationHeader {
     return TransferOperationHeader(
       id: id ?? this.id,
       operationType: operationType ?? this.operationType,
-      sourceLocation: sourceLocation ?? this.sourceLocation,
-      targetLocation: targetLocation ?? this.targetLocation,
+      sourceLocationId: sourceLocationId ?? this.sourceLocationId,
+      targetLocationId: targetLocationId ?? this.targetLocationId,
       containerId: containerId ?? this.containerId,
       transferDate: transferDate ?? this.transferDate,
       synced: synced ?? this.synced,
@@ -76,8 +75,8 @@ class TransferOperationHeader {
               runtimeType == other.runtimeType &&
               id == other.id &&
               operationType == other.operationType &&
-              sourceLocation == other.sourceLocation &&
-              targetLocation == other.targetLocation &&
+              sourceLocationId == other.sourceLocationId &&
+              targetLocationId == other.targetLocationId &&
               containerId == other.containerId &&
               transferDate.isAtSameMomentAs(other.transferDate) && // For DateTime comparison
               synced == other.synced;
@@ -86,8 +85,8 @@ class TransferOperationHeader {
   int get hashCode =>
       id.hashCode ^
       operationType.hashCode ^
-      sourceLocation.hashCode ^
-      targetLocation.hashCode ^
+      sourceLocationId.hashCode ^
+      targetLocationId.hashCode ^
       containerId.hashCode ^
       transferDate.hashCode ^
       synced.hashCode;

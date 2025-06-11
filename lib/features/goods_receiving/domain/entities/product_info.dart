@@ -1,18 +1,23 @@
 // features/goods_receiving/domain/entities/product_info.dart
-class ProductInfo {
-  final String id;
+import 'package:equatable/equatable.dart';
+
+class ProductInfo extends Equatable {
+  final int id;
   final String name;
   final String stockCode;
 
-  ProductInfo({
+  const ProductInfo({
     required this.id,
     required this.name,
     required this.stockCode,
   });
 
+  @override
+  List<Object?> get props => [id, name, stockCode];
+
   factory ProductInfo.fromJson(Map<String, dynamic> json) {
     return ProductInfo(
-      id: json['id'].toString(),
+      id: json['id'] as int,
       name: json['name'] as String,
       stockCode: json['code'] as String,
     );
@@ -26,7 +31,7 @@ class ProductInfo {
     };
   }
 
-  static ProductInfo empty = ProductInfo(id: '', name: '', stockCode: '');
+  static ProductInfo empty = ProductInfo(id: 0, name: '', stockCode: '');
 
   @override
   String toString() {

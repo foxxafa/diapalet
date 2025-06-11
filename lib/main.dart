@@ -15,31 +15,39 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/home/presentation/home_screen.dart';
+import 'package:diapalet/features/login/presentation/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
+
+  final syncService = SyncService();
+  await syncService.initialize();
+
   runApp(
     EasyLocalization(
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
       fallbackLocale: const Locale('tr'),
       startLocale: const Locale('tr'),
-      child: const DiapaletApp(),
+      child: DiapaletApp(syncService: syncService),
     ),
   );
 }
 
 class DiapaletApp extends StatelessWidget {
-  const DiapaletApp({super.key});
+  final SyncService syncService;
+
+  const DiapaletApp({
+    super.key,
+    required this.syncService,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Uygulama genelinde kullanılacak servisleri ve repository'leri tek bir yerden sağlıyoruz.
-    // Bu, her ekranda yeniden oluşturmayı engeller ve performansı artırır.
     return MultiProvider(
       providers: [
-        // Temel servisler
+        Provider<SyncService>.value(value: syncService),
         Provider<DatabaseHelper>(
           create: (_) => DatabaseHelper(),
         ),
@@ -47,12 +55,6 @@ class DiapaletApp extends StatelessWidget {
           create: (_) => NetworkInfoImpl(Connectivity()),
         ),
         
-        // Sync Service
-        Provider<SyncService>(
-          create: (_) => SyncService(),
-        ),
-
-        // Veri Kaynakları (DataSources)
         ProxyProvider<DatabaseHelper, GoodsReceivingLocalDataSource>(
           update: (_, dbHelper, __) => GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper),
         ),
@@ -66,7 +68,6 @@ class DiapaletApp extends StatelessWidget {
           create: (_) => PalletAssignmentRemoteDataSourceImpl(),
         ),
 
-        // Depolar (Repositories)
         ProxyProvider3<GoodsReceivingLocalDataSource, GoodsReceivingRemoteDataSource, NetworkInfo, GoodsReceivingRepository>(
           update: (_, local, remote, network, __) => GoodsReceivingRepositoryImpl(
             localDataSource: local,
@@ -89,7 +90,7 @@ class DiapaletApp extends StatelessWidget {
         localizationsDelegates: context.localizationDelegates,
         supportedLocales: context.supportedLocales,
         locale: context.locale,
-        home: const HomeScreen(),
+        home: LoginScreen(),
       ),
     );
   }

@@ -10,7 +10,7 @@ class DatabaseHelper {
 
   static Database? _database;
   static const String _dbName = 'app_main_database.db';
-  static const int _dbVersion = 12;
+  static const int _dbVersion = 13;
 
   // ==== PUBLIC HANDLE =======================================================
   Future<Database> get database async {
@@ -59,21 +59,26 @@ class DatabaseHelper {
       )
     ''');
 
-    // 3- Stock by location (box flow OR pallet unpacked)
+    // 3- Inventory stock (unified for palletized and non-palletized items)
     await db.execute('''
-      CREATE TABLE stock_location (
+      CREATE TABLE inventory_stock (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL REFERENCES product(id),
-        location   TEXT NOT NULL,
-        quantity   INTEGER NOT NULL
+        urun_id INTEGER NOT NULL REFERENCES product(id),
+        location_id INTEGER NOT NULL REFERENCES location(id),
+        quantity   INTEGER NOT NULL,
+        pallet_barcode TEXT                          -- Can be null
       )
     ''');
+    
+    // Create an index for faster lookups
+    await db.execute('CREATE INDEX idx_stock_location ON inventory_stock (location_id)');
+    await db.execute('CREATE INDEX idx_stock_pallet ON inventory_stock (pallet_barcode)');
 
     // 4- Pallet header & details
     await db.execute('''
       CREATE TABLE pallet (
         id       TEXT PRIMARY KEY,
-        location TEXT NOT NULL
+        location_id INTEGER NOT NULL REFERENCES location(id)
       )
     ''');
 
@@ -103,7 +108,7 @@ class DatabaseHelper {
         receipt_id INTEGER NOT NULL REFERENCES goods_receipt(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL REFERENCES product(id),
         quantity   INTEGER NOT NULL,
-        location   TEXT NOT NULL,
+        location_id INTEGER NOT NULL REFERENCES location(id),
         pallet_id  TEXT REFERENCES pallet(id)      -- NULL for box flow
       )
     ''');
@@ -113,8 +118,8 @@ class DatabaseHelper {
       CREATE TABLE transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_type TEXT NOT NULL,            -- 'pallet' | 'box'
-        source_location TEXT NOT NULL,
-        target_location TEXT NOT NULL,
+        source_location_id INTEGER NOT NULL REFERENCES location(id),
+        target_location_id INTEGER NOT NULL REFERENCES location(id),
         pallet_id TEXT,                          -- null for box flow
         transfer_date TEXT NOT NULL,
         synced INTEGER NOT NULL DEFAULT 0
@@ -153,7 +158,7 @@ class DatabaseHelper {
       'pallet_item','pallet',
       'goods_receipt_item','goods_receipt',
       'transfer_item','transfer_operation',
-      'stock_location',
+      'inventory_stock',
       'location',
       'product',
       'pending_operation',

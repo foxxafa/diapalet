@@ -11,9 +11,10 @@ abstract class GoodsReceivingLocalDataSource {
   Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts();
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId);
   Future<void> markGoodsReceiptAsSynced(int receiptId);
-  Future<ProductInfo?> getProductInfoById(String productId);
+  Future<ProductInfo?> getProductInfoById(int productId);
   Future<List<String>> getInvoiceNumbers();
   Future<List<ProductInfo>> getProductsForDropdown();
+  Future<List<LocationInfo>> getLocationsForDropdown();
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -21,35 +22,34 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
   GoodsReceivingLocalDataSourceImpl({required this.dbHelper});
 
-  Future<void> _ensureLocation(DatabaseExecutor txn, String location) async {
-    await txn.insert('location', {'name': location},
-        conflictAlgorithm: ConflictAlgorithm.ignore);
-  }
-
   /// Veritabanı transaction'ı veya direkt bağlantı üzerinde stok güncellemesi yapan genel bir metod.
-  /// Hem `db.transaction` bloğu içinden `txn` nesnesi ile hem de direkt `db` nesnesi ile çağrılabilir.
-  Future<void> _updateStock(DatabaseExecutor dbOrTxn, String productId, String location, int qty) async {
-    await _ensureLocation(dbOrTxn, location);
-    final existing = await dbOrTxn.query('stock_location',
-        where: 'product_id = ? AND location = ?',
-        whereArgs: [productId, location],
-        limit: 1);
+  Future<void> _updateStock(DatabaseExecutor dbOrTxn, int productId, int locationId, int qty, {String? palletId}) async {
+    // Paletlenmemiş ürünler için stok güncellemesi
+    if (palletId == null || palletId.isEmpty) {
+      final existing = await dbOrTxn.query('inventory_stock',
+          where: 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL',
+          whereArgs: [productId, locationId],
+          limit: 1);
 
-    if (existing.isEmpty) {
-      await dbOrTxn.insert('stock_location', {
-        'product_id': productId,
-        'location': location,
-        'quantity': qty,
-      });
-    } else {
-      final currentQty = existing.first['quantity'] as int? ?? 0;
-      await dbOrTxn.update(
-        'stock_location',
-        {'quantity': currentQty + qty},
-        where: 'id = ?',
-        whereArgs: [existing.first['id']],
-      );
+      if (existing.isEmpty) {
+        await dbOrTxn.insert('inventory_stock', {
+          'urun_id': productId,
+          'location_id': locationId,
+          'quantity': qty,
+        });
+      } else {
+        final currentQty = existing.first['quantity'] as int? ?? 0;
+        await dbOrTxn.update(
+          'inventory_stock',
+          {'quantity': currentQty + qty},
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      }
     }
+    // Paletli ürünler için stok kaydı zaten palet_item tablosunda tutuluyor,
+    // inventory_stock tablosunda ayrıca tutulmasına gerek yok. 
+    // Sunucu tarafında bu ayrım yapılacak.
   }
 
   @override
@@ -70,7 +70,6 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
       // 2. Her bir ürün kalemi için işlemleri yap.
       for (var item in items) {
-        await _ensureLocation(txn, item.location);
         // a. Ürün bilgisini 'product' tablosuna ekle (varsa görmezden gel).
         await txn.insert(
           'product',
@@ -85,10 +84,9 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         // b. Mal kabul kalemini (item) veritabanına ekle.
         if (item.containerId != null && item.containerId!.isNotEmpty) {
           // Palet kaydı - önce palet tablosunda var olduğundan emin ol
-          await _ensureLocation(txn, item.location);
           await txn.insert(
             'pallet',
-            {'id': item.containerId, 'location': item.location},
+            {'id': item.containerId, 'location_id': item.locationId},
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
 
@@ -118,7 +116,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           'receipt_id': headerId,
           'product_id': item.product.id,
           'quantity': item.quantity,
-          'location': item.location,
+          'location_id': item.locationId,
           'pallet_id': item.containerId,
         };
         await txn.insert(
@@ -127,16 +125,12 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
 
-        if (item.containerId == null || item.containerId!.isEmpty) {
-          // Kutu akışı
-          await _updateStock(txn, item.product.id, item.location, item.quantity);
-        }
+        // Stok güncellemesini yeni şemaya göre yap
+        await _updateStock(txn, item.product.id, item.locationId, item.quantity, palletId: item.containerId);
 
-        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location: ${item.location}");
+        debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location_id: ${item.locationId}");
       }
       // -------------------- PENDING QUEUE ---------------------------------
-      // Pack the entire receipt as JSON and push to unified pending queue so
-      // that SyncService can simply forward without reconstructing.
       final pendingPayload = {
         'external_id'   : header.externalId,
         'invoice_number': header.invoiceNumber,
@@ -144,7 +138,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
         'items': items.map((i) => {
           'product_id': i.product.id,
           'quantity'  : i.quantity,
-          'location'  : i.location,
+          'location_id'  : i.locationId, // Use locationId
           'pallet_id' : i.containerId,
         }).toList(),
       };
@@ -185,9 +179,10 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT gri.id, gri.receipt_id, gri.product_id,
              p.name AS product_name, p.code AS product_code,
-             gri.quantity, gri.location, gri.pallet_id
+             gri.quantity, gri.location_id, l.name as location_name, gri.pallet_id
       FROM goods_receipt_item gri
       JOIN product p ON p.id = gri.product_id
+      JOIN location l ON l.id = gri.location_id
       WHERE gri.receipt_id = ?
     ''', [receiptId]);
     if (maps.isEmpty) return [];
@@ -207,9 +202,17 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   }
 
   @override
-  Future<ProductInfo?> getProductInfoById(String productId) async {
-    debugPrint("LocalDataSource: getProductInfoById for $productId (not fully implemented for separate table).");
-    // Gerekirse burada 'product' tablosundan sorgu yapılabilir.
+  Future<ProductInfo?> getProductInfoById(int productId) async {
+    final db = await dbHelper.database;
+    final rows = await db.query('product', where: 'id = ?', whereArgs: [productId]);
+    if (rows.isNotEmpty) {
+      final e = rows.first;
+      return ProductInfo(
+        id: e['id'] as int,
+        name: e['name'] as String,
+        stockCode: e['code'] as String,
+      );
+    }
     return null;
   }
 
@@ -232,10 +235,23 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
     ''');
     return rows
         .map((e) => ProductInfo(
-      id: e['id'] as String,
+      id: e['id'] as int,
       name: e['name'] as String,
       stockCode: e['code'] as String,
     ))
+        .toList();
+  }
+
+  @override
+  Future<List<LocationInfo>> getLocationsForDropdown() async {
+    final db = await dbHelper.database;
+    final rows = await db.query('location', orderBy: 'name');
+    return rows
+        .map((e) => LocationInfo(
+              id: e['id'] as int,
+              name: e['name'] as String,
+              code: e['code'] as String? ?? '',
+            ))
         .toList();
   }
 }

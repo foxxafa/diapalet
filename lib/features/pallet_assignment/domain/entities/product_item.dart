@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart'; // For @immutable and @override
 
 @immutable
 class ProductItem {
-  final String id;
+  final int id;
   final String name;
   final String productCode;
   final int currentQuantity;
@@ -33,31 +33,24 @@ class ProductItem {
       currentQuantity.hashCode;
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
-    // Backend may send keys like productId, productName, quantity, etc.
     final dynamic idValue = json['id'] ?? json['productId'];
     final dynamic nameValue = json['name'] ?? json['productName'];
     final dynamic codeValue = json['productCode'] ?? json['code'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
 
-    int _parseQty(dynamic val) {
+    int _parseToInt(dynamic val) {
       if (val == null) return 0;
       if (val is int) return val;
       if (val is double) return val.round();
-      if (val is num) return val.toInt();
-      if (val is String) {
-        final int? i = int.tryParse(val);
-        if (i != null) return i;
-        final double? d = double.tryParse(val);
-        if (d != null) return d.round();
-      }
+      if (val is String) return int.tryParse(val) ?? 0;
       return 0;
     }
 
     return ProductItem(
-      id: idValue?.toString() ?? '',
+      id: _parseToInt(idValue),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
-      currentQuantity: _parseQty(qtyValue),
+      currentQuantity: _parseToInt(qtyValue),
     );
   }
 
@@ -68,6 +61,15 @@ class ProductItem {
       'productCode': productCode,
       'currentQuantity': currentQuantity,
     };
+  }
+
+  factory ProductItem.fromMap(Map<String, dynamic> map) {
+    return ProductItem(
+      id: map['product_id'] as int,
+      name: (map['product_name'] ?? '').toString(),
+      productCode: (map['product_code'] ?? '').toString(),
+      currentQuantity: (map['quantity'] as num?)?.toInt() ?? 0,
+    );
   }
 
 // Optional: toMap and fromMap if needed for local storage directly with this model

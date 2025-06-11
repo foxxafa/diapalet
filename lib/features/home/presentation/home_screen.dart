@@ -21,16 +21,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeSync();
+    _checkInitialDataSync();
   }
-  
-  Future<void> _initializeSync() async {
-    try {
-      final syncService = context.read<SyncService>();
-      await syncService.initialize();
-    } catch (e) {
-      debugPrint('Failed to initialize sync service: $e');
-    }
+
+  Future<void> _checkInitialDataSync() async {
+    final syncService = context.read<SyncService>();
+    // The initialize call is removed from here, as it's now handled in main.dart
+    // await syncService.initialize();
   }
 
   @override
