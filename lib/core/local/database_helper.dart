@@ -69,7 +69,7 @@ class DatabaseHelper {
     // 3- Inventory stock (unified for palletized and non-palletized items)
     await db.execute('''
       CREATE TABLE inventory_stock (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         urun_id INTEGER NOT NULL REFERENCES product(id),
         location_id INTEGER NOT NULL REFERENCES location(id),
         quantity   INTEGER NOT NULL,
@@ -131,7 +131,7 @@ class DatabaseHelper {
     // 6- Goods receipt header & lines
     await db.execute('''
       CREATE TABLE goods_receipt (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         external_id    TEXT UNIQUE,
         siparis_id     INTEGER,
         employee_id    INTEGER,
@@ -144,7 +144,7 @@ class DatabaseHelper {
 
     await db.execute('''
       CREATE TABLE goods_receipt_item (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         receipt_id INTEGER NOT NULL REFERENCES goods_receipt(id) ON DELETE CASCADE,
         product_id INTEGER NOT NULL REFERENCES product(id),
         quantity   INTEGER NOT NULL,

@@ -193,12 +193,18 @@ class SyncService {
   }
 
   Future<void> _updateLocalDatabase(Map<String, dynamic> data, {required bool isFullSync}) async {
+    // This is now a wrapper around the main logic
+    await _performDatabaseUpdate(data, isFullSync: isFullSync);
+  }
+  
+  // Centralized database update logic used by all download methods
+  Future<void> _performDatabaseUpdate(Map<String, dynamic> data, {required bool isFullSync}) async {
     final db = await _dbHelper.database;
     
     await db.transaction((txn) async {
       if (isFullSync) {
         debugPrint("Performing full data wipe before sync.");
-        // Order is critical to avoid foreign key violations
+        // Deletion order is critical to avoid foreign key violations
         for (final table in [
           'goods_receipt_item', 'pallet_item', 'transfer_item', 'inventory_stock', 'purchase_order_item',
           'goods_receipt', 'pallet', 'transfer_operation', 'purchase_order',
@@ -208,132 +214,83 @@ class SyncService {
         }
       }
 
-      // Corrected: Use singular keys as sent by the Python server
+      // Insertion order is critical. Parent tables must be populated before child tables.
+      
+      // Level 0: No dependencies
       final products = data['product'] as List? ?? [];
       for (final item in products) {
-        await txn.insert('product', {
-          'id': item['id'],
-          'name': item['name'],
-          'code': item['code'],
-          'is_active': item['is_active'],
-          'created_at': item['created_at'],
-          'updated_at': item['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('product', item, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final locations = data['location'] as List? ?? [];
       for (final item in locations) {
-        await txn.insert('location', {
-          'id': item['id'],
-          'name': item['name'],
-          'code': item['code'],
-          'is_active': item['is_active'],
-          'latitude': item['latitude'],
-          'longitude': item['longitude'],
-          'address': item['address'],
-          'description': item['description'],
-          'created_at': item['created_at'],
-          'updated_at': item['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('location', item, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      // --- Start of Pallet Handling ---
-      // Collect all unique pallet barcodes from inventory and goods receipts to pre-populate the pallet table
+      // Level 1: Depends on Level 0
+      // Pre-populate Pallets before they are referenced by other tables.
       final Set<String> palletBarcodes = {};
       final inventoryStock = data['inventory_stock'] as List? ?? [];
       final goodsReceiptItems = data['goods_receipt_item'] as List? ?? [];
 
       for (final item in inventoryStock) {
-        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].toString().isNotEmpty) {
           palletBarcodes.add(item['pallet_barcode']);
         }
       }
       for (final item in goodsReceiptItems) {
-        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].toString().isNotEmpty) {
           palletBarcodes.add(item['pallet_barcode']);
         }
       }
       
-      // Upsert pallets. This ensures foreign key constraints will be met.
       final Map<String, int> palletLocations = {};
        for (final item in inventoryStock) {
-        if (item['pallet_barcode'] != null && item['pallet_barcode'].isNotEmpty && palletLocations[item['pallet_barcode']] == null) {
+        if (item['pallet_barcode'] != null && item['pallet_barcode'].toString().isNotEmpty && palletLocations[item['pallet_barcode']] == null) {
           palletLocations[item['pallet_barcode']] = item['location_id'];
         }
       }
 
       for (final barcode in palletBarcodes) {
-        final locationId = palletLocations[barcode] ?? 1;
-        await txn.insert('pallet', {
-          'id': barcode,
-          'location_id': locationId,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        final locationId = palletLocations[barcode] ?? 1; // Default to 'MAL KABUL'
+        await txn.insert('pallet', {'id': barcode, 'location_id': locationId}, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       debugPrint("Upserted ${palletBarcodes.length} pallets.");
-      // --- End of Pallet Handling ---
 
       final purchaseOrders = data['purchase_order'] as List? ?? [];
       for (final item in purchaseOrders) {
-        await txn.insert('purchase_order', {
-          'id': item['id'],
-          'po_id': item['po_id'],
-          'tarih': item['tarih'],
-          'status': item['status'],
-          'notlar': item['notlar'],
-          'user': item['user'],
-          'created_at': item['created_at'],
-          'updated_at': item['updated_at'],
-          'gun': item['gun'],
-          'lokasyon_id': item['lokasyon_id'],
-          'invoice': item['invoice'],
-          'delivery': item['delivery'],
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-
-      final purchaseOrderItems = data['purchase_order_item'] as List? ?? [];
-      for (final item in purchaseOrderItems) {
-        await txn.insert('purchase_order_item', {
-          'id': item['id'],
-          'siparis_id': item['siparis_id'],
-          'urun_id': item['urun_id'],
-          'miktar': item['miktar'],
-          'birim': item['birim'],
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('purchase_order', item, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final goodsReceipts = data['goods_receipt'] as List? ?? [];
       for (final item in goodsReceipts) {
-        await txn.insert('goods_receipt', {
-          'id': item['id'],
-          'siparis_id': item['siparis_id'],
-          'employee_id': item['employee_id'],
-          'invoice_number': item['invoice_number'],
-          'receipt_date': item['receipt_date'],
-          'created_at': item['created_at'],
-          'synced': 1,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        // Add synced flag as it's not present in the generic table download
+        final Map<String, dynamic> receiptData = Map<String, dynamic>.from(item);
+        receiptData['synced'] = 1;
+        await txn.insert('goods_receipt', receiptData, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      // Level 2: Depends on Level 1
+      final purchaseOrderItems = data['purchase_order_item'] as List? ?? [];
+      for (final item in purchaseOrderItems) {
+        await txn.insert('purchase_order_item', item, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       for (final item in goodsReceiptItems) {
+        final locationId = palletLocations[item['pallet_barcode']] ?? 1;
         await txn.insert('goods_receipt_item', {
           'id': item['id'],
           'receipt_id': item['receipt_id'],
           'product_id': item['urun_id'],
           'quantity': item['quantity_received'],
           'pallet_id': item['pallet_barcode'],
-          'location_id': palletLocations[item['pallet_barcode']] ?? 1,
+          'location_id': locationId,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       
+      // Level 3: Depends on multiple previous levels
       for (final item in inventoryStock) {
-        await txn.insert('inventory_stock', {
-          'id': item['id'],
-          'urun_id': item['urun_id'],
-          'location_id': item['location_id'],
-          'quantity': item['quantity'],
-          'pallet_barcode': item['pallet_barcode'],
-          'updated_at': item['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('inventory_stock', item, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       debugPrint("Local database updated successfully.");
@@ -456,183 +413,48 @@ class SyncService {
     debugPrint("Local database has been reset.");
   }
 
-  Future<SyncResult> downloadSpecifiedTables(List<String> serverTableNames) async {
+  /// Downloads a specific list of tables from the server.
+  /// Used for more granular sync from the admin panel.
+  Future<SyncResult> downloadSpecifiedTables(List<String> tableNames) async {
     if (_isSyncingDownload) {
-      return SyncResult(success: false, message: 'Download sync already in progress.');
+      return SyncResult(success: false, message: 'Sync already in progress.');
     }
-    if (!await _networkInfo.isConnected) {
+     if (!await _networkInfo.isConnected) {
       _syncStatusController.add(SyncStatus.offline);
       return SyncResult(success: false, message: 'No network connection.');
     }
 
     _isSyncingDownload = true;
     _syncStatusController.add(SyncStatus.syncing);
-    debugPrint("Starting specified table download for: ${serverTableNames.join(', ')}");
-
-    final db = await _dbHelper.database;
+    debugPrint("Starting specified table download for: ${tableNames.join(', ')}");
 
     try {
-      for (final serverTableName in serverTableNames) {
-        final localTableName = _mapServerToLocalTable(serverTableName);
-        if (localTableName == null) {
-          debugPrint("Skipping unknown table: $serverTableName");
-          continue;
-        }
-
-        debugPrint("Fetching $serverTableName -> $localTableName...");
-        
+      final Map<String, dynamic> downloadedData = {};
+      for (final tableName in tableNames) {
         final response = await http.get(
-          Uri.parse('$_baseUrl/api/data/$serverTableName'),
+          Uri.parse('$_baseUrl/api/data/$tableName'),
           headers: {'Content-Type': 'application/json'},
         );
-
         if (response.statusCode == 200) {
-          final List<dynamic> data = jsonDecode(response.body);
-          
-          await db.transaction((txn) async {
-            // Clear the local table before inserting new data
-            await txn.delete(localTableName);
-            debugPrint("Cleared local table: $localTableName");
-
-            // Insert new data
-            for (final item in data) {
-              final mappedItem = _mapServerToLocalRecord(serverTableName, item);
-              if (mappedItem != null) {
-                await txn.insert(localTableName, mappedItem, conflictAlgorithm: ConflictAlgorithm.replace);
-              }
-            }
-            debugPrint("Inserted ${data.length} records into $localTableName.");
-          });
+          // The server returns a list, we need to map it to the table name key
+          downloadedData[tableName.replaceAll('satin_alma_siparis_fis', 'purchase_order').replaceAll('urunler', 'product')] = jsonDecode(response.body);
         } else {
-          throw Exception('Failed to download $serverTableName: HTTP ${response.statusCode}');
+          throw Exception('Failed to download table $tableName: HTTP ${response.statusCode}');
         }
       }
+
+      await _performDatabaseUpdate(downloadedData, isFullSync: true);
 
       _syncStatusController.add(SyncStatus.upToDate);
       debugPrint("Specified table download finished successfully.");
-      return SyncResult(success: true, message: 'Seçilen tablolar başarıyla indirildi.');
+      return SyncResult(success: true, message: 'Specified tables downloaded successfully.');
 
     } catch (e) {
-      debugPrint('Download error for specified tables: $e');
+      debugPrint('Specified table download error: $e');
       _syncStatusController.add(SyncStatus.error);
-      return SyncResult(success: false, message: 'Veri indirme hatası: $e');
+      return SyncResult(success: false, message: 'Download error: $e');
     } finally {
       _isSyncingDownload = false;
-    }
-  }
-
-  String? _mapServerToLocalTable(String serverTableName) {
-    const map = {
-      'urunler': 'product',
-      'locations': 'location',
-      'satin_alma_siparis_fis': 'purchase_order',
-      'satin_alma_siparis_fis_satir': 'purchase_order_item',
-      'goods_receipts': 'goods_receipt',
-      'goods_receipt_items': 'goods_receipt_item',
-      'inventory_stock': 'inventory_stock',
-    };
-    return map[serverTableName];
-  }
-
-  Map<String, dynamic>? _mapServerToLocalRecord(String serverTableName, Map<String, dynamic> serverRecord) {
-    try {
-      if (serverTableName == 'urunler') {
-        final id   = serverRecord['UrunId'];
-        final name = serverRecord['UrunAdi'];
-        final code = serverRecord['StokKodu'];
-        if (id == null) {
-          return null; // product id is mandatory
-        }
-        final safeName = (name == null || (name as String).trim().isEmpty)
-            ? 'Unnamed Product $id'
-            : name;
-        final safeCode = (code == null || (code as String).trim().isEmpty)
-            ? 'UNKNOWN_$id'
-            : code;
-        return {
-          'id': id,
-          'name': safeName,
-          'code': safeCode,
-          'is_active': serverRecord['aktif'] ?? 1,
-          'created_at': serverRecord['created_at'],
-          'updated_at': serverRecord['updated_at'],
-        };
-      }
-      if (serverTableName == 'locations') {
-        return {
-          'id': serverRecord['id'],
-          'name': serverRecord['name'],
-          'code': serverRecord['code'],
-          'is_active': serverRecord['is_active'],
-          'latitude': serverRecord['latitude'],
-          'longitude': serverRecord['longitude'],
-          'address': serverRecord['address'],
-          'description': serverRecord['description'],
-          'created_at': serverRecord['created_at'],
-          'updated_at': serverRecord['updated_at'],
-        };
-      }
-      if (serverTableName == 'satin_alma_siparis_fis') {
-        return {
-          'id': serverRecord['id'],
-          'po_id': serverRecord['po_id'],
-          'tarih': serverRecord['tarih'],
-          'status': serverRecord['status'],
-          'notlar': serverRecord['notlar'],
-          'user': serverRecord['user'],
-          'created_at': serverRecord['created_at'],
-          'updated_at': serverRecord['updated_at'],
-          'gun': serverRecord['gun'],
-          'lokasyon_id': serverRecord['lokasyon_id'],
-          'invoice': serverRecord['invoice'],
-          'delivery': serverRecord['delivery'],
-        };
-      }
-      if (serverTableName == 'satin_alma_siparis_fis_satir') {
-        return {
-          'id': serverRecord['id'],
-          'siparis_id': serverRecord['siparis_id'],
-          'urun_id': serverRecord['urun_id'],
-          'miktar': serverRecord['miktar'],
-          'birim': serverRecord['birim'],
-          'productName': serverRecord['productName'] ?? 'N/A',
-        };
-      }
-      if (serverTableName == 'goods_receipts') {
-        return {
-          'id': serverRecord['id'],
-          'siparis_id': serverRecord['siparis_id'],
-          'employee_id': serverRecord['employee_id'],
-          'invoice_number': serverRecord['invoice_number'],
-          'receipt_date': serverRecord['receipt_date'],
-          'created_at': serverRecord['created_at'],
-          'synced': 1,
-        };
-      }
-      if (serverTableName == 'goods_receipt_items') {
-        return {
-          'id': serverRecord['id'],
-          'receipt_id': serverRecord['receipt_id'],
-          'product_id': serverRecord['urun_id'],
-          'quantity': serverRecord['quantity_received'],
-          'location_id': serverRecord['location_id'] ?? 1, // Default to a valid location ID
-          'pallet_id': serverRecord['pallet_barcode'],
-        };
-      }
-      if (serverTableName == 'inventory_stock') {
-        return {
-          'id': serverRecord['id'],
-          'urun_id': serverRecord['urun_id'],
-          'location_id': serverRecord['location_id'],
-          'quantity': serverRecord['quantity'],
-          'pallet_barcode': serverRecord['pallet_barcode'],
-          'updated_at': serverRecord['updated_at'],
-        };
-      }
-      return serverRecord;
-    } catch (e) {
-      debugPrint("Error mapping record for table $serverTableName: $e. Record: $serverRecord");
-      return null;
     }
   }
 }
