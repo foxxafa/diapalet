@@ -72,6 +72,24 @@ class GoodsReceiptItem {
     };
   }
 
+  GoodsReceiptItem copyWith({
+    int? id,
+    int? receiptId,
+    ProductInfo? product,
+    int? quantity,
+    String? containerId,
+    int? locationId,
+  }) {
+    return GoodsReceiptItem(
+      id: id ?? this.id,
+      receiptId: receiptId ?? this.receiptId,
+      product: product ?? this.product,
+      quantity: quantity ?? this.quantity,
+      locationId: locationId ?? this.locationId,
+      containerId: containerId ?? this.containerId,
+    );
+  }
+
   factory GoodsReceiptItem.fromMap(Map<String, dynamic> map) {
     return GoodsReceiptItem(
       id: map['id'],

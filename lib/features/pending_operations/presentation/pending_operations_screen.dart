@@ -52,7 +52,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     });
 
     try {
-      final operations = await _syncService.getPendingOperationsForUI();
+      final operations = await _syncService.getPendingOperations();
       setState(() {
         _pendingOperations = operations;
         _isLoading = false;
@@ -75,7 +75,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     });
 
     try {
-      final result = await _syncService.syncPendingOperations();
+      final result = await _syncService.uploadPendingOperations();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

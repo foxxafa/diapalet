@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../local/database_helper.dart';
 import '../network/network_info.dart';
 import '../network/api_config.dart';
-import 'package.diapalet/core/sync/pending_operation.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -239,6 +239,10 @@ class SyncService {
     });
 
     debugPrint('Local database updated.');
+  }
+
+  Future<List<PendingOperation>> getPendingOperations() async {
+    return _getPendingOperations();
   }
 
   Future<List<PendingOperation>> _getPendingOperations() async {

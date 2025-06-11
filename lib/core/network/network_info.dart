@@ -4,12 +4,16 @@ import 'package:flutter/foundation.dart';
 
 abstract class NetworkInfo {
   Future<bool> get isConnected;
+  Stream<ConnectivityResult> get onConnectivityChanged;
 }
 
 class NetworkInfoImpl implements NetworkInfo {
   final Connectivity connectivity;
 
   NetworkInfoImpl(this.connectivity);
+
+  @override
+  Stream<ConnectivityResult> get onConnectivityChanged => connectivity.onConnectivityResult.map((results) => results.first);
 
   @override
   Future<bool> get isConnected async {
@@ -45,4 +49,8 @@ class MockNetworkInfoImpl implements NetworkInfo {
 
   @override
   Future<bool> get isConnected async => _isConnected;
+
+  // Mock implementation for the stream
+  @override
+  Stream<ConnectivityResult> get onConnectivityChanged => Stream.value(_isConnected ? ConnectivityResult.wifi : ConnectivityResult.none);
 }

@@ -43,8 +43,8 @@ class TransferOperationHeader {
       sourceLocationId: map['source_location_id'],
       targetLocationId: map['target_location_id'],
       containerId: map['pallet_id'],
-      transferDate: DateTime.parse(map['transfer_date']),
-      synced: map['synced'] ?? 0,
+      transferDate: DateTime.parse(map['transfer_date'] as String),
+      synced: map['synced'] as int? ?? 0,
     );
   }
 
@@ -90,4 +90,15 @@ class TransferOperationHeader {
       containerId.hashCode ^
       transferDate.hashCode ^
       synced.hashCode;
+
+  Map<String, dynamic> toMapForDb() {
+    return {
+      'operation_type': operationType.name,
+      'source_location_id': sourceLocationId,
+      'target_location_id': targetLocationId,
+      'pallet_id': containerId,
+      'transfer_date': transferDate.toIso8601String(),
+      'synced': synced,
+    };
+  }
 }

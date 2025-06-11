@@ -5,10 +5,12 @@ import '../../../../core/local/database_helper.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/entities/location_info.dart';
 import '../../domain/entities/product_info.dart';
+import '../../domain/entities/purchase_order.dart';
+import '../../domain/entities/purchase_order_item.dart';
 import 'dart:convert';
 
 abstract class GoodsReceivingLocalDataSource {
-  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
+  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items, {bool createPendingOperation});
   Future<List<GoodsReceipt>> getUnsyncedGoodsReceipts();
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId);
   Future<void> markGoodsReceiptAsSynced(int receiptId);
@@ -16,6 +18,8 @@ abstract class GoodsReceivingLocalDataSource {
   Future<List<String>> getInvoiceNumbers();
   Future<List<ProductInfo>> getProductsForDropdown();
   Future<List<LocationInfo>> getLocationsForDropdown();
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders();
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId);
 }
 
 class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource {
@@ -54,7 +58,7 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   }
 
   @override
-  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
+  Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items, {bool createPendingOperation = true}) async {
     final db = await dbHelper.database;
     late int headerId;
 
@@ -131,24 +135,21 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
 
         debugPrint("Saved goods_receipt_item for receipt_id: $headerId, product: ${item.product.name}, location_id: ${item.locationId}");
       }
-      // -------------------- PENDING QUEUE ---------------------------------
-      final pendingPayload = {
-        'external_id'   : header.externalId,
-        'invoice_number': header.invoiceNumber,
-        'receipt_date'  : header.receiptDate.toIso8601String(),
-        'items': items.map((i) => {
-          'product_id': i.product.id,
-          'quantity'  : i.quantity,
-          'location_id'  : i.locationId, // Use locationId
-          'pallet_id' : i.containerId,
-        }).toList(),
-      };
 
-      await txn.insert('pending_operation', {
-        'operation_type': 'goods_receipt',
-        'payload'       : jsonEncode(pendingPayload),
-        'created_at'    : DateTime.now().toIso8601String(),
-      });
+      if (createPendingOperation) {
+        // -------------------- PENDING QUEUE ---------------------------------
+        final pendingPayload = {
+          'header': header.toMap(),
+          'items': items.map((i) => i.toMap()).toList(),
+        };
+
+        await txn.insert('pending_operation', {
+          'operation_type': 'goods_receipt',
+          'payload': jsonEncode(pendingPayload),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        debugPrint("Created pending_operation for goods receipt.");
+      }
     });
     return headerId;
   }
@@ -268,5 +269,19 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
               code: e['code'] as String? ?? '',
             ))
         .toList();
+  }
+
+  @override
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
+    final db = await dbHelper.database;
+    final maps = await db.query('purchase_order', where: 'status = ?', whereArgs: [0], orderBy: 'tarih DESC');
+    return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
+  }
+
+  @override
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
+    final db = await dbHelper.database;
+    final maps = await db.query('purchase_order_item', where: 'siparis_id = ?', whereArgs: [orderId]);
+    return maps.map((map) => PurchaseOrderItem.fromMap(map)).toList();
   }
 }

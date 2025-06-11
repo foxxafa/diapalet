@@ -54,14 +54,14 @@ class DiapaletApp extends StatelessWidget {
           create: (_) => NetworkInfoImpl(Connectivity()),
         ),
         
-        ProxyProvider<DatabaseHelper, GoodsReceivingLocalDataSource>(
-          update: (_, dbHelper, __) => GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper),
+        ProxyProvider2<DatabaseHelper, SyncService, GoodsReceivingLocalDataSource>(
+          update: (_, dbHelper, syncService, __) => GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper, syncService: syncService),
         ),
         Provider<GoodsReceivingRemoteDataSource>(
           create: (_) => GoodsReceivingRemoteDataSourceImpl(),
         ),
-        ProxyProvider<DatabaseHelper, PalletAssignmentLocalDataSource>(
-          update: (_, dbHelper, __) => PalletAssignmentLocalDataSourceImpl(dbHelper: dbHelper),
+        ProxyProvider2<DatabaseHelper, SyncService, PalletAssignmentLocalDataSource>(
+          update: (_, dbHelper, syncService, __) => PalletAssignmentLocalDataSourceImpl(dbHelper: dbHelper, syncService: syncService),
         ),
         Provider<PalletAssignmentRemoteDataSource>(
           create: (_) => PalletAssignmentRemoteDataSourceImpl(),

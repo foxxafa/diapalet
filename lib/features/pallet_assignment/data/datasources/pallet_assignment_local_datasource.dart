@@ -1,4 +1,5 @@
 // lib/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:diapalet/core/local/database_helper.dart';
@@ -11,12 +12,14 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_ite
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 
 abstract class PalletAssignmentLocalDataSource {
-  Future<void> saveTransferOperationToLocalDB(TransferOperationHeader header, List<TransferItemDetail> items);
-  Future<void> queueTransferOperationForSync(TransferOperationHeader header, List<TransferItemDetail> items);
-  
+  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items, {bool createPendingOperation});
+  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations();
+  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId);
   Future<List<LocationInfo>> getDistinctLocations();
   Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode);
   Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode);
+  Future<List<BoxItem>> getBoxesAtLocation(int locationId);
+  Future<void> markTransferOperationAsSynced(int operationId);
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -26,41 +29,53 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
   PalletAssignmentLocalDataSourceImpl({required this.dbHelper, required this.syncService});
   
   @override
-  Future<void> saveTransferOperationToLocalDB(TransferOperationHeader header, List<TransferItemDetail> items) async {
+  Future<int> saveTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items, {bool createPendingOperation = true}) async {
     final db = await dbHelper.database;
+    late int opId;
+
     await db.transaction((txn) async {
-      int opId = await txn.insert('transfer_operation', header.toMap());
+      opId = await txn.insert('transfer_operation', header.toMapForDb());
 
       for (final item in items) {
         await txn.insert('transfer_item', {
-          ...item.toMap(),
           'operation_id': opId,
+          'product_id': item.productId,
+          'quantity': item.quantity,
         });
 
-        // Update local inventory based on the transfer
-        await _updateInventoryInTransaction(txn, item.productId, header.sourceLocationId, -item.quantity, header.containerId);
-        await _updateInventoryInTransaction(txn, item.productId, header.targetLocationId, item.quantity, header.containerId);
+        if (header.operationType == AssignmentMode.pallet) {
+          await txn.update(
+            'inventory_stock',
+            {'location_id': header.targetLocationId},
+            where: 'pallet_barcode = ? AND location_id = ?',
+            whereArgs: [header.containerId, header.sourceLocationId],
+          );
+        } else {
+          await _updateInventory(txn, item.productId, header.sourceLocationId, -item.quantity);
+          await _updateInventory(txn, item.productId, header.targetLocationId, item.quantity);
+        }
+      }
+
+      if (createPendingOperation) {
+        final pendingPayload = {
+          "header": header.toMap(),
+          "items": items.map((it) => it.toMap()).toList(),
+        };
+        await txn.insert('pending_operation', {
+          'operation_type': header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer',
+          'payload': jsonEncode(pendingPayload),
+          'created_at': DateTime.now().toIso8601String(),
+        });
       }
     });
-    debugPrint("Saved transfer operation to local DB (Online Mode).");
+    return opId;
   }
 
-  @override
-  Future<void> queueTransferOperationForSync(TransferOperationHeader header, List<TransferItemDetail> items) async {
-    final payload = {
-      "header": header.toMap(),
-      "items": items.map((item) => item.toMap()).toList(),
-    };
-    final opType = header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer';
-    await syncService.addPendingOperation(opType, payload);
-    debugPrint("Queued transfer operation for sync (Offline Mode).");
-  }
-
-  Future<void> _updateInventoryInTransaction(DatabaseExecutor txn, int productId, int locationId, int quantityChange, String? palletBarcode) async {
+  Future<void> _updateInventory(DatabaseExecutor txn, int productId, int locationId, int quantityChange) async {
     // This logic handles stock changes for both pallet and box transfers within a transaction
     final existing = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND pallet_barcode ${palletBarcode == null ? 'IS NULL' : '= ?'}',
-        whereArgs: palletBarcode == null ? [productId, locationId] : [productId, locationId, palletBarcode],
+        where: 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL',
+        whereArgs: [productId, locationId],
         limit: 1);
 
     if (existing.isNotEmpty) {
@@ -76,9 +91,22 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
         'urun_id': productId,
         'location_id': locationId,
         'quantity': quantityChange,
-        'pallet_barcode': palletBarcode,
       });
     }
+  }
+
+  @override
+  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations() async {
+    final db = await dbHelper.database;
+    final rows = await db.query('transfer_operation', where: 'synced = 0', orderBy: 'id DESC');
+    return rows.map((e) => TransferOperationHeader.fromMap(e)).toList();
+  }
+
+  @override
+  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId) async {
+    final db = await dbHelper.database;
+    final rows = await db.query('transfer_item', where: 'operation_id = ?', whereArgs: [operationId]);
+    return rows.map((e) => TransferItemDetail.fromMap(e)).toList();
   }
 
   @override
@@ -148,5 +176,22 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       }
     }
     return [];
+  }
+
+  @override
+  Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
+    final db = await dbHelper.database;
+    final rows = await db.query('inventory_stock',
+      columns: ['urun_id'],
+      where: 'location_id = ? AND pallet_barcode IS NULL AND quantity > 0',
+      whereArgs: [locationId]
+    );
+    return rows.map((e) => BoxItem(productId: e['urun_id'] as int)).toList();
+  }
+
+  @override
+  Future<void> markTransferOperationAsSynced(int operationId) async {
+    final db = await dbHelper.database;
+    await db.update('transfer_operation', {'synced': 1}, where: 'id = ?', whereArgs: [operationId]);
   }
 }
