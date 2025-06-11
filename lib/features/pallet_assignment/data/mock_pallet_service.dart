@@ -70,17 +70,21 @@ class MockPalletService implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<String>> getContainerIdsByLocation(String locationName, int locationId, AssignmentMode mode) async {
-    debugPrint("MockPalletService: Fetching container IDs at location ID: $locationId (Name: $locationName)");
+  Future<List<String>> getContainerIdsByLocation(String locationName, AssignmentMode mode) async {
+    debugPrint("MockPalletService: Fetching container IDs at location: $locationName");
     await Future.delayed(const Duration(milliseconds: 200));
-    return _locationContainers[locationId] ?? [];
+    final loc = _mockLocations.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
+    if (loc.id == -1) return [];
+    return _locationContainers[loc.id] ?? [];
   }
 
   @override
-  Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
-    debugPrint("MockPalletService: Fetching boxes at location ID: $locationId");
+  Future<List<BoxItem>> getBoxesAtLocation(String locationName) async {
+    debugPrint("MockPalletService: Fetching boxes at location: $locationName");
     await Future.delayed(const Duration(milliseconds: 150));
-    final containerIds = _locationContainers[locationId] ?? [];
+    final loc = _mockLocations.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
+    if (loc.id == -1) return [];
+    final containerIds = _locationContainers[loc.id] ?? [];
     
     final boxIds = containerIds.where((id) => int.tryParse(id) != null).toList();
 
@@ -102,7 +106,12 @@ class MockPalletService implements PalletAssignmentRepository {
   }
 
   @override
-  Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+  Future<void> recordTransferOperation(
+    TransferOperationHeader header,
+    List<TransferItemDetail> items, {
+    required String sourceLocationName,
+    required String targetLocationName,
+  }) async {
     debugPrint('MockPalletService: Recording Transfer Operation...');
     await Future.delayed(const Duration(milliseconds: 200));
 
@@ -111,7 +120,7 @@ class MockPalletService implements PalletAssignmentRepository {
 
     final newItems = items.map((item) => TransferItemDetail(
       id: _nextTransferItemId++,
-      operationId: newHeader.id!,
+      operationId: newHeader.id,
       productId: item.productId,
       productCode: item.productCode,
       productName: item.productName,
@@ -120,15 +129,14 @@ class MockPalletService implements PalletAssignmentRepository {
     _savedTransferItems[newHeader.id!] = newItems;
 
     debugPrint('Mock Saved Transfer - ID: ${newHeader.id}, Mode: ${newHeader.operationType.name}, Synced: ${newHeader.synced}');
-    debugPrint('  Source ID: ${newHeader.sourceLocationId}');
-    debugPrint('  Target ID: ${newHeader.targetLocationId}');
+    debugPrint('  Source Location: $sourceLocationName');
+    debugPrint('  Target Location: $targetLocationName');
     debugPrint('  Items (${newItems.length}):');
     for (var item in newItems) {
       debugPrint('    - ProductID: ${item.productId}, Name: ${item.productName}, Qty: ${item.quantity}');
     }
     
     _nextTransferOpId++;
-    return newHeader.id!;
   }
 
   @override

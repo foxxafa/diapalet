@@ -62,18 +62,24 @@ class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<String>> getContainerIdsByLocation(String locationName, int locationId, AssignmentMode mode) async {
+  Future<List<String>> getContainerIdsByLocation(String locationName, AssignmentMode mode) async {
     if (await networkInfo.isConnected) {
       try {
         debugPrint("ONLINE: Fetching container IDs from remote for location: $locationName");
         return await remoteDataSource.fetchContainerIds(locationName, mode);
       } catch (e) {
         debugPrint("ONLINE_ERROR: Failed to fetch remote container IDs, falling back to local. Error: $e");
-        return await localDataSource.getContainerIdsByLocation(locationId, mode);
+        final locList = await localDataSource.getDistinctLocations();
+        final loc = locList.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
+        if (loc.id == -1) return [];
+        return await localDataSource.getContainerIdsByLocation(loc.id, mode);
       }
     } else {
-      debugPrint("OFFLINE: Fetching container IDs from local for location ID: $locationId");
-      return await localDataSource.getContainerIdsByLocation(locationId, mode);
+      debugPrint("OFFLINE: Fetching container IDs from local for location: $locationName");
+      final locList = await localDataSource.getDistinctLocations();
+      final loc = locList.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
+      if (loc.id == -1) return [];
+      return await localDataSource.getContainerIdsByLocation(loc.id, mode);
     }
   }
 

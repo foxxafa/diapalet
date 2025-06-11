@@ -9,6 +9,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 
 import '../../../core/network/network_info.dart';
+import 'package:flutter/foundation.dart';
 
 /// A repository that combines a remote and local data source.
 /// It implements an offline-first strategy.
@@ -27,7 +28,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     try {
       // Always fetch from remote, as this is for online mode.
-      final remoteOrders = await remoteDataSource.getOpenPurchaseOrders();
+      final remoteOrders = await remoteDataSource.fetchOpenPurchaseOrders();
       return remoteOrders;
     } catch (e) {
       // In a real-world scenario, you might want to handle network errors gracefully.
@@ -39,7 +40,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     try {
       // Always fetch from remote for this specific feature.
-      final remoteItems = await remoteDataSource.getPurchaseOrderItems(orderId);
+      final remoteItems = await remoteDataSource.fetchPurchaseOrderItems(orderId);
       return remoteItems;
     } catch (e) {
       throw Exception('Failed to fetch purchase order items: $e');
@@ -49,7 +50,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<ProductInfo>> getProductsForDropdown() async {
     try {
-      final products = await remoteDataSource.getProductsForDropdown();
+      final products = await remoteDataSource.fetchProductsForDropdown();
       return products;
     } catch (e) {
       throw Exception('Failed to fetch products: $e');
@@ -71,26 +72,26 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   // --- Methods that might need a more complex offline strategy ---
 
-  @override
+  // This helper method is invoked by SyncService to push pending data when connectivity is restored.
   Future<void> syncPendingGoodsReceipts() async {
     final unsyncedReceipts = await localDataSource.getUnsyncedGoodsReceipts();
     for (final receipt in unsyncedReceipts) {
       final items = await localDataSource.getItemsForGoodsReceipt(receipt.id!);
       try {
-        final success = await remoteDataSource.postGoodsReceipt(receipt, items);
+        final success = await remoteDataSource.sendGoodsReceipt(receipt, items);
         if (success) {
           await localDataSource.markGoodsReceiptAsSynced(receipt.id!);
         }
       } catch (e) {
         // Handle sync error, maybe log it or retry later.
-        print('Failed to sync receipt ${receipt.id}: $e');
+        debugPrint('Failed to sync receipt ${receipt.id}: $e');
       }
     }
   }
 
   @override
   Future<List<LocationInfo>> getLocationsForDropdown() async {
-    return await remoteDataSource.getLocations();
+    return await remoteDataSource.fetchLocationsForDropdown();
   }
 
   // These methods are primarily for the sync process to check local data.
@@ -102,6 +103,25 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<GoodsReceiptItem>> getItemsForGoodsReceipt(int receiptId) {
     return localDataSource.getItemsForGoodsReceipt(receiptId);
+  }
+
+  // Add implementation for getInvoices (online-first, fallback to local)
+  @override
+  Future<List<String>> getInvoices() async {
+    try {
+      if (await networkInfo.isConnected) {
+        return await remoteDataSource.fetchInvoices();
+      }
+      // Offline fallback
+      return await localDataSource.getInvoiceNumbers();
+    } catch (e) {
+      throw Exception('Failed to fetch invoices: $e');
+    }
+  }
+
+  @override
+  Future<void> markGoodsReceiptAsSynced(int receiptId) async {
+    await localDataSource.markGoodsReceiptAsSynced(receiptId);
   }
 }
 
