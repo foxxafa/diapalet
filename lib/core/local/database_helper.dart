@@ -134,10 +134,13 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE goods_receipt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        external_id   TEXT NOT NULL UNIQUE,
-        invoice_number TEXT NOT NULL,
-        receipt_date   TEXT NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0
+        external_id    TEXT UNIQUE,
+        siparis_id     INTEGER,
+        employee_id    INTEGER,
+        invoice_number TEXT,
+        receipt_date   TEXT,
+        created_at     TEXT,
+        synced         INTEGER NOT NULL DEFAULT 0
       )
     ''');
 

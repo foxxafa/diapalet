@@ -3,55 +3,55 @@ from flask_cors import CORS
 from datetime import datetime
 import os
 import mysql.connector as mysql
+from contextlib import contextmanager
 
 # -----------------------------------------------------------------------------
 # Basic configuration – use environment variables for sensitive information
 # -----------------------------------------------------------------------------
+app = Flask(__name__)
+CORS(app)
 
-def get_db_connection():
-    return mysql.connect(
+@contextmanager
+def get_db():
+    """Provides a transactional database connection and cursor."""
+    conn = mysql.connect(
         host=os.environ.get("DB_HOST", "localhost"),
         user=os.environ.get("DB_USER", "root"),
         password=os.environ.get("DB_PASSWORD", "123456"),
         database=os.environ.get("DB_NAME", "diapalet_test"),
-        autocommit=True,
     )
-
-app = Flask(__name__)
-CORS(app)
+    cur = conn.cursor(dictionary=True)
+    try:
+        yield conn, cur
+        conn.commit()
+    except mysql.Error as err:
+        conn.rollback()
+        # In a real app, you'd want to log this error.
+        print(f"Database transaction failed: {err}")
+        # Re-raise the exception to be handled by the caller or Flask's error handler
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 # -----------------------------------------------------------------------------
 # Helper utilities
 # -----------------------------------------------------------------------------
 
-def query_one(sql: str, params: tuple = ()):  # Expect only one row
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    cur.execute(sql, params)
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row
-
+def query_one(sql: str, params: tuple = ()):
+    with get_db() as (_, cur):
+        cur.execute(sql, params)
+        return cur.fetchone()
 
 def query_all(sql: str, params: tuple = ()):
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return rows
+    with get_db() as (_, cur):
+        cur.execute(sql, params)
+        return cur.fetchall()
 
-
-def execute(sql: str, params: tuple = ()):  # Insert / update / delete
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(sql, params)
-    last_id = cur.lastrowid
-    cur.close()
-    conn.close()
-    return last_id
+def execute(sql: str, params: tuple = ()):
+    with get_db() as (conn, cur):
+        cur.execute(sql, params)
+        return cur.lastrowid
 
 # -----------------------------------------------------------------------------
 # API v1 – master data
@@ -74,14 +74,10 @@ def get_source_locations():
 def get_target_locations():
     return jsonify(_get_all_locations())
 
-
 @app.route("/v1/products/dropdown", methods=["GET"])
 def get_products_for_dropdown():
-    rows = query_all(
-        "SELECT UrunId AS id, UrunAdi AS name, StokKodu AS code FROM urunler WHERE aktif = 1 ORDER BY UrunAdi"
-    )
+    rows = query_all("SELECT UrunId AS id, UrunAdi AS name, StokKodu AS code FROM urunler WHERE aktif = 1 ORDER BY UrunAdi")
     return jsonify(rows)
-
 
 # -----------------------------------------------------------------------------
 # Purchase orders (open == status = 0)
@@ -99,16 +95,12 @@ def get_open_purchase_orders():
     )
     return jsonify(orders)
 
-
 @app.route("/v1/purchase-orders/<int:order_id>/items", methods=["GET"])
 def get_purchase_order_items(order_id):
     items = query_all(
         """
-        SELECT s.id AS id,
-               u.UrunAdi AS productName,
-               s.urun_id AS productId,
-               s.miktar    AS orderedQuantity,
-               s.birim     AS unit
+        SELECT s.id, u.UrunAdi AS productName, s.urun_id AS productId,
+               s.miktar AS orderedQuantity, s.birim AS unit
         FROM satin_alma_siparis_fis_satir s
         JOIN urunler u ON u.UrunId = s.urun_id
         WHERE s.siparis_id = %s
@@ -124,7 +116,6 @@ def get_purchase_order_items(order_id):
 def _create_goods_receipt(data):
     header = data.get("header")
     items = data.get("items", [])
-
     if not header or not items:
         return {"error": "Invalid payload"}, 400
 
@@ -133,47 +124,49 @@ def _create_goods_receipt(data):
     invoice_number = header.get("invoice_number")
     receipt_date = header.get("receipt_date") or datetime.utcnow().isoformat()
 
-    # Insert header
-    receipt_id = execute(
-        """
-        INSERT INTO goods_receipts (siparis_id, invoice_number, employee_id, receipt_date)
-        VALUES (%s, %s, %s, %s)
-        """,
-        (siparis_id, invoice_number, employee_id, receipt_date),
-    )
-
-    # Insert items and update stock
-    for item in items:
-        urun_id = item["urun_id"]
-        qty     = item.get("quantity", 0)
-        pallet_barcode = item.get("pallet_barcode")
-        execute(
-            """
-            INSERT INTO goods_receipt_items (receipt_id, urun_id, quantity_received, pallet_barcode)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (receipt_id, urun_id, qty, pallet_barcode),
-        )
-        # MAL KABUL location id assumed to be 1
-        upsert_stock(urun_id, 1, qty, pallet_barcode)
-
-    # If an order is associated, update its status to 'closed' (1)
-    # and set the invoice number if provided.
-    if siparis_id:
-        # Assuming status=1 means 'closed/completed'
-        if invoice_number:
-            execute(
-                "UPDATE satin_alma_siparis_fis SET status = 1, invoice = %s WHERE id = %s",
-                (invoice_number, siparis_id)
+    try:
+        with get_db() as (conn, cur):
+            # Insert header
+            cur.execute(
+                """
+                INSERT INTO goods_receipts (siparis_id, invoice_number, employee_id, receipt_date, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                """,
+                (siparis_id, invoice_number, employee_id, receipt_date),
             )
-        else:
-            execute(
-                "UPDATE satin_alma_siparis_fis SET status = 1 WHERE id = %s",
-                (siparis_id,)
-            )
+            receipt_id = cur.lastrowid
 
-    return {"receipt_id": receipt_id}, 201
+            # Insert items and update stock
+            for item in items:
+                urun_id = item["urun_id"]
+                qty = item.get("quantity", 0)
+                pallet_barcode = item.get("pallet_barcode")
+                cur.execute(
+                    """
+                    INSERT INTO goods_receipt_items (receipt_id, urun_id, quantity_received, pallet_barcode)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (receipt_id, urun_id, qty, pallet_barcode),
+                )
+                # MAL KABUL location id is assumed to be 1
+                upsert_stock(cur, urun_id, 1, qty, pallet_barcode)
 
+            # If an order is associated, update its status
+            if siparis_id:
+                if invoice_number:
+                    cur.execute(
+                        "UPDATE satin_alma_siparis_fis SET status = 1, invoice = %s, updated_at = NOW() WHERE id = %s",
+                        (invoice_number, siparis_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE satin_alma_siparis_fis SET status = 1, updated_at = NOW() WHERE id = %s",
+                        (siparis_id,)
+                    )
+        return {"receipt_id": receipt_id}, 201
+    except mysql.Error as err:
+        # The error is already printed by the context manager
+        return {"error": f"Database error occurred."}, 500
 
 @app.route("/v1/goods-receipts", methods=["POST"])
 def post_goods_receipt():
@@ -181,22 +174,16 @@ def post_goods_receipt():
     result, status_code = _create_goods_receipt(data)
     return jsonify(result), status_code
 
-
 # -----------------------------------------------------------------------------
-# Pallet Operations
+# Pallet Operations (Placeholder)
 # -----------------------------------------------------------------------------
 
 @app.route("/v1/pallets", methods=["POST"])
 def create_pallet():
-    # Bu endpoint için henüz bir işlevsellik tanımlanmamış.
-    # Gerekirse, veritabanına yeni bir palet eklemek için kod ekleyebilirsiniz.
     return jsonify({"status": "ok", "pallet_id": f"PALLET_{datetime.utcnow().timestamp()}"}), 201
-
 
 @app.route("/v1/pallets/<string:pallet_id>/items", methods=["POST"])
 def add_items_to_pallet(pallet_id):
-    # Bu endpoint için henüz bir işlevsellik tanımlanmamış.
-    # Gerekirse, belirli bir palete ürün eklemek için kod ekleyebilirsiniz.
     return jsonify({"status": "ok"}), 200
 
 # -----------------------------------------------------------------------------
@@ -206,75 +193,51 @@ def add_items_to_pallet(pallet_id):
 def _create_transfer(data):
     header = data.get("header")
     items = data.get("items", [])
-
     if not header or not items:
         return {"error": "Invalid payload"}, 400
 
-    operation_type  = header.get("operation_type")  # pallet or box
-    src_name        = header.get("source_location")
-    dst_name        = header.get("target_location")
-    pallet_barcode  = header.get("pallet_id")  # Palet barkodu veya None (kutu akışı)
-    employee_id     = header.get("employee_id")
-    transfer_date   = header.get("transfer_date") or datetime.utcnow().isoformat()
+    operation_type = header.get("operation_type")
+    src_id = header.get("source_location_id") # Changed from name to ID
+    dst_id = header.get("target_location_id") # Changed from name to ID
+    pallet_barcode = header.get("pallet_id")
+    employee_id = header.get("employee_id")
+    transfer_date = header.get("transfer_date") or datetime.utcnow().isoformat()
 
-    # Map location names to IDs
-    src = query_one("SELECT id FROM locations WHERE name = %s", (src_name,))
-    dst = query_one("SELECT id FROM locations WHERE name = %s", (dst_name,))
-    if not src or not dst:
-        return {"error": "Invalid source/target location"}, 400
+    if not src_id or not dst_id:
+         return {"error": "Invalid source/target location ID"}, 400
 
-    # ------------------------------------------------------------------
-    # PALET TRANSFERİ – paletin tamamını bir lokasyondan diğerine taşı
-    # ------------------------------------------------------------------
-    if operation_type in ("pallet", "pallet_transfer"):
-        # 1) Stok tablosunda ilgili paletin tüm satırlarının lokasyonunu güncelle
-        conn = get_db_connection()
-        cur  = conn.cursor()
-        cur.execute(
-            """
-            UPDATE inventory_stock
-            SET location_id = %s, updated_at = NOW()
-            WHERE location_id = %s AND pallet_barcode = %s
-            """,
-            (dst["id"], src["id"], pallet_barcode),
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        # 2) Her ürün için transfer hareketi kaydet (raporlama için)
-        for item in items:
-            urun_id = item["product_id"]
-            qty     = item["quantity"]
-            execute(
-                """
-                INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (urun_id, src["id"], dst["id"], qty, pallet_barcode, employee_id, transfer_date),
-            )
+    try:
+        with get_db() as (conn, cur):
+            if operation_type in ("pallet", "pallet_transfer"):
+                cur.execute(
+                    "UPDATE inventory_stock SET location_id = %s, updated_at = NOW() WHERE location_id = %s AND pallet_barcode = %s",
+                    (dst_id, src_id, pallet_barcode),
+                )
+                # Log transfer for each item on the pallet
+                for item in items:
+                    cur.execute(
+                        """
+                        INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (item["product_id"], src_id, dst_id, item["quantity"], pallet_barcode, employee_id, transfer_date),
+                    )
+            else: # Box transfer
+                for item in items:
+                    urun_id = item["product_id"]
+                    qty = item["quantity"]
+                    cur.execute(
+                        """
+                        INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (urun_id, src_id, dst_id, qty, None, employee_id, transfer_date),
+                    )
+                    upsert_stock(cur, urun_id, src_id, -qty, None)
+                    upsert_stock(cur, urun_id, dst_id, qty, None)
         return {"status": "success"}, 200
-
-    # ------------------------------------------------------------------
-    # KUTU TRANSFERİ – belirli miktar kutuyu taşı
-    # ------------------------------------------------------------------
-    for item in items:
-        urun_id = item["product_id"]
-        qty     = item["quantity"]
-        # Hareket kaydı
-        execute(
-            """
-            INSERT INTO inventory_transfers (urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (urun_id, src["id"], dst["id"], qty, pallet_barcode, employee_id, transfer_date),
-        )
-        # Stok güncelle – kaynak azalt, hedef artır
-        upsert_stock(urun_id, src["id"], -qty, None)  # kutu akışında pallet_barcode yok
-        upsert_stock(urun_id, dst["id"],  qty, None)
-
-    return {"status": "success"}, 200
-
+    except mysql.Error as err:
+        return {"error": "Database error occurred."}, 500
 
 @app.route("/v1/transfers", methods=["POST"])
 def post_transfer():
@@ -282,231 +245,144 @@ def post_transfer():
     result, status_code = _create_transfer(data)
     return jsonify(result), status_code
 
-
 # -----------------------------------------------------------------------------
-# Helper to update stock (insert or increment)
+# Helper to update stock (now requires a cursor)
 # -----------------------------------------------------------------------------
 
-def upsert_stock(urun_id: int, location_id: int, qty: float, pallet_barcode: str | None):
-    """Insert / update stock row.
-
-    * Mevcut kayıt varsa, miktarı arttır/azalt.
-    * Yeni miktar 0 veya altına düşerse kayıt silinir.
-    * Kayıt yoksa ve qty > 0 ise yeni kayıt oluşturulur.
-    """
-    conn = get_db_connection()
-    cur  = conn.cursor(dictionary=True)
-
-    # Sorgu, pallet_barcode NULL / NOT NULL durumuna göre farklılık gösterir
+def upsert_stock(cur, urun_id: int, location_id: int, qty: float, pallet_barcode: str | None):
+    """Insert/update stock row using a provided cursor to support transactions."""
     if pallet_barcode is None:
         cur.execute(
-            """
-            SELECT id, quantity FROM inventory_stock
-            WHERE urun_id = %s AND location_id = %s AND pallet_barcode IS NULL
-            """,
+            "SELECT id, quantity FROM inventory_stock WHERE urun_id = %s AND location_id = %s AND pallet_barcode IS NULL",
             (urun_id, location_id),
         )
     else:
         cur.execute(
-            """
-            SELECT id, quantity FROM inventory_stock
-            WHERE urun_id = %s AND location_id = %s AND pallet_barcode = %s
-            """,
+            "SELECT id, quantity FROM inventory_stock WHERE urun_id = %s AND location_id = %s AND pallet_barcode = %s",
             (urun_id, location_id, pallet_barcode),
         )
-
     row = cur.fetchone()
 
     if row:
         new_qty = (row["quantity"] or 0) + qty
         if new_qty <= 0:
-            # Miktar 0 veya negatif olduysa satırı sil
             cur.execute("DELETE FROM inventory_stock WHERE id = %s", (row["id"],))
         else:
-            cur.execute(
-                """
-                UPDATE inventory_stock
-                SET quantity = %s, updated_at = NOW()
-                WHERE id = %s
-                """,
-                (new_qty, row["id"]),
-            )
-    else:
-        # Kayıt yoksa ve pozitif miktar ekleniyorsa yeni satır oluştur
-        if qty > 0:
-            cur.execute(
-                """
-                INSERT INTO inventory_stock (urun_id, location_id, quantity, pallet_barcode)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (urun_id, location_id, qty, pallet_barcode),
-            )
-    conn.commit()
-    cur.close()
-    conn.close()
+            cur.execute("UPDATE inventory_stock SET quantity = %s, updated_at = NOW() WHERE id = %s", (new_qty, row["id"]))
+    elif qty > 0:
+        cur.execute(
+            "INSERT INTO inventory_stock (urun_id, location_id, quantity, pallet_barcode, updated_at) VALUES (%s, %s, %s, %s, NOW())",
+            (urun_id, location_id, qty, pallet_barcode),
+        )
 
 # -----------------------------------------------------------------------------
-# Device Registration & Sync endpoints
+# Device Sync endpoints
 # -----------------------------------------------------------------------------
 
 @app.route("/api/register_device", methods=["POST"])
 def register_device():
-    payload = request.get_json(force=True)
-    device_id = payload.get("device_id")
-    # Here you would store device info to a table (devices). For brevity, we just echo success.
+    device_id = request.get_json(force=True).get("device_id")
     return jsonify({"device_id": device_id, "status": "registered"}), 200
-
 
 @app.route("/api/sync/upload", methods=["POST"])
 def sync_upload():
+    # This function now correctly uses the transactional _create functions
     payload = request.get_json(force=True)
     operations = payload.get("operations", [])
     for op in operations:
         op_type = op.get("operation_type")
         data = op.get("operationData", {})
-
-        if op_type == "goods_receipt":
-            # Gelen veriyi _create_goods_receipt'in beklediği formata dönüştür
-            formatted_data = {
-                "header": {
-                    "invoice_number": data.get("invoice_number"),
-                    "receipt_date": data.get("receipt_date"),
-                    # employee_id ve siparis_id gibi eksik bilgiler mobil taraftan eklenmeli
-                    # veya burada varsayılan değerler atanmalıdır.
-                    "employee_id": data.get("employee_id", 1),
-                    "siparis_id": data.get("siparis_id")
-                },
-                "items": [
-                    {
-                        "urun_id": item.get("product_id"),
-                        "quantity": item.get("quantity"),
-                        "pallet_barcode": item.get("pallet_id")
-                    } for item in data.get("items", [])
-                ]
-            }
-            _create_goods_receipt(formatted_data)
-
-        elif op_type in ("pallet_transfer", "box_transfer"):
-            # Gelen veriyi _create_transfer'in beklediği formata dönüştür
-            formatted_data = {
-                "header": {
-                    "operation_type": op_type,
-                    "source_location": data.get("source_location"),
-                    "target_location": data.get("target_location"),
-                    "pallet_id": data.get("pallet_id"),
-                    "transfer_date": data.get("transfer_date"),
-                    # employee_id mobil taraftan eklenmeli veya varsayılan atanmalı
-                    "employee_id": data.get("employee_id", 1)
-                },
-                "items": [
-                    {
-                        "product_id": item.get("product_id"),
-                        "quantity": item.get("quantity")
-                    } for item in data.get("items", [])
-                ]
-            }
-            _create_transfer(formatted_data)
-        else:
-            continue
+        try:
+            if op_type == "goods_receipt":
+                _create_goods_receipt({
+                    "header": {
+                        "invoice_number": data.get("invoice_number"),
+                        "receipt_date": data.get("receipt_date"),
+                        "employee_id": data.get("employee_id", 1),
+                        "siparis_id": data.get("siparis_id")
+                    },
+                    "items": data.get("items", [])
+                })
+            elif op_type in ("pallet_transfer", "box_transfer"):
+                _create_transfer({
+                    "header": {
+                        "operation_type": op_type,
+                        "source_location_id": data.get("source_location_id"),
+                        "target_location_id": data.get("target_location_id"),
+                        "pallet_id": data.get("pallet_id"),
+                        "transfer_date": data.get("transfer_date"),
+                        "employee_id": data.get("employee_id", 1)
+                    },
+                    "items": data.get("items", [])
+                })
+        except Exception as e:
+            # In a real app, log this failure and perhaps store it for retry
+            print(f"Failed to process uploaded operation: {op_type}, error: {e}")
+            continue # Continue to next operation
     return jsonify({"success": True}), 200
-
 
 @app.route("/api/sync/download", methods=["POST"])
 def sync_download():
     payload = request.get_json(force=True)
-
-    # Optional incremental sync timestamp (ISO 8601 string). If provided, only
-    # rows created/updated after this timestamp will be returned *for tables
-    # that have such columns*; otherwise, the whole table is returned.
     last_sync_iso = payload.get("last_sync")
     try:
-        last_sync_dt = (
-            datetime.fromisoformat(last_sync_iso.replace("Z", "+00:00")) if last_sync_iso else None
-        )
-    except Exception:
+        last_sync_dt = datetime.fromisoformat(last_sync_iso.replace("Z", "+00:00")) if last_sync_iso else None
+    except (ValueError, TypeError):
         last_sync_dt = None
 
     def _build_inc_clause(columns: list[str]):
-        """Return sql clause and params respecting available timestamp columns."""
-        if not last_sync_dt or not columns:
-            return "", ()
-        cond_parts = [f"{col} >= %s" for col in columns]
-        return " WHERE " + " OR ".join(cond_parts), tuple([last_sync_dt] * len(columns))
+        if not last_sync_dt or not columns: return "", ()
+        conds = [f"{col} >= %s" for col in columns]
+        return " WHERE " + " OR ".join(conds), tuple([last_sync_dt] * len(conds))
 
-    def _fetch(sql: str, params: tuple = ()):  # tiny helper for brevity
+    def _fetch(sql: str, params: tuple = ()):
         return query_all(sql, params)
 
-    # ---------------------------- MASTER DATA ---------------------------------
-    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
-    products = _fetch(
-        f"""
-        SELECT UrunId AS id,
-               StokKodu AS code,
-               UrunAdi AS name,
-               aktif    AS is_active,
-               created_at, updated_at
-        FROM urunler""" + inc_clause,
-        inc_params,
-    )
+    try:
+        inc_clause_ts, inc_params_ts = _build_inc_clause(["created_at", "updated_at"])
+        inc_clause_up, inc_params_up = _build_inc_clause(["updated_at"])
+        inc_clause_cr, inc_params_cr = _build_inc_clause(["created_at"])
+        inc_clause_dt, inc_params_dt = _build_inc_clause(["transfer_date"])
 
-    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
-    locations = _fetch(
-        f"""
-        SELECT id, name, code, is_active, latitude, longitude, address, description,
-               created_at, updated_at
-        FROM locations""" + inc_clause,
-        inc_params,
-    )
-
-    # -------------------------- TRANSACTIONAL DATA ----------------------------
-    # satin_alma_siparis_fis (has created_at/updated_at)
-    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
-    purchase_orders = _fetch(
-        "SELECT * FROM satin_alma_siparis_fis" + inc_clause,
-        inc_params,
-    )
-
-    # satin_alma_siparis_fis_satir (no timestamps) -> always full
-    purchase_order_items = _fetch("SELECT * FROM satin_alma_siparis_fis_satir")
-
-    # goods_receipts (has created_at)
-    inc_clause, inc_params = _build_inc_clause(["created_at"])
-    goods_receipts = _fetch(
-        "SELECT * FROM goods_receipts" + inc_clause,
-        inc_params,
-    )
-
-    # goods_receipt_items (no timestamps) – link via goods_receipts inc
-    if last_sync_dt:
-        # fetch items where their parent receipt is in the incremental set
-        receipt_ids = [r["id"] for r in goods_receipts]
-        if receipt_ids:
+        employees = _fetch(f"SELECT id, first_name, last_name, role, is_active, created_at, updated_at FROM employees {inc_clause_ts}", inc_params_ts)
+        products = _fetch(f"SELECT UrunId AS id, StokKodu AS code, UrunAdi AS name, aktif AS is_active, created_at, updated_at FROM urunler {inc_clause_ts}", inc_params_ts)
+        locations = _fetch(f"SELECT id, name, code, is_active, latitude, longitude, address, description, created_at, updated_at FROM locations {inc_clause_ts}", inc_params_ts)
+        
+        purchase_orders = _fetch(f"SELECT id, po_id, tarih, status, notlar, user, created_at, updated_at, gun, lokasyon_id, invoice, delivery FROM satin_alma_siparis_fis {inc_clause_ts}", inc_params_ts)
+        purchase_order_items = _fetch("SELECT id, siparis_id, urun_id, miktar, birim FROM satin_alma_siparis_fis_satir") # No timestamp, full sync
+        
+        # NOTE: Excluded `created_at` as client DB doesn't have it.
+        goods_receipts = _fetch(f"SELECT id, siparis_id, invoice_number, employee_id, receipt_date FROM goods_receipts {inc_clause_cr}", inc_params_cr)
+        
+        if last_sync_dt and goods_receipts:
+            receipt_ids = [r["id"] for r in goods_receipts]
             placeholders = ",".join(["%s"] * len(receipt_ids))
-            goods_receipt_items = _fetch(
-                f"SELECT * FROM goods_receipt_items WHERE receipt_id IN ({placeholders})",
-                tuple(receipt_ids),
-            )
+            goods_receipt_items = _fetch(f"SELECT id, receipt_id, urun_id, quantity_received, pallet_barcode FROM goods_receipt_items WHERE receipt_id IN ({placeholders})", tuple(receipt_ids))
         else:
-            goods_receipt_items = []
-    else:
-        goods_receipt_items = _fetch("SELECT * FROM goods_receipt_items")
+            goods_receipt_items = _fetch("SELECT id, receipt_id, urun_id, quantity_received, pallet_barcode FROM goods_receipt_items")
+        
+        inventory_stock = _fetch(f"SELECT id, urun_id, location_id, quantity, pallet_barcode, updated_at FROM inventory_stock {inc_clause_up}", inc_params_up)
+        inventory_transfers = _fetch(f"SELECT id, urun_id, from_location_id, to_location_id, quantity, pallet_barcode, employee_id, transfer_date FROM inventory_transfers {inc_clause_dt}", inc_params_dt)
 
-    # inventory_stock (has updated_at)
-    inc_clause, inc_params = _build_inc_clause(["updated_at"])
-    inventory_stock = _fetch("SELECT * FROM inventory_stock" + inc_clause, inc_params)
+        # Using singular keys to match client-side table names
+        data = {
+            "employee": employees,
+            "product": products,
+            "location": locations,
+            "purchase_order": purchase_orders,
+            "purchase_order_item": purchase_order_items,
+            "goods_receipt": goods_receipts,
+            "goods_receipt_item": goods_receipt_items,
+            "inventory_stock": inventory_stock,
+            "inventory_transfer": inventory_transfers,
+        }
+        return jsonify({"success": True, "data": data}), 200
+    except mysql.Error as err:
+        return jsonify({"success": False, "error": "Database download failed."}), 500
 
-    # ------------------------------ RESPONSE ----------------------------------
-    data = {
-        "products": products,
-        "locations": locations,
-        "purchase_orders": purchase_orders,
-        "purchase_order_items": purchase_order_items,
-        "goods_receipts": goods_receipts,
-        "goods_receipt_items": goods_receipt_items,
-        "inventory_stock": inventory_stock,
-    }
-
-    return jsonify({"success": True, "data": data}), 200
+# -----------------------------------------------------------------------------
+# Container/Pallet Endpoints
+# -----------------------------------------------------------------------------
 
 @app.route("/v1/containers/<string:location>/ids", methods=["GET"])
 def get_container_ids(location):
@@ -515,48 +391,48 @@ def get_container_ids(location):
     if not loc_row:
         return jsonify({"error": "Location not found"}), 404
     loc_id = loc_row["id"]
+
     if mode == "pallet":
         rows = query_all(
             "SELECT DISTINCT pallet_barcode AS id FROM inventory_stock WHERE location_id = %s AND pallet_barcode IS NOT NULL",
             (loc_id,),
         )
-    else:  # box flow, return product IDs as container IDs
+        return jsonify([str(r["id"]) for r in rows])
+    else:  # Box mode returns full item details now
         rows = query_all(
-            "SELECT DISTINCT urun_id AS id FROM inventory_stock WHERE location_id = %s AND pallet_barcode IS NULL",
+            """
+            SELECT s.urun_id AS productId, u.UrunAdi AS productName, u.StokKodu as productCode, SUM(s.quantity) AS quantity
+            FROM inventory_stock s
+            JOIN urunler u ON u.UrunId = s.urun_id
+            WHERE s.location_id = %s AND s.pallet_barcode IS NULL
+            GROUP BY s.urun_id, u.UrunAdi, u.StokKodu
+            """,
             (loc_id,),
         )
-    return jsonify([str(r["id"]) for r in rows])
-
+        return jsonify(rows)
 
 @app.route("/v1/containers/<string:container_id>/contents", methods=["GET"])
 def get_container_contents(container_id):
+    # This endpoint is now primarily for pallets. Box contents are fetched via get_container_ids.
     mode = request.args.get("mode", "pallet").strip()
-    if mode == "pallet":
-        rows = query_all(
-            """
-            SELECT u.UrunAdi AS productName, s.urun_id AS productId, s.quantity
-            FROM inventory_stock s
-            JOIN urunler u ON u.UrunId = s.urun_id
-            WHERE s.pallet_barcode = %s
-            """,
-            (container_id,),
-        )
-    else:  # box mode (container_id is product id) – return total at each location
-        rows = query_all(
-            """
-            SELECT u.UrunAdi AS productName, s.location_id, l.name AS locationName, s.quantity
-            FROM inventory_stock s
-            JOIN urunler u ON u.UrunId = s.urun_id
-            JOIN locations l ON l.id = s.location_id
-            WHERE s.urun_id = %s AND s.pallet_barcode IS NULL
-            """,
-            (container_id,),
-        )
+    if mode != "pallet":
+        return jsonify([]) # Or return an error, but returning empty is safer for the client.
+
+    rows = query_all(
+        """
+        SELECT u.UrunAdi AS productName, s.urun_id AS productId, s.quantity
+        FROM inventory_stock s
+        JOIN urunler u ON u.UrunId = s.urun_id
+        WHERE s.pallet_barcode = %s
+        """,
+        (container_id,),
+    )
     return jsonify(rows)
 
 # -----------------------------------------------------------------------------
-# Start the app (only for local dev)
+# Start the app
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # Use 0.0.0.0 to make it accessible on your local network
     app.run(host="0.0.0.0", port=5000, debug=True)

@@ -13,7 +13,12 @@ import 'package:diapalet/features/goods_receiving/domain/entities/location_info.
 abstract class PalletAssignmentRemoteDataSource {
   Future<String> createNewPallet(String locationId);
   Future<bool> assignItemsToPallet(String palletId, List<PalletItem> items);
-  Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
+  Future<bool> sendTransferOperation(
+    TransferOperationHeader header,
+    List<TransferItemDetail> items, {
+    required String sourceLocationName,
+    required String targetLocationName,
+  });
   Future<List<LocationInfo>> fetchSourceLocations();
   Future<List<LocationInfo>> fetchTargetLocations();
   Future<List<String>> fetchContainerIds(String location, AssignmentMode mode);
@@ -149,13 +154,18 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
   }
 
   @override
-  Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
-    // Prepare the payload according to the new server.py structure
+  Future<bool> sendTransferOperation(
+    TransferOperationHeader header,
+    List<TransferItemDetail> items, {
+    required String sourceLocationName,
+    required String targetLocationName,
+  }) async {
+    // Prepare the payload according to the CURRENT server.py structure
     final payload = {
       "header": {
         "operation_type": header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer',
-        "source_location_id": header.sourceLocationId, // Use ID
-        "target_location_id": header.targetLocationId, // Use ID
+        "source_location": sourceLocationName, // Use name as expected by current server
+        "target_location": targetLocationName, // Use name as expected by current server
         "pallet_id": header.containerId,
         "employee_id": 1, // Example employee ID
         "transfer_date": header.transferDate.toIso8601String(),
@@ -167,7 +177,8 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
     };
 
     try {
-      final response = await _dio.post('/transfers', data: payload);
+      // NOTE: The endpoint is /v1/transfers, not just /transfers
+      final response = await _dio.post('/v1/transfers', data: payload);
       final success = response.statusCode == 200 || response.statusCode == 201;
       debugPrint("API: Transfer operation sent. Status: ${response.statusCode}");
       return success;
