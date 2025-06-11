@@ -7,11 +7,13 @@ import '../../domain/entities/purchase_order_item.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/entities/product_info.dart';
 import '../../../../core/network/api_config.dart';
+import '../../domain/entities/location_info.dart';
 
 /// Mal kabulü ile ilgili uzak sunucu (API) işlemlerini tanımlar.
 abstract class GoodsReceivingRemoteDataSource {
   Future<List<String>> fetchInvoices();
   Future<List<ProductInfo>> fetchProductsForDropdown();
+  Future<List<LocationInfo>> fetchLocationsForDropdown();
   Future<bool> sendGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
   Future<List<PurchaseOrder>> fetchOpenPurchaseOrders();
   Future<List<PurchaseOrderItem>> fetchPurchaseOrderItems(int orderId);
@@ -63,6 +65,24 @@ class GoodsReceivingRemoteDataSourceImpl implements GoodsReceivingRemoteDataSour
       }
     } on DioException catch (e) {
       debugPrint("API Error fetching products for dropdown: ${e.message}");
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<LocationInfo>> fetchLocationsForDropdown() async {
+    debugPrint("API: Fetching locations for dropdown from remote...");
+    try {
+      final response = await _dio.get('/locations/source');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List)
+            .map((json) => LocationInfo.fromMap(json))
+            .toList();
+      } else {
+        throw Exception('Failed to load locations for dropdown. Invalid data format.');
+      }
+    } on DioException catch (e) {
+      debugPrint("API Error fetching locations for dropdown: ${e.message}");
       rethrow;
     }
   }

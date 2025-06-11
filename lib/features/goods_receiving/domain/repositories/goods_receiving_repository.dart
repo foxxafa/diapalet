@@ -2,10 +2,12 @@
 import '../entities/product_info.dart';
 import '../entities/goods_receipt_entities.dart';
 import '../entities/purchase_order.dart';
+import '../entities/location_info.dart';
 
 abstract class GoodsReceivingRepository {
   Future<List<String>> getInvoices();
   Future<List<ProductInfo>> getProductsForDropdown();
+  Future<List<LocationInfo>> getLocationsForDropdown();
 
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items);
 

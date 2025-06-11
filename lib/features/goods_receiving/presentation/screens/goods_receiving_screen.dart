@@ -91,13 +91,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (!mounted) return;
 
       final locations = List<LocationInfo>.from(results[2]);
+      final malKabulLocation = locations.where((loc) => loc.name.toUpperCase() == "MAL KABUL");
+
       setState(() {
         _availableOrders = List<PurchaseOrder>.from(results[0]);
         _availableProducts = List<ProductInfo>.from(results[1]);
-        _defaultLocation = locations.firstWhere(
-          (loc) => loc.name.toUpperCase() == "MAL KABUL",
-          orElse: () => locations.isNotEmpty ? locations.first : null,
-        );
+        if (malKabulLocation.isNotEmpty) {
+          _defaultLocation = malKabulLocation.first;
+        } else {
+          _defaultLocation = locations.isNotEmpty ? locations.first : null;
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -269,8 +272,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _showSuccessSnackBar("Palet barkodu okundu: $result");
         break;
       case 'product':
+        final qrAsInt = int.tryParse(result);
         final matchedProduct = _availableProducts.firstWhere(
-              (p) => p.id == result || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
+              (p) => (qrAsInt != null && p.id == qrAsInt) || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
           orElse: () => ProductInfo.empty,
         );
         if (matchedProduct != ProductInfo.empty) {

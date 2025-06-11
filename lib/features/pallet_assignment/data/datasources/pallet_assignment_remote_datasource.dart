@@ -144,8 +144,6 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
 
   @override
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
-    final url = Uri.parse('$baseUrl/v1/transfers');
-    
     // Prepare the payload according to the new server.py structure
     final payload = {
       "header": {
@@ -157,7 +155,7 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
         "transfer_date": header.transferDate.toIso8601String(),
       },
       "items": items.map((item) => {
-        "product_id": item.productId,
+        "product_id": int.tryParse(item.productId) ?? 0,
         "quantity": item.quantity,
       }).toList(),
     };

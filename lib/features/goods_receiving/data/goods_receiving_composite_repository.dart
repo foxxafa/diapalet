@@ -7,6 +7,7 @@ import '../domain/entities/purchase_order.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
 import './local/goods_receiving_local_service.dart';
 import './remote/goods_receiving_api_service.dart';
+import '../domain/entities/location_info.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final GoodsReceivingLocalDataSource localDataSource;
@@ -47,6 +48,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
     }
     return await localDataSource.getProductsForDropdown();
+  }
+
+  @override
+  Future<List<LocationInfo>> getLocationsForDropdown() async {
+    if (await networkInfo.isConnected) {
+      try {
+        final locations = await remoteDataSource.fetchLocationsForDropdown();
+        return locations;
+      } catch (e) {
+        debugPrint("API getLocationsForDropdown error: $e. Falling back to local.");
+        return await localDataSource.getLocationsForDropdown();
+      }
+    }
+    return await localDataSource.getLocationsForDropdown();
   }
 
   @override

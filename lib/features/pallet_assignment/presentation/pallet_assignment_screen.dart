@@ -251,71 +251,96 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
        return;
     }
 
-    if (_selectedMode == AssignmentMode.box && _productsInContainer.isEmpty) {
-      _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
+    if (_selectedSourceLocation!.id == _selectedTargetLocation!.id) {
+       _showSnackBar(tr('pallet_assignment.validation.source_target_same'), isError: true);
+       return;
+    }
+    
+    if (_productsInContainer.isEmpty) {
+      _showSnackBar(tr('pallet_assignment.validation.no_products'), isError: true);
       return;
     }
+    
+    // For Box mode, validate quantity
+    if (_selectedMode == AssignmentMode.box) {
+      final qty = int.tryParse(_transferQuantityController.text) ?? 0;
+      final maxQty = _productsInContainer.first.currentQuantity;
+      if (qty <= 0 || qty > maxQty) {
+        _showSnackBar(tr('pallet_assignment.validation.invalid_quantity', namedArgs: {'max': maxQty.toString()}), isError: true);
+        return;
+      }
+    }
 
-    if (!mounted) return;
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(tr('pallet_assignment.confirm_dialog.title')),
+          content: Text(tr('pallet_assignment.confirm_dialog.message', namedArgs: {
+            'mode': _selectedMode.displayName,
+            'id': _selectedContainerId!,
+            'source': _selectedSourceLocation!.name,
+            'target': _selectedTargetLocation!.name,
+          })),
+          actions: <Widget>[
+            TextButton(
+              child: Text(tr('common.cancel')),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            ElevatedButton(
+              child: Text(tr('common.confirm')),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isSaving = true);
     try {
+      final transferDate = DateTime.now();
       final header = TransferOperationHeader(
         operationType: _selectedMode,
         sourceLocationId: _selectedSourceLocation!.id,
         targetLocationId: _selectedTargetLocation!.id,
-        containerId: _selectedContainerId!,
-        transferDate: DateTime.now(),
+        containerId: _selectedContainerId,
+        transferDate: transferDate,
       );
 
-      List<TransferItemDetail> itemsToTransfer = [];
-      if (_selectedMode == AssignmentMode.box) {
-        if (_productsInContainer.isNotEmpty) {
-          final product = _productsInContainer.first;
-          final qty = int.tryParse(_transferQuantityController.text) ?? 0;
-          if (qty > 0 && qty <= product.currentQuantity) {
-              itemsToTransfer.add(TransferItemDetail(
-                productId: product.id,
-                quantity: qty,
-                productName: product.name,
-                productCode: product.productCode,
-              ));
-          } else {
-            _showSnackBar(tr('pallet_assignment.validation.invalid_quantity'), isError: true);
-            return;
-          }
-        }
-      } else {
-        itemsToTransfer = _productsInContainer.map((p) => TransferItemDetail(
-            productId: p.id,
-            quantity: p.currentQuantity,
-            productName: p.name,
-            productCode: p.productCode,
+      final List<TransferItemDetail> items;
+      if (_selectedMode == AssignmentMode.pallet) {
+        // For pallets, transfer all items
+        items = _productsInContainer.map((p) => TransferItemDetail(
+          operationId: 0, // temp
+          productId: p.id,
+          productCode: p.productCode,
+          productName: p.name,
+          quantity: p.currentQuantity,
         )).toList();
+      } else {
+        // For boxes, transfer one item with specified quantity
+        final product = _productsInContainer.first;
+        items = [
+          TransferItemDetail(
+            operationId: 0, // temp
+            productId: product.id,
+            productCode: product.productCode,
+            productName: product.name,
+            quantity: int.parse(_transferQuantityController.text),
+          )
+        ];
       }
       
-      if (itemsToTransfer.isEmpty) {
-          _showSnackBar(tr('pallet_assignment.validation.no_items_to_transfer'), isError: true);
-          return;
-      }
+      await _repo.recordTransferOperation(header, items);
+      _showSnackBar(tr('pallet_assignment.save_success'));
+      _resetForm(resetAll: true);
 
-      await _repo.recordTransferOperation(header, itemsToTransfer);
-
-      if (mounted) {
-        String msg;
-        if (_selectedMode == AssignmentMode.box && _productsInContainer.isNotEmpty) {
-          msg = tr('pallet_assignment.transfer_saved_box', namedArgs: {'product': _productsInContainer.first.name});
-        } else {
-          msg = tr('pallet_assignment.transfer_saved', namedArgs: {'mode': _selectedMode.displayName});
-        }
-        _showSnackBar(msg);
-        _resetForm(resetAll: true);
-      }
     } catch (e) {
-      if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
+      if(mounted) _showSnackBar(tr('pallet_assignment.save_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if(mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -485,29 +510,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               children: [
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
-                _buildSearchableDropdownWithQr(
-                    controller: _sourceLocationController,
-                    label: tr('pallet_assignment.select_source'),
-                    value: _selectedSourceLocation,
-                    items: _availableSourceLocations,
-                    onSelected: (val) {
-                      if (mounted) {
-                        setState(() {
-                          _selectedSourceLocation = val;
-                          _sourceLocationController.text = val ?? "";
-                          _scannedContainerIdController.clear();
-                          _selectedContainerId = null;
-                          _boxItems = {};
-                        });
-                        _loadContainerIdsForLocation();
-                      }
-                    },
-                    onQrTap: () => _scanQrAndUpdateField('source'),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) return tr('pallet_assignment.source_required');
-                      return null;
-                    }
-                ),
+                _buildSourceLocationDropdown(),
                 const SizedBox(height: _gap),
                 _buildScannedIdSection(),
                 if (_isLoadingContainerIds)
@@ -537,25 +540,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
                       else
                         const Spacer(),
                       const SizedBox(height: _gap),
-                      _buildSearchableDropdownWithQr(
-                          controller: _targetLocationController,
-                          label: tr('pallet_assignment.select_target'),
-                          value: _selectedTargetLocation,
-                          items: _availableTargetLocations,
-                          onSelected: (val) {
-                            if (mounted) {
-                              setState(() {
-                                _selectedTargetLocation = val;
-                                _targetLocationController.text = val ?? "";
-                              });
-                            }
-                          },
-                          onQrTap: () => _scanQrAndUpdateField('target'),
-                          validator: (val) {
-                            if (val == null || val.isEmpty) return tr('pallet_assignment.target_required');
-                            return null;
-                          }
-                      ),
+                      _buildTargetLocationDropdown(),
                     ],
                   ),
                 ),
@@ -599,47 +584,67 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     );
   }
 
-  Widget _buildSearchableDropdownWithQr({
-    required TextEditingController controller,
-    required String label,
-    required String? value,
-    required List<LocationInfo> items,
-    required ValueChanged<LocationInfo?> onSelected,
-    String Function(LocationInfo)? itemLabelBuilder,
-    bool Function(LocationInfo, String)? filterFn,
-    required VoidCallback onQrTap,
-    required FormFieldValidator<String>? validator,
-  }) {
-    return SizedBox(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: controller,
-              readOnly: true,
-              decoration: _inputDecoration(label, filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
-              onTap: () async {
-                final LocationInfo? selected = await _showSearchableDropdownDialog<LocationInfo>(
-                  context: context,
-                  title: label,
-                  items: items,
-                  itemToString: (item) => itemLabelBuilder != null ? itemLabelBuilder(item) : item.location,
-                  filterCondition: (item, query) => filterFn != null
-                      ? filterFn(item, query)
-                      : item.location.toLowerCase().contains(query.toLowerCase()),
-                  initialValue: value,
-                );
-                onSelected(selected);
-              },
-              validator: validator,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-            ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(onTap: onQrTap, size: _fieldHeight),
-        ],
+  Widget _buildSourceLocationDropdown() {
+    return DropdownButtonFormField<LocationInfo>(
+      value: _selectedSourceLocation,
+      decoration: _inputDecoration(
+        'pallet_assignment.source_location_label'.tr(),
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.qr_code_scanner),
+          onPressed: () => _scanQrAndUpdateField('source'),
+        ),
       ),
+      items: _availableSourceLocations.map((location) {
+        return DropdownMenuItem<LocationInfo>(
+          value: location,
+          child: Text(location.name),
+        );
+      }).toList(),
+      onChanged: (LocationInfo? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _selectedSourceLocation = newValue;
+            _sourceLocationController.text = newValue.name;
+            _selectedContainerId = null;
+            _scannedContainerIdController.clear();
+            _productsInContainer = [];
+          });
+          _loadContainerIdsForLocation();
+        }
+      },
+      validator: (value) => value == null ? tr('pallet_assignment.validation.required') : null,
+      isExpanded: true,
+    );
+  }
+
+  Widget _buildTargetLocationDropdown() {
+    return DropdownButtonFormField<LocationInfo>(
+      value: _selectedTargetLocation,
+      decoration: _inputDecoration(
+        'pallet_assignment.target_location_label'.tr(),
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.qr_code_scanner),
+          onPressed: () => _scanQrAndUpdateField('target'),
+        ),
+      ),
+      items: _availableTargetLocations
+          .where((loc) => loc.id != _selectedSourceLocation?.id)
+          .map((location) {
+            return DropdownMenuItem<LocationInfo>(
+              value: location,
+              child: Text(location.name),
+            );
+          }).toList(),
+      onChanged: (LocationInfo? newValue) {
+        if (newValue != null) {
+          setState(() {
+            _selectedTargetLocation = newValue;
+            _targetLocationController.text = newValue.name;
+          });
+        }
+      },
+      validator: (value) => value == null ? tr('pallet_assignment.validation.required') : null,
+      isExpanded: true,
     );
   }
 

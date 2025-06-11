@@ -157,8 +157,22 @@ class GoodsReceivingLocalDataSourceImpl implements GoodsReceivingLocalDataSource
   /// Kendi başına bir işlem olarak çalışır.
   Future<void> updateStock(String productId, String location, int qty) async {
     final db = await dbHelper.database;
+    final pId = int.tryParse(productId);
+    if (pId == null) {
+      debugPrint('Error: Product ID is not a valid integer: $productId');
+      return;
+    }
+
+    final locations = await db.query('location', where: 'name = ?', whereArgs: [location], limit: 1);
+    if (locations.isEmpty) {
+      debugPrint('Error: Location not found: $location');
+      return;
+    }
+    
+    final locationId = locations.first['id'] as int;
+
     // _updateStock metodu DatabaseExecutor kabul ettiği için 'db' nesnesi ile direkt çalışabilir.
-    await _updateStock(db, productId, location, qty);
+    await _updateStock(db, pId, locationId, qty);
   }
 
   @override

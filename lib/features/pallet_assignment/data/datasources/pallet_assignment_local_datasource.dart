@@ -17,6 +17,7 @@ abstract class PalletAssignmentLocalDataSource {
   Future<List<String>> getContainerIdsByLocation(int locationId);
   Future<List<ProductItem>> getContainerContent(String containerId);
   Future<List<BoxItem>> getBoxesAtLocation(int locationId);
+  Future<void> markTransferOperationAsSynced(int operationId);
 }
 
 class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSource {
@@ -54,10 +55,13 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
           await txn.update('pallet', {'location_id': header.targetLocationId},
               where: 'id = ?', whereArgs: [header.containerId]);
         } else { // Box transfer
+          final productIdAsInt = int.tryParse(item.productId);
+          if (productIdAsInt == null) continue; // Skip if product ID is not a valid int
+
           // Decrement stock from source
-          await _updateInventory(txn, item.productId, header.sourceLocationId, -item.quantity);
+          await _updateInventory(txn, productIdAsInt, header.sourceLocationId, -item.quantity);
           // Increment stock at target
-          await _updateInventory(txn, item.productId, header.targetLocationId, item.quantity);
+          await _updateInventory(txn, productIdAsInt, header.targetLocationId, item.quantity);
         }
       }
 
@@ -204,5 +208,16 @@ class PalletAssignmentLocalDataSourceImpl implements PalletAssignmentLocalDataSo
       ORDER BY s.id DESC
     ''', [locationId]);
     return rows.map((e) => BoxItem.fromMap(e)).toList();
+  }
+
+  @override
+  Future<void> markTransferOperationAsSynced(int operationId) async {
+    final db = await dbHelper.database;
+    await db.update(
+      'transfer_operation',
+      {'synced': 1},
+      where: 'id = ?',
+      whereArgs: [operationId],
+    );
   }
 }
