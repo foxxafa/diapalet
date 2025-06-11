@@ -1,3 +1,4 @@
+import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
 import 'package:flutter/material.dart';
