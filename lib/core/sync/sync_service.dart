@@ -135,13 +135,17 @@ class SyncService {
     });
   }
 
-  Future<SyncResult> downloadMasterData({bool fullSync = false}) async {
-    if (_isSyncingDownload) {
+  Future<SyncResult> downloadMasterData({bool fullSync = false, bool force = false}) async {
+    if (_isSyncingDownload && !force) {
       return SyncResult(success: false, message: 'Download sync already in progress.');
     }
      if (!await _networkInfo.isConnected) {
       _syncStatusController.add(SyncStatus.offline);
       return SyncResult(success: false, message: 'No network connection.');
+    }
+
+    if(force) {
+      _syncTimer?.cancel(); // Stop background timer to prevent conflict
     }
 
     _isSyncingDownload = true;
@@ -182,6 +186,9 @@ class SyncService {
       return SyncResult(success: false, message: 'Download error: $e');
     } finally {
       _isSyncingDownload = false;
+      if (force) {
+        _startBackgroundSync(); // Restart background timer
+      }
     }
   }
 

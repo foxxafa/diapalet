@@ -178,7 +178,11 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   }
 
   Future<void> _downloadMasterData({bool fullSync = false}) async {
-    final result = await _syncService.downloadMasterData(fullSync: fullSync);
+    setState(() {
+      _isSyncing = true;
+    });
+    // Force a full sync, overriding any existing sync process.
+    final result = await _syncService.downloadMasterData(fullSync: fullSync, force: true);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -187,6 +191,9 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
         ),
       );
     }
+    setState(() {
+      _isSyncing = false;
+    });
   }
 
   Widget _buildSyncStatusBanner() {
