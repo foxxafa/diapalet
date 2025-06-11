@@ -8,6 +8,7 @@ import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_r
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/assignment_mode.dart';
 
 class MockPalletService implements PalletAssignmentRepository {
   final List<LocationInfo> _mockLocations = [
@@ -62,14 +63,14 @@ class MockPalletService implements PalletAssignmentRepository {
   }
 
   @override
-  Future<List<ProductItem>> getContainerContent(String containerId) async {
+  Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode) async {
     debugPrint("MockPalletService: Fetching product info for container: $containerId");
     await Future.delayed(const Duration(milliseconds: 300));
     return List.from(_containerContents[containerId] ?? []);
   }
 
   @override
-  Future<List<String>> getContainerIdsByLocation(int locationId) async {
+  Future<List<String>> getContainerIdsByLocation(int locationId, AssignmentMode mode) async {
     debugPrint("MockPalletService: Fetching container IDs at location ID: $locationId");
     await Future.delayed(const Duration(milliseconds: 200));
     return _locationContainers[locationId] ?? [];

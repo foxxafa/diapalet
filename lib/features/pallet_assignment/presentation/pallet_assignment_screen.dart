@@ -133,7 +133,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           });
         }
       } else {
-        final ids = await _repo.getContainerIdsByLocation(locationId);
+        final ids = await _repo.getContainerIdsByLocation(locationId, _selectedMode);
         if (mounted) {
           setState(() {
             _availableContainerIds = ids;
@@ -155,7 +155,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     
     setState(() => _isLoadingContainerContents = true);
     try {
-      final contents = await _repo.getContainerContent(containerId);
+      final contents = await _repo.getContainerContent(containerId, _selectedMode);
       if (!mounted) return;
       setState(() {
         _productsInContainer = contents;
