@@ -414,14 +414,99 @@ def sync_upload():
 @app.route("/api/sync/download", methods=["POST"])
 def sync_download():
     payload = request.get_json(force=True)
-    # For simplicity always return full master data
-    products = query_all(
-        "SELECT UrunId AS id, UrunAdi AS name, StokKodu AS code FROM urunler WHERE aktif = 1"
+
+    # Optional incremental sync timestamp (ISO 8601 string). If provided, only
+    # rows created/updated after this timestamp will be returned *for tables
+    # that have such columns*; otherwise, the whole table is returned.
+    last_sync_iso = payload.get("last_sync")
+    try:
+        last_sync_dt = (
+            datetime.fromisoformat(last_sync_iso.replace("Z", "+00:00")) if last_sync_iso else None
+        )
+    except Exception:
+        last_sync_dt = None
+
+    def _build_inc_clause(columns: list[str]):
+        """Return sql clause and params respecting available timestamp columns."""
+        if not last_sync_dt or not columns:
+            return "", ()
+        cond_parts = [f"{col} >= %s" for col in columns]
+        return " WHERE " + " OR ".join(cond_parts), tuple([last_sync_dt] * len(columns))
+
+    def _fetch(sql: str, params: tuple = ()):  # tiny helper for brevity
+        return query_all(sql, params)
+
+    # ---------------------------- MASTER DATA ---------------------------------
+    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
+    products = _fetch(
+        f"""
+        SELECT UrunId AS id,
+               StokKodu AS code,
+               UrunAdi AS name,
+               aktif    AS is_active,
+               created_at, updated_at
+        FROM urunler""" + inc_clause,
+        inc_params,
     )
-    locations = query_all(
-        "SELECT id, name, code FROM locations WHERE is_active = 1"
+
+    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
+    locations = _fetch(
+        f"""
+        SELECT id, name, code, is_active, latitude, longitude, address, description,
+               created_at, updated_at
+        FROM locations""" + inc_clause,
+        inc_params,
     )
-    return jsonify({"success": True, "data": {"products": products, "locations": locations}}), 200
+
+    # -------------------------- TRANSACTIONAL DATA ----------------------------
+    # satin_alma_siparis_fis (has created_at/updated_at)
+    inc_clause, inc_params = _build_inc_clause(["created_at", "updated_at"])
+    purchase_orders = _fetch(
+        "SELECT * FROM satin_alma_siparis_fis" + inc_clause,
+        inc_params,
+    )
+
+    # satin_alma_siparis_fis_satir (no timestamps) -> always full
+    purchase_order_items = _fetch("SELECT * FROM satin_alma_siparis_fis_satir")
+
+    # goods_receipts (has created_at)
+    inc_clause, inc_params = _build_inc_clause(["created_at"])
+    goods_receipts = _fetch(
+        "SELECT * FROM goods_receipts" + inc_clause,
+        inc_params,
+    )
+
+    # goods_receipt_items (no timestamps) – link via goods_receipts inc
+    if last_sync_dt:
+        # fetch items where their parent receipt is in the incremental set
+        receipt_ids = [r["id"] for r in goods_receipts]
+        if receipt_ids:
+            placeholders = ",".join(["%s"] * len(receipt_ids))
+            goods_receipt_items = _fetch(
+                f"SELECT * FROM goods_receipt_items WHERE receipt_id IN ({placeholders})",
+                tuple(receipt_ids),
+            )
+        else:
+            goods_receipt_items = []
+    else:
+        goods_receipt_items = _fetch("SELECT * FROM goods_receipt_items")
+
+    # inventory_stock (has updated_at)
+    inc_clause, inc_params = _build_inc_clause(["updated_at"])
+    inventory_stock = _fetch("SELECT * FROM inventory_stock" + inc_clause, inc_params)
+
+    # ------------------------------ RESPONSE ----------------------------------
+    data = {
+        "products": products,
+        "locations": locations,
+        "purchase_orders": purchase_orders,
+        "purchase_order_items": purchase_order_items,
+        "goods_receipts": goods_receipts,
+        "goods_receipt_items": goods_receipt_items,
+        "inventory_stock": inventory_stock,
+    }
+
+    return jsonify({"success": True, "data": data}), 200
 
 @app.route("/v1/containers/<string:location>/ids", methods=["GET"])
 def get_container_ids(location):
