@@ -13,7 +13,7 @@ class NetworkInfoImpl implements NetworkInfo {
   NetworkInfoImpl(this.connectivity);
 
   @override
-  Stream<ConnectivityResult> get onConnectivityChanged => connectivity.onConnectivityResult.map((results) => results.first);
+  Stream<ConnectivityResult> get onConnectivityChanged => connectivity.onConnectivityChanged.map((results) => results.first);
 
   @override
   Future<bool> get isConnected async {

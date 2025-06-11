@@ -3,6 +3,7 @@ import '../entities/product_info.dart';
 import '../entities/goods_receipt_entities.dart';
 import '../entities/purchase_order.dart';
 import '../entities/location_info.dart';
+import '../entities/purchase_order_item.dart';
 
 abstract class GoodsReceivingRepository {
   Future<List<String>> getInvoices();
@@ -16,4 +17,5 @@ abstract class GoodsReceivingRepository {
   Future<void> markGoodsReceiptAsSynced(int receiptId);
 
   Future<List<PurchaseOrder>> getOpenPurchaseOrders();
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId);
 }

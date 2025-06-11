@@ -51,4 +51,20 @@ class PurchaseOrder {
       'tedarikci_id': supplierId,
     };
   }
+
+  // Lokal DB'den (map) model oluşturma
+  factory PurchaseOrder.fromMap(Map<String, dynamic> map) {
+    // Veritabanı sütun adları `toJson` metodundaki anahtarlarla eşleşmelidir.
+    return PurchaseOrder(
+      id: map['id'] as int,
+      poId: map['po_id'] as String?,
+      // Tarih alanı string olarak saklanıyorsa parse edilir.
+      date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
+      notes: map['notlar'] as String?,
+      status: map['status'] as int?,
+      // Bu alanlar genellikle JOIN ile doldurulur, lokalde olmayabilir.
+      supplierName: map['tedarikci_adi'] as String?,
+      supplierId: map['tedarikci_id'] as int?,
+    );
+  }
 } 

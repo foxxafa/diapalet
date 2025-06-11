@@ -18,16 +18,20 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _checkInitialDataSync();
-  }
-
-  Future<void> _checkInitialDataSync() async {
-    final syncService = context.read<SyncService>();
-    // The initialize call is removed from here, as it's now handled in main.dart
-    // await syncService.initialize();
+    // Start sync service when home screen is initialized
+    // It will run in the background.
+    Provider.of<SyncService>(context, listen: false).startPeriodicSync();
   }
 
   @override
