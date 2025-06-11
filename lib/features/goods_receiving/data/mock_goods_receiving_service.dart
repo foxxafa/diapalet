@@ -1,6 +1,6 @@
 // lib/features/goods_receiving/data/mock_goods_receiving_service.dart
-import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:flutter/foundation.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import '../domain/entities/product_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
 import '../domain/repositories/goods_receiving_repository.dart';
