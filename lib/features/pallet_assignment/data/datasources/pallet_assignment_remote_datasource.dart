@@ -144,36 +144,23 @@ class PalletAssignmentRemoteDataSourceImpl implements PalletAssignmentRemoteData
 
   @override
   Future<bool> sendTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
-    debugPrint("API: Sending transfer operation to API...");
-
-    // Header'ı sunucunun beklediği alan adlarıyla dönüştür.
-    final headerMap = {
-      // Flask backend expects exactly these keys
-      'operation_type': header.operationType.name,          // pallet | box
-      'source_location': header.sourceLocation,             // Kaynak lokasyon adı
-      'target_location': header.targetLocation,             // Hedef lokasyon adı
-      'pallet_id': header.containerId,                      // Palet barkodu veya ürün ID'si
-      // Backend'imiz employee_id bekliyor ancak mobil tarafta henüz kullanıcı yönetimi yok.
-      // Şimdilik sabit bir değer (1) gönderiyoruz. Gerektiğinde burada gerçek kullanıcı ID'si kullanılabilir.
-      'employee_id': 1,
-      'transfer_date': header.transferDate.toIso8601String(),
-    };
-
-    // Her iki mod (pallet & box) için de items listesi gönderiyoruz.
-    // Palet transferinde sunucu ürün listesini yok saysa bile boş liste gönderilirse
-    // "Invalid payload" hatasını önleriz.
-    final itemsList = items.map((item) => {
-      // Flask tarafında 'product_id' INT olarak bekleniyor.
-      'product_id': int.tryParse(item.productId) ?? item.productId,
-      'quantity': item.quantity,
-    }).toList();
-
+    final url = Uri.parse('$baseUrl/v1/transfers');
+    
+    // Prepare the payload according to the new server.py structure
     final payload = {
-      'header': headerMap,
-      'items': itemsList,
+      "header": {
+        "operation_type": header.operationType == AssignmentMode.pallet ? 'pallet_transfer' : 'box_transfer',
+        "source_location_id": header.sourceLocationId, // Use ID
+        "target_location_id": header.targetLocationId, // Use ID
+        "pallet_id": header.containerId,
+        "employee_id": 1, // Example employee ID
+        "transfer_date": header.transferDate.toIso8601String(),
+      },
+      "items": items.map((item) => {
+        "product_id": item.productId,
+        "quantity": item.quantity,
+      }).toList(),
     };
-
-    debugPrint("API Payload => $payload");
 
     try {
       final response = await _dio.post('/transfers', data: payload);

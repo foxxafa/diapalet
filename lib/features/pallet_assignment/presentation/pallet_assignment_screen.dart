@@ -12,6 +12,7 @@ import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dar
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart'; // Assuming 'diapalet'
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 
 
 class PalletAssignmentScreen extends StatefulWidget {
@@ -31,8 +32,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
 
-  List<String> _availableSourceLocations = [];
-  String? _selectedSourceLocation;
+  List<LocationInfo> _availableSourceLocations = [];
+  LocationInfo? _selectedSourceLocation;
   final TextEditingController _sourceLocationController = TextEditingController();
 
   List<String> _availableContainerIds = [];
@@ -44,8 +45,8 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
   List<ProductItem> _productsInContainer = [];
   final TextEditingController _transferQuantityController = TextEditingController();
 
-  List<String> _availableTargetLocations = [];
-  String? _selectedTargetLocation;
+  List<LocationInfo> _availableTargetLocations = [];
+  LocationInfo? _selectedTargetLocation;
   final TextEditingController _targetLocationController = TextEditingController();
 
   static const double _fieldHeight = 56.0;
@@ -101,10 +102,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       ]);
       if (!mounted) return;
       setState(() {
-        _availableSourceLocations = List<String>.from(results[0]);
-        _availableTargetLocations = List<String>.from(results[1]);
+        _availableSourceLocations = results[0];
+        _availableTargetLocations = results[1];
       });
-      await _loadContainerIdsForLocation();
+      // We don't load container IDs initially, but after a source location is selected.
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
@@ -116,27 +117,22 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
 
   Future<void> _loadContainerIdsForLocation() async {
     if (_selectedSourceLocation == null) {
-      if (mounted) {
-        setState(() {
-          _availableContainerIds = [];
-          _boxItems = {};
-        });
-      }
+      if (mounted) setState(() => _availableContainerIds = []);
       return;
     }
     setState(() => _isLoadingContainerIds = true);
     try {
+      final locationId = _selectedSourceLocation!.id;
       if (_selectedMode == AssignmentMode.box) {
-        final boxes = await _repo.getBoxesAtLocation(_selectedSourceLocation!);
+        final boxes = await _repo.getBoxesAtLocation(locationId);
         if (mounted) {
           setState(() {
-            _availableContainerIds =
-                boxes.map((b) => b.boxId.toString()).toList();
+            _availableContainerIds = boxes.map((b) => b.boxId.toString()).toList();
             _boxItems = {for (var b in boxes) b.boxId.toString(): b};
           });
         }
       } else {
-        final ids = await _repo.getProductIdsAtLocation(_selectedSourceLocation!);
+        final ids = await _repo.getContainerIdsByLocation(locationId);
         if (mounted) {
           setState(() {
             _availableContainerIds = ids;
@@ -147,68 +143,33 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _isLoadingContainerIds = false);
-      }
+      if (mounted) setState(() => _isLoadingContainerIds = false);
     }
   }
 
   Future<void> _fetchContainerContents() async {
     FocusScope.of(context).unfocus();
     final containerId = _selectedContainerId ?? '';
-    if (containerId.isEmpty) {
-      _showSnackBar(tr('pallet_assignment.container_empty', namedArgs: {
-        'mode': _selectedMode.displayName
-      }), isError: true);
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _isLoadingContainerContents = true;
-      _productsInContainer = [];
-    });
+    if (containerId.isEmpty) return;
+    
+    setState(() => _isLoadingContainerContents = true);
     try {
-      if (_selectedMode == AssignmentMode.box) {
-        final box = _boxItems[containerId];
-        if (box == null) {
-          _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
-            'mode': _selectedMode.displayName
-          }), isError: true);
-        } else {
-          setState(() {
-            _productsInContainer = [
-              ProductItem(
-                id: box.productId,
-                name: box.productName,
-                productCode: box.productCode,
-                currentQuantity: box.quantity,
-              )
-            ];
-            _transferQuantityController.text = box.quantity.toString();
-            _scannedContainerIdController.text =
-                '${box.productName} • ${box.productCode} • ${box.quantity} pcs';
-          });
+      final contents = await _repo.getContainerContent(containerId);
+      if (!mounted) return;
+      setState(() {
+        _productsInContainer = contents;
+        _transferQuantityController.clear();
+        if (_selectedMode == AssignmentMode.box && contents.isNotEmpty) {
+           _transferQuantityController.text = contents.first.currentQuantity.toString();
+           _scannedContainerIdController.text = '${contents.first.name} • ${contents.first.productCode} • ${contents.first.currentQuantity} pcs';
+        } else if (contents.isEmpty) {
+          _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
         }
-      } else {
-        final contents =
-            await _repo.getProductInfo(containerId, _selectedSourceLocation!);
-        if (!mounted) return;
-        setState(() {
-          _productsInContainer = contents;
-          _transferQuantityController.clear();
-          if (contents.isEmpty && containerId.isNotEmpty) {
-            _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {
-              'mode': _selectedMode.displayName
-            }), isError: true);
-          }
-        });
-      }
+      });
     } catch (e) {
       if (mounted) _showSnackBar(tr('pallet_assignment.load_error', namedArgs: {'error': e.toString()}), isError: true);
     } finally {
-      if (mounted) {
-        setState(() => _isLoadingContainerContents = false);
-      }
+      if (mounted) setState(() => _isLoadingContainerContents = false);
     }
   }
 
@@ -240,50 +201,42 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       MaterialPageRoute(builder: (context) => const QrScannerScreen()),
     );
 
-    if (result != null && result.isNotEmpty && mounted) {
-      String successMessage = "";
-      bool found = false;
-      if (fieldIdentifier == 'source') {
-        if (_availableSourceLocations.contains(result)) {
-          setState(() {
-            _selectedSourceLocation = result;
-            _sourceLocationController.text = result;
-            _scannedContainerIdController.clear();
-            _selectedContainerId = null;
-          });
-          successMessage = tr('pallet_assignment.qr_source_selected', namedArgs: {'val': result});
-          found = true;
-          await _loadContainerIdsForLocation();
-        } else {
-          _showSnackBar(tr('pallet_assignment.invalid_source_qr', namedArgs: {'qr': result}), isError: true);
-        }
-      } else if (fieldIdentifier == 'scannedId') {
-        _selectedContainerId = result;
+    if (result == null || result.isEmpty || !mounted) return;
+
+    bool found = false;
+    String successMessage = "";
+
+    if (fieldIdentifier == 'source') {
+      final foundLocation = _availableSourceLocations.where((loc) => loc.name == result || loc.code == result).firstOrNull;
+      if (foundLocation != null) {
         setState(() {
-          _scannedContainerIdController.text = _selectedMode == AssignmentMode.box
-              ? (_boxItems[result] != null
-                  ? '${_boxItems[result]!.productName} • ${_boxItems[result]!.productCode} • ${_boxItems[result]!.quantity} pcs'
-                  : result)
-              : result;
+          _selectedSourceLocation = foundLocation;
+          _sourceLocationController.text = foundLocation.name;
         });
-        successMessage = tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result});
         found = true;
-        await _fetchContainerContents();
-      } else if (fieldIdentifier == 'target') {
-        if (_availableTargetLocations.contains(result)) {
-          setState(() {
-            _selectedTargetLocation = result;
-            _targetLocationController.text = result;
-          });
-          successMessage = tr('pallet_assignment.qr_target_selected', namedArgs: {'val': result});
-          found = true;
-        } else {
-          _showSnackBar(tr('pallet_assignment.invalid_target_qr', namedArgs: {'qr': result}), isError: true);
-        }
+        successMessage = tr('pallet_assignment.scan_success.source', namedArgs: {'location': result});
       }
-      if (found && successMessage.isNotEmpty) _showSnackBar(successMessage);
-      _formKey.currentState?.validate();
+    } else if (fieldIdentifier == 'target') {
+      final foundLocation = _availableTargetLocations.where((loc) => loc.name == result || loc.code == result).firstOrNull;
+      if (foundLocation != null) {
+        setState(() {
+          _selectedTargetLocation = foundLocation;
+          _targetLocationController.text = foundLocation.name;
+        });
+        found = true;
+        successMessage = tr('pallet_assignment.scan_success.target', namedArgs: {'location': result});
+      }
+    } else if (fieldIdentifier == 'container') {
+      setState(() {
+        _selectedContainerId = result;
+        _scannedContainerIdController.text = result;
+      });
+      await _fetchContainerContents();
+      found = true;
+      successMessage = tr('pallet_assignment.scan_success.container', namedArgs: {'id': result});
     }
+
+    _showSnackBar(found ? successMessage : tr('pallet_assignment.scan_error', namedArgs: {'value': result}));
   }
 
   Future<void> _onConfirmSave() async {
@@ -293,48 +246,12 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
       return;
     }
 
-    List<TransferItemDetail> itemsToTransferDetails;
-    if (_selectedMode == AssignmentMode.box) {
-      if (_productsInContainer.isEmpty) {
-        _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
-        return;
-      }
-      final product = _productsInContainer.first; // Kutu modunda listede tek ürün olmalı
-      final qty = int.tryParse(_transferQuantityController.text) ?? 0;
-
-      // Transfer edilecek miktar sıfırdan büyük olmalı
-      if (qty <= 0) {
-        _showSnackBar(tr('pallet_assignment.amount_positive'), isError: true);
-        return;
-      }
-      // Transfer edilecek miktar mevcut miktarı aşmamalı
-      if (qty > product.currentQuantity) {
-        _showSnackBar(tr('pallet_assignment.amount_max', namedArgs: {'max': product.currentQuantity.toString()}), isError: true);
-        return;
-      }
-
-      itemsToTransferDetails = [
-        TransferItemDetail(
-          operationId: 0,
-          productId: product.id, // ProductItem'ın 'id' alanı productId'yi temsil eder
-          productCode: product.productCode,
-          productName: product.name,
-          quantity: qty,
-        )
-      ];
-    } else { // Palet modu
-      itemsToTransferDetails = _productsInContainer
-          .map((p) => TransferItemDetail(
-        operationId: 0,
-        productId: p.id, // ProductItem'ın 'id' alanı productId'yi temsil eder
-        productCode: p.productCode,
-        productName: p.name,
-        quantity: p.currentQuantity,
-      ))
-          .toList();
+    if (_selectedSourceLocation == null || _selectedTargetLocation == null || _selectedContainerId == null) {
+       _showSnackBar(tr('pallet_assignment.validation.all_fields_required'), isError: true);
+       return;
     }
 
-    if (itemsToTransferDetails.isEmpty) {
+    if (_selectedMode == AssignmentMode.box && _productsInContainer.isEmpty) {
       _showSnackBar(tr('pallet_assignment.contents_empty', namedArgs: {'mode': _selectedMode.displayName}), isError: true);
       return;
     }
@@ -344,13 +261,44 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     try {
       final header = TransferOperationHeader(
         operationType: _selectedMode,
-        sourceLocation: _selectedSourceLocation!,
-        targetLocation: _selectedTargetLocation!,
+        sourceLocationId: _selectedSourceLocation!.id,
+        targetLocationId: _selectedTargetLocation!.id,
         containerId: _selectedContainerId!,
         transferDate: DateTime.now(),
       );
 
-      await _repo.recordTransferOperation(header, itemsToTransferDetails);
+      List<TransferItemDetail> itemsToTransfer = [];
+      if (_selectedMode == AssignmentMode.box) {
+        if (_productsInContainer.isNotEmpty) {
+          final product = _productsInContainer.first;
+          final qty = int.tryParse(_transferQuantityController.text) ?? 0;
+          if (qty > 0 && qty <= product.currentQuantity) {
+              itemsToTransfer.add(TransferItemDetail(
+                productId: product.id,
+                quantity: qty,
+                productName: product.name,
+                productCode: product.productCode,
+              ));
+          } else {
+            _showSnackBar(tr('pallet_assignment.validation.invalid_quantity'), isError: true);
+            return;
+          }
+        }
+      } else {
+        itemsToTransfer = _productsInContainer.map((p) => TransferItemDetail(
+            productId: p.id,
+            quantity: p.currentQuantity,
+            productName: p.name,
+            productCode: p.productCode,
+        )).toList();
+      }
+      
+      if (itemsToTransfer.isEmpty) {
+          _showSnackBar(tr('pallet_assignment.validation.no_items_to_transfer'), isError: true);
+          return;
+      }
+
+      await _repo.recordTransferOperation(header, itemsToTransfer);
 
       if (mounted) {
         String msg;
@@ -655,10 +603,10 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
     required TextEditingController controller,
     required String label,
     required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onSelected,
-    String Function(String)? itemLabelBuilder,
-    bool Function(String, String)? filterFn,
+    required List<LocationInfo> items,
+    required ValueChanged<LocationInfo?> onSelected,
+    String Function(LocationInfo)? itemLabelBuilder,
+    bool Function(LocationInfo, String)? filterFn,
     required VoidCallback onQrTap,
     required FormFieldValidator<String>? validator,
   }) {
@@ -672,14 +620,14 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
               readOnly: true,
               decoration: _inputDecoration(label, filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
               onTap: () async {
-                final String? selected = await _showSearchableDropdownDialog<String>(
+                final LocationInfo? selected = await _showSearchableDropdownDialog<LocationInfo>(
                   context: context,
                   title: label,
                   items: items,
-                  itemToString: (item) => itemLabelBuilder != null ? itemLabelBuilder(item) : item,
+                  itemToString: (item) => itemLabelBuilder != null ? itemLabelBuilder(item) : item.location,
                   filterCondition: (item, query) => filterFn != null
                       ? filterFn(item, query)
-                      : item.toLowerCase().contains(query.toLowerCase()),
+                      : item.location.toLowerCase().contains(query.toLowerCase()),
                   initialValue: value,
                 );
                 onSelected(selected);
@@ -730,7 +678,7 @@ class _PalletAssignmentScreenState extends State<PalletAssignmentScreen> {
           if (val != null) await _fetchContainerContents();
         }
       },
-      onQrTap: () => _scanQrAndUpdateField('scannedId'),
+      onQrTap: () => _scanQrAndUpdateField('container'),
       validator: (value) {
         if (value == null || value.isEmpty) {
           return tr('pallet_assignment.container_empty', namedArgs: {'mode': _selectedMode.displayName});

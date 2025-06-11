@@ -10,6 +10,7 @@ import '../../domain/entities/goods_receipt_entities.dart';
 import '../../domain/repositories/goods_receiving_repository.dart';
 import '../../domain/entities/purchase_order.dart';
 import '../../../../core/widgets/qr_scanner_screen.dart';
+import '../../domain/entities/location_info.dart';
 
 // Palet ve Kutu modları için enum tanımı
 enum ReceivingMode { palet, kutu }
@@ -23,7 +24,7 @@ class GoodsReceivingScreen extends StatefulWidget {
 
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // Sabit lokasyon kuralı: Fiziksel olarak tüm ürünler bu lokasyona girer.
-  static const String _defaultLocation = "MAL KABUL";
+  LocationInfo? _defaultLocation;
 
   late GoodsReceivingRepository _repository;
   bool _isRepoInitialized = false;
@@ -85,12 +86,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final results = await Future.wait([
         _repository.getOpenPurchaseOrders(),
         _repository.getProductsForDropdown(),
+        _repository.getLocationsForDropdown(),
       ]);
       if (!mounted) return;
 
+      final locations = List<LocationInfo>.from(results[2]);
       setState(() {
         _availableOrders = List<PurchaseOrder>.from(results[0]);
         _availableProducts = List<ProductInfo>.from(results[1]);
+        _defaultLocation = locations.firstWhere(
+          (loc) => loc.name.toUpperCase() == "MAL KABUL",
+          orElse: () => locations.isNotEmpty ? locations.first : null,
+        );
       });
     } catch (e) {
       if (mounted) {
@@ -145,8 +152,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    // Tüm konteynerler varsayılan fiziksel lokasyonda başlar.
-    const String itemLocation = _defaultLocation;
+    if (_defaultLocation == null) {
+      _showErrorSnackBar(tr('goods_receiving.errors.no_default_location'));
+      return;
+    }
 
     // Kutu modunda sadece tek çeşit ürün eklenmesine izin ver.
     if (_selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty) {
@@ -155,10 +164,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
 
     final newItem = GoodsReceiptItem(
-      goodsReceiptId: -1,
+      receiptId: -1, // Temporary ID, local DB will assign a real one.
       product: _selectedProduct!,
       quantity: quantity,
-      location: itemLocation,
+      locationId: _defaultLocation!.id, // Use ID from the location object
       containerId: _selectedMode == ReceivingMode.palet ? _palletIdController.text : null,
     );
 
@@ -668,42 +677,47 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 final item = _addedItems[index];
                 final bool isPalletItem = item.containerId != null;
 
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
-                  elevation: 1.5,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  child: ListTile(
-                    title: Text("${item.product.name} (${item.product.stockCode})", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Sipariş: ${_selectedOrder?.id ?? 'N/A'}"),
-                        Text("Konum: ${item.location}"),
-                        if (isPalletItem)
-                          Text("Palet: ${item.containerId}"),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(tr('goods_receiving.qty_unit', namedArgs: {'qty': item.quantity.toString()}), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
-                        const SizedBox(width: _smallGap),
-                        IconButton(
-                          icon: Icon(Icons.delete_outline, color: Colors.redAccent[700]),
-                          onPressed: () => _removeItemFromList(index),
-                          tooltip: 'goods_receiving.delete_item'.tr(),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                    isThreeLine: true,
-                  ),
-                );
+                return _buildItemCard(item, index);
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildItemCard(GoodsReceiptItem item, int index) {
+    return Card(
+      key: ValueKey(item.product.id),
+      margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
+      shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+      elevation: 2,
+      child: ListTile(
+        title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('(${item.product.stockCode})'),
+            if (item.containerId != null && item.containerId!.isNotEmpty)
+              Text('Palet: ${item.containerId}'),
+            // Location is implicitly the default "MAL KABUL" location, so no need to display it per item.
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(tr('goods_receiving.qty_unit', namedArgs: {'qty': item.quantity.toString()}), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
+            const SizedBox(width: _smallGap),
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: Colors.redAccent[700]),
+              onPressed: () => _removeItemFromList(index),
+              tooltip: 'goods_receiving.delete_item'.tr(),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+        isThreeLine: true,
       ),
     );
   }

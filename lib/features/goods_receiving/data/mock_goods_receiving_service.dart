@@ -1,4 +1,5 @@
 // lib/features/goods_receiving/data/mock_goods_receiving_service.dart
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/entities/product_info.dart';
 import '../domain/entities/goods_receipt_entities.dart';
@@ -10,11 +11,16 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     "INV-MOCK-001", "INV-MOCK-002", "INV-MOCK-003"
   ];
 
+  final List<LocationInfo> _mockLocations = [
+    const LocationInfo(id: 1, name: "MAL KABUL", code: "MK"),
+    const LocationInfo(id: 2, name: "DEPO-A1", code: "A1"),
+    const LocationInfo(id: 3, name: "DEPO-B2", code: "B2"),
+  ];
 
   final List<ProductInfo> _mockProductsForDropdown = [
-    ProductInfo(id: "mock_prod_1", name: "Mock Ürün A (Kola)", stockCode: "MOCKA001"),
-    ProductInfo(id: "mock_prod_2", name: "Mock Ürün B (Gofret)", stockCode: "MOCKB002"),
-    ProductInfo(id: "mock_prod_3", name: "Mock Ürün C (Süt)", stockCode: "MOCKC003"),
+    const ProductInfo(id: 101, name: "Mock Ürün A (Kola)", stockCode: "MOCKA001"),
+    const ProductInfo(id: 102, name: "Mock Ürün B (Gofret)", stockCode: "MOCKB002"),
+    const ProductInfo(id: 103, name: "Mock Ürün C (Süt)", stockCode: "MOCKC003"),
   ];
 
   final List<GoodsReceipt> _savedReceipts = [];
@@ -35,6 +41,13 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     await Future.delayed(const Duration(milliseconds: 100));
     return List.from(_mockProductsForDropdown);
   }
+  
+  @override
+  Future<List<LocationInfo>> getLocationsForDropdown() async {
+    debugPrint("MockGoodsReceivingService: Fetching locations for dropdown.");
+    await Future.delayed(const Duration(milliseconds: 100));
+    return List.from(_mockLocations);
+  }
 
   @override
   Future<int> saveGoodsReceipt(GoodsReceipt header, List<GoodsReceiptItem> items) async {
@@ -54,10 +67,10 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     for (var item in items) {
       newItemsWithId.add(GoodsReceiptItem(
         id: _nextItemId++,
-        goodsReceiptId: newHeader.id!,
+        receiptId: newHeader.id!,
         product: item.product,
         quantity: item.quantity,
-        location: item.location,
+        locationId: item.locationId,
         containerId: item.containerId,
       ));
     }
@@ -88,7 +101,15 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
     await Future.delayed(const Duration(milliseconds: 50));
     final index = _savedReceipts.indexWhere((r) => r.id == receiptId);
     if (index != -1) {
-      _savedReceipts[index].synced = 1;
+      // This is not ideal as it modifies a list item directly. In a real app with state management, this would be handled differently.
+      final oldReceipt = _savedReceipts[index];
+      _savedReceipts[index] = GoodsReceipt(
+        id: oldReceipt.id,
+        externalId: oldReceipt.externalId,
+        invoiceNumber: oldReceipt.invoiceNumber,
+        receiptDate: oldReceipt.receiptDate,
+        synced: 1, // Mark as synced
+      );
     }
   }
 
@@ -100,5 +121,4 @@ class MockGoodsReceivingService implements GoodsReceivingRepository {
       PurchaseOrder(id: 2, poId: 'PO-MOCK-002', date: DateTime.now(), notes: 'Mock sipariş 2', status: 0, supplierName: 'Tedarikçi B', supplierId: 2),
     ];
   }
-
 }

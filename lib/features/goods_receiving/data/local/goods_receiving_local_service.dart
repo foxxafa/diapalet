@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/local/database_helper.dart';
 import '../../domain/entities/goods_receipt_entities.dart';
+import '../../domain/entities/location_info.dart';
 import '../../domain/entities/product_info.dart';
 import 'dart:convert';
 

@@ -1,15 +1,16 @@
 // lib/features/pallet_assignment/domain/repositories/pallet_repository.dart
-import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
+import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/transfer_operation_header.dart';
 
 abstract class PalletAssignmentRepository {
-  Future<List<String>> getSourceLocations();
-  Future<List<String>> getTargetLocations();
-  Future<List<String>> getProductIdsAtLocation(String location);
-  Future<List<ProductItem>> getProductInfo(String productId, String location);
-  Future<List<BoxItem>> getBoxesAtLocation(String location);
+  Future<List<LocationInfo>> getSourceLocations();
+  Future<List<LocationInfo>> getTargetLocations();
+  Future<List<String>> getContainerIdsByLocation(int locationId);
+  Future<List<ProductItem>> getContainerContent(String containerId);
+  Future<List<BoxItem>> getBoxesAtLocation(int locationId);
 
   Future<int> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items);
 
