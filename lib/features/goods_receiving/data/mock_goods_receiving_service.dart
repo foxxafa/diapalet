@@ -1,11 +1,11 @@
 // lib/features/goods_receiving/data/mock_goods_receiving_service.dart
 import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
-import '../domain/entities/product_info.dart';
-import '../domain/entities/goods_receipt_entities.dart';
-import '../domain/repositories/goods_receiving_repository.dart';
-import '../domain/entities/purchase_order.dart';
-import '../domain/entities/purchase_order_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 
 class MockGoodsReceivingService implements GoodsReceivingRepository {
   final List<String> _mockInvoices = [
