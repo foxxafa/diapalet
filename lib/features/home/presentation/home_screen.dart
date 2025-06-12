@@ -6,7 +6,6 @@ import 'package:diapalet/features/pending_operations/presentation/pending_operat
 // Provider aracılığıyla dolaylı olarak kullanılır.
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:provider/provider.dart'; // Provider'ı dil değişimi için kullanıyoruz.
 
 // Hata düzeltildi ve widget StatelessWidget'a dönüştürüldü.
 class HomeScreen extends StatelessWidget {

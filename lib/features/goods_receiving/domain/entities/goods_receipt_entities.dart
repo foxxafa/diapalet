@@ -1,70 +1,93 @@
-// features/goods_receiving/domain/entities/goods_receipt_entities.dart
+// lib/features/goods_receiving/domain/entities/goods_receipt_entities.dart
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
+import 'package:flutter/foundation.dart';
 
-class GoodsReceipt {
-  final int id;
-  final int purchaseOrderId;
-  final String receiptNumber;
-  final DateTime receiptDate;
-  final String? notes;
-  final String status;
-  final List<GoodsReceiptItem> items;
+/// Mal kabul işleminin türünü belirtir.
+enum ReceivingMode {
+  palet,
+  kutu,
+}
 
-  GoodsReceipt({
-    required this.id,
-    required this.purchaseOrderId,
-    required this.receiptNumber,
-    required this.receiptDate,
-    this.notes,
-    required this.status,
+/// Kullanıcının UI'da listeye eklediği tek bir mal kabul kalemini temsil eder.
+/// Bu, henüz veritabanına kaydedilmemiş geçici bir modeldir.
+@immutable
+class ReceiptItemDraft {
+  final ProductInfo product;
+  final double quantity;
+
+  /// Sadece palet modunda kullanılır.
+  final String? palletBarcode;
+
+  const ReceiptItemDraft({
+    required this.product,
+    required this.quantity,
+    this.palletBarcode,
+  });
+}
+
+/// Hem API'ye gönderilecek hem de lokal veritabanına (pending_operations)
+/// kaydedilecek olan mal kabul işleminin tamamını temsil eden model.
+@immutable
+class GoodsReceiptPayload {
+  final GoodsReceiptHeader header;
+  final List<GoodsReceiptItemPayload> items;
+
+  const GoodsReceiptPayload({
+    required this.header,
     required this.items,
   });
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'purchase_order_id': purchaseOrderId,
-        'receipt_number': receiptNumber,
-        'receipt_date': receiptDate.toIso8601String(),
-        'notes': notes,
-        'status': status,
-      };
+  /// API'ye gönderilmek üzere JSON formatına dönüştürür.
+  /// Bu yapı, Flask sunucusunun beklediği payload ile eşleşir.
+  Map<String, dynamic> toApiJson() {
+    return {
+      'header': header.toJson(),
+      'items': items.map((item) => item.toJson()).toList(),
+    };
+  }
 }
 
-class GoodsReceiptItem {
-  final int id;
-  final int goodsReceiptId;
-  final int productId;
-  final double quantity;
-  final String? notes;
+@immutable
+class GoodsReceiptHeader {
+  final int? siparisId;
+  final String? invoiceNumber;
+  final int? employeeId; // Gelecekte eklenebilir
+  final DateTime receiptDate;
 
-  GoodsReceiptItem({
-    required this.id,
-    required this.goodsReceiptId,
-    required this.productId,
-    required this.quantity,
-    this.notes,
+  const GoodsReceiptHeader({
+    this.siparisId,
+    this.invoiceNumber,
+    this.employeeId,
+    required this.receiptDate,
   });
 
-  GoodsReceiptItem copyWith({
-    int? id,
-    int? goodsReceiptId,
-    int? productId,
-    double? quantity,
-    String? notes,
-  }) {
-    return GoodsReceiptItem(
-      id: id ?? this.id,
-      goodsReceiptId: goodsReceiptId ?? this.goodsReceiptId,
-      productId: productId ?? this.productId,
-      quantity: quantity ?? this.quantity,
-      notes: notes ?? this.notes,
-    );
+  Map<String, dynamic> toJson() {
+    return {
+      'siparis_id': siparisId,
+      'invoice_number': invoiceNumber,
+      'employee_id': employeeId,
+      'receipt_date': receiptDate.toIso8601String(),
+    };
   }
+}
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'goods_receipt_id': goodsReceiptId,
-        'product_id': productId,
-        'quantity': quantity,
-        'notes': notes,
-      };
+@immutable
+class GoodsReceiptItemPayload {
+  final int urunId;
+  final double quantity;
+  final String? palletBarcode;
+
+  const GoodsReceiptItemPayload({
+    required this.urunId,
+    required this.quantity,
+    this.palletBarcode,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'urun_id': urunId,
+      'quantity': quantity,
+      'pallet_barcode': palletBarcode,
+    };
+  }
 }

@@ -1,27 +1,26 @@
+// lib/features/goods_receiving/data/goods_receiving_repository_impl.dart
+
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/network/network_info.dart'; // Eklendi
+import 'package:diapalet/core/network/api_config.dart';
+import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:dio/dio.dart'; // Eklendi
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:uuid/uuid.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
-  final Dio dio; // Eklendi
-  final NetworkInfo networkInfo; // Eklendi
-  final Uuid _uuid = const Uuid();
+  final Dio dio;
+  final NetworkInfo networkInfo;
 
-  // "MAL KABUL" lokasyonunun ID'sinin 1 olduğunu varsayıyoruz.
-  // Gerçek bir uygulamada bu, yapılandırmadan veya veritabanından alınabilir.
   static const int malKabulLocationId = 1;
 
-  // Constructor güncellendi
   GoodsReceivingRepositoryImpl({
     required this.dbHelper,
     required this.dio,
@@ -29,69 +28,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   });
 
   @override
-  Future<List<LocationInfo>> getLocations({String? filter}) async {
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-        'location',
-        where: filter != null && filter.isNotEmpty ? 'name LIKE ?' : null,
-        whereArgs: filter != null && filter.isNotEmpty ? ['%$filter%'] : null,
-        orderBy: 'name'
+      'satin_alma_siparis_fis',
+      where: 'status = ?',
+      whereArgs: [0],
+      orderBy: 'tarih DESC',
     );
-    return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
-  }
-
-  @override
-  Future<List<ProductInfo>> getProducts({String? filter}) async {
-    final db = await dbHelper.database;
-    String whereClause = 'is_active = 1';
-    List<dynamic> whereArgs = [];
-    if (filter != null && filter.isNotEmpty) {
-      whereClause += ' AND (name LIKE ? OR code LIKE ?)';
-      whereArgs.addAll(['%$filter%', '%$filter%']);
-    }
-
-    final List<Map<String, dynamic>> maps = await db.query('product', where: whereClause, whereArgs: whereArgs, orderBy: 'name');
-    return List.generate(maps.length, (i) => ProductInfo.fromMap(maps[i]));
-  }
-
-  @override
-  Future<List<ProductInfo>> getAllProducts() {
-    return getProducts();
-  }
-
-  @override
-  Future<List<RecentReceiptItem>> getRecentReceipts({int limit = 50}) async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT 
-        gri.id, 
-        gri.quantity_received, 
-        gri.pallet_barcode, 
-        gr.created_at,
-        p.name as productName
-      FROM goods_receipt_item gri
-      JOIN goods_receipt gr ON gr.local_id = gri.receipt_local_id
-      JOIN product p ON p.id = gri.urun_id
-      ORDER BY gr.created_at DESC
-      LIMIT ?
-    ''', [limit]);
-    return List.generate(maps.length, (i) => RecentReceiptItem.fromMap(maps[i]));
-  }
-
-  @override
-  Future<List<PurchaseOrder>> getPurchaseOrders() async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('purchase_orders');
-    return List.generate(maps.length, (i) {
-      return PurchaseOrder.fromJson(maps[i]);
-    });
-  }
-
-  @override
-  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
-    // Bu metot getPurchaseOrders ile aynı işi yapabilir veya status'e göre filtreleyebilir.
-    // Şimdilik getPurchaseOrders'ı çağıralım.
-    return getPurchaseOrders();
+    return List.generate(maps.length, (i) => PurchaseOrder.fromMap(maps[i]));
   }
 
   @override
@@ -99,54 +44,108 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
-        poi.id,
-        poi.urun_id as productId,
-        p.name as productName,
-        poi.miktar as orderedQuantity,
-        poi.birim as unit
-      FROM purchase_order_item poi
-      JOIN product p ON p.id = poi.urun_id
-      WHERE poi.siparis_id = ?
+        satir.id,
+        satir.siparis_id,
+        satir.urun_id,
+        satir.miktar,
+        satir.birim,
+        urun.UrunAdi,
+        urun.StokKodu
+      FROM satin_alma_siparis_fis_satir AS satir
+      JOIN urunler AS urun ON urun.UrunId = satir.urun_id
+      WHERE satir.siparis_id = ?
     ''', [orderId]);
-    return List.generate(maps.length, (i) => PurchaseOrderItem.fromMap(maps[i]));
-  }
-
-  @override
-  Future<void> saveGoodsReceipt(GoodsReceipt receipt) async {
-    final db = await dbHelper.database;
-    await db.transaction((txn) async {
-      final receiptId = await txn.insert('goods_receipts', receipt.toJson());
-      for (var item in receipt.items) {
-        await txn.insert('goods_receipt_items', item.copyWith(goodsReceiptId: receiptId.toInt()).toJson());
-      }
-    });
+    return List.generate(maps.length, (i) => PurchaseOrderItem.fromDbJoinMap(maps[i]));
   }
 
   @override
   Future<List<ProductInfo>> searchProducts(String query) async {
-    // Implement product search logic
-    return [];
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'urunler',
+      where: 'UrunAdi LIKE ? OR StokKodu LIKE ?',
+      whereArgs: ['%$query%', '%$query%'],
+      limit: 50,
+    );
+    return List.generate(maps.length, (i) => ProductInfo.fromDbMap(maps[i]));
   }
 
   @override
-  Future<ProductInfo?> getProductDetails(String barcode) async {
-    // Implement get product details logic
-    return null;
+  Future<List<LocationInfo>> getLocations() async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query('locations');
+    return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
   }
 
   @override
-  Future<LocationInfo?> getLocationDetails(String barcode) async {
-    // Implement get location details logic
-    return null;
+  Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
+    final isConnected = await networkInfo.isConnected;
+
+    if (isConnected) {
+      try {
+        debugPrint("Online mode: Sending goods receipt to API...");
+        await dio.post(ApiConfig.goodsReceipts, data: payload.toApiJson());
+        await _updateLocalStock(payload);
+        debugPrint("API call successful. Local stock also updated.");
+      } on DioException catch (e) {
+        debugPrint("API call failed: ${e.message}. Saving to pending operations queue.");
+        await _saveAsPendingOperation(payload);
+      } catch (e) {
+        debugPrint("An unexpected error occurred: $e. Saving to pending operations queue.");
+        await _saveAsPendingOperation(payload);
+      }
+    } else {
+      debugPrint("Offline mode: Saving to pending operations queue.");
+      await _saveAsPendingOperation(payload);
+    }
   }
 
-  Future<void> _upsertStock(DatabaseExecutor txn, int urunId, int locationId, double qtyChange, String? palletBarcode) async {
-    final palletClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
+  Future<void> _saveAsPendingOperation(GoodsReceiptPayload payload) async {
+    final db = await dbHelper.database;
+    await db.transaction((txn) async {
+      final operation = PendingOperation(
+          id: 0,
+          operationType: 'goods_receipt',
+          operationData: payload.toApiJson(),
+          createdAt: DateTime.now(),
+          status: 'pending',
+          tableName: 'goods_receipts'
+      );
+      await txn.insert(
+        'pending_operation',
+        operation.toMapForDb(),
+      );
+      await _updateLocalStock(payload, txn: txn);
+    });
+    debugPrint("Saved goods receipt as pending operation and updated local stock.");
+  }
+
+  Future<void> _updateLocalStock(GoodsReceiptPayload payload, {DatabaseExecutor? txn}) async {
+    final db = txn ?? await dbHelper.database;
+    for (final item in payload.items) {
+      await _upsertStock(
+        db,
+        urunId: item.urunId,
+        locationId: malKabulLocationId,
+        qtyChange: item.quantity,
+        palletBarcode: item.palletBarcode,
+      );
+    }
+  }
+
+  Future<void> _upsertStock(
+      DatabaseExecutor txn, {
+        required int urunId,
+        required int locationId,
+        required double qtyChange,
+        String? palletBarcode,
+      }) async {
+    final palletWhereClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
     final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
 
     final List<Map<String, dynamic>> existing = await txn.query(
       'inventory_stock',
-      where: 'urun_id = ? AND location_id = ? AND $palletClause',
+      where: 'urun_id = ? AND location_id = ? AND $palletWhereClause',
       whereArgs: whereArgs,
     );
 
@@ -154,13 +153,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final currentQty = (existing.first['quantity'] as num).toDouble();
       final newQty = currentQty + qtyChange;
 
-      await txn.update(
-        'inventory_stock',
-        {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [existing.first['id']],
-      );
-    } else {
+      if (newQty > 0.001) {
+        await txn.update(
+          'inventory_stock',
+          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      } else {
+        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
+      }
+    } else if (qtyChange > 0) {
       await txn.insert('inventory_stock', {
         'urun_id': urunId,
         'location_id': locationId,

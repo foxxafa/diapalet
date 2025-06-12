@@ -2,12 +2,13 @@
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
+import 'dart:async';
 
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
@@ -17,355 +18,406 @@ class GoodsReceivingScreen extends StatefulWidget {
 }
 
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
+  // --- State ve Controller'lar ---
   late final GoodsReceivingRepository _repository;
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
-  final _receiptNumberController = TextEditingController();
-  final _notesController = TextEditingController();
-  final _searchController = TextEditingController();
-  final Map<int, TextEditingController> _quantityControllers = {};
-
-  // State
-  List<PurchaseOrder> _allPurchaseOrders = [];
-  List<PurchaseOrder> _filteredPurchaseOrders = [];
-  PurchaseOrder? _selectedOrder;
-  List<PurchaseOrderItem> _orderItems = [];
-  final List<GoodsReceiptItem> _receiptItems = [];
-
-  bool _isLoading = false;
+  // Sayfa durumu
+  bool _isLoading = true;
   bool _isSaving = false;
+
+  // Seçimler ve veriler
+  ReceivingMode _receivingMode = ReceivingMode.kutu;
+  List<PurchaseOrder> _purchaseOrders = [];
+  PurchaseOrder? _selectedOrder;
+  List<ProductInfo> _products = [];
+  ProductInfo? _selectedProduct;
+  List<ReceiptItemDraft> _receiptItems = []; // Listeye eklenen ürünler
+
+  // Controller'lar
+  final _palletBarcodeController = TextEditingController();
+  final _quantityController = TextEditingController();
+  final _productSearchController = TextEditingController();
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
-    _loadPurchaseOrders();
+    _loadInitialData();
+
+    // Ürün arama için debounce (kullanıcı yazmayı bitirince arama yapar)
+    _productSearchController.addListener(() {
+      if (_debounce?.isActive ?? false) _debounce!.cancel();
+      _debounce = Timer(const Duration(milliseconds: 500), () {
+        if (_productSearchController.text.isNotEmpty) {
+          _searchProducts(_productSearchController.text);
+        }
+      });
+    });
   }
 
   @override
   void dispose() {
-    _receiptNumberController.dispose();
-    _notesController.dispose();
-    _searchController.dispose();
-    _quantityControllers.forEach((_, controller) => controller.dispose());
+    _palletBarcodeController.dispose();
+    _quantityController.dispose();
+    _productSearchController.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadPurchaseOrders() async {
+  // --- Veri Yükleme ---
+  Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
     try {
       final orders = await _repository.getOpenPurchaseOrders();
       if (mounted) {
         setState(() {
-          _allPurchaseOrders = orders;
-          _filteredPurchaseOrders = orders;
+          _purchaseOrders = orders;
         });
       }
     } catch (e) {
-      if (mounted) _showSnackBar('Siparişler yüklenemedi: $e', isError: true);
+      if (mounted) _showErrorSnackBar('Siparişler yüklenemedi: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _filterPurchaseOrders(String query) {
-    setState(() {
-      _filteredPurchaseOrders = _allPurchaseOrders.where((order) {
-        final poId = order.poId?.toLowerCase() ?? '';
-        final supplier = order.supplierName?.toLowerCase() ?? '';
-        final queryLower = query.toLowerCase();
-        return poId.contains(queryLower) || supplier.contains(queryLower);
-      }).toList();
-    });
-  }
-
-  Future<void> _selectOrder(PurchaseOrder order) async {
-    setState(() {
-      _selectedOrder = order;
-      _receiptItems.clear();
-      _orderItems = [];
-      _quantityControllers.forEach((_, c) => c.dispose());
-      _quantityControllers.clear();
-      _isLoading = true;
-    });
-
+  Future<void> _searchProducts(String query) async {
     try {
-      final items = await _repository.getPurchaseOrderItems(order.id);
+      final products = await _repository.searchProducts(query);
       if (mounted) {
         setState(() {
-          _orderItems = items;
-          for (var item in items) {
-            _quantityControllers[item.id] = TextEditingController();
-          }
+          _products = products;
         });
       }
     } catch (e) {
-      if (mounted) _showSnackBar('Sipariş kalemleri yüklenemedi: $e', isError: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) _showErrorSnackBar('Ürünler aranırken hata: $e');
     }
   }
 
-  Future<void> _saveReceipt() async {
-    if (!(_formKey.currentState?.validate() ?? false) || _selectedOrder == null) return;
-    if (_receiptItems.isEmpty) {
-      _showSnackBar('Kaydetmek için en az bir ürünün miktarını girin.', isError: true);
+  // --- UI Etkileşimleri ---
+  void _onOrderSelected(PurchaseOrder? order) {
+    setState(() {
+      _selectedOrder = order;
+      // Sipariş seçimi değiştiğinde diğer alanları temizle
+      _clearEntryFields();
+    });
+  }
+
+  void _onProductSelected(ProductInfo? product) {
+    setState(() {
+      _selectedProduct = product;
+    });
+  }
+
+  void _addItemToList() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final quantity = double.tryParse(_quantityController.text);
+    if (_selectedProduct == null || quantity == null || quantity <= 0) {
+      _showErrorSnackBar("Lütfen ürün seçin ve geçerli bir miktar girin.");
       return;
     }
 
+    setState(() {
+      _receiptItems.add(ReceiptItemDraft(
+        product: _selectedProduct!,
+        quantity: quantity,
+        palletBarcode: _receivingMode == ReceivingMode.palet
+            ? _palletBarcodeController.text
+            : null,
+      ));
+      _clearEntryFields();
+    });
+  }
+
+  Future<void> _saveAndConfirm() async {
+    if (_receiptItems.isEmpty) {
+      _showErrorSnackBar("Kaydetmek için listeye en az bir ürün eklemelisiniz.");
+      return;
+    }
+
+    // Onay dialogu
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Mal Kabulü Onayla"),
+        content: Text("${_receiptItems.length} kalem ürün 'MAL KABUL' lokasyonuna kaydedilecek. Emin misiniz?"),
+        actions: [
+          TextButton(child: const Text("İptal"), onPressed: () => Navigator.of(ctx).pop(false)),
+          ElevatedButton(child: const Text("Onayla"), onPressed: () => Navigator.of(ctx).pop(true)),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isSaving = true);
+
     try {
-      // DÜZELTME: Eksik olan 'id' ve 'status' parametreleri eklendi.
-      final receipt = GoodsReceipt(
-        id: 0, // ID veritabanı tarafından atanacağı için 0 gönderilebilir.
-        purchaseOrderId: _selectedOrder!.id,
-        receiptNumber: _receiptNumberController.text,
-        receiptDate: DateTime.now(),
-        notes: _notesController.text,
-        status: 'pending', // Başlangıç durumu olarak 'pending' ayarlandı.
-        items: _receiptItems,
+      // Payload'ı oluştur
+      final payload = GoodsReceiptPayload(
+        header: GoodsReceiptHeader(
+          siparisId: _selectedOrder?.id,
+          invoiceNumber: _selectedOrder?.poId,
+          receiptDate: DateTime.now(),
+        ),
+        items: _receiptItems.map((draft) => GoodsReceiptItemPayload(
+          urunId: draft.product.id,
+          quantity: draft.quantity,
+          palletBarcode: draft.palletBarcode,
+        )).toList(),
       );
 
-      await _repository.saveGoodsReceipt(receipt);
-      if (!mounted) return;
-      _showSnackBar("Mal kabul başarıyla kaydedildi.", isError: false);
-      Navigator.pop(context);
+      // Repository üzerinden kaydet
+      await _repository.saveGoodsReceipt(payload);
+
+      if (mounted) {
+        _showSuccessSnackBar("Mal kabul başarıyla kaydedildi!");
+        _resetScreen();
+      }
     } catch (e) {
-      if (mounted) _showSnackBar('Kayıt başarısız: $e', isError: true);
+      if (mounted) _showErrorSnackBar("Kaydetme hatası: $e");
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  void _onOrderItemChanged(PurchaseOrderItem item, String value) {
-    final quantity = double.tryParse(value) ?? 0.0;
-    _receiptItems.removeWhere((receiptItem) => receiptItem.productId == item.productId);
-
-    if (quantity > 0) {
-      // DÜZELTME: Eksik olan 'id' ve 'goodsReceiptId' parametreleri eklendi.
-      _receiptItems.add(
-        GoodsReceiptItem(
-          id: 0, // Bu ID veritabanı tarafından atanacak.
-          goodsReceiptId: 0, // Bu ID asıl fiş kaydedildikten sonra atanacak.
-          productId: item.productId,
-          quantity: quantity,
-        ),
-      );
+  // --- Temizlik ve Resetleme ---
+  void _clearEntryFields() {
+    _productSearchController.clear();
+    setState(() {
+      _selectedProduct = null;
+      _products = [];
+    });
+    _quantityController.clear();
+    // Palet barkodu modu Palet ise temizlenmemeli
+    if (_receivingMode == ReceivingMode.kutu) {
+      _palletBarcodeController.clear();
     }
+    FocusScope.of(context).unfocus();
   }
 
-  void _reset() {
+  void _resetScreen() {
     setState(() {
-      _selectedOrder = null;
-      _orderItems.clear();
       _receiptItems.clear();
-      _receiptNumberController.clear();
-      _notesController.clear();
-      _searchController.clear();
-      _filteredPurchaseOrders = _allPurchaseOrders;
+      _selectedOrder = null;
+      _receivingMode = ReceivingMode.kutu;
+      _clearEntryFields();
     });
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
+  // --- Yardımcı Widget'lar ve Metotlar ---
+  void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
-      backgroundColor: isError ? Colors.redAccent : Colors.green,
+      backgroundColor: Colors.redAccent,
     ));
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.green,
+    ));
+  }
+
+  Future<void> _scanBarcode() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() {
+        _palletBarcodeController.text = result;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: SharedAppBar(
-        title: 'goods_receiving.title'.tr(),
-        actions: [
-          if (_selectedOrder != null)
-            IconButton(
-              icon: const Icon(Icons.clear),
-              onPressed: _reset,
-              tooltip: 'common.clear_selection'.tr(),
-            )
-        ],
-      ),
-      body: _selectedOrder == null ? _buildOrderSelectionUI() : _buildItemEntryUI(),
-      bottomNavigationBar: _buildBottomBar(),
-    );
-  }
-
-  Widget _buildBottomBar() {
-    if (_selectedOrder == null || _orderItems.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: ElevatedButton.icon(
-        onPressed: _isSaving ? null : _saveReceipt,
-        icon: _isSaving
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,))
-            : const Icon(Icons.save_alt_outlined),
-        label: Text('common.save'.tr()),
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 50),
-          textStyle: const TextStyle(fontSize: 18),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOrderSelectionUI() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: TextFormField(
-            controller: _searchController,
-            decoration: InputDecoration(
-                labelText: 'goods_receiving.search_po'.tr(),
-                hintText: 'goods_receiving.search_po_hint'.tr(),
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder()
-            ),
-            onChanged: _filterPurchaseOrders,
-          ),
-        ),
-        if (_isLoading && _filteredPurchaseOrders.isEmpty)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (_filteredPurchaseOrders.isEmpty)
-          Expanded(child: Center(child: Text('goods_receiving.no_open_pos'.tr())))
-        else
-          Expanded(
-            child: ListView.builder(
-              itemCount: _filteredPurchaseOrders.length,
-              itemBuilder: (context, index) {
-                final order = _filteredPurchaseOrders[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: ListTile(
-                    title: Text(order.poId ?? 'PO #${order.id}'),
-                    subtitle: Text(order.supplierName ?? 'Bilinmeyen Tedarikçi'),
-                    trailing: const Icon(Icons.arrow_forward_ios),
-                    onTap: () => _selectOrder(order),
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildItemEntryUI() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        children: [
-          _buildSelectedOrderHeader(),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _orderItems.isEmpty
-                ? const Center(child: Text('Bu siparişte ürün bulunmuyor.'))
-                : ListView.builder(
-              padding: const EdgeInsets.all(8),
-              itemCount: _orderItems.length,
-              itemBuilder: (context, index) => _buildOrderItemCard(_orderItems[index]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSelectedOrderHeader() {
-    return Material(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+      appBar: SharedAppBar(title: 'Mal Kabul'),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+        key: _formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_selectedOrder?.poId ?? 'PO #${_selectedOrder?.id}', style: Theme.of(context).textTheme.headlineSmall),
-            Text(_selectedOrder?.supplierName ?? 'Bilinmeyen Tedarikçi', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _receiptNumberController,
-              decoration: InputDecoration(
-                labelText: 'İrsaliye Numarası',
-                hintText: 'Varsa irsaliye numarasını girin',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner),
-                  onPressed: () async {
-                    final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const QrScannerScreen()));
-                    if (code != null) _receiptNumberController.text = code;
-                  },
-                ),
-              ),
-              validator: (val) => val == null || val.isEmpty ? 'Bu alan zorunludur' : null,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Notlar',
-                hintText: 'İsteğe bağlı notlar',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOrderItemCard(PurchaseOrderItem item) {
-    final qtyController = _quantityControllers[item.id]!;
-    const alreadyReceived = 0.0;
-    final remaining = item.expectedQuantity - alreadyReceived;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.productName ?? 'Bilinmeyen Ürün', style: Theme.of(context).textTheme.titleMedium),
-            Text(item.stockCode ?? '', style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: _buildInfoColumn('Sipariş', item.expectedQuantity.toStringAsFixed(0))),
-                Expanded(child: _buildInfoColumn('Kalan', remaining.toStringAsFixed(0))),
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: qtyController,
-                    decoration: const InputDecoration(labelText: 'Gelen Miktar', border: OutlineInputBorder()),
-                    keyboardType: TextInputType.number,
-                    onChanged: (val) => _onOrderItemChanged(item, val),
-                    validator: (val) {
-                      final entered = num.tryParse(val ?? '0');
-                      if (entered != null && entered > remaining) return 'Kalanı aşamaz';
-                      return null;
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16.0),
+                children: [
+                  // 1. Mod Seçimi
+                  SegmentedButton<ReceivingMode>(
+                    segments: const [
+                      ButtonSegment(value: ReceivingMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
+                      ButtonSegment(value: ReceivingMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
+                    ],
+                    selected: {_receivingMode},
+                    onSelectionChanged: (newSelection) {
+                      setState(() => _receivingMode = newSelection.first);
                     },
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+
+                  // 2. Sipariş Seçimi
+                  DropdownButtonFormField<PurchaseOrder>(
+                    value: _selectedOrder,
+                    items: _purchaseOrders.map((order) {
+                      return DropdownMenuItem(
+                        value: order,
+                        child: Text(order.poId ?? "ID: ${order.id}"),
+                      );
+                    }).toList(),
+                    onChanged: _onOrderSelected,
+                    decoration: const InputDecoration(
+                      labelText: 'Sipariş Seç (Opsiyonel)',
+                      border: OutlineInputBorder(),
+                    ),
+                    isExpanded: true,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Palet Barkodu (Görünürlük kontrolü)
+                  if (_receivingMode == ReceivingMode.palet)
+                    TextFormField(
+                      controller: _palletBarcodeController,
+                      decoration: InputDecoration(
+                          labelText: 'Palet Barkodu',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.qr_code_scanner),
+                            onPressed: _scanBarcode,
+                          )
+                      ),
+                      validator: (value) {
+                        if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+                          return "Palet modu için barkod zorunludur.";
+                        }
+                        return null;
+                      },
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                    ),
+                  const SizedBox(height: 16),
+
+                  const Divider(),
+
+                  // 4. Ürün Seçimi (Autocomplete)
+                  Autocomplete<ProductInfo>(
+                    displayStringForOption: (option) => "${option.name} (${option.stockCode})",
+                    optionsBuilder: (textEditingValue) {
+                      if (textEditingValue.text == '') {
+                        return const Iterable<ProductInfo>.empty();
+                      }
+                      // Arama sonuçları _products listesinden gelecek
+                      return _products.where((p) =>
+                      p.name.toLowerCase().contains(textEditingValue.text.toLowerCase()) ||
+                          p.stockCode.toLowerCase().contains(textEditingValue.text.toLowerCase())
+                      );
+                    },
+                    onSelected: _onProductSelected,
+                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                      // Arama kontrolcüsünü bizimkiyle senkronize et
+                      if (_productSearchController != controller) {
+                        // Bu sadece bir kerelik senkronizasyon için
+                      }
+                      return TextFormField(
+                        controller: _productSearchController, // Kendi kontrolcümüzü kullanıyoruz
+                        focusNode: focusNode,
+                        decoration: const InputDecoration(
+                          labelText: "Ürün Ara (Ad veya Stok Kodu)",
+                          border: OutlineInputBorder(),
+                          suffixIcon: Icon(Icons.search),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 5. Miktar Girişi
+                  TextFormField(
+                    controller: _quantityController,
+                    decoration: const InputDecoration(
+                      labelText: 'Miktar',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    validator: (value) => (value?.isEmpty ?? true) ? "Miktar girin." : null,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 6. Listeye Ekle Butonu
+                  ElevatedButton.icon(
+                    onPressed: _addItemToList,
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text('Listeye Ekle'),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 7. Eklenenler Listesi
+                  Text("Kabul Edilecek Ürünler (${_receiptItems.length})", style: Theme.of(context).textTheme.titleMedium),
+                  const Divider(),
+                  if (_receiptItems.isEmpty)
+                    const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text("Liste boş.")))
+                  else
+                    _buildReceiptsList(),
+                ],
+              ),
             ),
+            // 8. Kaydet ve Onayla Butonu
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveAndConfirm,
+                icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white)) : const Icon(Icons.check_circle),
+                label: const Text('Kaydet ve Onayla'),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 50)
+                ),
+              ),
+            )
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoColumn(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        Text(value, style: Theme.of(context).textTheme.titleMedium),
-      ],
+  Widget _buildReceiptsList() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _receiptItems.length,
+      itemBuilder: (context, index) {
+        final item = _receiptItems[index];
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          child: ListTile(
+            title: Text(item.product.name),
+            subtitle: Text("Palet: ${item.palletBarcode ?? 'YOK'}"),
+            trailing: Text("x ${item.quantity.toStringAsFixed(0)}", style: Theme.of(context).textTheme.titleLarge),
+            onLongPress: () {
+              // Silme onayı
+              showDialog(context: context, builder: (ctx) => AlertDialog(
+                title: const Text("Öğeyi Sil"),
+                content: Text("'${item.product.name}' ürününü listeden kaldırmak istediğinize emin misiniz?"),
+                actions: [
+                  TextButton(child: const Text("İptal"), onPressed: () => Navigator.of(ctx).pop()),
+                  TextButton(child: const Text("Sil"), onPressed: (){
+                    setState(() => _receiptItems.removeAt(index));
+                    Navigator.of(ctx).pop();
+                  }),
+                ],
+              ));
+            },
+          ),
+        );
+      },
     );
   }
 }

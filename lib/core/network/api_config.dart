@@ -1,3 +1,4 @@
+// lib/core/network/api_config.dart
 class ApiConfig {
   /// The root host for the backend service. **Do NOT** add a trailing slash here.
   static const String _host = 'http://10.0.2.2:5000';
@@ -23,4 +24,8 @@ class ApiConfig {
 
   // Belirli tabloları indirme (opsiyonel)
   static String dataDownload(String tableName) => '$baseUrl/api/data/$tableName';
+
+  // === YENİ EKLENEN ENDPOINT ===
+  /// Mal kabul işlemleri için endpoint
+  static final String goodsReceipts = '$sanitizedBaseUrl/goods-receipts';
 }

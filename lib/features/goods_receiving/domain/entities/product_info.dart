@@ -1,4 +1,4 @@
-// features/goods_receiving/domain/entities/product_info.dart
+// lib/features/goods_receiving/domain/entities/product_info.dart
 import 'package:equatable/equatable.dart';
 
 class ProductInfo extends Equatable {
@@ -6,63 +6,44 @@ class ProductInfo extends Equatable {
   final String name;
   final String stockCode;
   final bool isActive;
-  final bool isSerialized;
 
   const ProductInfo({
     required this.id,
     required this.name,
     required this.stockCode,
     required this.isActive,
-    this.isSerialized = false,
   });
 
-  factory ProductInfo.fromMap(Map<String, dynamic> map) {
+  /// Özellikle lokal 'urunler' tablosundan gelen Map'ten nesne oluşturur.
+  factory ProductInfo.fromDbMap(Map<String, dynamic> map) {
     return ProductInfo(
-      id: map['id'] as int,
-      name: map['name'] as String,
-      stockCode: map['code'] as String,
-      isActive: map['is_active'] as bool? ?? true,
-      isSerialized: map['is_serialized'] as bool? ?? false,
+      id: map['UrunId'] as int,
+      name: map['UrunAdi'] as String,
+      stockCode: map['StokKodu'] as String,
+      isActive: (map['aktif'] as int? ?? 1) == 1,
     );
   }
 
-  @override
-  List<Object?> get props => [id, name, stockCode, isActive, isSerialized];
-
+  /// API'den gelen JSON'dan nesne oluşturur.
   factory ProductInfo.fromJson(Map<String, dynamic> json) {
     return ProductInfo(
       id: json['id'] as int,
       name: json['name'] as String,
-      stockCode: json['code'] as String? ?? '',
-      isActive: json['is_active'] as bool? ?? true,
-      isSerialized: json['is_serialized'] as bool? ?? false,
+      stockCode: json['stockCode'] as String? ?? json['code'] as String? ?? '',
+      isActive: (json['isActive'] as bool? ?? true),
     );
   }
 
+  /// Nesneyi JSON formatına dönüştürür.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'stockCode': stockCode,
       'isActive': isActive,
-      'isSerialized': isSerialized,
     };
   }
 
-  static const ProductInfo empty = ProductInfo(id: 0, name: '', stockCode: '', isActive: false, isSerialized: false);
-
   @override
-  String toString() {
-    return 'ProductInfo(id: $id, name: $name, stockCode: $stockCode, isActive: $isActive, isSerialized: $isSerialized)';
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is ProductInfo &&
-              runtimeType == other.runtimeType &&
-              id == other.id;
-
-  @override
-  int get hashCode => id.hashCode;
+  List<Object?> get props => [id, name, stockCode, isActive];
 }

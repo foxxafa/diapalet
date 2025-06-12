@@ -4,7 +4,9 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
+// SOMUT implementasyon buradan geliyor
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
+// SOYUT arayüz buradan geliyor
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
@@ -19,7 +21,7 @@ void main() async {
 
   // --- Bağımsız Singleton Servisler ---
   final dbHelper = DatabaseHelper.instance;
-  await dbHelper.database;
+  await dbHelper.database; // Veritabanının başlatıldığından emin ol
   final dio = Dio();
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
@@ -38,8 +40,8 @@ void main() async {
 
           // Repository'ler: Diğer servislere bağımlı.
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
-              GoodsReceivingRepository>(
-            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
+              GoodsReceivingRepository>( // Arayüz (soyut) tipini belirtiyoruz
+            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl( // Implementasyonu (somut) oluşturuyoruz
               dbHelper: db,
               networkInfo: network,
               dio: dio,
@@ -52,11 +54,11 @@ void main() async {
                 InventoryTransferRepositoryImpl(
                   dbHelper: db,
                   networkInfo: network,
-
                   dio: dio,
                 ),
           ),
 
+          // SyncService
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             update: (_, db, network, dio, __) => SyncService(
               dbHelper: db,

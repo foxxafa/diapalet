@@ -1,24 +1,15 @@
-import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
+import 'package:flutter/foundation.dart';
 
-/// Satin alma siparişinin bir kalemini (satırını) temsil eder.
-/// Bu model, 'satin_alma_siparis_fis_satir' tablosundaki verilerle eşleşir.
 @immutable
 class PurchaseOrderItem {
-  final int id; // 'satin_alma_siparis_fis_satir.id'
-  final int orderId; // 'satin_alma_siparis_fis_satir.siparis_id'
-  final int productId; // 'satin_alma_siparis_fis_satir.urun_id'
-  final double expectedQuantity; // 'satin_alma_siparis_fis_satir.miktar'
-  final String? unit; // 'satin_alma_siparis_fis_satir.birim'
-  final String? notes; // 'satin_alma_siparis_fis_satir.notes'
-
-  // 'urunler' tablosundan JOIN ile alınacak ek bilgiler
+  final int id;
+  final int orderId;
+  final int productId;
+  final double expectedQuantity;
+  final String? unit;
   final String? productName;
   final String? stockCode;
-  final String? barcode;
-  final int? itemsPerBox; // 'urunler.qty' (Kutu içi adet)
-  final int? itemsPerPallet; // 'urunler.palletqty' (Palet içi adet)
-
   final ProductInfo? product;
 
   const PurchaseOrderItem({
@@ -27,75 +18,51 @@ class PurchaseOrderItem {
     required this.productId,
     required this.expectedQuantity,
     this.unit,
-    this.notes,
     this.productName,
     this.stockCode,
-    this.barcode,
-    this.itemsPerBox,
-    this.itemsPerPallet,
     this.product,
   });
 
-  double get orderedQuantity => expectedQuantity;
+  /// Veritabanındaki 'urunler' tablosuyla JOIN yapılmış bir sorgudan nesne oluşturur.
+  factory PurchaseOrderItem.fromDbJoinMap(Map<String, dynamic> map) {
+    return PurchaseOrderItem(
+      id: map['id'] as int,
+      orderId: map['siparis_id'] as int,
+      productId: map['urun_id'] as int,
+      expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
+      unit: map['birim'] as String?,
+      productName: map['UrunAdi'] as String?,
+      stockCode: map['StokKodu'] as String?,
+    );
+  }
 
-  // JSON'dan model oluşturma
+  /// API'den gelen JSON'dan nesne oluşturur.
   factory PurchaseOrderItem.fromJson(Map<String, dynamic> json) {
     return PurchaseOrderItem(
-      id: json['id'],
-      orderId: json['siparis_id'],
-      productId: json['urun_id'],
-      expectedQuantity: (json['miktar'] as num).toDouble(),
-      unit: json['birim'],
-      notes: json['notes'],
-      // JOIN ile gelen ürün bilgileri
-      productName: json['urun_adi'],
-      stockCode: json['stok_kodu'],
-      barcode: json['barcode1'], // Veya hangi barkod alanı kullanılacaksa
-      itemsPerBox: json['qty'],
-      itemsPerPallet: json['palletqty'],
+      id: json['id'] as int,
+      orderId: json['orderId'] as int,
+      productId: json['productId'] as int,
+      expectedQuantity: (json['expectedQuantity'] as num).toDouble(),
+      unit: json['unit'] as String?,
+      productName: json['productName'] as String?,
+      stockCode: json['stockCode'] as String?,
       product: json['product'] != null
           ? ProductInfo.fromJson(json['product'] as Map<String, dynamic>)
           : null,
     );
   }
 
-  // Modelden JSON oluşturma
+  /// Nesneyi JSON formatına dönüştürür.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'siparis_id': orderId,
-      'urun_id': productId,
-      'miktar': expectedQuantity,
-      'birim': unit,
-      'notes': notes,
-      'urun_adi': productName,
-      'stok_kodu': stockCode,
-      'barcode1': barcode,
-      'qty': itemsPerBox,
-      'palletqty': itemsPerPallet,
+      'orderId': orderId,
+      'productId': productId,
+      'expectedQuantity': expectedQuantity,
+      'unit': unit,
+      'productName': productName,
+      'stockCode': stockCode,
       'product': product?.toJson(),
     };
   }
-
-  // Lokal DB'den (map) model oluşturma
-  factory PurchaseOrderItem.fromMap(Map<String, dynamic> map) {
-    // Veritabanı sütun adları `toJson` metodundaki anahtarlarla eşleşmelidir.
-    return PurchaseOrderItem(
-      id: map['id'] as int,
-      orderId: map['siparis_id'] as int,
-      productId: map['urun_id'] as int,
-      // 'miktar' alanı double veya int olabilir, num'dan çevirmek daha güvenli.
-      expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
-      unit: map['birim'] as String?,
-      notes: map['notes'] as String?,
-      // JOIN ile gelen ürün bilgileri, lokalde ayrı sorguyla eklenebilir.
-      // Bu nedenle burada null olabilirler.
-      productName: map['urun_adi'] as String?,
-      stockCode: map['stok_kodu'] as String?,
-      barcode: map['barcode1'] as String?,
-      itemsPerBox: map['qty'] as int?,
-      itemsPerPallet: map['palletqty'] as int?,
-      product: null,
-    );
-  }
-} 
+}
