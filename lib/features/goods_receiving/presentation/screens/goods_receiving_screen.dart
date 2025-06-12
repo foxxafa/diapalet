@@ -22,735 +22,207 @@ class GoodsReceivingScreen extends StatefulWidget {
 }
 
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
-  // Sabit lokasyon kuralı: Fiziksel olarak tüm ürünler bu lokasyona girer.
-  LocationInfo? _defaultLocation;
-
-  late GoodsReceivingRepository _repo;
-  bool _isRepoInitialized = false;
-  bool _isLoading = true;
-  bool _isSaving = false;
-
   final _formKey = GlobalKey<FormState>();
+  late final GoodsReceivingRepository _repository;
 
-  // Yeni state: Palet/Kutu modu
-  GoodsReceivingMode _mode = GoodsReceivingMode.box;
+  final _productController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _palletBarcodeController = TextEditingController();
+  final _quantityController = TextEditingController();
 
-  List<PurchaseOrder> _availableOrders = [];
-  PurchaseOrder? _selectedOrder;
-  final TextEditingController _orderController = TextEditingController();
-
-  // Palet ID'si için controller
-  final TextEditingController _palletBarcodeController = TextEditingController();
-
-  List<ProductInfo> _availableProducts = [];
   ProductInfo? _selectedProduct;
-  final TextEditingController _productController = TextEditingController();
-
-  final TextEditingController _quantityController = TextEditingController();
-  final List<GoodsReceiptLogItem> _receivedItems = [];
-
-  static const double _fieldHeight = 56;
-  static const double _gap = 12;
-  static const double _smallGap = 8;
-  final _borderRadius = BorderRadius.circular(12);
+  LocationInfo? _selectedLocation;
+  
+  List<GoodsReceiptLogItem> _logItems = [];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _repo = Provider.of<GoodsReceivingRepository>(context, listen: false);
-      _loadInitialData();
+    _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
+    _loadInitialLogs();
+  }
+
+  void _loadInitialLogs() async {
+    final logs = await _repository.getRecentReceipts(limit: 50);
+    if (mounted) {
+      setState(() {
+        _logItems = logs;
+      });
+    }
+  }
+
+  void _onProductSelected(ProductInfo? product) {
+    setState(() {
+      _selectedProduct = product;
+      if (product != null) {
+        _productController.text = product.name;
+      }
     });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isRepoInitialized) {
-      _loadInitialData();
-      _isRepoInitialized = true;
-    }
+  void _onLocationSelected(LocationInfo? location) {
+    setState(() {
+      _selectedLocation = location;
+       if (location != null) {
+        _locationController.text = location.name;
+      }
+    });
   }
 
-  @override
-  void dispose() {
-    _quantityController.dispose();
-    _productController.dispose();
-    _palletBarcodeController.dispose();
-    _orderController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadInitialData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    try {
-      final results = await Future.wait([
-        _repo.getOpenPurchaseOrders(),
-        _repo.getAllProducts(),
-        _repo.getLocationsForDropdown(),
-      ]);
-      if (!mounted) return;
-
-      final locations = List<LocationInfo>.from(results[2]);
-      final malKabulLocation = locations.where((loc) => loc.name.toUpperCase() == "MAL KABUL");
-
+  Future<void> _scanBarcode() async {
+    final barcode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (context) => const QRScannerScreen()),
+    );
+    if (barcode != null && barcode.isNotEmpty) {
       setState(() {
-        _availableOrders = List<PurchaseOrder>.from(results[0]);
-        _availableProducts = List<ProductInfo>.from(results[1]);
-        if (malKabulLocation.isNotEmpty) {
-          _defaultLocation = malKabulLocation.first;
-        } else {
-          _defaultLocation = locations.isNotEmpty ? locations.first : null;
-        }
+        _palletBarcodeController.text = barcode;
       });
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar(
-            tr('goods_receiving.errors.load_initial', namedArgs: {'error': e.toString()}));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
     }
   }
 
-  void _resetInputFields({bool resetAll = false}) {
-    _productController.clear();
-    _quantityController.clear();
-    _selectedProduct = null;
-    if(_mode == GoodsReceivingMode.pallet) {
+  Future<void> _saveReceipt() async {
+    if (_formKey.currentState!.validate() && _selectedProduct != null && _selectedLocation != null) {
+      final palletBarcode = _palletBarcodeController.text.trim();
+      final quantity = double.tryParse(_quantityController.text);
+
+      if (quantity == null || quantity <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid quantity.')),
+        );
+        return;
+      }
+      
+      await _repository.saveGoodsReceipt(
+        productId: _selectedProduct!.id,
+        locationId: _selectedLocation!.id,
+        quantity: quantity,
+        palletBarcode: palletBarcode.isEmpty ? null : palletBarcode,
+      );
+
+      _formKey.currentState!.reset();
+      _productController.clear();
+      _locationController.clear();
       _palletBarcodeController.clear();
-    }
-
-    if (mounted) {
+      _quantityController.clear();
       setState(() {
-        if (resetAll) {
-          _selectedOrder = null;
-          _orderController.clear();
-          _receivedItems.clear();
-          _formKey.currentState?.reset();
-        }
-      });
-    }
-  }
-
-  Future<void> _addItemToList() async {
-    FocusScope.of(context).unfocus();
-
-    if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
-      _showErrorSnackBar(tr('goods_receiving.errors.required_fields'));
-      return;
-    }
-
-    if (_selectedProduct == null) {
-      _showErrorSnackBar(tr('goods_receiving.errors.invalid_product'));
-      return;
-    }
-
-    final quantity = double.tryParse(_quantityController.text);
-    if (quantity == null || quantity <= 0) {
-      _showErrorSnackBar(tr('goods_receiving.errors.invalid_qty'));
-      return;
-    }
-
-    if (_defaultLocation == null) {
-      _showErrorSnackBar(tr('goods_receiving.errors.no_default_location'));
-      return;
-    }
-
-    // Kutu modunda sadece tek çeşit ürün eklenmesine izin ver.
-    if (_mode == GoodsReceivingMode.box && _receivedItems.isNotEmpty) {
-      _showErrorSnackBar("Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.");
-      return;
-    }
-
-    final newItem = GoodsReceiptLogItem(
-      productId: _selectedProduct!.id,
-      productName: _selectedProduct!.name,
-      quantity: quantity,
-      palletBarcode: _mode == GoodsReceivingMode.pallet ? _palletBarcodeController.text : null,
-    );
-
-    if (mounted) {
-      setState(() {
-        _receivedItems.insert(0, newItem);
         _selectedProduct = null;
-        _productController.clear();
-        _quantityController.clear();
+        _selectedLocation = null;
       });
-      _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': newItem.productName}));
+      _loadInitialLogs(); 
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Goods receipt saved successfully!')),
+      );
     }
   }
 
-  void _removeItem(int index) {
-    if (mounted) {
-      setState(() {
-        final removedItem = _receivedItems.removeAt(index);
-        _showSuccessSnackBar(tr('goods_receiving.success.item_removed', namedArgs: {'product': removedItem.productName}), isError: true);
-      });
-    }
-  }
-
-  Future<void> _onConfirmSave() async {
-    FocusScope.of(context).unfocus();
-    if (_receivedItems.isEmpty) {
-      _showErrorSnackBar(tr('goods_receiving.errors.no_items'));
-      return;
-    }
-
-    if (_selectedOrder == null) {
-      _showErrorSnackBar(tr('goods_receiving.errors.select_order'));
-      return;
-    }
-
-    if (_mode == GoodsReceivingMode.pallet && _palletBarcodeController.text.isEmpty) {
-      _showErrorSnackBar("Lütfen bir palet barkodu girin veya okutun.");
-      return;
-    }
-
-    bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text('goods_receiving.confirm_title'.tr()),
-          content: Text('goods_receiving.confirm_message'.tr(namedArgs: {'count': _receivedItems.length.toString()})),
-          actions: <Widget>[
-            TextButton(
-              child: Text('common.cancel'.tr()),
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-            ),
-            ElevatedButton(
-              child: Text('goods_receiving.save_and_confirm'.tr()),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirm == true) {
-      if (!mounted) return;
-      setState(() => _isSaving = true);
-      try {
-        await _repo.recordGoodsReceipt(
-          purchaseOrderId: _selectedOrder?.id,
-          receivedItems: _receivedItems
-        );
-        if (mounted) {
-          _showSuccessSnackBar(tr('goods_receiving.success.saved'));
-          _resetInputFields(resetAll: true);
-        }
-      } catch (e) {
-        if (mounted) {
-          _showErrorSnackBar(tr('goods_receiving.errors.save_error', namedArgs: {'error': e.toString()}));
-        }
-      } finally {
-        if (mounted) {
-          setState(() => _isSaving = false);
-        }
-      }
-    }
-  }
-
-  Future<void> _scanQrAndUpdateSelection(String fieldType) async {
-    FocusScope.of(context).unfocus();
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
-    );
-    if (result == null || result.isEmpty || !mounted) return;
-
-    switch (fieldType) {
-      case 'pallet':
-        setState(() {
-          _palletBarcodeController.text = result;
-        });
-        _showSuccessSnackBar("Palet barkodu okundu: $result");
-        break;
-      case 'product':
-        final qrAsInt = int.tryParse(result);
-        final matchedProduct = _availableProducts.firstWhere(
-              (p) => (qrAsInt != null && p.id == qrAsInt) || p.stockCode == result || p.name.toLowerCase() == result.toLowerCase(),
-          orElse: () => ProductInfo.empty,
-        );
-        if (matchedProduct != ProductInfo.empty) {
-          setState(() {
-            _selectedProduct = matchedProduct;
-            _productController.text = "${matchedProduct.name} (${matchedProduct.stockCode})";
-          });
-          _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': matchedProduct.name}));
-        } else {
-          _showErrorSnackBar(tr('goods_receiving.errors.invalid_qr_product', namedArgs: {'qr': result}));
-        }
-        break;
-    }
-  }
-
-  void _showErrorSnackBar(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(20),
-        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.orangeAccent : Colors.green,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(20),
-        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label, {bool filled = false, Widget? suffixIcon, bool enabled = true}) {
-    return InputDecoration(
-      labelText: label,
-      filled: filled,
-      fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
-      border: OutlineInputBorder(borderRadius: _borderRadius),
-      enabled: enabled,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
-      suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01),
-      helperText: ' ',
-      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
-    );
-  }
-
-  Future<T?> _showSearchableDropdown<T>({
-    required BuildContext context,
-    required String title,
-    required List<T> items,
-    required String Function(T) itemToString,
-    required bool Function(T, String) filterCondition,
-    T? initialValue,
-  }) async {
-    return showDialog<T>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        String searchText = '';
-        List<T> filteredItems = List.from(items);
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setStateDialog) {
-            if (searchText.isNotEmpty) {
-              filteredItems = items.where((item) => filterCondition(item, searchText)).toList();
-            } else {
-              filteredItems = List.from(items);
-            }
-            return AlertDialog(
-              title: Text(title),
-              contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    TextField(
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: tr('goods_receiving.search_hint'),
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: _borderRadius),
-                      ),
-                      onChanged: (value) {
-                        setStateDialog(() {
-                          searchText = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: _gap),
-                    Expanded(
-                      child: filteredItems.isEmpty
-                          ? Center(child: Text('goods_receiving.search_no_result'.tr()))
-                          : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filteredItems.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final item = filteredItems[index];
-                          return ListTile(
-                            title: Text(itemToString(item)),
-                            onTap: () {
-                              Navigator.of(dialogContext).pop(item);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Goods Receiving')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Product Autocomplete
+              Autocomplete<ProductInfo>(
+                displayStringForOption: (option) => option.name,
+                optionsBuilder: (TextEditingValue textEditingValue) {
+                  if (textEditingValue.text.isEmpty) {
+                    return const Iterable<ProductInfo>.empty();
+                  }
+                  return _repository.getProducts(filter: textEditingValue.text);
+                },
+                onSelected: _onProductSelected,
+                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(labelText: 'Product', hintText: 'Start typing to search...'),
+                    validator: (value) => _selectedProduct == null ? 'Please select a product' : null,
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              // Location Autocomplete
+              Autocomplete<LocationInfo>(
+                displayStringForOption: (option) => option.name,
+                optionsBuilder: (TextEditingValue textEditingValue) {
+                  if (textEditingValue.text.isEmpty) {
+                    return const Iterable<LocationInfo>.empty();
+                  }
+                  return _repository.getLocations(filter: textEditingValue.text);
+                },
+                onSelected: _onLocationSelected,
+                 fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(labelText: 'Location'),
+                     validator: (value) => _selectedLocation == null ? 'Please select a location' : null,
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _quantityController,
+                decoration: const InputDecoration(labelText: 'Quantity'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                validator: (value) {
+                  if (value == null || value.isEmpty || double.tryParse(value) == null || double.parse(value) <= 0) {
+                    return 'Please enter a valid quantity';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _palletBarcodeController,
+                decoration: InputDecoration(
+                  labelText: 'Pallet Barcode (Optional)',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.qr_code_scanner),
+                    onPressed: _scanBarcode,
+                  ),
                 ),
               ),
-              actions: <Widget>[
-                TextButton(
-                  child: Text('common.cancel'.tr()),
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _saveReceipt,
+                child: const Text('Save Receipt'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+              ),
+              const Divider(height: 32),
+              const Text('Recent Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _logItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _logItems[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.check_circle, color: Colors.green),
+                        title: Text(
+                          '${item.urun_name} (${item.quantity} units)',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Pallet: ${item.container_id ?? 'N/A'}\nTo: ${item.location_name} at ${item.created_at}',
+                        ),
+                        isThreeLine: true,
+                      ),
+                    );
                   },
                 ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final double screenHeight = MediaQuery.of(context).size.height;
-    final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
-    final bool isKutuModeLocked = _mode == GoodsReceivingMode.box && _receivedItems.isNotEmpty;
-
-    return Scaffold(
-      appBar: SharedAppBar(
-        title: 'goods_receiving.title'.tr(),
-      ),
-      resizeToAvoidBottomInset: true,
-      bottomNavigationBar: _isLoading || _isSaving
-          ? null
-          : Container(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        height: bottomNavHeight,
-        child: ElevatedButton.icon(
-          onPressed: _receivedItems.isEmpty ? null : _onConfirmSave,
-          icon: const Icon(Icons.check_circle_outline),
-          label: Text('goods_receiving.save_and_confirm'.tr()),
-          style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-              shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        ),
-      ),
-      body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildModeSelector(),
-                const SizedBox(height: _gap),
-                _buildSearchableOrderDropdown(),
-                if (_mode == GoodsReceivingMode.pallet) ...[
-                  const SizedBox(height: _gap),
-                  _buildPalletIdInput(),
-                ],
-                const SizedBox(height: _gap),
-                _buildSearchableProductInputRow(isLocked: isKutuModeLocked),
-                const SizedBox(height: _gap),
-                _buildQuantityInput(isLocked: isKutuModeLocked),
-                const SizedBox(height: _gap),
-                _buildAddToListButton(isLocked: isKutuModeLocked),
-                const SizedBox(height: _smallGap + 4),
-                Expanded(child: _buildReceivedItemsList()),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeSelector() {
-    return Center(
-      child: SegmentedButton<GoodsReceivingMode>(
-        segments: const [
-          ButtonSegment(
-              value: GoodsReceivingMode.pallet,
-              label: Text('Palet'), // L10n key: 'goods_receiving.modes.pallet'
-              icon: Icon(Icons.pallet)),
-          ButtonSegment(
-              value: GoodsReceivingMode.box,
-              label: Text('Kutu'), // L10n key: 'goods_receiving.modes.box'
-              icon: Icon(Icons.inventory_2_outlined)),
-        ],
-        selected: {_mode},
-        onSelectionChanged: (Set<GoodsReceivingMode> newSelection) {
-          if (mounted) {
-            setState(() {
-              _mode = newSelection.first;
-              // Mod değiştiğinde listeyi ve giriş alanlarını temizle
-              _receivedItems.clear();
-              _resetInputFields();
-            });
-          }
-        },
-        style: SegmentedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()),
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchableOrderDropdown() {
-    return SizedBox(
-      child: TextFormField(
-        controller: _orderController,
-        readOnly: true,
-        decoration: _inputDecoration('goods_receiving.select_order'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
-        onTap: () async {
-          final PurchaseOrder? selected = await _showSearchableDropdown<PurchaseOrder>(
-            context: context,
-            title: 'goods_receiving.select_order'.tr(),
-            items: _availableOrders,
-            itemToString: (item) => item.poId ?? item.id.toString(),
-            filterCondition: (item, query) => (item.poId ?? item.id.toString()).toLowerCase().contains(query.toLowerCase()),
-            initialValue: _selectedOrder,
-          );
-          if (selected != null) {
-            setState(() {
-              _selectedOrder = selected;
-              _orderController.text = selected.poId ?? selected.id.toString();
-            });
-          }
-        },
-        validator: (value) => (value == null || value.isEmpty) ? 'goods_receiving.errors.select_order'.tr() : null,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-      ),
-    );
-  }
-
-  Widget _buildPalletIdInput() {
-    return SizedBox(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _palletBarcodeController,
-              decoration: _inputDecoration('Palet Barkodu Girin/Okutun', filled: false),
-              validator: (value) {
-                if (_mode == GoodsReceivingMode.pallet && (value == null || value.isEmpty)) {
-                  return "Palet barkodu zorunludur.";
-                }
-                return null;
-              },
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-            ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(
-            onTap: () => _scanQrAndUpdateSelection('pallet'),
-            size: _fieldHeight,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchableProductInputRow({required bool isLocked}) {
-    return SizedBox(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _productController,
-              readOnly: true,
-              enabled: !isLocked,
-              decoration: _inputDecoration('goods_receiving.select_product'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down), enabled: !isLocked),
-              onTap: isLocked ? null : () async {
-                final ProductInfo? selected = await _showSearchableDropdown<ProductInfo>(
-                  context: context,
-                  title: 'goods_receiving.select_product'.tr(),
-                  items: _availableProducts,
-                  itemToString: (product) => "${product.name} (${product.stockCode})",
-                  filterCondition: (product, query) =>
-                  product.name.toLowerCase().contains(query.toLowerCase()) ||
-                      product.stockCode.toLowerCase().contains(query.toLowerCase()),
-                  initialValue: _selectedProduct,
-                );
-                if (selected != null) {
-                  setState(() {
-                    _selectedProduct = selected;
-                    _productController.text = "${selected.name} (${selected.stockCode})";
-                  });
-                }
-              },
-              validator: (value) {
-                if(isLocked) return null;
-                return (value == null || value.isEmpty) ? tr('goods_receiving.errors.invalid_product') : null;
-              },
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-            ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(
-            onTap: isLocked ? (){} : () => _scanQrAndUpdateSelection('product'),
-            size: _fieldHeight,
-            isEnabled: !isLocked,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuantityInput({required bool isLocked}) {
-    return SizedBox(
-      child: TextFormField(
-        controller: _quantityController,
-        keyboardType: TextInputType.number,
-        enabled: !isLocked,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: _inputDecoration('goods_receiving.enter_qty'.tr(), enabled: !isLocked),
-        validator: (value) {
-          if (isLocked) return null; // Do not validate if locked
-          if (value == null || value.isEmpty) return tr('goods_receiving.enter_qty');
-          final number = double.tryParse(value);
-          if (number == null) return tr('goods_receiving.errors.invalid_qty');
-          if (number <= 0) return tr('goods_receiving.errors.invalid_qty');
-          return null;
-        },
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-      ),
-    );
-  }
-
-  Widget _buildAddToListButton({required bool isLocked}) {
-    return SizedBox(
-      height: _fieldHeight,
-      child: ElevatedButton.icon(
-        onPressed: isLocked || _isSaving ? null : _addItemToList,
-        icon: const Icon(Icons.add_circle_outline),
-        label: Text('goods_receiving.add_to_list'.tr()),
-        style: ElevatedButton.styleFrom(
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReceivedItemsList() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.5).round()),
-        borderRadius: _borderRadius,
-        border: Border.all(color: Theme.of(context).dividerColor.withAlpha((255 * 0.7).round())),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text(
-              tr('goods_receiving.items_added', namedArgs: {'count': _receivedItems.length.toString()}),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Divider(height: 1, thickness: 1),
-          Expanded(
-            child: _receivedItems.isEmpty
-                ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'goods_receiving.no_items'.tr(),
-                  style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
-                  textAlign: TextAlign.center,
-                ),
               ),
-            )
-                : ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: _smallGap, horizontal: _smallGap / 2),
-              itemCount: _receivedItems.length,
-              itemBuilder: (context, index) {
-                final item = _receivedItems[index];
-                return _buildItemCard(item, index);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemCard(GoodsReceiptLogItem item, int index) {
-    return Card(
-      key: ValueKey(item.productId),
-      margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
-      shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-      elevation: 2,
-      child: ListTile(
-        title: Text(item.productName, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (item.palletBarcode != null && item.palletBarcode!.isNotEmpty)
-              Text('Palet: ${item.palletBarcode}'),
-            // Location is implicitly the default "MAL KABUL" location, so no need to display it per item.
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(tr('goods_receiving.qty_unit', namedArgs: {'qty': item.quantity.toString()}), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
-            const SizedBox(width: _smallGap),
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: Colors.redAccent[700]),
-              onPressed: () => _removeItem(index),
-              tooltip: 'goods_receiving.delete_item'.tr(),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ],
-        ),
-        isThreeLine: true,
-      ),
-    );
-  }
-}
-
-class _QrButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final double size;
-  final bool isEnabled;
-
-  const _QrButton({required this.onTap, required this.size, this.isEnabled = true});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ElevatedButton(
-        onPressed: isEnabled ? onTap : null,
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          padding: EdgeInsets.zero,
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-        ).copyWith(
-          backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-                (Set<WidgetState> states) {
-              if (states.contains(WidgetState.disabled)) {
-                return Colors.grey.shade300;
-              }
-              return Theme.of(context).colorScheme.secondaryContainer;
-            },
+            ],
           ),
         ),
-        child: const Icon(Icons.qr_code_scanner, size: 28),
       ),
     );
   }

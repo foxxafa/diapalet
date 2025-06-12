@@ -114,6 +114,47 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     });
   }
 
+  @override
+  Future<void> saveGoodsReceipt({
+    required int productId,
+    required int locationId,
+    required double quantity,
+    String? palletBarcode,
+  }) async {
+    final db = await _dbHelper.database;
+    final timestamp = DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      // 1. Log the receipt
+      await txn.insert('goods_receipt_log', {
+        'urun_id': productId,
+        'location_id': locationId,
+        'quantity': quantity,
+        'container_id': palletBarcode,
+        'created_at': timestamp,
+      });
+
+      // 2. Update the inventory stock
+      await _upsertStock(txn, productId, locationId, quantity, palletBarcode);
+
+      // 3. Create a pending operation for the server
+      final payload = {
+        'product_id': productId,
+        'location_id': locationId,
+        'quantity': quantity,
+        'pallet_barcode': palletBarcode,
+        'receipt_date': timestamp,
+      };
+
+      await txn.insert('pending_operation', {
+        'type': 'goods_receipt',
+        'data': jsonEncode(payload),
+        'created_at': timestamp,
+        'status': 'pending',
+      });
+    });
+  }
+
   Future<void> _upsertStock(DatabaseExecutor txn, int urunId, int locationId, double qtyChange, String? palletBarcode) async {
     final palletClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
     final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
@@ -127,22 +168,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     if (existing.isNotEmpty) {
       final currentQty = (existing.first['quantity'] as num).toDouble();
       final newQty = currentQty + qtyChange;
-      if (newQty > 0.001) {
-        await txn.update(
-          'inventory_stock',
-          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
-      } else {
-        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
-      }
-    } else if (qtyChange > 0) {
+      
+      await txn.update(
+        'inventory_stock',
+        {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [existing.first['id']],
+      );
+    } else {
       await txn.insert('inventory_stock', {
         'urun_id': urunId,
         'location_id': locationId,
         'quantity': qtyChange,
         'pallet_barcode': palletBarcode,
+        'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       });
     }

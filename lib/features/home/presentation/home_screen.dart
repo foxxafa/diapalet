@@ -15,8 +15,8 @@ class HomeScreen extends StatelessWidget {
     final syncService = Provider.of<SyncService>(context, listen: false);
 
     return Scaffold(
-      appBar: SharedAppBar(
-        title: 'Diapalet WMS',
+      appBar: AppBar(
+        title: const Text('Diapalet WMS'),
         actions: [
           StreamBuilder<SyncStatus>(
             stream: syncService.syncStatusStream,
@@ -41,7 +41,7 @@ class HomeScreen extends StatelessWidget {
                   color = Colors.red;
                   break;
                 case SyncStatus.offline:
-                case SyncStatus.online: // same icon for both online and offline before sync
+                case SyncStatus.online:
                   icon = Icons.cloud_upload;
                   color = Colors.grey;
                   break;
@@ -70,7 +70,10 @@ class HomeScreen extends StatelessWidget {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => PendingOperationsScreen(syncService: syncService),
+                  builder: (_) => Provider.value(
+                    value: syncService,
+                    child: PendingOperationsScreen(syncService: syncService),
+                  ),
                 ),
               );
             },
@@ -91,10 +94,7 @@ class HomeScreen extends StatelessWidget {
             icon: Icons.inventory_2,
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) {
-                return Provider.value(
-                  value: Provider.of<GoodsReceivingRepository>(context, listen: false),
-                  child: const GoodsReceivingScreen(),
-                );
+                return const GoodsReceivingScreen();
               }));
             },
           ),
@@ -104,10 +104,7 @@ class HomeScreen extends StatelessWidget {
             icon: Icons.swap_horiz,
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) {
-                return Provider.value(
-                  value: Provider.of<InventoryTransferRepository>(context, listen: false),
-                  child: const InventoryTransferScreen(),
-                );
+                return const InventoryTransferScreen();
               }));
             },
           ),

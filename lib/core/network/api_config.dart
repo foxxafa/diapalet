@@ -15,11 +15,11 @@ class ApiConfig {
   static String get sanitizedBaseUrl => baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
 
   // Cihaz kaydı
-  static const String registerDevice = '$baseUrl/api/register_device';
+  static final String registerDevice = '$baseUrl/api/register_device';
 
   // Senkronizasyon
-  static const String syncDownload = '$baseUrl/api/sync/download';
-  static const String syncUpload = '$baseUrl/api/sync/upload';
+  static final String syncDownload = '$baseUrl/api/sync/download';
+  static final String syncUpload = '$baseUrl/api/sync/upload';
 
   // Belirli tabloları indirme (opsiyonel)
   static String dataDownload(String tableName) => '$baseUrl/api/data/$tableName';

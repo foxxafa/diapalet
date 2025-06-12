@@ -32,7 +32,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   }
 
   Future<void> _showOperationDetails(PendingOperation operation) async {
-    final data = jsonDecode(operation.data);
+    final data = jsonDecode(operation.operationData);
     final prettyData = const JsonEncoder.withIndent('  ').convert(data);
 
     await showDialog(
@@ -89,7 +89,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                 child: ListTile(
                   leading: Icon(icon, color: statusColor),
                   title: Text(
-                    '${operation.type.toUpperCase()} Operation',
+                    '${operation.operationType.toUpperCase()} Operation',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(

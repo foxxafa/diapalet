@@ -16,6 +16,16 @@ class ProductInfo extends Equatable {
     this.isSerialized = false,
   });
 
+  factory ProductInfo.fromMap(Map<String, dynamic> map) {
+    return ProductInfo(
+      id: map['id'] as int,
+      name: map['name'] as String,
+      stockCode: map['code'] as String,
+      isActive: map['is_active'] as bool? ?? true,
+      isSerialized: map['is_serialized'] as bool? ?? false,
+    );
+  }
+
   @override
   List<Object?> get props => [id, name, stockCode, isActive, isSerialized];
 

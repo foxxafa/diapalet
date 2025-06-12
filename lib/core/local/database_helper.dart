@@ -5,6 +5,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet.db";
@@ -230,5 +231,56 @@ class DatabaseHelper {
       _database = null;
       debugPrint("Database closed.");
     }
+  }
+
+  /// Replaces all data in the specified tables with new data from the server.
+  /// This is a destructive operation used for full syncs.
+  Future<void> replaceTables(Map<String, dynamic> tableData) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final tableName in tableData.keys) {
+        // Clear the table first
+        await txn.delete(tableName);
+
+        // Insert new data
+        final records = tableData[tableName] as List<dynamic>;
+        for (final record in records) {
+          await txn.insert(tableName, record as Map<String, dynamic>);
+        }
+        debugPrint('Replaced ${records.length} records in "$tableName" table.');
+      }
+    });
+  }
+
+  // --- Pending Operations ---
+
+  /// Fetches all pending operations from the local database.
+  Future<List<PendingOperation>> getPendingOperations() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('pending_operation');
+    return List.generate(maps.length, (i) {
+      return PendingOperation.fromMap(maps[i]);
+    });
+  }
+
+  /// Deletes a pending operation by its local ID.
+  Future<void> deletePendingOperation(int id) async {
+    final db = await database;
+    await db.delete(
+      'pending_operation',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Updates the status of a pending operation, typically to 'failed' or 'pending'.
+  Future<void> updatePendingOperationStatus(int id, String status, {String? error}) async {
+    final db = await database;
+    await db.update(
+      'pending_operation',
+      {'status': status, 'error_message': error},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }

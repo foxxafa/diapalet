@@ -95,10 +95,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       operationType = sourceIsPallet ? 'box_from_pallet' : 'box_transfer';
     }
 
-    final sourceLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.sourceLocation])).first;
-    final targetLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.targetLocation])).first;
-    final int sourceLocationId = sourceLocationMap['id'];
-    final int targetLocationId = targetLocationMap['id'];
+    final sourceLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.sourceLocationName])).first;
+    final targetLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.targetLocationName])).first;
+    final int sourceLocationId = sourceLocationMap['id'] as int;
+    final int targetLocationId = targetLocationMap['id'] as int;
 
     await db.transaction((txn) async {
       final transferTimestamp = DateTime.now();
@@ -130,7 +130,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'items': items.map((item) => {
             'product_id': item.productId,
             'quantity': item.quantity,
-            'pallet_id': item.sourcePalletBarcode,
+            'source_pallet_barcode': item.sourcePalletBarcode,
+            'target_pallet_barcode': item.targetPalletBarcode,
         }).toList(),
       };
       
@@ -154,7 +155,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       );
 
       if (existing.isNotEmpty) {
-          final currentQty = (existing.first['quantity'] as num).toDouble();
+          final currentQty = (existing.first['quantity'] as num?)?.toDouble() ?? 0.0;
           final newQty = currentQty + qtyChange;
           if (newQty > 0.001) {
               await txn.update(
@@ -172,6 +173,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
               'location_id': locationId,
               'quantity': qtyChange,
               'pallet_barcode': palletBarcode,
+              'created_at': DateTime.now().toIso8601String(),
               'updated_at': DateTime.now().toIso8601String(),
           });
       }
