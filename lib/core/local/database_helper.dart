@@ -1,88 +1,89 @@
 // core/local/database_helper.dart
-import 'package:sqflite/sqflite.dart';
+import 'dart:io';
+
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
-  static final DatabaseHelper _instance = DatabaseHelper._internal();
-  factory DatabaseHelper() => _instance;
-  DatabaseHelper._internal();
+  static const _databaseName = "Diapallet.db";
+  static const _databaseVersion = 2;
+
+  DatabaseHelper._privateConstructor();
+  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   static Database? _database;
-  static const String _dbName = 'app_main_database.db';
-  static const int _dbVersion = 14;
-
-  // ==== PUBLIC HANDLE =======================================================
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB();
+    _database = await _initDatabase();
     return _database!;
   }
 
-  // ==== INIT ================================================================
-  Future<Database> _initDB() async {
-    final dbPath = await getDatabasesPath();
-    final path   = join(dbPath, _dbName);
-    debugPrint('DB path  : $path');
-
-    return openDatabase(
+  Future<Database> _initDatabase() async {
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    String path = join(documentsDirectory.path, _databaseName);
+    debugPrint('DB path: $path');
+    return await openDatabase(
       path,
-      version: _dbVersion,
+      version: _databaseVersion,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
-      onCreate : _onCreate,
+      onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
-  // ==== SCHEMA ==============================================================
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    debugPrint("Upgrading database from version $oldVersion to $newVersion...");
+    // Simple upgrade strategy: drop all tables and recreate them.
+    // This is suitable for development but would cause data loss in production
+    // without a proper migration strategy.
+    await _dropAllTables(db);
+    await _onCreate(db, newVersion);
+    debugPrint("Database upgrade complete.");
+  }
 
-  Future<void> _onCreate(Database db, int _) async {
+  Future<void> _onCreate(Database db, int version) async {
+    debugPrint("Creating database version $version...");
 
-    // 1- Products
-    await db.execute('''
-      CREATE TABLE product (
-        id   INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT,
-        updated_at TEXT
-      )
-    ''');
-
-    // 2- Master location list (optional but handy for dropdowns)
     await db.execute('''
       CREATE TABLE location (
-        id   INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         code TEXT,
         is_active INTEGER DEFAULT 1,
-        latitude REAL,
-        longitude REAL,
         address TEXT,
         description TEXT,
+        latitude REAL,
+        longitude REAL,
         created_at TEXT,
         updated_at TEXT
       )
     ''');
 
-    // 3- Inventory stock (unified for palletized and non-palletized items)
     await db.execute('''
-      CREATE TABLE inventory_stock (
+      CREATE TABLE employee (
         id INTEGER PRIMARY KEY,
-        urun_id INTEGER NOT NULL REFERENCES product(id),
-        location_id INTEGER NOT NULL REFERENCES location(id),
-        quantity   INTEGER NOT NULL,
-        pallet_barcode TEXT,                          -- Can be null
+        first_name TEXT,
+        last_name TEXT,
+        role TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT,
         updated_at TEXT
       )
     ''');
-    
-    // Create an index for faster lookups
-    await db.execute('CREATE INDEX idx_stock_location ON inventory_stock (location_id)');
-    await db.execute('CREATE INDEX idx_stock_pallet ON inventory_stock (pallet_barcode)');
 
-    // 4- Purchase Orders (from server)
+    await db.execute('''
+      CREATE TABLE product (
+        id INTEGER PRIMARY KEY,
+        code TEXT UNIQUE,
+        name TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+      )
+    ''');
+
     await db.execute('''
       CREATE TABLE purchase_order (
         id INTEGER PRIMARY KEY,
@@ -103,138 +104,131 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE purchase_order_item (
         id INTEGER PRIMARY KEY,
-        siparis_id INTEGER NOT NULL REFERENCES purchase_order(id) ON DELETE CASCADE,
+        siparis_id INTEGER NOT NULL,
         urun_id INTEGER NOT NULL,
         miktar REAL,
         birim TEXT,
-        productName TEXT
+        FOREIGN KEY (siparis_id) REFERENCES purchase_order (id) ON DELETE CASCADE,
+        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE RESTRICT
       )
     ''');
 
-    // 5- Pallet header & details
-    await db.execute('''
-      CREATE TABLE pallet (
-        id       TEXT PRIMARY KEY,
-        location_id INTEGER NOT NULL REFERENCES location(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE pallet_item (
-        pallet_id  TEXT NOT NULL REFERENCES pallet(id) ON DELETE CASCADE,
-        product_id INTEGER NOT NULL REFERENCES product(id),
-        quantity   INTEGER NOT NULL,
-        PRIMARY KEY (pallet_id, product_id)
-      )
-    ''');
-
-    // 6- Goods receipt header & lines
+    // For local operations before sync, we need a local ID.
+    // server_id is populated after a successful sync.
     await db.execute('''
       CREATE TABLE goods_receipt (
-        id INTEGER PRIMARY KEY,
-        external_id    TEXT UNIQUE,
-        siparis_id     INTEGER,
-        employee_id    INTEGER,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_id TEXT UNIQUE, 
+        server_id INTEGER,
+        siparis_id INTEGER,
         invoice_number TEXT,
-        receipt_date   TEXT,
-        created_at     TEXT,
-        synced         INTEGER NOT NULL DEFAULT 0
+        employee_id INTEGER,
+        receipt_date TEXT,
+        created_at TEXT
       )
     ''');
 
     await db.execute('''
       CREATE TABLE goods_receipt_item (
-        id INTEGER PRIMARY KEY,
-        receipt_id INTEGER NOT NULL REFERENCES goods_receipt(id) ON DELETE CASCADE,
-        product_id INTEGER NOT NULL REFERENCES product(id),
-        quantity   INTEGER NOT NULL,
-        location_id INTEGER NOT NULL REFERENCES location(id),
-        pallet_id  TEXT REFERENCES pallet(id)      -- NULL for box flow
-      )
-    ''');
-
-    // 7- Transfer header & lines
-    await db.execute('''
-      CREATE TABLE transfer_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        operation_type TEXT NOT NULL,            -- 'pallet' | 'box'
-        source_location_id INTEGER NOT NULL REFERENCES location(id),
-        target_location_id INTEGER NOT NULL REFERENCES location(id),
-        pallet_id TEXT,                          -- null for box flow
-        transfer_date TEXT NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0
+        receipt_local_id TEXT NOT NULL,
+        server_id INTEGER,
+        urun_id INTEGER NOT NULL,
+        quantity_received REAL NOT NULL,
+        pallet_barcode TEXT,
+        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE RESTRICT
+      )
+    ''');
+    
+    // The core of inventory management. Tracks every item in every location.
+    await db.execute('''
+      CREATE TABLE inventory_stock (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server_id INTEGER,
+        urun_id INTEGER NOT NULL,
+        location_id INTEGER NOT NULL,
+        quantity REAL NOT NULL,
+        pallet_barcode TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE (urun_id, location_id, pallet_barcode),
+        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE CASCADE,
+        FOREIGN KEY (location_id) REFERENCES location (id) ON DELETE CASCADE
       )
     ''');
 
-    // 8- Unified pending queue – each row is a standalone operation waiting
-    //    to be synced. We keep JSON payload so that adding new operation types
-    //    does not require schema changes.
+    // Log of all transfers for history and syncing.
+    await db.execute('''
+      CREATE TABLE inventory_transfer (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_id TEXT UNIQUE,
+        server_id INTEGER,
+        urun_id INTEGER NOT NULL,
+        from_location_id INTEGER NOT NULL,
+        to_location_id INTEGER NOT NULL,
+        quantity REAL NOT NULL,
+        pallet_barcode TEXT,
+        employee_id INTEGER,
+        transfer_date TEXT,
+        created_at TEXT,
+        FOREIGN KEY (urun_id) REFERENCES product (id),
+        FOREIGN KEY (from_location_id) REFERENCES location (id),
+        FOREIGN KEY (to_location_id) REFERENCES location (id)
+      )
+    ''');
+
+    // Queue for operations performed offline that need to be sent to the server.
     await db.execute('''
       CREATE TABLE pending_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        operation_type TEXT NOT NULL,
-        payload TEXT NOT NULL,                  -- raw JSON encoded string
+        type TEXT NOT NULL,
+        data TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        attempts   INTEGER NOT NULL DEFAULT 0   -- retry counter
+        status TEXT DEFAULT 'pending',
+        attempts INTEGER DEFAULT 0,
+        error_message TEXT
       )
     ''');
 
-    await db.execute('''
-      CREATE TABLE transfer_item (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        operation_id INTEGER NOT NULL REFERENCES transfer_operation(id) ON DELETE CASCADE,
-        product_id   INTEGER NOT NULL REFERENCES product(id),
-        quantity     INTEGER NOT NULL
-      )
-    ''');
-
-    debugPrint('All tables created (v$_dbVersion).');
-  }
-
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    debugPrint("Upgrading database from version $oldVersion to $newVersion");
-
-    if (oldVersion < 14) {
-      await db.execute('ALTER TABLE inventory_stock ADD COLUMN updated_at TEXT');
-      debugPrint("Upgraded: Added updated_at to inventory_stock");
-    }
+    debugPrint("All tables created for version $_databaseVersion.");
   }
 
   // ==== HOUSEKEEPING ========================================================
-
+  
   Future<void> _dropAllTables(Database db) async {
-    // Drop order is critical due to foreign key constraints.
-    // Tables that have foreign keys into other tables must be dropped first.
-    for (final t in [
-      'goods_receipt_item',
-      'pallet_item',
-      'transfer_item',
-      'inventory_stock',
-      'purchase_order_item',
-      'goods_receipt',
-      'pallet',
-      'transfer_operation',
-      'purchase_order',
+    final tables = [
       'pending_operation',
+      'inventory_transfer',
+      'inventory_stock',
+      'goods_receipt_item',
+      'goods_receipt',
+      'purchase_order_item',
+      'purchase_order',
       'product',
+      'employee',
       'location',
-    ]) {
-      await db.execute('DROP TABLE IF EXISTS $t');
+    ];
+    for (final table in tables) {
+      await db.execute('DROP TABLE IF EXISTS $table');
     }
+    debugPrint("All tables dropped.");
   }
 
   Future<void> resetDatabase() async {
-    final path = join(await getDatabasesPath(), _dbName);
+    final path = join(await getDatabasesPath(), _databaseName);
     if (_database != null) {
       await _database!.close();
       _database = null;
     }
     await deleteDatabase(path);
+    debugPrint("Database completely reset.");
   }
 
   Future<void> close() async {
-    final db = await database;
-    await db.close();
-    _database = null;
+    final db = await _database;
+    if (db != null) {
+      await db.close();
+      _database = null;
+      debugPrint("Database closed.");
+    }
   }
 }
