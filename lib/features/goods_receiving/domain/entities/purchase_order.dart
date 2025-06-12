@@ -1,14 +1,15 @@
+// lib/features/goods_receiving/domain/entities/purchase_order.dart
 import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 
 @immutable
 class PurchaseOrder {
   final int id;
-  final String? poId;
+  final String? poId; // Purchase Order ID
   final DateTime? date;
   final String? notes;
   final int? status;
-  final String? supplierName;
+  final String? supplierName; // Bu alan şu anki API'de yok, ileride eklenebilir.
   final List<PurchaseOrderItem> items;
 
   const PurchaseOrder({
@@ -29,11 +30,12 @@ class PurchaseOrder {
       date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
       notes: map['notlar'] as String?,
       status: map['status'] as int?,
-      supplierName: map['supplierName'] as String?, // JOIN'dan gelmeli
+      supplierName: map['supplierName'] as String?,
     );
   }
 
   /// API'den gelen JSON verisinden model oluşturma.
+  /// Flask API'nizin döndürdüğü anahtarlarla eşleşir.
   factory PurchaseOrder.fromJson(Map<String, dynamic> json) {
     var itemsList = <PurchaseOrderItem>[];
     if (json['items'] != null) {
@@ -43,8 +45,11 @@ class PurchaseOrder {
     }
     return PurchaseOrder(
       id: json['id'] as int,
-      poId: json['poId'] as String?,
-      date: json['date'] != null ? DateTime.parse(json['date']) : null,
+      // API 'po_id' dönerse 'poId' alanına map'lenir.
+      poId: json['po_id'] as String? ?? json['poId'] as String?,
+      // API 'tarih' dönerse 'date' alanına map'lenir.
+      date: json['tarih'] != null ? DateTime.tryParse(json['tarih']) :
+      (json['date'] != null ? DateTime.parse(json['date']) : null),
       notes: json['notes'] as String?,
       status: json['status'] as int?,
       supplierName: json['supplierName'] as String?,
@@ -52,7 +57,6 @@ class PurchaseOrder {
     );
   }
 
-  /// Modeli JSON'a dönüştürme.
   Map<String, dynamic> toJson() {
     return {
       'id': id,

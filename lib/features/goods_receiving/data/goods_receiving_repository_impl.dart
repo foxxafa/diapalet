@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/data/goods_receiving_repository_impl.dart
 
+import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
@@ -19,7 +20,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final Dio dio;
   final NetworkInfo networkInfo;
 
-  static const int malKabulLocationId = 1;
+  static const int malKabulLocationId = 1; // Sabit: Mal Kabul lokasyon ID'si
 
   GoodsReceivingRepositoryImpl({
     required this.dbHelper,
@@ -27,8 +28,85 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     required this.networkInfo,
   });
 
+  /// --- ONLINE-FIRST DATA FETCHING METHODS ---
+
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
+    // Online-first: Önce API'den çekmeyi dene.
+    if (await networkInfo.isConnected) {
+      try {
+        final response = await dio.get(ApiConfig.purchaseOrders);
+        if (response.data is List) {
+          final orders = (response.data as List)
+              .map((json) => PurchaseOrder.fromJson(json))
+              .toList();
+          return orders;
+        }
+        throw Exception('Unexpected response format.');
+      } catch (e) {
+        debugPrint("API'den siparişler çekilemedi, lokale başvuruluyor: $e");
+        // Hata olursa lokale fallback yap
+        return _getOpenPurchaseOrdersFromLocal();
+      }
+    }
+    // Offline: Lokal veritabanından çek.
+    return _getOpenPurchaseOrdersFromLocal();
+  }
+
+  @override
+  Future<List<ProductInfo>> searchProducts(String query) async {
+    // Online-first: Önce API'den çekmeyi dene.
+    if (await networkInfo.isConnected) {
+      try {
+        // Flask endpoint'i şu anda sorgu (query) desteklemiyor, tümünü çekiyor.
+        // Gerekirse endpoint'e query parametresi eklenebilir.
+        final response = await dio.get(ApiConfig.productsDropdown);
+        if (response.data is List) {
+          final products = (response.data as List)
+              .map((json) => ProductInfo.fromJson(json))
+              .toList();
+          // Client-side filtreleme
+          if (query.isNotEmpty) {
+            return products.where((p) =>
+            p.name.toLowerCase().contains(query.toLowerCase()) ||
+                p.stockCode.toLowerCase().contains(query.toLowerCase())
+            ).toList();
+          }
+          return products;
+        }
+        throw Exception('Unexpected response format.');
+      } catch (e) {
+        debugPrint("API'den ürünler çekilemedi, lokale başvuruluyor: $e");
+        return _searchProductsFromLocal(query);
+      }
+    }
+    // Offline: Lokal veritabanından çek.
+    return _searchProductsFromLocal(query);
+  }
+
+  @override
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
+    if (await networkInfo.isConnected) {
+      try {
+        final response = await dio.get(ApiConfig.purchaseOrderItems(orderId));
+        if (response.data is List) {
+          final items = (response.data as List)
+              .map((json) => PurchaseOrderItem.fromJson(json))
+              .toList();
+          return items;
+        }
+        throw Exception('Unexpected response format.');
+      } catch(e) {
+        debugPrint("API'den sipariş kalemleri çekilemedi, lokale başvuruluyor: $e");
+        return _getPurchaseOrderItemsFromLocal(orderId);
+      }
+    }
+    return _getPurchaseOrderItemsFromLocal(orderId);
+  }
+
+  /// --- LOCAL DATABASE FALLBACK METHODS ---
+
+  Future<List<PurchaseOrder>> _getOpenPurchaseOrdersFromLocal() async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'satin_alma_siparis_fis',
@@ -39,8 +117,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return List.generate(maps.length, (i) => PurchaseOrder.fromMap(maps[i]));
   }
 
-  @override
-  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
+  Future<List<ProductInfo>> _searchProductsFromLocal(String query) async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'urunler',
+      where: 'UrunAdi LIKE ? OR StokKodu LIKE ?',
+      whereArgs: ['%$query%', '%$query%'],
+      limit: 50,
+    );
+    return List.generate(maps.length, (i) => ProductInfo.fromDbMap(maps[i]));
+  }
+
+  Future<List<PurchaseOrderItem>> _getPurchaseOrderItemsFromLocal(int orderId) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
@@ -59,23 +147,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<ProductInfo>> searchProducts(String query) async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'urunler',
-      where: 'UrunAdi LIKE ? OR StokKodu LIKE ?',
-      whereArgs: ['%$query%', '%$query%'],
-      limit: 50,
-    );
-    return List.generate(maps.length, (i) => ProductInfo.fromDbMap(maps[i]));
-  }
-
-  @override
   Future<List<LocationInfo>> getLocations() async {
+    // Lokasyonlar genellikle sabit olduğu için lokalden çekmek daha performanslı olabilir.
+    // İstenirse bu da online-first yapılabilir.
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query('locations');
     return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
   }
+
+
+  /// --- DATA SAVING AND SYNC LOGIC ---
 
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
@@ -83,19 +164,26 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     if (isConnected) {
       try {
-        debugPrint("Online mode: Sending goods receipt to API...");
+        debugPrint("Online mod: Mal kabul API'ye gönderiliyor...");
+        // Flask sunucusu /v1/goods-receipts endpoint'ini bekliyor.
         await dio.post(ApiConfig.goodsReceipts, data: payload.toApiJson());
-        await _updateLocalStock(payload);
-        debugPrint("API call successful. Local stock also updated.");
+
+        // API'ye başarıyla kaydedildikten sonra, UI'ın güncel kalması için
+        // lokal veritabanını da hemen güncelliyoruz.
+        // Bir sonraki senkronizasyonda bu veri sunucudan tekrar gelecektir,
+        // bu geçici bir UI güncellemesidir.
+        await _updateLocalStockAndOrderStatus(payload);
+        debugPrint("API çağrısı başarılı. Lokal stok ve sipariş durumu güncellendi.");
+
       } on DioException catch (e) {
-        debugPrint("API call failed: ${e.message}. Saving to pending operations queue.");
+        debugPrint("API çağrısı başarısız oldu: ${e.message}. İşlem sıraya alınıyor.");
         await _saveAsPendingOperation(payload);
       } catch (e) {
-        debugPrint("An unexpected error occurred: $e. Saving to pending operations queue.");
+        debugPrint("Beklenmedik bir hata oluştu: $e. İşlem sıraya alınıyor.");
         await _saveAsPendingOperation(payload);
       }
     } else {
-      debugPrint("Offline mode: Saving to pending operations queue.");
+      debugPrint("Offline mod: İşlem senkronizasyon için sıraya alınıyor.");
       await _saveAsPendingOperation(payload);
     }
   }
@@ -106,22 +194,25 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final operation = PendingOperation(
           id: 0,
           operationType: 'goods_receipt',
+          // JSON'a çevrilmiş payload'u string olarak saklıyoruz.
           operationData: payload.toApiJson(),
           createdAt: DateTime.now(),
           status: 'pending',
-          tableName: 'goods_receipts'
+          tableName: 'goods_receipts' // Bu alan bilgi amaçlıdır
       );
-      await txn.insert(
-        'pending_operation',
-        operation.toMapForDb(),
-      );
-      await _updateLocalStock(payload, txn: txn);
+      await txn.insert('pending_operation', operation.toMapForDb());
+
+      // Offline durumda da stokların lokalde güncel görünmesi için bu işlemi yapıyoruz.
+      await _updateLocalStockAndOrderStatus(payload, txn: txn);
     });
-    debugPrint("Saved goods receipt as pending operation and updated local stock.");
+    debugPrint("Mal kabul işlemi sıraya alındı ve lokal stok/sipariş durumu güncellendi.");
   }
 
-  Future<void> _updateLocalStock(GoodsReceiptPayload payload, {DatabaseExecutor? txn}) async {
+  /// Hem lokal stoğu günceller hem de ilgili siparişin durumunu 'tamamlandı' yapar.
+  Future<void> _updateLocalStockAndOrderStatus(GoodsReceiptPayload payload, {DatabaseExecutor? txn}) async {
     final db = txn ?? await dbHelper.database;
+
+    // Stokları güncelle
     for (final item in payload.items) {
       await _upsertStock(
         db,
@@ -129,6 +220,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         locationId: malKabulLocationId,
         qtyChange: item.quantity,
         palletBarcode: item.palletBarcode,
+      );
+    }
+
+    // Sipariş durumunu güncelle
+    if (payload.header.siparisId != null) {
+      await db.update(
+        'satin_alma_siparis_fis',
+        {'status': 1, 'updated_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [payload.header.siparisId],
       );
     }
   }

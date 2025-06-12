@@ -11,7 +11,6 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.da
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 
-// DÜZELTME: Sınıf adı "InventoryTransferScreen" olarak değiştirildi ve gereksiz "syncService" kaldırıldı.
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({
     super.key,
