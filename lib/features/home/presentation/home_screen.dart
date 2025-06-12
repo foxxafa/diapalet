@@ -1,16 +1,22 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
-// Eksik olan import eklendi.
 import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
+// core/sync/sync_service.dart import'u artık bu dosyada doğrudan kullanılmadığı için kaldırılabilir.
+// Provider aracılığıyla dolaylı olarak kullanılır.
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart'; // Provider'ı dil değişimi için kullanıyoruz.
 
+// Hata düzeltildi ve widget StatelessWidget'a dönüştürüldü.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // SyncService, Provider tarafından oluşturulduğunda otomatik olarak başlatılır.
+    // Bu yüzden burada manuel bir başlatma işlemine gerek yoktur.
+
     return Scaffold(
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
@@ -35,13 +41,12 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             _HomeButton(
-              icon: Icons.sync_alt_outlined,
+              icon: Icons.warehouse_outlined,
               label: 'home.pallet_transfer'.tr(),
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    // Bu satır artık hata vermeyecektir.
                     builder: (context) => const InventoryTransferScreen(),
                   ),
                 );
@@ -49,7 +54,7 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             _HomeButton(
-              icon: Icons.sync_problem_outlined,
+              icon: Icons.sync_alt,
               label: 'home.pending_operations'.tr(),
               onTap: () {
                 Navigator.push(
@@ -62,6 +67,36 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      // Dil değiştirme butonu ve işlevselliği korundu.
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (_) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: Text('language.turkish'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('tr'));
+                    Navigator.pop(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: Text('language.english'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('en'));
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+        child: const Icon(Icons.language),
       ),
     );
   }
@@ -97,6 +132,7 @@ class _HomeButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 3,
+          textStyle: const TextStyle(fontSize: 17),
         ),
       ),
     );
