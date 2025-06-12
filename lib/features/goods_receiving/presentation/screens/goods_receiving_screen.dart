@@ -159,7 +159,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             return DropdownMenuItem(
               value: order,
               child: Text(
-                  '${order.orderNumber} - ${order.supplierName ?? 'Tedarikçi Yok'}'),
+                  '${order.poId ?? 'PO #${order.id}'} - ${order.supplierName ?? 'Tedarikçi Yok'}'),
             );
           }).toList(),
           onChanged: (order) async {
@@ -257,8 +257,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   child: ListTile(
-                    title: Text(item.product?.name ?? 'Ürün Adı Yok'),
-                    subtitle: Text('Sipariş: ${item.quantity}'),
+                    title: Text(item.product?.name ?? item.productName ?? 'Ürün Adı Yok'),
+                    subtitle: Text('Sipariş: ${item.expectedQuantity} ${item.unit ?? ''}'),
                     trailing: SizedBox(
                       width: 100,
                       child: TextField(
