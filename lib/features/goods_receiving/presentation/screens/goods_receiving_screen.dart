@@ -1,5 +1,4 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
-import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';

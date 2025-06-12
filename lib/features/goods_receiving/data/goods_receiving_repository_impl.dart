@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_log_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';

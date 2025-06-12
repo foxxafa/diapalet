@@ -1,5 +1,8 @@
-import '../pending_operations/pending_operations_screen.dart';
-import '../inventory_transfer/transfer_screen.dart';
+
+
+import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
+import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
+import 'package:flutter/material.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
