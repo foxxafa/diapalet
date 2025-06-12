@@ -11,17 +11,25 @@ import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_r
 import '../datasources/pallet_assignment_local_datasource.dart';
 import '../datasources/pallet_assignment_remote_datasource.dart';
 import 'package:diapalet/features/pallet_assignment/domain/entities/box_item.dart';
+import 'dart:convert';
+import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
   final PalletAssignmentLocalDataSource localDataSource;
   final PalletAssignmentRemoteDataSource remoteDataSource;
   final NetworkInfo networkInfo;
+  final DatabaseHelper _dbHelper;
+  final Uuid _uuid = const Uuid();
 
   PalletAssignmentRepositoryImpl({
     required this.localDataSource,
     required this.remoteDataSource,
     required this.networkInfo,
-  });
+    required DatabaseHelper dbHelper,
+  }) : _dbHelper = dbHelper;
 
   @override
   Future<List<LocationInfo>> getSourceLocations() async {
