@@ -16,151 +16,170 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 
-class PalletAssignmentRepositoryImpl implements PalletAssignmentRepository {
-  final PalletAssignmentLocalDataSource localDataSource;
-  final PalletAssignmentRemoteDataSource remoteDataSource;
-  final NetworkInfo networkInfo;
+class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper _dbHelper;
   final Uuid _uuid = const Uuid();
 
-  PalletAssignmentRepositoryImpl({
-    required this.localDataSource,
-    required this.remoteDataSource,
-    required this.networkInfo,
-    required DatabaseHelper dbHelper,
-  }) : _dbHelper = dbHelper;
+  InventoryTransferRepositoryImpl({required DatabaseHelper dbHelper}) : _dbHelper = dbHelper;
 
   @override
-  Future<List<LocationInfo>> getSourceLocations() async {
-    if (await networkInfo.isConnected) {
-      try {
-        debugPrint("ONLINE: Fetching source locations from remote.");
-        final locations = await remoteDataSource.fetchSourceLocations();
-        // Optional: Cache to local DB for offline access
-        // await localDataSource.cacheLocations(locations);
-        return locations;
-      } catch (e) {
-        debugPrint("ONLINE_ERROR: Failed to fetch remote source locations, falling back to local. Error: $e");
-        return await localDataSource.getDistinctLocations();
-      }
-    } else {
-      debugPrint("OFFLINE: Fetching source locations from local.");
-      return await localDataSource.getDistinctLocations();
-    }
+  Future<List<String>> getSourceLocations() async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'location',
+      where: 'is_active = 1',
+      orderBy: 'name',
+    );
+    return List.generate(maps.length, (i) => maps[i]['name'] as String);
   }
 
   @override
-  Future<List<LocationInfo>> getTargetLocations() async {
-    if (await networkInfo.isConnected) {
-      try {
-        debugPrint("ONLINE: Fetching target locations from remote.");
-        final locations = await remoteDataSource.fetchTargetLocations();
-        // Optional: Cache to local DB for offline access
-        // await localDataSource.cacheLocations(locations);
-        return locations;
-      } catch (e) {
-        debugPrint("ONLINE_ERROR: Failed to fetch remote target locations, falling back to local. Error: $e");
-        return await localDataSource.getDistinctLocations();
-      }
-    } else {
-      debugPrint("OFFLINE: Fetching target locations from local.");
-      return await localDataSource.getDistinctLocations();
-    }
+  Future<List<String>> getTargetLocations() async {
+    // In this model, source and target locations are the same list.
+    return getSourceLocations();
   }
 
   @override
-  Future<List<String>> getContainerIdsByLocation(String locationName, AssignmentMode mode) async {
-    if (await networkInfo.isConnected) {
-      try {
-        debugPrint("ONLINE: Fetching container IDs from remote for location: $locationName");
-        return await remoteDataSource.fetchContainerIds(locationName, mode);
-      } catch (e) {
-        debugPrint("ONLINE_ERROR: Failed to fetch remote container IDs, falling back to local. Error: $e");
-        final locList = await localDataSource.getDistinctLocations();
-        final loc = locList.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
-        if (loc.id == -1) return [];
-        return await localDataSource.getContainerIdsByLocation(loc.id, mode);
-      }
-    } else {
-      debugPrint("OFFLINE: Fetching container IDs from local for location: $locationName");
-      final locList = await localDataSource.getDistinctLocations();
-      final loc = locList.firstWhere((l) => l.name == locationName, orElse: () => const LocationInfo(id: -1, name: '', code: ''));
-      if (loc.id == -1) return [];
-      return await localDataSource.getContainerIdsByLocation(loc.id, mode);
-    }
-  }
-
-  @override
-  Future<List<ProductItem>> getContainerContent(String containerId, AssignmentMode mode) async {
-    if (await networkInfo.isConnected) {
-      try {
-        debugPrint("ONLINE: Fetching container content from remote for: $containerId");
-        return await remoteDataSource.fetchContainerContents(containerId, mode);
-      } catch (e) {
-        debugPrint("ONLINE_ERROR: Failed to fetch remote container content, falling back to local. Error: $e");
-        return await localDataSource.getContainerContent(containerId, mode);
-      }
-    } else {
-      debugPrint("OFFLINE: Fetching container content from local for: $containerId");
-      return await localDataSource.getContainerContent(containerId, mode);
-    }
+  Future<List<String>> getPalletIdsAtLocation(String locationName) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT DISTINCT T2.pallet_barcode
+      FROM location T1
+      JOIN inventory_stock T2 ON T1.id = T2.location_id
+      WHERE T1.name = ? AND T2.pallet_barcode IS NOT NULL
+    ''', [locationName]);
+    if (maps.isEmpty) return [];
+    return List.generate(maps.length, (i) => maps[i]['pallet_barcode'] as String);
   }
 
   @override
   Future<List<BoxItem>> getBoxesAtLocation(String locationName) async {
-    // This method is online-only for now.
-    // An offline strategy could involve caching.
-    return remoteDataSource.fetchBoxesAtLocation(locationName);
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT
+        p.id as productId,
+        p.name as productName,
+        p.code as productCode,
+        SUM(s.quantity) as quantity
+      FROM inventory_stock s
+      JOIN product p ON p.id = s.urun_id
+      JOIN location l ON l.id = s.location_id
+      WHERE l.name = ? AND s.pallet_barcode IS NULL
+      GROUP BY p.id, p.name, p.code
+    ''', [locationName]);
+    return List.generate(maps.length, (i) => BoxItem.fromMap(maps[i]));
   }
 
   @override
-  Future<void> recordTransferOperation(
-    TransferOperationHeader header,
-    List<TransferItemDetail> items, {
-    required String sourceLocationName,
-    required String targetLocationName,
-  }) async {
-    // Logic to decide whether to send to remote or save locally
-    if (await networkInfo.isConnected) {
-      try {
-        final success = await remoteDataSource.sendTransferOperation(
-          header,
-          items,
-          sourceLocationName: sourceLocationName,
-          targetLocationName: targetLocationName,
-        );
-        if (!success) {
-          // If API fails, save as pending
-          await localDataSource.saveTransferOperation(header, items);
-        }
-      } catch (e) {
-        // On exception, save as pending
-        await localDataSource.saveTransferOperation(header, items);
-      }
+  Future<List<ProductItem>> getPalletContents(String palletId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT
+        p.id,
+        p.name,
+        p.code as productCode,
+        s.quantity as currentQuantity
+      FROM inventory_stock s
+      JOIN product p ON p.id = s.urun_id
+      WHERE s.pallet_barcode = ?
+    ''', [palletId]);
+    return List.generate(maps.length, (i) => ProductItem.fromMap(maps[i]));
+  }
+
+  @override
+  Future<void> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
+    final db = await _dbHelper.database;
+    final localId = _uuid.v4();
+
+    String operationType;
+    if (header.operationType == AssignmentMode.pallet) {
+      operationType = 'pallet_transfer';
     } else {
-      // If offline, save as pending
-      await localDataSource.saveTransferOperation(header, items);
+      final sourceIsPallet = items.any((item) => item.sourcePalletBarcode != null);
+      operationType = sourceIsPallet ? 'box_from_pallet' : 'box_transfer';
     }
+
+    final sourceLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.sourceLocation])).first;
+    final targetLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.targetLocation])).first;
+    final int sourceLocationId = sourceLocationMap['id'];
+    final int targetLocationId = targetLocationMap['id'];
+
+    await db.transaction((txn) async {
+      final transferTimestamp = DateTime.now();
+      await txn.insert('inventory_transfer', {
+        'local_id': localId,
+        'urun_id': items.first.productId,
+        'from_location_id': sourceLocationId,
+        'to_location_id': targetLocationId,
+        'quantity': items.fold(0.0, (sum, item) => sum + item.quantity),
+        'pallet_barcode': header.containerId,
+        'employee_id': 1,
+        'transfer_date': transferTimestamp.toIso8601String(),
+        'created_at': transferTimestamp.toIso8601String(),
+      });
+
+      for (final item in items) {
+        await _upsertStock(txn, item.productId, sourceLocationId, -item.quantity, item.sourcePalletBarcode);
+        await _upsertStock(txn, item.productId, targetLocationId, item.quantity, item.targetPalletBarcode);
+      }
+
+      final payload = {
+        'header': {
+            'operation_type': operationType,
+            'source_location_id': sourceLocationId,
+            'target_location_id': targetLocationId,
+            'transfer_date': transferTimestamp.toIso8601String(),
+            'employee_id': 1,
+        },
+        'items': items.map((item) => {
+            'product_id': item.productId,
+            'quantity': item.quantity,
+            'pallet_id': item.sourcePalletBarcode,
+        }).toList(),
+      };
+      
+      await txn.insert('pending_operation', {
+        'type': 'transfer',
+        'data': jsonEncode(payload),
+        'created_at': DateTime.now().toIso8601String(),
+        'status': 'pending',
+      });
+    });
   }
 
-  @override
-  Future<void> synchronizePendingTransfers() async {
-    // This is now handled by SyncService.
-  }
-  
-  @override
-  Future<List<TransferOperationHeader>> getUnsyncedTransferOperations() async {
-    return await localDataSource.getUnsyncedTransferOperations();
-  }
+  Future<void> _upsertStock(DatabaseExecutor txn, int urunId, int locationId, double qtyChange, String? palletBarcode) async {
+      final palletClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
+      final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
 
-  @override
-  Future<List<TransferItemDetail>> getTransferItemsForOperation(int operationId) async {
-    return await localDataSource.getTransferItemsForOperation(operationId);
-  }
+      final List<Map<String, dynamic>> existing = await txn.query(
+          'inventory_stock',
+          where: 'urun_id = ? AND location_id = ? AND $palletClause',
+          whereArgs: whereArgs,
+      );
 
-  @override
-  Future<void> markTransferOperationAsSynced(int operationId) async {
-    await localDataSource.markTransferOperationAsSynced(operationId);
+      if (existing.isNotEmpty) {
+          final currentQty = (existing.first['quantity'] as num).toDouble();
+          final newQty = currentQty + qtyChange;
+          if (newQty > 0.001) {
+              await txn.update(
+                  'inventory_stock',
+                  {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+                  where: 'id = ?',
+                  whereArgs: [existing.first['id']],
+              );
+          } else {
+              await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
+          }
+      } else if (qtyChange > 0) {
+          await txn.insert('inventory_stock', {
+              'urun_id': urunId,
+              'location_id': locationId,
+              'quantity': qtyChange,
+              'pallet_barcode': palletBarcode,
+              'updated_at': DateTime.now().toIso8601String(),
+          });
+      }
   }
 }

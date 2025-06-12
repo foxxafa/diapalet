@@ -1,419 +1,53 @@
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:intl/intl.dart';
-import '../../../core/sync/sync_service.dart';
+import 'dart:convert';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
+import 'package.flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
-  const PendingOperationsScreen({super.key});
+  final SyncService syncService;
+
+  const PendingOperationsScreen({
+    Key? key,
+    required this.syncService,
+  }) : super(key: key);
 
   @override
-  State<PendingOperationsScreen> createState() => _PendingOperationsScreenState();
+  _PendingOperationsScreenState createState() => _PendingOperationsScreenState();
 }
 
 class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
-  final SyncService _syncService = SyncService();
-  List<PendingOperation> _pendingOperations = [];
-  bool _isLoading = true;
-  bool _isSyncing = false;
-  SyncStatus _syncStatus = SyncStatus.offline;
-  StreamSubscription? _syncStatusSubscription;
+  late Future<List<PendingOperation>> _pendingOperationsFuture;
 
   @override
   void initState() {
     super.initState();
-    // Initialization is now handled in main.dart, so we just listen for updates.
-    // _syncService.initialize();
     _loadPendingOperations();
-    _syncStatusSubscription = _syncService.syncStatusStream.listen((status) {
-      if (mounted) {
-        setState(() {
-          _syncStatus = status;
-          _isSyncing = status == SyncStatus.syncing;
-        });
-        
-        // Reload operations after sync completes
-        if (status == SyncStatus.upToDate) {
-          _loadPendingOperations();
-        }
-      }
-    });
   }
 
-  @override
-  void dispose() {
-    _syncStatusSubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _loadPendingOperations() async {
+  void _loadPendingOperations() {
     setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final operations = await _syncService.getPendingOperations();
-      setState(() {
-        _pendingOperations = operations;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading operations: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _performSync() async {
-    setState(() {
-      _isSyncing = true;
-    });
-
-    try {
-      final result = await _syncService.uploadPendingOperations();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: result.success ? Colors.green : Colors.red,
-          ),
-        );
-      }
-      
-      if (result.success) {
-        await _loadPendingOperations();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sync error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-
-    setState(() {
-      _isSyncing = false;
+      _pendingOperationsFuture = widget.syncService.getPendingOperations();
     });
   }
 
-  Future<void> _confirmAndResetDatabase() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('pending_operations.admin.reset_confirm_title'.tr()),
-          content: Text('pending_operations.admin.reset_confirm_body'.tr()),
-          actions: <Widget>[
-            TextButton(
-              child: Text('dialog.cancel'.tr()),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: Text('dialog.confirm'.tr()),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    );
+  Future<void> _showOperationDetails(PendingOperation operation) async {
+    final data = jsonDecode(operation.data);
+    final prettyData = const JsonEncoder.withIndent('  ').convert(data);
 
-    if (confirmed == true) {
-      await _syncService.resetLocalData();
-      await _loadPendingOperations(); // Refresh the list
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('pending_operations.admin.reset_success'.tr()),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _syncFromServer() async {
-    setState(() {
-      _isSyncing = true;
-    });
-
-    final tablesToSync = [
-      // Parent tables first
-      'locations',            // referenced by inventory_stock & transfers
-      'urunler',              // products referenced by many tables
-      // Purchase orders
-      'satin_alma_siparis_fis',
-      'satin_alma_siparis_fis_satir',
-      // Goods receipt header before items
-      'goods_receipts',
-      'goods_receipt_items',
-      // Stock last (depends on product & location)
-      'inventory_stock',
-    ];
-
-    final result = await _syncService.downloadSpecifiedTables(tablesToSync);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          backgroundColor: result.success ? Colors.green : Colors.red,
-        ),
-      );
-    }
-    
-    setState(() {
-      _isSyncing = false;
-    });
-  }
-
-  Future<void> _downloadMasterData({bool fullSync = false}) async {
-    setState(() {
-      _isSyncing = true;
-    });
-    // Force a full sync, overriding any existing sync process.
-    final result = await _syncService.downloadMasterData(fullSync: fullSync, force: true);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          backgroundColor: result.success ? Colors.green : Colors.red,
-        ),
-      );
-    }
-    setState(() {
-      _isSyncing = false;
-    });
-  }
-
-  Widget _buildSyncStatusBanner() {
-    IconData icon;
-    Color color;
-    String message;
-
-    switch (_syncStatus) {
-      case SyncStatus.offline:
-        icon = Icons.wifi_off;
-        color = Colors.grey;
-        message = 'pending_operations.status.offline'.tr();
-        break;
-      case SyncStatus.syncing:
-        icon = Icons.sync;
-        color = Colors.blue;
-        message = 'pending_operations.status.syncing'.tr();
-        break;
-      case SyncStatus.upToDate:
-        icon = Icons.check_circle;
-        color = Colors.green;
-        message = 'pending_operations.status.up_to_date'.tr();
-        break;
-      case SyncStatus.error:
-        icon = Icons.error;
-        color = Colors.red;
-        message = 'pending_operations.status.error'.tr();
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      margin: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: color.withAlpha((255 * 0.1).round()),
-        border: Border.all(color: color.withAlpha((255 * 0.3).round())),
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      child: Row(
-        children: [
-          if (_syncStatus == SyncStatus.syncing)
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Icon(icon, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-                if (_pendingOperations.isNotEmpty)
-                  Text(
-                    'pending_operations.operations_count'.tr(args: [_pendingOperations.length.toString()]),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOperationCard(PendingOperation operation) {
-    IconData icon;
-    Color iconColor;
-
-    switch (operation.operationType) {
-      case 'goods_receipt':
-        icon = Icons.input_outlined;
-        iconColor = Colors.blue;
-        break;
-      case 'pallet_transfer':
-        icon = Icons.warehouse_outlined;
-        iconColor = Colors.orange;
-        break;
-      case 'box_transfer':
-        icon = Icons.move_to_inbox;
-        iconColor = Colors.purple;
-        break;
-      default:
-        icon = Icons.help_outline;
-        iconColor = Colors.grey;
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      elevation: 2.0,
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withOpacity(0.1),
-          child: Icon(icon, color: iconColor),
-        ),
-        title: Text(
-          operation.operationType.replaceAll('_', ' ').capitalize(),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              'Tarih: ${DateFormat.yMd().add_Hms().format(operation.createdAt)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Detay: ${operation.payloadSummary}',
-              style: Theme.of(context).textTheme.bodySmall,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-        isThreeLine: true,
-      ),
-    );
-  }
-
-  void _showOperationDetails(PendingOperation operation) {
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('pending_operations.operation_details'.tr()),
+        title: Text('Operation Details (ID: ${operation.id})'),
         content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetailRow('pending_operations.type'.tr(), operation.operationType),
-              _buildDetailRow('pending_operations.created'.tr(), 
-                DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt)),
-              const SizedBox(height: 16),
-              Text(
-                'pending_operations.data'.tr(),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  operation.operationData.toString(),
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text('common.close'.tr()),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          child: Text(prettyData),
         ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAdminControls() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ElevatedButton.icon(
-            icon: const Icon(Icons.storage_outlined),
-            label: const Text('Sunucudan Veri Çek'),
-            onPressed: _isSyncing ? null : _syncFromServer,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.delete_forever_outlined, color: Colors.white),
-            label: const Text('Veritabanını Sıfırla', style: TextStyle(color: Colors.white)),
-            onPressed: _isSyncing ? null : _confirmAndResetDatabase,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -424,51 +58,98 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('pending_operations.title'.tr()),
+        title: const Text('Pending Operations'),
         actions: [
-          // Keeping a simple sync status indicator in the AppBar
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Icon(
-              _syncStatus == SyncStatus.offline ? Icons.wifi_off : Icons.wifi,
-              color: _syncStatus == SyncStatus.offline ? Colors.grey : Colors.green,
-            ),
-          )
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadPendingOperations,
+            tooltip: 'Refresh List',
+          ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildAdminControls(),
-          const Divider(),
-          if (_isLoading)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_pendingOperations.isEmpty)
-            Expanded(
-              child: Center(
-                child: Text('pending_operations.empty'.tr()),
-              ),
-            )
-          else
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _loadPendingOperations,
-                child: ListView.builder(
-                  itemCount: _pendingOperations.length,
-                  itemBuilder: (context, index) {
-                    return _buildOperationCard(_pendingOperations[index]);
-                  },
+      body: FutureBuilder<List<PendingOperation>>(
+        future: _pendingOperationsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No pending operations found.'));
+          }
+
+          final operations = snapshot.data!;
+          return ListView.builder(
+            itemCount: operations.length,
+            itemBuilder: (context, index) {
+              final operation = operations[index];
+              final statusColor = _getStatusColor(operation.status);
+              final icon = _getStatusIcon(operation.status);
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: ListTile(
+                  leading: Icon(icon, color: statusColor),
+                  title: Text(
+                    '${operation.type.toUpperCase()} Operation',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    'Status: ${operation.status}\nCreated: ${DateFormat('yyyy-MM-dd HH:mm').format(operation.createdAt)}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () async {
+                           await widget.syncService.deleteOperation(operation.id!);
+                           _loadPendingOperations();
+                        },
+                      ),
+                      if (operation.status == 'failed')
+                        IconButton(
+                          icon: const Icon(Icons.sync_problem, color: Colors.orange),
+                          onPressed: () async {
+                            await widget.syncService.retryOperation(operation.id!);
+                            _loadPendingOperations();
+                          },
+                        ),
+                    ],
+                  ),
+                  onTap: () => _showOperationDetails(operation),
                 ),
-              ),
-            ),
-        ],
+              );
+            },
+          );
+        },
       ),
     );
   }
-}
 
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1)}";
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return Colors.blue;
+      case 'failed':
+        return Colors.red;
+      case 'synced':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'pending':
+        return Icons.cloud_queue;
+      case 'failed':
+        return Icons.error_outline;
+      case 'synced':
+        return Icons.cloud_done;
+      default:
+        return Icons.help_outline;
+    }
   }
 } 

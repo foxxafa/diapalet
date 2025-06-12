@@ -1,5 +1,5 @@
 // lib/features/pallet_assignment/domain/entities/transfer_item_detail.dart
-import 'package:diapalet/features/pallet_assignment/domain/entities/product_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:flutter/foundation.dart'; // For @immutable and @override
 
 @immutable

@@ -16,77 +16,102 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: SharedAppBar(
-        title: 'home.title'.tr(),
+        title: 'Diapalet WMS',
         actions: [
-          IconButton(
-            icon: const Icon(Icons.sync),
-            onPressed: () async {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Senkronizasyon başlatılıyor...'),
-              ));
-              try {
-                await syncService.downloadMasterData(force: true);
-                await syncService.uploadPendingOperations();
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Senkronizasyon tamamlandı!'),
-                  backgroundColor: Colors.green,
-                ));
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Senkronizasyon hatası: $e'),
-                  backgroundColor: Colors.red,
-                ));
+          StreamBuilder<SyncStatus>(
+            stream: syncService.syncStatusStream,
+            builder: (context, snapshot) {
+              final status = snapshot.data ?? SyncStatus.offline;
+              IconData icon;
+              Color color;
+              VoidCallback? onPressed = () => syncService.uploadPendingOperations();
+
+              switch (status) {
+                case SyncStatus.syncing:
+                  icon = Icons.sync;
+                  color = Colors.blue;
+                  onPressed = null; // Disable button while syncing
+                  break;
+                case SyncStatus.upToDate:
+                  icon = Icons.cloud_done;
+                  color = Colors.green;
+                  break;
+                case SyncStatus.error:
+                  icon = Icons.cloud_off;
+                  color = Colors.red;
+                  break;
+                case SyncStatus.offline:
+                case SyncStatus.online: // same icon for both online and offline before sync
+                  icon = Icons.cloud_upload;
+                  color = Colors.grey;
+                  break;
               }
+
+              if (status == SyncStatus.syncing) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.0, color: Colors.white),
+                  ),
+                );
+              }
+
+              return IconButton(
+                icon: Icon(icon, color: color),
+                onPressed: onPressed,
+                tooltip: 'Sync with Server',
+              );
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.list_alt),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PendingOperationsScreen(syncService: syncService),
+                ),
+              );
+            },
+            tooltip: 'View Pending Operations',
           )
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _HomeButton(
-              icon: Icons.input_outlined,
-              label: 'home.goods_receiving'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const GoodsReceivingScreen(),
-                  ),
+      body: GridView.count(
+        crossAxisCount: 2,
+        padding: const EdgeInsets.all(16.0),
+        childAspectRatio: 3 / 2,
+        mainAxisSpacing: 16.0,
+        crossAxisSpacing: 16.0,
+        children: [
+          _buildFeatureCard(
+            context,
+            title: 'Goods Receiving',
+            icon: Icons.inventory_2,
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) {
+                return Provider.value(
+                  value: Provider.of<GoodsReceivingRepository>(context, listen: false),
+                  child: const GoodsReceivingScreen(),
                 );
-              },
-            ),
-            const SizedBox(height: 24),
-            _HomeButton(
-              icon: Icons.warehouse_outlined,
-              label: 'home.pallet_transfer'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const InventoryTransferScreen(),
-                  ),
+              }));
+            },
+          ),
+          _buildFeatureCard(
+            context,
+            title: 'Inventory Transfer',
+            icon: Icons.swap_horiz,
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) {
+                return Provider.value(
+                  value: Provider.of<InventoryTransferRepository>(context, listen: false),
+                  child: const InventoryTransferScreen(),
                 );
-              },
-            ),
-            const SizedBox(height: 24),
-            _HomeButton(
-              icon: Icons.sync_alt,
-              label: 'home.pending_operations'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PendingOperationsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+              }));
+            },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -119,39 +144,25 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-}
 
-class _HomeButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _HomeButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SizedBox(
-      height: 120,
-      child: ElevatedButton.icon(
-        icon: Icon(icon, size: 44),
-        label: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: theme.colorScheme.primaryContainer,
-          foregroundColor: theme.colorScheme.onPrimaryContainer,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 3,
-          textStyle: const TextStyle(fontSize: 17),
+  Widget _buildFeatureCard(BuildContext context, {required String title, required IconData icon, required VoidCallback onTap}) {
+    return Card(
+      elevation: 4.0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 48.0, color: Theme.of(context).primaryColor),
+            const SizedBox(height: 12.0),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
         ),
       ),
     );

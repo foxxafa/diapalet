@@ -4,10 +4,25 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+
+class SyncResult {
+  final bool success;
+  final String message;
+  SyncResult(this.success, this.message);
+}
+
+enum SyncStatus {
+  offline,
+  online,
+  syncing,
+  upToDate,
+  error,
+}
 
 class SyncService {
   final Dio _dio;
@@ -18,13 +33,28 @@ class SyncService {
   bool _isSyncingDownload = false;
   bool _isSyncingUpload = false;
 
+  final StreamController<SyncStatus> _syncStatusController = StreamController<SyncStatus>.broadcast();
+
+  Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
+
   SyncService({
     required Dio dio,
     required DatabaseHelper dbHelper,
     required Connectivity connectivity,
   })  : _dio = dio,
         _dbHelper = dbHelper,
-        _connectivity = connectivity;
+        _connectivity = connectivity {
+    _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> result) {
+      final isConnected = result.contains(ConnectivityResult.mobile) || result.contains(ConnectivityResult.wifi);
+      if (isConnected) {
+        _syncStatusController.add(SyncStatus.online);
+        // Automatically try to upload pending operations on reconnect
+        uploadPendingOperations();
+      } else {
+        _syncStatusController.add(SyncStatus.offline);
+      }
+    });
+  }
 
   Future<String?> _getLastSyncTimestamp() async {
     final prefs = await SharedPreferences.getInstance();
@@ -43,107 +73,93 @@ class SyncService {
 
   // --- PUBLIC API ---
 
-  Future<void> downloadMasterData({bool force = false}) async {
-    if (_isSyncingDownload && !force) {
-      debugPrint("Download sync already in progress.");
-      return;
-    }
-    if (!await _isConnected()) {
-      debugPrint("No internet connection for download.");
-      return;
+  Future<SyncResult> downloadMasterData() async {
+    final hasConnection = await _connectivity.checkConnectivity();
+    if (hasConnection.contains(ConnectivityResult.none)) {
+        return SyncResult(false, "No internet connection.");
     }
 
-    _isSyncingDownload = true;
-    debugPrint("Starting master data download...");
+    _syncStatusController.add(SyncStatus.syncing);
 
     try {
-      final lastSync = await _getLastSyncTimestamp();
-      final response = await _dio.post(
-        ApiConfig.syncDownload,
-        data: {'last_sync': lastSync},
-      );
+      final response = await _dio.get(ApiConfig.syncDownload);
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'] as Map<String, dynamic>;
-        await _updateLocalDatabase(data);
-        final newTimestamp = response.data['timestamp'] as String?;
-        if (newTimestamp != null) {
-          await _setLastSyncTimestamp(newTimestamp);
-        }
-        debugPrint("Master data download successful.");
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        await _dbHelper.replaceTables(data);
+        _syncStatusController.add(SyncStatus.upToDate);
+        return SyncResult(true, "Master data synced successfully.");
       } else {
-        throw Exception('Failed to download data: ${response.data['error']}');
+        _syncStatusController.add(SyncStatus.error);
+        return SyncResult(false, "Server error: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Error during data download: $e");
-      rethrow;
-    } finally {
-      _isSyncingDownload = false;
+      _syncStatusController.add(SyncStatus.error);
+      debugPrint("Error during master data download: $e");
+      return SyncResult(false, "An error occurred: $e");
     }
   }
 
-  Future<void> uploadPendingOperations() async {
-    if (_isSyncingUpload) {
-      debugPrint("Upload sync already in progress.");
-      return;
+  Future<SyncResult> uploadPendingOperations() async {
+     final hasConnection = await _connectivity.checkConnectivity();
+    if (hasConnection.contains(ConnectivityResult.none)) {
+        return SyncResult(false, "No internet connection.");
     }
-    if (!await _isConnected()) {
-      debugPrint("No internet connection for upload.");
-      return;
+    
+    _syncStatusController.add(SyncStatus.syncing);
+
+    final pendingOperations = await getPendingOperations();
+    if (pendingOperations.isEmpty) {
+      _syncStatusController.add(SyncStatus.upToDate);
+      return SyncResult(true, "No pending operations to sync.");
     }
-
-    _isSyncingUpload = true;
-    debugPrint("Starting pending operations upload...");
-
-    final db = await _dbHelper.database;
-    final pendingOps = await db.query('pending_operation', where: 'status = ?', whereArgs: ['pending']);
-
-    if (pendingOps.isEmpty) {
-      debugPrint("No pending operations to upload.");
-      _isSyncingUpload = false;
-      return;
-    }
-
-    final operationsPayload = pendingOps.map((op) {
-      return {
-        'id': op['id'],
-        'type': op['type'],
-        'data': jsonDecode(op['data'] as String),
-      };
-    }).toList();
 
     try {
       final response = await _dio.post(
         ApiConfig.syncUpload,
-        data: {'operations': operationsPayload},
+        data: jsonEncode(pendingOperations.map((op) => op.toJson()).toList()),
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final results = response.data['results'] as List<dynamic>;
-        for (final result in results) {
-            final opId = result['operation']['id'];
-            if (result['result']['status'] == 'success') {
-                await db.delete('pending_operation', where: 'id = ?', whereArgs: [opId]);
-            } else {
-                await db.update(
-                'pending_operation',
-                {'status': 'failed', 'error_message': result['result']['error']},
-                where: 'id = ?',
-                whereArgs: [opId],
-                );
-            }
+      if (response.statusCode == 200) {
+        final results = response.data['results'] as List;
+        for (var result in results) {
+          final int opId = result['operation_id'];
+          final bool success = result['success'];
+          if (success) {
+            await _dbHelper.deletePendingOperation(opId);
+          } else {
+            await _dbHelper.updatePendingOperationStatus(opId, 'failed', error: result['error']);
+          }
         }
-        debugPrint("Pending operations uploaded successfully.");
+        _syncStatusController.add(SyncStatus.upToDate);
+        return SyncResult(true, "Sync process completed.");
       } else {
-        throw Exception("Failed to upload operations: ${response.data['error']}");
+        _syncStatusController.add(SyncStatus.error);
+        return SyncResult(false, "Server error: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Error during data upload: $e");
-      // Optionally mark ops as failed on network error
-      rethrow;
-    } finally {
-      _isSyncingUpload = false;
+      _syncStatusController.add(SyncStatus.error);
+      debugPrint("Error during pending operations upload: $e");
+      return SyncResult(false, "An error occurred: $e");
     }
+  }
+
+  Future<List<PendingOperation>> getPendingOperations() async {
+    return _dbHelper.getPendingOperations();
+  }
+
+  Future<void> deleteOperation(int operationId) async {
+    await _dbHelper.deletePendingOperation(operationId);
+  }
+
+  Future<void> retryOperation(int operationId) async {
+    await _dbHelper.updatePendingOperationStatus(operationId, 'pending');
+    // Attempt to upload immediately
+    uploadPendingOperations();
+  }
+
+  void dispose() {
+    _syncStatusController.close();
   }
 
   // --- PRIVATE HELPERS ---
