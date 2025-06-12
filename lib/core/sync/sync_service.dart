@@ -44,8 +44,8 @@ class SyncService {
   })  : _dio = dio,
         _dbHelper = dbHelper,
         _connectivity = connectivity {
-    _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> result) {
-      final isConnected = result.isNotEmpty && !result.contains(ConnectivityResult.none);
+    _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      final isConnected = result != ConnectivityResult.none;
       if (isConnected) {
         _syncStatusController.add(SyncStatus.online);
         // Automatically try to upload pending operations on reconnect
@@ -75,7 +75,7 @@ class SyncService {
 
   Future<SyncResult> downloadMasterData() async {
     final hasConnection = await _connectivity.checkConnectivity();
-    if (hasConnection.contains(ConnectivityResult.none)) {
+    if (hasConnection == ConnectivityResult.none) {
         return SyncResult(false, "No internet connection.");
     }
 
@@ -102,7 +102,7 @@ class SyncService {
 
   Future<SyncResult> uploadPendingOperations() async {
      final hasConnection = await _connectivity.checkConnectivity();
-    if (hasConnection.contains(ConnectivityResult.none)) {
+    if (hasConnection == ConnectivityResult.none) {
         return SyncResult(false, "No internet connection.");
     }
     

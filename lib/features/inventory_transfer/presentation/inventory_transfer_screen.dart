@@ -137,7 +137,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           });
         }
       } else {
-        final ids = await _repo.getProductIdsAtLocation(_selectedSourceLocation!);
+        final ids = await _repo.getPalletIdsAtLocation(_selectedSourceLocation!);
         if (mounted) {
           setState(() {
             _availableContainerIds = ids;
@@ -191,8 +191,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           });
         }
       } else {
-        final contents =
-        await _repo.getProductInfo(containerId, _selectedSourceLocation!);
+        final contents = await _repo.getPalletContents(containerId);
         if (!mounted) return;
         setState(() {
           _productsInContainer = contents;

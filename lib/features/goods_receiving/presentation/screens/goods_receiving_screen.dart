@@ -66,8 +66,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _scanBarcode(TextEditingController controller) async {
-    final barcode = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (context) => const QRScannerScreen()),
+      final barcode = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (context) => const QrScannerScreen()),
     );
     if (barcode != null && barcode.isNotEmpty) {
       controller.text = barcode;
@@ -203,9 +203,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         leading: const Icon(Icons.check_circle, color: Colors.green),
-                        title: Text('${item.urun_name} (${item.quantity} units)'),
+                        title: Text('${item.urunName} (${item.quantity} units)'),
                         subtitle: Text(
-                          'Pallet: ${item.container_id ?? "N/A"}\nTo: ${item.location_name} at ${DateFormat.yMd().add_Hms().format(DateTime.parse(item.created_at))}',
+                          'Pallet: ${item.containerId ?? "N/A"}\nTo: ${item.locationName} at ${DateFormat.yMd().add_Hms().format(DateTime.parse(item.createdAt))}',
                         ),
                         isThreeLine: true,
                       ),

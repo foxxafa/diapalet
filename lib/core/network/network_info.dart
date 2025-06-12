@@ -1,6 +1,5 @@
 // core/network/network_info.dart
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 
 abstract class NetworkInfo {
   Future<bool> get isConnected;
@@ -23,8 +22,8 @@ class NetworkInfoImpl implements NetworkInfo {
     return connectivity.onConnectivityChanged.map(_hasConnection);
   }
 
-  bool _hasConnection(List<ConnectivityResult> result) {
-    return result.isNotEmpty && !result.contains(ConnectivityResult.none);
+  bool _hasConnection(ConnectivityResult result) {
+    return result != ConnectivityResult.none;
   }
 }
 
