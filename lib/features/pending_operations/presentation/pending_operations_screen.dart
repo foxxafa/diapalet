@@ -132,6 +132,36 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     }
   }
 
+  Future<void> _resetDatabase() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('pending_operations.admin.reset_confirm_title'.tr()),
+        content: Text('pending_operations.admin.reset_confirm_body'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('common.cancel'.tr()),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('pending_operations.admin.reset_db'.tr()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await context.read<DatabaseHelper>().resetDatabase();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('pending_operations.admin.reset_success'.tr())),
+        );
+        await _loadPendingOperations();
+      }
+    }
+  }
+
   Widget _buildSyncStatusBanner() {
     IconData icon;
     Color color;
@@ -334,6 +364,11 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: _loadPendingOperations,
             tooltip: 'pending_operations.refresh'.tr(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_forever),
+            onPressed: _resetDatabase,
+            tooltip: 'pending_operations.admin.reset_db'.tr(),
           ),
           // Add connectivity indicator like SharedAppBar
           Padding(
