@@ -32,7 +32,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   PurchaseOrder? _selectedOrder;
   List<PurchaseOrderItem> _orderItems = [];
   final Map<int, TextEditingController> _quantityControllers = {};
-  List<GoodsReceiptItem> _receiptItems = [];
+  final List<GoodsReceiptItem> _receiptItems = [];
 
   bool _isLoading = false;
 
@@ -46,26 +46,44 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = GoodsReceivingRepositoryImpl(DatabaseHelper());
+    // initState'te context kullanmak genellikle önerilmez, bu yüzden `didChangeDependencies` kullanmak daha güvenlidir.
+    // Ancak bu durumda, `listen: false` ile anında bir kerelik erişim sorun yaratmayacaktır.
+    // Yine de en iyi pratik için `didChangeDependencies`'e taşınabilir.
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final dbHelper = Provider.of<DatabaseHelper>(context, listen: false);
+    _repository = GoodsReceivingRepositoryImpl(dbHelper: dbHelper);
     _loadPurchaseOrders();
     _loadRecentReceipts();
   }
 
   Future<void> _loadPurchaseOrders() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
     try {
       final orders = await _repository.getPurchaseOrders();
-      setState(() {
-        _purchaseOrders = orders;
-      });
+      if (mounted) {
+        setState(() {
+          _purchaseOrders = orders;
+        });
+      }
     } catch (e) {
-      // Handle error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Siparişler yüklenemedi: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -120,15 +138,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _saveReceipt() async {
-    if (_selectedOrder == null) return;
+    if (_selectedOrder == null || _receiptItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lütfen sipariş seçin ve en az bir ürün miktarı girin.')),
+      );
+      return;
+    }
 
     final receipt = GoodsReceipt(
-      id: 0, // Yeni kayıt
+      id: 0, // Yeni kayıt için 0
       purchaseOrderId: _selectedOrder!.id,
       receiptNumber: _receiptNumberController.text,
       receiptDate: DateTime.now(),
       notes: _notesController.text,
-      status: 'pending',
+      status: 'pending', // Senkronizasyon bekliyor
       items: _receiptItems,
     );
 
@@ -151,31 +174,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _onOrderItemChanged(PurchaseOrderItem item, String value) {
     final quantity = double.tryParse(value) ?? 0.0;
+    
+    // Önceki kaydı listeden kaldır
+    _receiptItems.removeWhere((receiptItem) => receiptItem.productId == item.productId);
+
+    // Eğer miktar 0'dan büyükse, yeni kayıt ekle
     if (quantity > 0) {
-      final existingIndex =
-          _receiptItems.indexWhere((element) => element.productId == item.productId);
-      if (existingIndex != -1) {
-        _receiptItems[existingIndex] = GoodsReceiptItem(
-          id: _receiptItems[existingIndex].id,
-          goodsReceiptId: _receiptItems[existingIndex].goodsReceiptId,
+      _receiptItems.add(
+        GoodsReceiptItem(
+          id: 0, // Yeni kayıt
+          goodsReceiptId: 0, // Bu ID veritabanında atanacak
           productId: item.productId,
           quantity: quantity,
           notes: '',
-        );
-      } else {
-        _receiptItems.add(
-          GoodsReceiptItem(
-            id: 0,
-            goodsReceiptId: 0,
-            productId: item.productId,
-            quantity: quantity,
-            notes: '',
-          ),
-        );
-      }
-    } else {
-      _receiptItems.removeWhere((element) => element.productId == item.productId);
+        ),
+      );
     }
+    // Değişikliği yansıtmak için setState gerekli değilse de, UI'da anlık güncelleme için kullanılabilir.
     setState(() {});
   }
 

@@ -10,7 +10,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final syncService = Provider.of<SyncService>(context);
+    final syncService = Provider.of<SyncService>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -46,8 +46,7 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const GoodsReceivingScreen(),
+                    builder: (context) => const GoodsReceivingScreen(),
                   ),
                 );
               },
@@ -59,7 +58,7 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const TransferScreen(),
+                    builder: (context) => TransferScreen(syncService: syncService),
                   ),
                 );
               },
@@ -71,7 +70,7 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PendingOperationsScreen(),
+                    builder: (context) => PendingOperationsScreen(syncService: syncService),
                   ),
                 );
               },

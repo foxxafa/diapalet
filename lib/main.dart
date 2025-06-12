@@ -19,8 +19,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
-  // --- Singleton BINDINGS ---
-  final dbHelper = DatabaseHelper.instance;
+  final dbHelper = DatabaseHelper();
+  await dbHelper.initDatabase();
+  
   final dio = Dio();
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);

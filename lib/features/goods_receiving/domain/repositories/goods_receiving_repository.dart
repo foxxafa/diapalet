@@ -1,4 +1,6 @@
 // features/goods_receiving/domain/repositories/goods_receiving_repository.dart
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
@@ -25,4 +27,10 @@ abstract class GoodsReceivingRepository {
     required int? purchaseOrderId,
     required List<({int productId, double quantity, String? palletBarcode})> items,
   });
+
+  Future<List<PurchaseOrder>> getPurchaseOrders();
+  Future<List<ProductInfo>> searchProducts(String query);
+  Future<ProductInfo?> getProductDetails(String barcode);
+  Future<LocationInfo?> getLocationDetails(String barcode);
+  Future<void> saveGoodsReceipt(GoodsReceipt receipt);
 }

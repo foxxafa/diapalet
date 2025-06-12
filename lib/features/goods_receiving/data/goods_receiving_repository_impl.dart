@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -10,18 +11,18 @@ import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
-  final DatabaseHelper _dbHelper;
+  final DatabaseHelper dbHelper;
   final Uuid _uuid = const Uuid();
 
   // "MAL KABUL" lokasyonunun ID'sinin 1 olduğunu varsayıyoruz.
   // Gerçek bir uygulamada bu, yapılandırmadan veya veritabanından alınabilir.
   static const int malKabulLocationId = 1;
 
-  GoodsReceivingRepositoryImpl({required DatabaseHelper dbHelper}) : _dbHelper = dbHelper;
+  GoodsReceivingRepositoryImpl({required this.dbHelper});
 
   @override
   Future<List<LocationInfo>> getLocations({String? filter}) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'location', 
       where: filter != null && filter.isNotEmpty ? 'name LIKE ?' : null,
@@ -33,7 +34,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<ProductInfo>> getProducts({String? filter}) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     String whereClause = 'is_active = 1';
     List<dynamic> whereArgs = [];
     if (filter != null && filter.isNotEmpty) {
@@ -52,7 +53,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<RecentReceiptItem>> getRecentReceipts({int limit = 50}) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT 
         gri.id, 
@@ -70,19 +71,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
-    final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'purchase_order',
-      where: 'status = 0',
-      orderBy: 'tarih DESC',
-    );
-    return List.generate(maps.length, (i) => PurchaseOrder.fromMap(maps[i]));
+  Future<List<PurchaseOrder>> getPurchaseOrders() async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query('purchase_orders');
+    return List.generate(maps.length, (i) {
+      return PurchaseOrder.fromJson(maps[i]);
+    });
   }
 
   @override
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
         poi.id,
@@ -98,58 +97,32 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<void> saveGoodsReceipt({
-    required int? purchaseOrderId,
-    required List<({int productId, double quantity, String? palletBarcode})> items,
-  }) async {
-    final db = await _dbHelper.database;
-    final receiptLocalId = _uuid.v4();
-    final now = DateTime.now().toIso8601String();
-
+  Future<void> saveGoodsReceipt(GoodsReceipt receipt) async {
+    final db = await dbHelper.database;
     await db.transaction((txn) async {
-      // 1. Mal kabul başlığını (`goods_receipt`) oluştur.
-      await txn.insert('goods_receipt', {
-        'local_id': receiptLocalId,
-        'siparis_id': purchaseOrderId,
-        'employee_id': 1, // Gerçek kullanıcı ID'si ile değiştirilecek
-        'receipt_date': now,
-        'created_at': now,
-      });
-
-      // 2. Her bir ürünü `goods_receipt_item`'a ekle ve stoğu güncelle.
-      for (final item in items) {
-        await txn.insert('goods_receipt_item', {
-          'receipt_local_id': receiptLocalId,
-          'urun_id': item.productId,
-          'quantity_received': item.quantity,
-          'pallet_barcode': item.palletBarcode,
-        });
-
-        // Stoğu "MAL KABUL" lokasyonunda güncelle.
-        await _upsertStock(txn, item.productId, malKabulLocationId, item.quantity, item.palletBarcode);
+      final receiptId = await txn.insert('goods_receipts', receipt.toJson());
+      for (var item in receipt.items) {
+        await txn.insert('goods_receipt_items', item.copyWith(goodsReceiptId: receiptId.toInt()).toJson());
       }
-
-      // 3. Senkronizasyon için işlemi `pending_operation` kuyruğuna ekle.
-      final payload = {
-        'header': {
-          'siparis_id': purchaseOrderId,
-          'employee_id': 1, // Gerçek kullanıcı ID'si ile değiştirilecek
-          'receipt_date': now,
-        },
-        'items': items.map((item) => {
-          'urun_id': item.productId,
-          'quantity': item.quantity,
-          'pallet_barcode': item.palletBarcode,
-        }).toList(),
-      };
-      
-      await txn.insert('pending_operation', {
-        'type': 'goods_receipt',
-        'data': jsonEncode(payload),
-        'created_at': now,
-        'status': 'pending',
-      });
     });
+  }
+
+  @override
+  Future<List<ProductInfo>> searchProducts(String query) async {
+    // Implement product search logic
+    return [];
+  }
+
+  @override
+  Future<ProductInfo?> getProductDetails(String barcode) async {
+    // Implement get product details logic
+    return null;
+  }
+
+  @override
+  Future<LocationInfo?> getLocationDetails(String barcode) async {
+    // Implement get location details logic
+    return null;
   }
 
   Future<void> _upsertStock(DatabaseExecutor txn, int urunId, int locationId, double qtyChange, String? palletBarcode) async {

@@ -5,121 +5,70 @@ import 'product_info.dart';
 // Mode concept removed; receipts simply track products at locations
 
 class GoodsReceipt {
-  final int? id;
-  final String externalId;
-  final String invoiceNumber;
+  final int id;
+  final int purchaseOrderId;
+  final String receiptNumber;
   final DateTime receiptDate;
-  int synced;
+  final String? notes;
+  final String status;
+  final List<GoodsReceiptItem> items;
 
   GoodsReceipt({
-    this.id,
-    String? externalId,
-    required this.invoiceNumber,
+    required this.id,
+    required this.purchaseOrderId,
+    required this.receiptNumber,
     required this.receiptDate,
-    this.synced = 0,
-  }) : externalId = externalId ?? const Uuid().v4();
+    this.notes,
+    required this.status,
+    required this.items,
+  });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'external_id': externalId,
-      'invoice_number': invoiceNumber,
-      'receipt_date': receiptDate.toIso8601String(),
-      'synced': synced,
-    };
-  }
-
-  factory GoodsReceipt.fromMap(Map<String, dynamic> map) {
-    return GoodsReceipt(
-      id: map['id'] as int?,
-      externalId: map['external_id'] as String? ?? const Uuid().v4(),
-      invoiceNumber: map['invoice_number'] as String,
-      receiptDate: DateTime.parse(map['receipt_date'] as String),
-      // mode column removed
-      synced: map['synced'] as int? ?? 0,
-    );
-  }
-
-  GoodsReceipt copyWith({
-    int? id,
-    String? externalId,
-    String? invoiceNumber,
-    DateTime? receiptDate,
-    int? synced,
-  }) {
-    return GoodsReceipt(
-      id: id ?? this.id,
-      externalId: externalId ?? this.externalId,
-      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
-      receiptDate: receiptDate ?? this.receiptDate,
-      synced: synced ?? this.synced,
-    );
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'purchase_order_id': purchaseOrderId,
+        'receipt_number': receiptNumber,
+        'receipt_date': receiptDate.toIso8601String(),
+        'notes': notes,
+        'status': status,
+      };
 }
 
 class GoodsReceiptItem {
-  final int? id;
-  final int receiptId;
-  final ProductInfo product;
-  final int quantity;
-  final int locationId;
-  final String? locationName;
-  final String? containerId;
+  final int id;
+  final int goodsReceiptId;
+  final int productId;
+  final double quantity;
+  final String? notes;
 
   GoodsReceiptItem({
-    this.id,
-    required this.receiptId,
-    required this.product,
+    required this.id,
+    required this.goodsReceiptId,
+    required this.productId,
     required this.quantity,
-    required this.locationId,
-    this.locationName,
-    this.containerId,
+    this.notes,
   });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'receipt_id': receiptId,
-      'urun_id': product.id,
-      'quantity': quantity,
-      'location_id': locationId,
-      'location_name': locationName,
-      'pallet_barcode': containerId,
-    };
-  }
 
   GoodsReceiptItem copyWith({
     int? id,
-    int? receiptId,
-    ProductInfo? product,
-    int? quantity,
-    String? containerId,
-    int? locationId,
+    int? goodsReceiptId,
+    int? productId,
+    double? quantity,
+    String? notes,
   }) {
     return GoodsReceiptItem(
       id: id ?? this.id,
-      receiptId: receiptId ?? this.receiptId,
-      product: product ?? this.product,
+      goodsReceiptId: goodsReceiptId ?? this.goodsReceiptId,
+      productId: productId ?? this.productId,
       quantity: quantity ?? this.quantity,
-      locationId: locationId ?? this.locationId,
-      containerId: containerId ?? this.containerId,
+      notes: notes ?? this.notes,
     );
   }
 
-  factory GoodsReceiptItem.fromMap(Map<String, dynamic> map) {
-    return GoodsReceiptItem(
-      id: map['id'],
-      receiptId: map['receipt_id'],
-      product: ProductInfo(
-        id: map['product_id'],
-        name: map['product_name'],
-        stockCode: map['product_code'],
-        isActive: true,
-      ),
-      quantity: map['quantity'],
-      locationId: map['location_id'],
-      locationName: map['location_name'],
-      containerId: map['pallet_id'],
-    );
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'goods_receipt_id': goodsReceiptId,
+        'product_id': productId,
+        'quantity': quantity,
+        'notes': notes,
+      };
 }
