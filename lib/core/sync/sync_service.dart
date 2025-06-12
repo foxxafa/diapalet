@@ -9,6 +9,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:rxdart/rxdart.dart';
 
 class SyncResult {
   final bool success;
@@ -25,35 +26,41 @@ enum SyncStatus {
 }
 
 class SyncService {
-  final Dio _dio;
-  final DatabaseHelper _dbHelper;
-  final Connectivity _connectivity;
+  final Dio dio;
+  final DatabaseHelper dbHelper;
+  final Connectivity connectivity;
   static const _lastSyncKey = 'last_sync_timestamp';
+  late SharedPreferences _prefs;
 
   bool _isSyncingDownload = false;
   bool _isSyncingUpload = false;
 
-  final StreamController<SyncStatus> _syncStatusController = StreamController<SyncStatus>.broadcast();
-
+  final _syncStatusController = BehaviorSubject<SyncStatus>.seeded(SyncStatus.offline);
   Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
 
   SyncService({
-    required Dio dio,
-    required DatabaseHelper dbHelper,
-    required Connectivity connectivity,
-  })  : _dio = dio,
-        _dbHelper = dbHelper,
-        _connectivity = connectivity {
-    _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+    required this.dio,
+    required this.dbHelper,
+    required this.connectivity,
+  }) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    _prefs = await SharedPreferences.getInstance();
+    
+    connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
       final isConnected = result != ConnectivityResult.none;
+      _syncStatusController.add(isConnected ? SyncStatus.online : SyncStatus.offline);
       if (isConnected) {
-        _syncStatusController.add(SyncStatus.online);
-        // Automatically try to upload pending operations on reconnect
         uploadPendingOperations();
-      } else {
-        _syncStatusController.add(SyncStatus.offline);
       }
     });
+
+    final initialConnectivity = await connectivity.checkConnectivity();
+    final isInitiallyConnected = initialConnectivity != ConnectivityResult.none;
+    _syncStatusController
+        .add(isInitiallyConnected ? SyncStatus.online : SyncStatus.offline);
   }
 
   Future<String?> _getLastSyncTimestamp() async {
@@ -67,14 +74,14 @@ class SyncService {
   }
 
   Future<bool> _isConnected() async {
-    final result = await _connectivity.checkConnectivity();
+    final result = await connectivity.checkConnectivity();
     return result != ConnectivityResult.none;
   }
 
   // --- PUBLIC API ---
 
   Future<SyncResult> downloadMasterData() async {
-    final hasConnection = await _connectivity.checkConnectivity();
+    final hasConnection = await connectivity.checkConnectivity();
     if (hasConnection == ConnectivityResult.none) {
         return SyncResult(false, "No internet connection.");
     }
@@ -82,11 +89,11 @@ class SyncService {
     _syncStatusController.add(SyncStatus.syncing);
 
     try {
-      final response = await _dio.get(ApiConfig.syncDownload);
+      final response = await dio.get(ApiConfig.syncDownload);
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
-        await _dbHelper.replaceTables(data);
+        await dbHelper.replaceTables(data);
         _syncStatusController.add(SyncStatus.upToDate);
         return SyncResult(true, "Master data synced successfully.");
       } else {
@@ -101,7 +108,7 @@ class SyncService {
   }
 
   Future<SyncResult> uploadPendingOperations() async {
-     final hasConnection = await _connectivity.checkConnectivity();
+     final hasConnection = await connectivity.checkConnectivity();
     if (hasConnection == ConnectivityResult.none) {
         return SyncResult(false, "No internet connection.");
     }
@@ -115,7 +122,7 @@ class SyncService {
     }
 
     try {
-      final response = await _dio.post(
+      final response = await dio.post(
         ApiConfig.syncUpload,
         data: jsonEncode(pendingOperations.map((op) => op.toJson()).toList()),
       );
@@ -126,9 +133,9 @@ class SyncService {
           final int opId = result['operation_id'];
           final bool success = result['success'];
           if (success) {
-            await _dbHelper.deletePendingOperation(opId);
+            await dbHelper.deletePendingOperation(opId);
           } else {
-            await _dbHelper.updatePendingOperationStatus(opId, 'failed', error: result['error']);
+            await dbHelper.updatePendingOperationStatus(opId, 'failed', error: result['error']);
           }
         }
         _syncStatusController.add(SyncStatus.upToDate);
@@ -145,16 +152,15 @@ class SyncService {
   }
 
   Future<List<PendingOperation>> getPendingOperations() async {
-    return _dbHelper.getPendingOperations();
+    return dbHelper.getPendingOperations();
   }
 
   Future<void> deleteOperation(int operationId) async {
-    await _dbHelper.deletePendingOperation(operationId);
+    await dbHelper.deletePendingOperation(operationId);
   }
 
   Future<void> retryOperation(int operationId) async {
-    await _dbHelper.updatePendingOperationStatus(operationId, 'pending');
-    // Attempt to upload immediately
+    await dbHelper.updatePendingOperationStatus(operationId, 'pending');
     uploadPendingOperations();
   }
 
@@ -165,7 +171,7 @@ class SyncService {
   // --- PRIVATE HELPERS ---
 
   Future<void> _updateLocalDatabase(Map<String, dynamic> data) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     await db.transaction((txn) async {
       // Helper to perform batch upserts. `ConflictAlgorithm.replace` is effectively an UPSERT.
       Future<void> batchUpsert(String table, List<dynamic> records) async {

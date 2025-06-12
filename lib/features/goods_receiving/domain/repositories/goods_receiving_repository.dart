@@ -23,14 +23,12 @@ abstract class GoodsReceivingRepository {
 
   /// Yeni bir mal kabul işlemini kaydeder.
   /// Bu, yerel stoğu anında günceller ve işlemi sunucuya senkronizasyon için kuyruğa alır.
-  Future<void> saveGoodsReceipt({
-    required int? purchaseOrderId,
-    required List<({int productId, double quantity, String? palletBarcode})> items,
-  });
+  Future<void> saveGoodsReceipt(GoodsReceipt receipt);
 
   Future<List<PurchaseOrder>> getPurchaseOrders();
   Future<List<ProductInfo>> searchProducts(String query);
   Future<ProductInfo?> getProductDetails(String barcode);
   Future<LocationInfo?> getLocationDetails(String barcode);
-  Future<void> saveGoodsReceipt(GoodsReceipt receipt);
+
+  Future<List<LocationInfo>> getLocations({String? filter});
 }

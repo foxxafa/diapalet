@@ -8,189 +8,99 @@ import 'package:flutter/foundation.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 
 class DatabaseHelper {
-  static const _databaseName = "Diapallet.db";
-  static const _databaseVersion = 2;
-
-  DatabaseHelper._privateConstructor();
-  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
+  static final DatabaseHelper _instance = DatabaseHelper._internal();
+  factory DatabaseHelper() => _instance;
+  DatabaseHelper._internal();
 
   static Database? _database;
+
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
+    _database = await initDatabase();
     return _database!;
   }
 
-  Future<Database> _initDatabase() async {
+  Future<Database> initDatabase() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
-    String path = join(documentsDirectory.path, _databaseName);
-    debugPrint('DB path: $path');
+    String path = join(documentsDirectory.path, 'diapalet.db');
     return await openDatabase(
       path,
-      version: _databaseVersion,
-      onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      version: 1,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    debugPrint("Upgrading database from version $oldVersion to $newVersion...");
-    // Simple upgrade strategy: drop all tables and recreate them.
-    // This is suitable for development but would cause data loss in production
-    // without a proper migration strategy.
-    await _dropAllTables(db);
-    await _onCreate(db, newVersion);
-    debugPrint("Database upgrade complete.");
-  }
-
   Future<void> _onCreate(Database db, int version) async {
-    debugPrint("Creating database version $version...");
-
+    // Tablo oluşturma sorguları
     await db.execute('''
-      CREATE TABLE location (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        code TEXT,
-        is_active INTEGER DEFAULT 1,
-        address TEXT,
-        description TEXT,
-        latitude REAL,
-        longitude REAL,
-        created_at TEXT,
-        updated_at TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE employee (
-        id INTEGER PRIMARY KEY,
-        first_name TEXT,
-        last_name TEXT,
-        role TEXT,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT,
-        updated_at TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE product (
-        id INTEGER PRIMARY KEY,
-        code TEXT UNIQUE,
-        name TEXT NOT NULL,
-        is_active INTEGER DEFAULT 1,
-        created_at TEXT,
-        updated_at TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE purchase_order (
-        id INTEGER PRIMARY KEY,
-        po_id TEXT,
-        tarih TEXT,
-        status INTEGER,
-        notlar TEXT,
-        user TEXT,
-        created_at TEXT,
-        updated_at TEXT,
-        gun INTEGER,
-        lokasyon_id INTEGER,
-        invoice TEXT,
-        delivery INTEGER
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE purchase_order_item (
-        id INTEGER PRIMARY KEY,
-        siparis_id INTEGER NOT NULL,
-        urun_id INTEGER NOT NULL,
-        miktar REAL,
-        birim TEXT,
-        FOREIGN KEY (siparis_id) REFERENCES purchase_order (id) ON DELETE CASCADE,
-        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE RESTRICT
-      )
-    ''');
-
-    // For local operations before sync, we need a local ID.
-    // server_id is populated after a successful sync.
-    await db.execute('''
-      CREATE TABLE goods_receipt (
+      CREATE TABLE goods_receipts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        local_id TEXT UNIQUE, 
-        server_id INTEGER,
-        siparis_id INTEGER,
-        invoice_number TEXT,
-        employee_id INTEGER,
+        purchase_order_id INTEGER,
+        receipt_number TEXT,
         receipt_date TEXT,
-        created_at TEXT
+        notes TEXT,
+        status TEXT
       )
     ''');
 
     await db.execute('''
-      CREATE TABLE goods_receipt_item (
+      CREATE TABLE goods_receipt_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        receipt_local_id TEXT NOT NULL,
-        server_id INTEGER,
-        urun_id INTEGER NOT NULL,
-        quantity_received REAL NOT NULL,
-        pallet_barcode TEXT,
-        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE RESTRICT
+        goods_receipt_id INTEGER,
+        product_id INTEGER,
+        quantity REAL,
+        notes TEXT,
+        FOREIGN KEY (goods_receipt_id) REFERENCES goods_receipts (id) ON DELETE CASCADE
       )
     ''');
     
-    // The core of inventory management. Tracks every item in every location.
+    // Diğer tablolar
+    await _createOtherTables(db);
+  }
+
+  Future<void> _createOtherTables(Database db) async {
     await db.execute('''
-      CREATE TABLE inventory_stock (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        server_id INTEGER,
-        urun_id INTEGER NOT NULL,
-        location_id INTEGER NOT NULL,
-        quantity REAL NOT NULL,
-        pallet_barcode TEXT,
-        updated_at TEXT NOT NULL,
-        UNIQUE (urun_id, location_id, pallet_barcode),
-        FOREIGN KEY (urun_id) REFERENCES product (id) ON DELETE CASCADE,
-        FOREIGN KEY (location_id) REFERENCES location (id) ON DELETE CASCADE
+      CREATE TABLE purchase_orders (
+        id INTEGER PRIMARY KEY,
+        order_number TEXT NOT NULL,
+        supplier_name TEXT,
+        order_date TEXT,
+        status TEXT
       )
     ''');
 
-    // Log of all transfers for history and syncing.
     await db.execute('''
-      CREATE TABLE inventory_transfer (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        local_id TEXT UNIQUE,
-        server_id INTEGER,
-        urun_id INTEGER NOT NULL,
-        from_location_id INTEGER NOT NULL,
-        to_location_id INTEGER NOT NULL,
-        quantity REAL NOT NULL,
-        pallet_barcode TEXT,
-        employee_id INTEGER,
-        transfer_date TEXT,
-        created_at TEXT,
-        FOREIGN KEY (urun_id) REFERENCES product (id),
-        FOREIGN KEY (from_location_id) REFERENCES location (id),
-        FOREIGN KEY (to_location_id) REFERENCES location (id)
+      CREATE TABLE purchase_order_items (
+        id INTEGER PRIMARY KEY,
+        purchase_order_id INTEGER,
+        product_id INTEGER,
+        quantity REAL,
+        notes TEXT,
+        FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders (id)
       )
     ''');
-
-    // Queue for operations performed offline that need to be sent to the server.
+    
     await db.execute('''
-      CREATE TABLE pending_operation (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        attempts INTEGER DEFAULT 0,
-        error_message TEXT
+      CREATE TABLE products (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        stock_code TEXT,
+        barcode TEXT
       )
     ''');
+  }
 
-    debugPrint("All tables created for version $_databaseVersion.");
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // Veritabanı yükseltme mantığı buraya gelecek
+  }
+
+  Future<void> resetDatabase() async {
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    String path = join(documentsDirectory.path, 'diapalet.db');
+    await deleteDatabase(path);
+    _database = null; // Referansı temizle
+    await database; // Veritabanını yeniden oluştur
   }
 
   // ==== HOUSEKEEPING ========================================================
@@ -212,16 +122,6 @@ class DatabaseHelper {
       await db.execute('DROP TABLE IF EXISTS $table');
     }
     debugPrint("All tables dropped.");
-  }
-
-  Future<void> resetDatabase() async {
-    final path = join(await getDatabasesPath(), _databaseName);
-    if (_database != null) {
-      await _database!.close();
-      _database = null;
-    }
-    await deleteDatabase(path);
-    debugPrint("Database completely reset.");
   }
 
   Future<void> close() async {

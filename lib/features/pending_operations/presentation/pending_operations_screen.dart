@@ -4,6 +4,7 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
   final SyncService syncService;
@@ -52,14 +53,12 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     );
   }
 
-  Future<void> _resetDatabase() async {
+  void _resetDatabase() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Veritabanını Sıfırla?'),
-        content: const Text(
-          'DİKKAT: Bu işlem cihazdaki tüm verileri (gönderilmemiş işlemler dahil) silecek ve tabloları yeniden oluşturacaktır. Bu işlem geri alınamaz. Emin misiniz?',
-        ),
+        title: const Text('Veritabanını Sıfırla'),
+        content: const Text('Bu işlem tüm yerel verileri silecek. Emin misiniz?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -67,7 +66,6 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Sıfırla'),
           ),
         ],
@@ -76,23 +74,19 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
 
     if (confirmed == true) {
       try {
-        await DatabaseHelper.instance.resetDatabase();
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Veritabanı başarıyla sıfırlandı.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadPendingOperations(); // Ekranı yenile
+        final dbHelper = Provider.of<DatabaseHelper>(context, listen: false);
+        await dbHelper.resetDatabase();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Veritabanı başarıyla sıfırlandı.')),
+          );
+        }
       } catch (e) {
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Veritabanı sıfırlanırken bir hata oluştu: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Veritabanı sıfırlanırken hata oluştu: $e')),
+          );
+        }
       }
     }
   }

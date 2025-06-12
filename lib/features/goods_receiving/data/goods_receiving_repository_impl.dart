@@ -80,6 +80,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
+    // Bu metot getPurchaseOrders ile aynı işi yapabilir veya status'e göre filtreleyebilir.
+    // Şimdilik getPurchaseOrders'ı çağıralım.
+    return getPurchaseOrders();
+  }
+
+  @override
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''

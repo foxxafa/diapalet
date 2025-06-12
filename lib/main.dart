@@ -15,21 +15,16 @@ import 'package:diapalet/features/inventory_transfer/data/repositories/inventory
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
+  // --- Singleton BINDINGS ---
   final dbHelper = DatabaseHelper();
-  await dbHelper.initDatabase();
-  
+  await dbHelper.initDatabase(); // Veritabanını başlat
+
   final dio = Dio();
   final connectivity = Connectivity();
-  final networkInfo = NetworkInfoImpl(connectivity);
-  final syncService = SyncService(
-    dio: dio,
-    dbHelper: dbHelper,
-    connectivity: connectivity,
-  );
 
   runApp(
     EasyLocalization(
@@ -38,42 +33,47 @@ Future<void> main() async {
       fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [
-          // --- CORE SERVICES ---
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<Dio>.value(value: dio),
           Provider<Connectivity>.value(value: connectivity),
-          Provider<NetworkInfo>.value(value: networkInfo),
-          Provider<SyncService>.value(value: syncService),
-
-          // --- REPOSITORIES ---
-          // Goods Receiving
-          Provider<GoodsReceivingRepository>(
-            create: (_) => GoodsReceivingRepositoryImpl(dbHelper: dbHelper),
+          ProxyProvider<Connectivity, NetworkInfo>(
+            update: (_, connectivity, __) => NetworkInfoImpl(connectivity),
           ),
-          // Inventory Transfer
-          Provider<InventoryTransferRepository>(
-            create: (_) => InventoryTransferRepositoryImpl(dbHelper: dbHelper),
+          ProxyProvider<DatabaseHelper, GoodsReceivingRepository>(
+            update: (_, db, __) => GoodsReceivingRepositoryImpl(dbHelper: db),
+          ),
+          ProxyProvider<DatabaseHelper, InventoryTransferRepository>(
+            update: (_, db, __) =>
+                InventoryTransferRepositoryImpl(dbHelper: db),
+          ),
+          ProxyProvider2<NetworkInfo, DatabaseHelper, SyncService>(
+            update: (context, networkInfo, db, __) => SyncService(
+              dbHelper: db,
+              dio: Provider.of<Dio>(context, listen: false),
+              connectivity: Provider.of<Connectivity>(context, listen: false),
+            ),
           ),
         ],
-        child: const DiapaletApp(),
+        child: const MyApp(),
       ),
     ),
   );
 }
 
-class DiapaletApp extends StatelessWidget {
-  const DiapaletApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Diapalet',
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
       locale: context.locale,
+      title: 'DiaPalet',
       theme: AppTheme.light,
+      darkTheme: AppTheme.light,
       themeMode: ThemeMode.system,
-      home: HomeScreen(syncService: Provider.of<SyncService>(context)),
+      home: const HomeScreen(),
     );
   }
 }

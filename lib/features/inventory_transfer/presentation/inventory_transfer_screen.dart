@@ -1,3 +1,4 @@
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
@@ -11,14 +12,19 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.da
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 
-class InventoryTransferScreen extends StatefulWidget {
-  const InventoryTransferScreen({super.key});
+class TransferScreen extends StatefulWidget {
+  final SyncService syncService;
+
+  const TransferScreen({
+    super.key,
+    required this.syncService,
+  });
 
   @override
-  State<InventoryTransferScreen> createState() => _InventoryTransferScreenState();
+  State<TransferScreen> createState() => _TransferScreenState();
 }
 
-class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
+class _TransferScreenState extends State<TransferScreen> {
   final _formKey = GlobalKey<FormState>();
   late InventoryTransferRepository _repo;
   bool _isRepoInitialized = false;
