@@ -203,4 +203,9 @@ class SyncService {
     });
     debugPrint("Local database updated from sync.");
   }
+
+  Future<void> syncData() async {
+    await downloadMasterData();
+    await uploadPendingOperations();
+  }
 } 

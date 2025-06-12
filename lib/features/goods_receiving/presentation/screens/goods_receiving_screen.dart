@@ -1,4 +1,9 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
+import 'dart:convert';
+import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
@@ -10,33 +15,58 @@ import 'package:intl/intl.dart';
 
 enum GoodsReceivingMode { pallet, box }
 
-class GoodsReceiptScreen extends StatefulWidget {
-  const GoodsReceiptScreen({super.key});
+class GoodsReceivingScreen extends StatefulWidget {
+  const GoodsReceivingScreen({super.key});
 
   @override
-  State<GoodsReceiptScreen> createState() => _GoodsReceiptScreenState();
+  State<GoodsReceivingScreen> createState() => _GoodsReceivingScreenState();
 }
 
-class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
+class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   late final GoodsReceivingRepository _repository;
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _receiptNumberController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
+
+  List<PurchaseOrder> _purchaseOrders = [];
+  PurchaseOrder? _selectedOrder;
+  List<PurchaseOrderItem> _orderItems = [];
+  final Map<int, TextEditingController> _quantityControllers = {};
+  List<GoodsReceiptItem> _receiptItems = [];
+
+  bool _isLoading = false;
 
   // UI State
   GoodsReceivingMode _mode = GoodsReceivingMode.pallet;
-  PurchaseOrder? _selectedOrder;
-  List<PurchaseOrderItem> _orderItems = [];
   List<RecentReceiptItem> _recentReceipts = [];
-  bool _isLoading = false;
 
   // Form Controllers
   final _palletBarcodeController = TextEditingController();
-  // Her bir sipariş kalemi için bir controller listesi tutacağız
-  final Map<int, TextEditingController> _quantityControllers = {};
 
   @override
   void initState() {
     super.initState();
-    _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
+    _repository = GoodsReceivingRepositoryImpl(DatabaseHelper());
+    _loadPurchaseOrders();
     _loadRecentReceipts();
+  }
+
+  Future<void> _loadPurchaseOrders() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final orders = await _repository.getPurchaseOrders();
+      setState(() {
+        _purchaseOrders = orders;
+      });
+    } catch (e) {
+      // Handle error
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadRecentReceipts() async {
@@ -98,19 +128,8 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
       receiptNumber: _receiptNumberController.text,
       receiptDate: DateTime.now(),
       notes: _notesController.text,
-      status: 'completed',
-      items: _receiptItems.map((item) {
-        final orderItem = _selectedOrder!.items.firstWhere(
-          (orderItem) => orderItem.productId == item.productId,
-        );
-        return GoodsReceiptItem(
-          id: 0,
-          goodsReceiptId: 0,
-          productId: item.productId,
-          quantity: item.quantity,
-          notes: item.notes ?? '',
-        );
-      }).toList(),
+      status: 'pending',
+      items: _receiptItems,
     );
 
     try {
@@ -129,7 +148,37 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
       }
     }
   }
-  
+
+  void _onOrderItemChanged(PurchaseOrderItem item, String value) {
+    final quantity = double.tryParse(value) ?? 0.0;
+    if (quantity > 0) {
+      final existingIndex =
+          _receiptItems.indexWhere((element) => element.productId == item.productId);
+      if (existingIndex != -1) {
+        _receiptItems[existingIndex] = GoodsReceiptItem(
+          id: _receiptItems[existingIndex].id,
+          goodsReceiptId: _receiptItems[existingIndex].goodsReceiptId,
+          productId: item.productId,
+          quantity: quantity,
+          notes: '',
+        );
+      } else {
+        _receiptItems.add(
+          GoodsReceiptItem(
+            id: 0,
+            goodsReceiptId: 0,
+            productId: item.productId,
+            quantity: quantity,
+            notes: '',
+          ),
+        );
+      }
+    } else {
+      _receiptItems.removeWhere((element) => element.productId == item.productId);
+    }
+    setState(() {});
+  }
+
   Future<void> _scanBarcode() async {
     final barcode = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (context) => const QrScannerScreen()),
@@ -299,5 +348,14 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
         ),
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _receiptNumberController.dispose();
+    _notesController.dispose();
+    _quantityControllers.forEach((_, controller) => controller.dispose());
+    super.dispose();
   }
 }

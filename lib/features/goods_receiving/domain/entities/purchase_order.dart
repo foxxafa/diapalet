@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 
 /// Satin alma siparişinin ana bilgilerini temsil eder.
 /// Bu model, 'satin_alma_siparis_fis' tablosundaki verilerle eşleşir.
@@ -11,6 +12,7 @@ class PurchaseOrder {
   final int? status; // 'satin_alma_siparis_fis.status' (0: Açık, 1: Kısmi, 2: Kapalı)
   final String? supplierName; // 'tedarikci.tedarikci_adi' (JOIN ile alınacak)
   final int? supplierId; // 'tedarikci.id' (JOIN için)
+  final List<PurchaseOrderItem> items;
 
   const PurchaseOrder({
     required this.id,
@@ -20,6 +22,7 @@ class PurchaseOrder {
     this.status,
     this.supplierName,
     this.supplierId,
+    required this.items,
   });
 
   // JSON'dan model oluşturma (API'den gelen veri için)
@@ -27,6 +30,13 @@ class PurchaseOrder {
     // Flask tarafında alan adları "po_id", "poId" veya "purchaseOrderNumber" gibi 
     // farklı biçimlerde gelebilir. Tüm olasılıkları kontrol edip ilk bulunanı kullanıyoruz.
     final dynamic rawPoId = json['po_id'] ?? json['poId'] ?? json['purchaseOrderNumber'];
+
+    var itemsList = <PurchaseOrderItem>[];
+    if (json['items'] != null) {
+      itemsList = (json['items'] as List)
+          .map((item) => PurchaseOrderItem.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
 
     return PurchaseOrder(
       id: json['id'] as int,
@@ -36,6 +46,7 @@ class PurchaseOrder {
       status: json['status'] as int?,
       supplierName: json['tedarikci_adi'] ?? json['supplierName'], // JOIN sonucu
       supplierId: json['tedarikci_id'] ?? json['supplierId'],   // JOIN sonucu
+      items: itemsList,
     );
   }
 
@@ -49,6 +60,7 @@ class PurchaseOrder {
       'status': status,
       'tedarikci_adi': supplierName,
       'tedarikci_id': supplierId,
+      'items': items.map((item) => item.toJson()).toList(),
     };
   }
 
@@ -65,6 +77,7 @@ class PurchaseOrder {
       // Bu alanlar genellikle JOIN ile doldurulur, lokalde olmayabilir.
       supplierName: map['tedarikci_adi'] as String?,
       supplierId: map['tedarikci_id'] as int?,
+      items: [], // items field is not provided in the map, so we'll keep it empty
     );
   }
 } 
