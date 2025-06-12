@@ -10,7 +10,6 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/product_ite
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});

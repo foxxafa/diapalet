@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
-import 'package.flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
