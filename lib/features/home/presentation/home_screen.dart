@@ -1,33 +1,45 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
-import 'package:diapalet/features/pallet_assignment/presentation/pallet_assignment_screen.dart';
+import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    // Start sync service when home screen is initialized
-    // It will run in the background.
-    Provider.of<SyncService>(context, listen: false).startPeriodicSync();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final syncService = Provider.of<SyncService>(context, listen: false);
+
     return Scaffold(
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sync),
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Senkronizasyon başlatılıyor...'),
+              ));
+              try {
+                await syncService.downloadMasterData(force: true);
+                await syncService.uploadPendingOperations();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Senkronizasyon tamamlandı!'),
+                  backgroundColor: Colors.green,
+                ));
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Senkronizasyon hatası: $e'),
+                  backgroundColor: Colors.red,
+                ));
+              }
+            },
+          )
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -39,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.input_outlined,
               label: 'home.goods_receiving'.tr(),
               onTap: () {
-                // Provider artık main.dart'da olduğu için burada tekrar oluşturmaya gerek yok.
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -53,11 +64,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.warehouse_outlined,
               label: 'home.pallet_transfer'.tr(),
               onTap: () {
-                // Provider artık main.dart'da olduğu için burada tekrar oluşturmaya gerek yok.
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PalletAssignmentScreen(),
+                    builder: (context) => const InventoryTransferScreen(),
                   ),
                 );
               },

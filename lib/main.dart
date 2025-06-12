@@ -1,27 +1,22 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/network/network_info.dart';
-import 'package:diapalet/features/goods_receiving/data/goods_receiving_composite_repository.dart';
-import 'package:diapalet/features/goods_receiving/data/local/goods_receiving_local_service.dart';
-import 'package:diapalet/features/goods_receiving/data/remote/goods_receiving_api_service.dart';
-import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_local_datasource.dart';
-import 'package:diapalet/features/pallet_assignment/data/datasources/pallet_assignment_remote_datasource.dart';
-import 'package:diapalet/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart';
-import 'package:diapalet/features/pallet_assignment/domain/repositories/pallet_repository.dart';
-import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
-import 'core/theme/app_theme.dart';
-import 'features/home/presentation/home_screen.dart';
+
+import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/theme/app_theme.dart';
+
+import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
+import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
+import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
+import 'package:diapalet/features/home/presentation/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
-
-  final syncService = SyncService();
-  await syncService.initialize();
 
   runApp(
     EasyLocalization(
@@ -29,56 +24,50 @@ void main() async {
       path: 'assets/lang',
       fallbackLocale: const Locale('tr'),
       startLocale: const Locale('tr'),
-      child: DiapaletApp(syncService: syncService),
+      child: const DiapaletApp(),
     ),
   );
 }
 
 class DiapaletApp extends StatelessWidget {
-  final SyncService syncService;
-
-  const DiapaletApp({
-    super.key,
-    required this.syncService,
-  });
+  const DiapaletApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<SyncService>.value(value: syncService),
+        // CORE SERVICES
+        // These are low-level services that don't depend on other providers.
         Provider<DatabaseHelper>(
-          create: (_) => DatabaseHelper(),
+          create: (_) => DatabaseHelper.instance, // Use singleton instance
         ),
-        Provider<NetworkInfo>(
-          create: (_) => NetworkInfoImpl(Connectivity()),
+        Provider<Dio>(
+          create: (_) => Dio(), // Create a single Dio instance
         ),
-        
-        ProxyProvider2<DatabaseHelper, SyncService, GoodsReceivingLocalDataSource>(
-          update: (_, dbHelper, syncService, __) => GoodsReceivingLocalDataSourceImpl(dbHelper: dbHelper, syncService: syncService),
-        ),
-        Provider<GoodsReceivingRemoteDataSource>(
-          create: (_) => GoodsReceivingRemoteDataSourceImpl(),
-        ),
-        ProxyProvider2<DatabaseHelper, SyncService, PalletAssignmentLocalDataSource>(
-          update: (_, dbHelper, syncService, __) => PalletAssignmentLocalDataSourceImpl(dbHelper: dbHelper, syncService: syncService),
-        ),
-        Provider<PalletAssignmentRemoteDataSource>(
-          create: (_) => PalletAssignmentRemoteDataSourceImpl(),
+        Provider<Connectivity>(
+          create: (_) => Connectivity(),
         ),
 
-        ProxyProvider3<GoodsReceivingLocalDataSource, GoodsReceivingRemoteDataSource, NetworkInfo, GoodsReceivingRepository>(
-          update: (_, local, remote, network, __) => GoodsReceivingRepositoryImpl(
-            localDataSource: local,
-            remoteDataSource: remote,
-            networkInfo: network,
+        // DEPENDENT SERVICES (using ProxyProvider)
+        // These services depend on the core services above.
+        ProxyProvider3<Dio, DatabaseHelper, Connectivity, SyncService>(
+          update: (_, dio, dbHelper, connectivity, __) => SyncService(
+            dio: dio,
+            dbHelper: dbHelper,
+            connectivity: connectivity,
           ),
         ),
-        ProxyProvider3<PalletAssignmentLocalDataSource, PalletAssignmentRemoteDataSource, NetworkInfo, PalletAssignmentRepository>(
-          update: (_, local, remote, network, __) => PalletAssignmentRepositoryImpl(
-            localDataSource: local,
-            remoteDataSource: remote,
-            networkInfo: network,
+
+        // REPOSITORIES
+        // Repositories depend on core services like DatabaseHelper.
+        ProxyProvider<DatabaseHelper, GoodsReceivingRepository>(
+          update: (_, dbHelper, __) => GoodsReceivingRepositoryImpl(
+            dbHelper: dbHelper,
+          ),
+        ),
+        ProxyProvider<DatabaseHelper, InventoryTransferRepository>(
+          update: (_, dbHelper, __) => InventoryTransferRepositoryImpl(
+            dbHelper: dbHelper,
           ),
         ),
       ],
