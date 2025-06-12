@@ -1,17 +1,12 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
-import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 
 enum GoodsReceivingMode { pallet, box }
 

@@ -1,8 +1,4 @@
 // features/goods_receiving/domain/entities/goods_receipt_entities.dart
-import 'package:uuid/uuid.dart';
-import 'product_info.dart';
-
-// Mode concept removed; receipts simply track products at locations
 
 class GoodsReceipt {
   final int id;
