@@ -101,8 +101,21 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
                         onPressed: () async {
-                           await widget.syncService.deleteOperation(operation.id!);
-                           _loadPendingOperations();
+                           final bool? confirmed = await showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Confirm Deletion'),
+                                content: const Text('Are you sure you want to delete this pending operation? This cannot be undone.'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete'), style: TextButton.styleFrom(foregroundColor: Colors.red)),
+                                ],
+                              ),
+                            );
+                           if (confirmed == true) {
+                            await widget.syncService.deleteOperation(operation.id!);
+                            _loadPendingOperations();
+                           }
                         },
                       ),
                       if (operation.status == 'failed')
@@ -112,6 +125,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                             await widget.syncService.retryOperation(operation.id!);
                             _loadPendingOperations();
                           },
+                          tooltip: 'Retry Upload',
                         ),
                     ],
                   ),

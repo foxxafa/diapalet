@@ -345,8 +345,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       final header = TransferOperationHeader(
         operationType: _selectedMode,
-        sourceLocation: _selectedSourceLocation!,
-        targetLocation: _selectedTargetLocation!,
+        sourceLocationName: _selectedSourceLocation!,
+        targetLocationName: _selectedTargetLocation!,
         containerId: _selectedContainerId!,
         transferDate: DateTime.now(),
       );

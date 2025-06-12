@@ -103,11 +103,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'items': items.map((item) => item.toMap()).toList(),
       };
       
-      await txn.insert('pending_operation', {
-        'type': 'transfer',
-        'data': jsonEncode(payload),
-        'created_at': DateTime.now().toIso8601String(),
-        'status': 'pending',
+      await txn.insert('inventory_transfer', {
+        'local_id': localId,
+        'urun_id': items.first.productId,
+        'from_location_id': sourceLocationId,
+        'to_location_id': targetLocationId,
+        'quantity': items.fold(0.0, (sum, item) => sum + (item.quantity as num).toDouble()),
+        'pallet_barcode': header.containerId,
+        'employee_id': 1, // Replace with actual employee ID
+        'transfer_date': transferTimestamp.toIso8601String(),
       });
     });
   }

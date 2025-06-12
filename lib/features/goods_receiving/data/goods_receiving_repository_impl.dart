@@ -24,8 +24,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'location', 
-      where: filter != null ? 'name LIKE ?' : null,
-      whereArgs: filter != null ? ['%$filter%'] : null,
+      where: filter != null && filter.isNotEmpty ? 'name LIKE ?' : null,
+      whereArgs: filter != null && filter.isNotEmpty ? ['%$filter%'] : null,
       orderBy: 'name'
     );
     return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
@@ -34,8 +34,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<ProductInfo>> getProducts({String? filter}) async {
     final db = await _dbHelper.database;
-    String? whereClause = 'is_active = 1';
-    List<dynamic>? whereArgs = [];
+    String whereClause = 'is_active = 1';
+    List<dynamic> whereArgs = [];
     if (filter != null && filter.isNotEmpty) {
       whereClause += ' AND (name LIKE ? OR code LIKE ?)';
       whereArgs.addAll(['%$filter%', '%$filter%']);
