@@ -90,65 +90,42 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
   }
 
   Future<void> _saveReceipt() async {
-    if (_selectedOrder == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a purchase order first.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
+    if (_selectedOrder == null) return;
 
-    final palletBarcode = _mode == GoodsReceivingMode.pallet ? _palletBarcodeController.text.trim() : null;
-    if (_mode == GoodsReceivingMode.pallet && (palletBarcode == null || palletBarcode.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pallet barcode is required for pallet receiving mode.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    final List<({int productId, double quantity, String? palletBarcode})> receivedItems = [];
-    for (var item in _orderItems) {
-      final quantity = double.tryParse(_quantityControllers[item.id]?.text ?? '0') ?? 0;
-      if (quantity > 0) {
-        receivedItems.add((
+    final receipt = GoodsReceipt(
+      id: 0, // Yeni kayıt
+      purchaseOrderId: _selectedOrder!.id,
+      receiptNumber: _receiptNumberController.text,
+      receiptDate: DateTime.now(),
+      notes: _notesController.text,
+      status: 'completed',
+      items: _receiptItems.map((item) {
+        final orderItem = _selectedOrder!.items.firstWhere(
+          (orderItem) => orderItem.productId == item.productId,
+        );
+        return GoodsReceiptItem(
+          id: 0,
+          goodsReceiptId: 0,
           productId: item.productId,
-          quantity: quantity,
-          palletBarcode: palletBarcode,
-        ));
-      }
-    }
+          quantity: item.quantity,
+          notes: item.notes ?? '',
+        );
+      }).toList(),
+    );
 
-    if (receivedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter quantity for at least one item.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    setState(() { _isLoading = true; });
     try {
-      await _repository.saveGoodsReceipt(
-        purchaseOrderId: _selectedOrder!.id,
-        items: receivedItems,
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Goods receipt saved successfully!'), backgroundColor: Colors.green),
-      );
-      // Reset state
-      setState(() {
-        _selectedOrder = null;
-        _orderItems = [];
-        _quantityControllers.clear();
-        _palletBarcodeController.clear();
-      });
-      await _loadRecentReceipts(); // Refresh logs
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving receipt: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
+      await _repository.saveGoodsReceipt(receipt);
       if (mounted) {
-        setState(() { _isLoading = false; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mal kabul kaydı başarıyla oluşturuldu')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e')),
+        );
       }
     }
   }

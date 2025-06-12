@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 
 /// Satin alma siparişinin bir kalemini (satırını) temsil eder.
 /// Bu model, 'satin_alma_siparis_fis_satir' tablosundaki verilerle eşleşir.
@@ -18,6 +19,8 @@ class PurchaseOrderItem {
   final int? itemsPerBox; // 'urunler.qty' (Kutu içi adet)
   final int? itemsPerPallet; // 'urunler.palletqty' (Palet içi adet)
 
+  final ProductInfo? product;
+
   const PurchaseOrderItem({
     required this.id,
     required this.orderId,
@@ -30,7 +33,10 @@ class PurchaseOrderItem {
     this.barcode,
     this.itemsPerBox,
     this.itemsPerPallet,
+    this.product,
   });
+
+  double get orderedQuantity => expectedQuantity;
 
   // JSON'dan model oluşturma
   factory PurchaseOrderItem.fromJson(Map<String, dynamic> json) {
@@ -47,6 +53,9 @@ class PurchaseOrderItem {
       barcode: json['barcode1'], // Veya hangi barkod alanı kullanılacaksa
       itemsPerBox: json['qty'],
       itemsPerPallet: json['palletqty'],
+      product: json['product'] != null
+          ? ProductInfo.fromJson(json['product'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -64,6 +73,7 @@ class PurchaseOrderItem {
       'barcode1': barcode,
       'qty': itemsPerBox,
       'palletqty': itemsPerPallet,
+      'product': product?.toJson(),
     };
   }
 
@@ -85,6 +95,7 @@ class PurchaseOrderItem {
       barcode: map['barcode1'] as String?,
       itemsPerBox: map['qty'] as int?,
       itemsPerPallet: map['palletqty'] as int?,
+      product: null,
     );
   }
 } 

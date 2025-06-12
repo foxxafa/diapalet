@@ -72,7 +72,7 @@ class DiapaletApp extends StatelessWidget {
       locale: context.locale,
       theme: AppTheme.light,
       themeMode: ThemeMode.system,
-      home: const HomeScreen(),
+      home: HomeScreen(syncService: Provider.of<SyncService>(context)),
     );
   }
 }
