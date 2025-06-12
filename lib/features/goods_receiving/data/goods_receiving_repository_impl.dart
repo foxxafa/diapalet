@@ -48,6 +48,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<List<ProductInfo>> getAllProducts() {
+    return getProducts();
+  }
+
+  @override
   Future<List<GoodsReceiptLogItem>> getRecentReceipts({int limit = 50}) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
@@ -118,13 +123,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       for (final item in receivedItems) {
         await txn.insert('goods_receipt_items', {
           'receipt_id': receiptId,
-          'urun_id': item.productId,
+          'urun_id': item.urunId,
           'quantity_received': item.quantity,
-          'pallet_barcode': item.palletBarcode,
+          'pallet_barcode': item.containerId,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
-        
+
         // Add received items to stock at the "MAL KABUL" location
-        await _upsertStock(txn, item.productId, malKabulLocationId, item.quantity, item.palletBarcode);
+        await _upsertStock(txn, item.urunId, malKabulLocationId, item.quantity, item.containerId);
       }
 
       // 3. Queue for upload
@@ -136,9 +141,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           'receipt_date': DateTime.now().toIso8601String(),
         },
         'items': receivedItems.map((item) => {
-          'urun_id': item.productId,
+          'urun_id': item.urunId,
           'quantity': item.quantity,
-          'pallet_barcode': item.palletBarcode,
+          'pallet_barcode': item.containerId,
         }).toList(),
       };
       

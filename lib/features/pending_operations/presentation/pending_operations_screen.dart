@@ -32,8 +32,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
   }
 
   Future<void> _showOperationDetails(PendingOperation operation) async {
-    final data = jsonDecode(operation.operationData);
-    final prettyData = const JsonEncoder.withIndent('  ').convert(data);
+    final prettyData = const JsonEncoder.withIndent('  ').convert(operation.operationData);
 
     await showDialog(
       context: context,
@@ -112,8 +111,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                                 ],
                               ),
                             );
-                           if (confirmed == true) {
-                            await widget.syncService.deleteOperation(operation.id!);
+                             if (confirmed == true) {
+                            await widget.syncService.deleteOperation(operation.id);
                             _loadPendingOperations();
                            }
                         },
@@ -122,7 +121,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
                         IconButton(
                           icon: const Icon(Icons.sync_problem, color: Colors.orange),
                           onPressed: () async {
-                            await widget.syncService.retryOperation(operation.id!);
+                            await widget.syncService.retryOperation(operation.id);
                             _loadPendingOperations();
                           },
                           tooltip: 'Retry Upload',

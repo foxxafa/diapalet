@@ -1,4 +1,3 @@
-import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';

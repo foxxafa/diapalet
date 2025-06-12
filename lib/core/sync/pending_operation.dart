@@ -10,6 +10,9 @@ class PendingOperation {
   final String operationType;
   final Map<String, dynamic> operationData;
   final DateTime createdAt;
+  final String status;
+  final int attempts;
+  final String? errorMessage;
   final String tableName;
 
   PendingOperation({
@@ -18,6 +21,9 @@ class PendingOperation {
     required this.operationType,
     required this.operationData,
     required this.createdAt,
+    required this.status,
+    this.attempts = 0,
+    this.errorMessage,
     required this.tableName,
   });
 
@@ -68,6 +74,9 @@ class PendingOperation {
       'operation_type': operationType,
       'operation_data': operationData,
       'created_at': createdAt.toIso8601String(),
+      'status': status,
+      'attempts': attempts,
+      'error_message': errorMessage,
       'table_name': tableName,
     };
   }
@@ -82,10 +91,13 @@ class PendingOperation {
   factory PendingOperation.fromMap(Map<String, dynamic> map) {
     return PendingOperation(
       id: map['id'] as int,
-      operationType: map['operation_type'] as String,
-      operationData: jsonDecode(map['payload'] as String) as Map<String, dynamic>,
+      operationType: map['type'] as String,
+      operationData: jsonDecode(map['data'] as String) as Map<String, dynamic>,
       createdAt: DateTime.parse(map['created_at'] as String),
-      tableName: 'pending_operation', // This is constant now
+      status: map['status'] as String? ?? 'pending',
+      attempts: map['attempts'] as int? ?? 0,
+      errorMessage: map['error_message'] as String?,
+      tableName: 'pending_operation',
     );
   }
 
@@ -96,6 +108,9 @@ class PendingOperation {
       operationType: json['operation_type'] as String,
       operationData: Map<String, dynamic>.from(json['operation_data']),
       createdAt: DateTime.parse(json['created_at'] as String),
+      status: json['status'] as String? ?? 'pending',
+      attempts: json['attempts'] as int? ?? 0,
+      errorMessage: json['error_message'] as String?,
       tableName: json['table_name'] as String,
     );
   }

@@ -1,8 +1,6 @@
 // lib/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart
 
-import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -94,21 +92,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final transferTimestamp = DateTime.now();
       
       for (final item in items) {
-        await _upsertStock(txn, item.productId, sourceLocationId, -item.quantity, item.sourcePalletBarcode);
-        await _upsertStock(txn, item.productId, targetLocationId, item.quantity, item.targetPalletBarcode);
+        await _upsertStock(txn, item.productId, sourceLocationId, -item.quantity.toDouble(), item.sourcePalletBarcode);
+        await _upsertStock(txn, item.productId, targetLocationId, item.quantity.toDouble(), item.targetPalletBarcode);
       }
 
-      final payload = {
-        'header': header.toMap(),
-        'items': items.map((item) => item.toMap()).toList(),
-      };
-      
       await txn.insert('inventory_transfer', {
         'local_id': localId,
         'urun_id': items.first.productId,
         'from_location_id': sourceLocationId,
         'to_location_id': targetLocationId,
-        'quantity': items.fold(0.0, (sum, item) => sum + (item.quantity as num).toDouble()),
+        'quantity': items.fold<double>(0.0, (sum, item) => sum + item.quantity.toDouble()),
         'pallet_barcode': header.containerId,
         'employee_id': 1, // Replace with actual employee ID
         'transfer_date': transferTimestamp.toIso8601String(),
