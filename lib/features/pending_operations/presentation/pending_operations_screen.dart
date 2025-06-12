@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:flutter/material.dart';
@@ -51,16 +52,66 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     );
   }
 
+  Future<void> _resetDatabase() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Veritabanını Sıfırla?'),
+        content: const Text(
+          'DİKKAT: Bu işlem cihazdaki tüm verileri (gönderilmemiş işlemler dahil) silecek ve tabloları yeniden oluşturacaktır. Bu işlem geri alınamaz. Emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Sıfırla'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await DatabaseHelper.instance.resetDatabase();
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Veritabanı başarıyla sıfırlandı.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadPendingOperations(); // Ekranı yenile
+      } catch (e) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Veritabanı sıfırlanırken bir hata oluştu: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pending Operations'),
+        title: const Text('Bekleyen İşlemler'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_forever),
+            onPressed: _resetDatabase,
+            tooltip: 'Veritabanını Sıfırla',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPendingOperations,
-            tooltip: 'Refresh List',
+            tooltip: 'Listeyi Yenile',
           ),
         ],
       ),

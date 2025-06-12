@@ -5,6 +5,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/location_info.
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -42,9 +43,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
 
     final List<Map<String, dynamic>> maps = await db.query('product', where: whereClause, whereArgs: whereArgs, orderBy: 'name');
-    return List.generate(maps.length, (i) {
-      return ProductInfo.fromMap(maps[i]);
-    });
+    return List.generate(maps.length, (i) => ProductInfo.fromMap(maps[i]));
   }
 
   @override
@@ -53,22 +52,22 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<GoodsReceiptLogItem>> getRecentReceipts({int limit = 50}) async {
+  Future<List<RecentReceiptItem>> getRecentReceipts({int limit = 50}) async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT 
-        l.id, l.urun_id, l.location_id, l.quantity, l.container_id, l.created_at,
-        p.name as urun_name,
-        loc.name as location_name
-      FROM goods_receipt_log l
-      JOIN product p ON p.id = l.urun_id
-      JOIN location loc ON loc.id = l.location_id
-      ORDER BY l.created_at DESC
+        gri.id, 
+        gri.quantity_received, 
+        gri.pallet_barcode, 
+        gr.created_at,
+        p.name as productName
+      FROM goods_receipt_item gri
+      JOIN goods_receipt gr ON gr.local_id = gri.receipt_local_id
+      JOIN product p ON p.id = gri.urun_id
+      ORDER BY gr.created_at DESC
       LIMIT ?
     ''', [limit]);
-    return List.generate(maps.length, (i) {
-      return GoodsReceiptLogItem.fromMap(maps[i]);
-    });
+    return List.generate(maps.length, (i) => RecentReceiptItem.fromMap(maps[i]));
   }
 
   @override
@@ -100,95 +99,55 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<void> recordGoodsReceipt({
+  Future<void> saveGoodsReceipt({
     required int? purchaseOrderId,
-    String? invoiceNumber,
-    required List<GoodsReceiptLogItem> receivedItems,
+    required List<({int productId, double quantity, String? palletBarcode})> items,
   }) async {
     final db = await _dbHelper.database;
-    final localId = _uuid.v4();
+    final receiptLocalId = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
 
     await db.transaction((txn) async {
-      // 1. Create goods_receipts header for local log
-      final receiptId = await txn.insert('goods_receipts', {
-        'local_id': localId,
+      // 1. Mal kabul başlığını (`goods_receipt`) oluştur.
+      await txn.insert('goods_receipt', {
+        'local_id': receiptLocalId,
         'siparis_id': purchaseOrderId,
-        'invoice_number': invoiceNumber,
-        'employee_id': 1, // Replace with actual logged-in user ID
-        'receipt_date': DateTime.now().toIso8601String(),
-        'created_at': DateTime.now().toIso8601String(),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+        'employee_id': 1, // Gerçek kullanıcı ID'si ile değiştirilecek
+        'receipt_date': now,
+        'created_at': now,
+      });
 
-      // 2. Insert items and update stock for each item
-      for (final item in receivedItems) {
-        await txn.insert('goods_receipt_items', {
-          'receipt_id': receiptId,
-          'urun_id': item.urunId,
+      // 2. Her bir ürünü `goods_receipt_item`'a ekle ve stoğu güncelle.
+      for (final item in items) {
+        await txn.insert('goods_receipt_item', {
+          'receipt_local_id': receiptLocalId,
+          'urun_id': item.productId,
           'quantity_received': item.quantity,
-          'pallet_barcode': item.containerId,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+          'pallet_barcode': item.palletBarcode,
+        });
 
-        // Add received items to stock at the "MAL KABUL" location
-        await _upsertStock(txn, item.urunId, malKabulLocationId, item.quantity, item.containerId);
+        // Stoğu "MAL KABUL" lokasyonunda güncelle.
+        await _upsertStock(txn, item.productId, malKabulLocationId, item.quantity, item.palletBarcode);
       }
 
-      // 3. Queue for upload
+      // 3. Senkronizasyon için işlemi `pending_operation` kuyruğuna ekle.
       final payload = {
         'header': {
           'siparis_id': purchaseOrderId,
-          'invoice_number': invoiceNumber,
-          'employee_id': 1, // FAKE ID
-          'receipt_date': DateTime.now().toIso8601String(),
+          'employee_id': 1, // Gerçek kullanıcı ID'si ile değiştirilecek
+          'receipt_date': now,
         },
-        'items': receivedItems.map((item) => {
-          'urun_id': item.urunId,
+        'items': items.map((item) => {
+          'urun_id': item.productId,
           'quantity': item.quantity,
-          'pallet_barcode': item.containerId,
+          'pallet_barcode': item.palletBarcode,
         }).toList(),
       };
       
       await txn.insert('pending_operation', {
-        'type': 'goods_receipt', // Using string as per previous logic. Enum is better.
-        'data': jsonEncode(payload),
-        'created_at': DateTime.now().toIso8601String(),
-        'status': 'pending',
-      });
-    });
-  }
-
-  @override
-  Future<void> saveGoodsReceipt({
-    required int productId,
-    required int locationId,
-    required double quantity,
-    String? palletBarcode,
-  }) async {
-    final db = await _dbHelper.database;
-    final timestamp = DateTime.now().toIso8601String();
-
-    await db.transaction((txn) async {
-      await txn.insert('goods_receipt_log', {
-        'urun_id': productId,
-        'location_id': locationId,
-        'quantity': quantity,
-        'container_id': palletBarcode,
-        'created_at': timestamp,
-      });
-
-      await _upsertStock(txn, productId, locationId, quantity, palletBarcode);
-
-      final payload = {
-        'product_id': productId,
-        'location_id': locationId,
-        'quantity': quantity,
-        'pallet_barcode': palletBarcode,
-        'receipt_date': timestamp,
-      };
-
-      await txn.insert('pending_operation', {
         'type': 'goods_receipt',
         'data': jsonEncode(payload),
-        'created_at': timestamp,
+        'created_at': now,
         'status': 'pending',
       });
     });
@@ -220,7 +179,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'location_id': locationId,
         'quantity': qtyChange,
         'pallet_barcode': palletBarcode,
-        'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       });
     }

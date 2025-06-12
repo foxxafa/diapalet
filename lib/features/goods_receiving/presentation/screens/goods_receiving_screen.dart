@@ -1,222 +1,327 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
-import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_log_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
-import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/services.dart'; // For TextInputFormatter
-import 'package:easy_localization/easy_localization.dart';
 import 'package:intl/intl.dart';
 
-// Palet ve Kutu modları için enum tanımı
 enum GoodsReceivingMode { pallet, box }
 
-class GoodsReceivingScreen extends StatefulWidget {
-  const GoodsReceivingScreen({super.key});
+class GoodsReceiptScreen extends StatefulWidget {
+  const GoodsReceiptScreen({super.key});
 
   @override
-  State<GoodsReceivingScreen> createState() => _GoodsReceivingScreenState();
+  State<GoodsReceiptScreen> createState() => _GoodsReceiptScreenState();
 }
 
-class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
-  final _formKey = GlobalKey<FormState>();
+class _GoodsReceiptScreenState extends State<GoodsReceiptScreen> {
   late final GoodsReceivingRepository _repository;
 
-  ProductInfo? _selectedProduct;
-  LocationInfo? _selectedLocation;
+  // UI State
+  GoodsReceivingMode _mode = GoodsReceivingMode.pallet;
+  PurchaseOrder? _selectedOrder;
+  List<PurchaseOrderItem> _orderItems = [];
+  List<RecentReceiptItem> _recentReceipts = [];
+  bool _isLoading = false;
 
-  List<GoodsReceiptLogItem> _logItems = [];
+  // Form Controllers
+  final _palletBarcodeController = TextEditingController();
+  // Her bir sipariş kalemi için bir controller listesi tutacağız
+  final Map<int, TextEditingController> _quantityControllers = {};
 
   @override
   void initState() {
     super.initState();
     _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
-    _loadInitialLogs();
+    _loadRecentReceipts();
   }
 
-  Future<void> _loadInitialLogs() async {
+  Future<void> _loadRecentReceipts() async {
     try {
-      final logs = await _repository.getRecentReceipts(limit: 50);
+      final receipts = await _repository.getRecentReceipts(limit: 50);
       if (mounted) {
         setState(() {
-          _logItems = logs;
+          _recentReceipts = receipts;
         });
       }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error loading logs: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error loading recent receipts: $e")),
+        );
+      }
     }
   }
 
-  void _onProductSelected(ProductInfo product, TextEditingController controller) {
+  Future<void> _onOrderSelected(PurchaseOrder order) async {
     setState(() {
-      _selectedProduct = product;
-      controller.text = product.name;
+      _isLoading = true;
+      _selectedOrder = order;
+      _orderItems = [];
+      _quantityControllers.clear();
     });
-  }
-
-  void _onLocationSelected(LocationInfo location, TextEditingController controller) {
-    setState(() {
-      _selectedLocation = location;
-      controller.text = location.name;
-    });
-  }
-
-  Future<void> _scanBarcode(TextEditingController controller) async {
-      final barcode = await Navigator.of(context).push<String>(
-        MaterialPageRoute(builder: (context) => const QrScannerScreen()),
-    );
-    if (barcode != null && barcode.isNotEmpty) {
-      controller.text = barcode;
+    try {
+      final items = await _repository.getPurchaseOrderItems(order.id);
+      if (mounted) {
+        setState(() {
+          _orderItems = items;
+          for (var item in items) {
+            // Başlangıçta beklenen miktar ile doldur
+            _quantityControllers[item.id] = TextEditingController(text: item.orderedQuantity.toString());
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error loading order items: $e")),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  Future<void> _saveReceipt(BuildContext context, Map<String, TextEditingController> controllers) async {
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _saveReceipt() async {
+    if (_selectedOrder == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a purchase order first.'), backgroundColor: Colors.orange),
+      );
       return;
     }
 
-    final palletBarcode = controllers['pallet']!.text.trim();
-    final quantity = double.tryParse(controllers['quantity']!.text);
+    final palletBarcode = _mode == GoodsReceivingMode.pallet ? _palletBarcodeController.text.trim() : null;
+    if (_mode == GoodsReceivingMode.pallet && (palletBarcode == null || palletBarcode.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pallet barcode is required for pallet receiving mode.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
 
+    final List<({int productId, double quantity, String? palletBarcode})> receivedItems = [];
+    for (var item in _orderItems) {
+      final quantity = double.tryParse(_quantityControllers[item.id]?.text ?? '0') ?? 0;
+      if (quantity > 0) {
+        receivedItems.add((
+          productId: item.productId,
+          quantity: quantity,
+          palletBarcode: palletBarcode,
+        ));
+      }
+    }
+
+    if (receivedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter quantity for at least one item.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() { _isLoading = true; });
     try {
       await _repository.saveGoodsReceipt(
-        productId: _selectedProduct!.id,
-        locationId: _selectedLocation!.id,
-        quantity: quantity!,
-        palletBarcode: palletBarcode.isEmpty ? null : palletBarcode,
+        purchaseOrderId: _selectedOrder!.id,
+        items: receivedItems,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Goods receipt saved successfully!'), backgroundColor: Colors.green),
       );
-
-      _formKey.currentState!.reset();
-      controllers.forEach((_, c) => c.clear());
+      // Reset state
       setState(() {
-        _selectedProduct = null;
-        _selectedLocation = null;
+        _selectedOrder = null;
+        _orderItems = [];
+        _quantityControllers.clear();
+        _palletBarcodeController.clear();
       });
-      _loadInitialLogs();
+      await _loadRecentReceipts(); // Refresh logs
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving receipt: $e'), backgroundColor: Colors.red),
       );
+    } finally {
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
+    }
+  }
+  
+  Future<void> _scanBarcode() async {
+    final barcode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+    if (barcode != null && barcode.isNotEmpty) {
+      _palletBarcodeController.text = barcode;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final palletController = TextEditingController();
-    final quantityController = TextEditingController();
-    final productController = TextEditingController();
-    final locationController = TextEditingController();
-
-    final controllers = {
-      'pallet': palletController,
-      'quantity': quantityController,
-      'product': productController,
-      'location': locationController,
-    };
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Goods Receiving')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Autocomplete<ProductInfo>(
-                displayStringForOption: (option) => option.name,
-                optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) return const Iterable.empty();
-                  return _repository.getProducts(filter: textEditingValue.text);
-                },
-                onSelected: (product) => _onProductSelected(product, productController),
-                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return TextFormField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    decoration: const InputDecoration(labelText: 'Product', hintText: 'Search product...'),
-                    validator: (value) => _selectedProduct == null ? 'Please select a product' : null,
-                  );
-                },
+      appBar: AppBar(title: const Text('Mal Kabul')),
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildModeSelector(),
+                  const SizedBox(height: 16),
+                  _buildOrderSelector(),
+                  const SizedBox(height: 16),
+                  if (_mode == GoodsReceivingMode.pallet) ...[
+                    _buildPalletBarcodeField(),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_selectedOrder != null) Expanded(child: _buildOrderItemsList()),
+                  if (_selectedOrder == null) Expanded(child: _buildRecentReceiptsList()),
+                ],
               ),
-              const SizedBox(height: 16),
-              Autocomplete<LocationInfo>(
-                displayStringForOption: (option) => option.name,
-                optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) return const Iterable.empty();
-                  return _repository.getLocations(filter: textEditingValue.text);
-                },
-                onSelected: (location) => _onLocationSelected(location, locationController),
-                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return TextFormField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    decoration: const InputDecoration(labelText: 'Location'),
-                    validator: (value) => _selectedLocation == null ? 'Please select a location' : null,
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: quantityController,
-                decoration: const InputDecoration(labelText: 'Quantity'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                validator: (value) {
-                  if (value == null || value.isEmpty || (double.tryParse(value) ?? 0) <= 0) {
-                    return 'Please enter a valid quantity';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: palletController,
-                decoration: InputDecoration(
-                  labelText: 'Pallet Barcode (Optional)',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.qr_code_scanner),
-                    onPressed: () => _scanBarcode(palletController),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () => _saveReceipt(context, controllers),
-                child: const Text('Save Receipt'),
-              ),
-              const Divider(height: 32),
-              const Text('Recent Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _logItems.length,
-                  itemBuilder: (context, index) {
-                    final item = _logItems[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        leading: const Icon(Icons.check_circle, color: Colors.green),
-                        title: Text('${item.urunName} (${item.quantity} units)'),
-                        subtitle: Text(
-                          'Pallet: ${item.containerId ?? "N/A"}\nTo: ${item.locationName} at ${DateFormat.yMd().add_Hms().format(DateTime.parse(item.createdAt))}',
-                        ),
-                        isThreeLine: true,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
+      floatingActionButton: _selectedOrder != null
+          ? FloatingActionButton.extended(
+              onPressed: _saveReceipt,
+              label: const Text('Kaydet'),
+              icon: const Icon(Icons.save),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildModeSelector() {
+    return SegmentedButton<GoodsReceivingMode>(
+      segments: const <ButtonSegment<GoodsReceivingMode>>[
+        ButtonSegment<GoodsReceivingMode>(value: GoodsReceivingMode.pallet, label: Text('Palet'), icon: Icon(Icons.pallet)),
+        ButtonSegment<GoodsReceivingMode>(value: GoodsReceivingMode.box, label: Text('Kutu'), icon: Icon(Icons.inventory_2)),
+      ],
+      selected: <GoodsReceivingMode>{_mode},
+      onSelectionChanged: (Set<GoodsReceivingMode> newSelection) {
+        setState(() {
+          _mode = newSelection.first;
+        });
+      },
+    );
+  }
+
+  Widget _buildOrderSelector() {
+    return Autocomplete<PurchaseOrder>(
+      displayStringForOption: (option) => option.poId ?? 'PO #${option.id}',
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        return _repository.getOpenPurchaseOrders(); // Simplified: fetches all open orders
+      },
+      onSelected: _onOrderSelected,
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: 'Satınalma Siparişi Seç',
+            hintText: 'Sipariş ara...',
+            suffixIcon: _selectedOrder != null 
+              ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
+                  setState(() {
+                    _selectedOrder = null;
+                    _orderItems = [];
+                    controller.clear();
+                  });
+                })
+              : null,
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPalletBarcodeField() {
+    return TextFormField(
+      controller: _palletBarcodeController,
+      decoration: InputDecoration(
+        labelText: 'Palet Barkodu',
+        hintText: 'Palet barkodunu okutun veya girin',
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.qr_code_scanner),
+          onPressed: _scanBarcode,
         ),
       ),
+    );
+  }
+  
+  Widget _buildOrderItemsList() {
+    if (_orderItems.isEmpty) return const Center(child: Text('Bu siparişe ait ürün bulunamadı.'));
+    
+    return ListView.builder(
+      itemCount: _orderItems.length,
+      itemBuilder: (context, index) {
+        final item = _orderItems[index];
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.productName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text('Beklenen Miktar: ${item.orderedQuantity} ${item.unit}'),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 120,
+                  child: TextFormField(
+                    controller: _quantityControllers[item.id],
+                    decoration: const InputDecoration(labelText: 'Gelen Miktar'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentReceiptsList() {
+    if (_recentReceipts.isEmpty) return const Center(child: Text('Son işlem bulunmuyor.'));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Son İşlemler', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Divider(),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _recentReceipts.length,
+            itemBuilder: (context, index) {
+              final item = _recentReceipts[index];
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                child: ListTile(
+                  leading: const Icon(Icons.check_circle, color: Colors.green),
+                  title: Text('${item.productName} (${item.quantity} birim)'),
+                  subtitle: Text(
+                    'Palet: ${item.palletBarcode ?? "YOK"}\nTarih: ${DateFormat.yMd().add_Hms().format(DateTime.parse(item.createdAt))}',
+                  ),
+                  isThreeLine: true,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

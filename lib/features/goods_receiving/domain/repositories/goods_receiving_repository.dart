@@ -1,37 +1,28 @@
 // features/goods_receiving/domain/repositories/goods_receiving_repository.dart
-import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_log_item.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 
-/// The contract for fetching data required for the goods receiving process
-/// and for recording the receiving operation. This implementation is offline-first.
+/// Mal kabul süreci için veri getirme ve kaydetme sözleşmesi.
+/// Bu implementasyon offline-first (önce çevrimdışı) çalışır.
 abstract class GoodsReceivingRepository {
-  /// Fetches all open purchase orders from the local database.
+  /// Yerel veritabanından açık satınalma siparişlerini getirir.
   Future<List<PurchaseOrder>> getOpenPurchaseOrders();
 
-  /// Fetches all items for a specific purchase order from the local database.
+  /// Belirli bir satınalma siparişinin kalemlerini yerel veritabanından getirir.
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId);
-
-  /// Fetches a list of all products available in the local database for manual selection.
-  Future<List<ProductInfo>> getAllProducts();
-
-  /// Records a completed goods receipt operation.
-  /// This will update local stock immediately and queue the operation for server sync.
-  Future<void> recordGoodsReceipt({
-    required int? purchaseOrderId,
-    String? invoiceNumber,
-    required List<GoodsReceiptLogItem> receivedItems,
-  });
-
+  
+  /// Ürünleri filtreleyerek getirir.
   Future<List<ProductInfo>> getProducts({String? filter});
-  Future<List<LocationInfo>> getLocations({String? filter});
-  Future<List<GoodsReceiptLogItem>> getRecentReceipts({int limit = 50});
+
+  /// Son mal kabul işlemlerini yerel veritabanından getirir.
+  Future<List<RecentReceiptItem>> getRecentReceipts({int limit = 50});
+
+  /// Yeni bir mal kabul işlemini kaydeder.
+  /// Bu, yerel stoğu anında günceller ve işlemi sunucuya senkronizasyon için kuyruğa alır.
   Future<void> saveGoodsReceipt({
-    required int productId,
-    required int locationId,
-    required double quantity,
-    String? palletBarcode,
+    required int? purchaseOrderId,
+    required List<({int productId, double quantity, String? palletBarcode})> items,
   });
 }
