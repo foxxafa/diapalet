@@ -3,6 +3,8 @@ import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_log_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
@@ -12,7 +14,7 @@ import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:easy_localization/easy_localization.dart';
 
 // Palet ve Kutu modları için enum tanımı
-enum ReceivingMode { palet, kutu }
+enum GoodsReceivingMode { pallet, box }
 
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
@@ -25,7 +27,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // Sabit lokasyon kuralı: Fiziksel olarak tüm ürünler bu lokasyona girer.
   LocationInfo? _defaultLocation;
 
-  late GoodsReceivingRepository _repository;
+  late GoodsReceivingRepository _repo;
   bool _isRepoInitialized = false;
   bool _isLoading = true;
   bool _isSaving = false;
@@ -33,21 +35,21 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // Yeni state: Palet/Kutu modu
-  ReceivingMode _selectedMode = ReceivingMode.palet;
+  GoodsReceivingMode _mode = GoodsReceivingMode.box;
 
   List<PurchaseOrder> _availableOrders = [];
   PurchaseOrder? _selectedOrder;
   final TextEditingController _orderController = TextEditingController();
 
   // Palet ID'si için controller
-  final TextEditingController _palletIdController = TextEditingController();
+  final TextEditingController _palletBarcodeController = TextEditingController();
 
   List<ProductInfo> _availableProducts = [];
   ProductInfo? _selectedProduct;
   final TextEditingController _productController = TextEditingController();
 
   final TextEditingController _quantityController = TextEditingController();
-  final List<GoodsReceiptItem> _addedItems = [];
+  final List<GoodsReceiptLogItem> _receivedItems = [];
 
   static const double _fieldHeight = 56;
   static const double _gap = 12;
@@ -57,13 +59,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _repo = Provider.of<GoodsReceivingRepository>(context, listen: false);
+      _loadInitialData();
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isRepoInitialized) {
-      _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
       _loadInitialData();
       _isRepoInitialized = true;
     }
@@ -73,7 +78,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void dispose() {
     _quantityController.dispose();
     _productController.dispose();
-    _palletIdController.dispose();
+    _palletBarcodeController.dispose();
     _orderController.dispose();
     super.dispose();
   }
@@ -83,9 +88,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
-        _repository.getOpenPurchaseOrders(),
-        _repository.getProductsForDropdown(),
-        _repository.getLocationsForDropdown(),
+        _repo.getOpenPurchaseOrders(),
+        _repo.getAllProducts(),
+        _repo.getLocationsForDropdown(),
       ]);
       if (!mounted) return;
 
@@ -113,22 +118,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-
   void _resetInputFields({bool resetAll = false}) {
     _productController.clear();
     _quantityController.clear();
     _selectedProduct = null;
-    if(_selectedMode == ReceivingMode.palet) {
-      _palletIdController.clear();
+    if(_mode == GoodsReceivingMode.pallet) {
+      _palletBarcodeController.clear();
     }
-
 
     if (mounted) {
       setState(() {
         if (resetAll) {
           _selectedOrder = null;
           _orderController.clear();
-          _addedItems.clear();
+          _receivedItems.clear();
           _formKey.currentState?.reset();
         }
       });
@@ -148,7 +151,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    final quantity = int.tryParse(_quantityController.text);
+    final quantity = double.tryParse(_quantityController.text);
     if (quantity == null || quantity <= 0) {
       _showErrorSnackBar(tr('goods_receiving.errors.invalid_qty'));
       return;
@@ -160,42 +163,41 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
 
     // Kutu modunda sadece tek çeşit ürün eklenmesine izin ver.
-    if (_selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty) {
+    if (_mode == GoodsReceivingMode.box && _receivedItems.isNotEmpty) {
       _showErrorSnackBar("Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.");
       return;
     }
 
-    final newItem = GoodsReceiptItem(
-      receiptId: -1, // Temporary ID, local DB will assign a real one.
-      product: _selectedProduct!,
+    final newItem = GoodsReceiptLogItem(
+      productId: _selectedProduct!.id,
+      productName: _selectedProduct!.name,
       quantity: quantity,
-      locationId: _defaultLocation!.id, // Use ID from the location object
-      containerId: _selectedMode == ReceivingMode.palet ? _palletIdController.text : null,
+      palletBarcode: _mode == GoodsReceivingMode.pallet ? _palletBarcodeController.text : null,
     );
 
     if (mounted) {
       setState(() {
-        _addedItems.insert(0, newItem);
+        _receivedItems.insert(0, newItem);
         _selectedProduct = null;
         _productController.clear();
         _quantityController.clear();
       });
-      _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': newItem.product.name}));
+      _showSuccessSnackBar(tr('goods_receiving.success.item_added', namedArgs: {'product': newItem.productName}));
     }
   }
 
-  void _removeItemFromList(int index) {
+  void _removeItem(int index) {
     if (mounted) {
       setState(() {
-        final removedItem = _addedItems.removeAt(index);
-        _showSuccessSnackBar(tr('goods_receiving.success.item_removed', namedArgs: {'product': removedItem.product.name}), isError: true);
+        final removedItem = _receivedItems.removeAt(index);
+        _showSuccessSnackBar(tr('goods_receiving.success.item_removed', namedArgs: {'product': removedItem.productName}), isError: true);
       });
     }
   }
 
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
-    if (_addedItems.isEmpty) {
+    if (_receivedItems.isEmpty) {
       _showErrorSnackBar(tr('goods_receiving.errors.no_items'));
       return;
     }
@@ -205,7 +207,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    if (_selectedMode == ReceivingMode.palet && _palletIdController.text.isEmpty) {
+    if (_mode == GoodsReceivingMode.pallet && _palletBarcodeController.text.isEmpty) {
       _showErrorSnackBar("Lütfen bir palet barkodu girin veya okutun.");
       return;
     }
@@ -215,7 +217,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: Text('goods_receiving.confirm_title'.tr()),
-          content: Text('goods_receiving.confirm_message'.tr(namedArgs: {'count': _addedItems.length.toString()})),
+          content: Text('goods_receiving.confirm_message'.tr(namedArgs: {'count': _receivedItems.length.toString()})),
           actions: <Widget>[
             TextButton(
               child: Text('common.cancel'.tr()),
@@ -234,11 +236,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (!mounted) return;
       setState(() => _isSaving = true);
       try {
-        final header = GoodsReceipt(
-          invoiceNumber: _selectedOrder!.poId ?? _selectedOrder!.id.toString(),
-          receiptDate: DateTime.now(),
+        await _repo.recordGoodsReceipt(
+          purchaseOrderId: _selectedOrder?.id,
+          receivedItems: _receivedItems
         );
-        await _repository.saveGoodsReceipt(header, _addedItems);
         if (mounted) {
           _showSuccessSnackBar(tr('goods_receiving.success.saved'));
           _resetInputFields(resetAll: true);
@@ -266,7 +267,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     switch (fieldType) {
       case 'pallet':
         setState(() {
-          _palletIdController.text = result;
+          _palletBarcodeController.text = result;
         });
         _showSuccessSnackBar("Palet barkodu okundu: $result");
         break;
@@ -288,7 +289,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         break;
     }
   }
-
 
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
@@ -334,7 +334,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Future<T?> _showSearchableDropdownDialog<T>({
+  Future<T?> _showSearchableDropdown<T>({
     required BuildContext context,
     required String title,
     required List<T> items,
@@ -415,7 +415,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget build(BuildContext context) {
     final double screenHeight = MediaQuery.of(context).size.height;
     final double bottomNavHeight = (screenHeight * 0.09).clamp(70.0, 90.0);
-    final bool isKutuModeLocked = _selectedMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
+    final bool isKutuModeLocked = _mode == GoodsReceivingMode.box && _receivedItems.isNotEmpty;
 
     return Scaffold(
       appBar: SharedAppBar(
@@ -428,7 +428,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         height: bottomNavHeight,
         child: ElevatedButton.icon(
-          onPressed: _addedItems.isEmpty ? null : _onConfirmSave,
+          onPressed: _receivedItems.isEmpty ? null : _onConfirmSave,
           icon: const Icon(Icons.check_circle_outline),
           label: Text('goods_receiving.save_and_confirm'.tr()),
           style: ElevatedButton.styleFrom(
@@ -450,7 +450,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 _buildModeSelector(),
                 const SizedBox(height: _gap),
                 _buildSearchableOrderDropdown(),
-                if (_selectedMode == ReceivingMode.palet) ...[
+                if (_mode == GoodsReceivingMode.pallet) ...[
                   const SizedBox(height: _gap),
                   _buildPalletIdInput(),
                 ],
@@ -461,7 +461,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 const SizedBox(height: _gap),
                 _buildAddToListButton(isLocked: isKutuModeLocked),
                 const SizedBox(height: _smallGap + 4),
-                Expanded(child: _buildAddedItemsList()),
+                Expanded(child: _buildReceivedItemsList()),
               ],
             ),
           ),
@@ -472,24 +472,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   Widget _buildModeSelector() {
     return Center(
-      child: SegmentedButton<ReceivingMode>(
+      child: SegmentedButton<GoodsReceivingMode>(
         segments: const [
           ButtonSegment(
-              value: ReceivingMode.palet,
+              value: GoodsReceivingMode.pallet,
               label: Text('Palet'), // L10n key: 'goods_receiving.modes.pallet'
               icon: Icon(Icons.pallet)),
           ButtonSegment(
-              value: ReceivingMode.kutu,
+              value: GoodsReceivingMode.box,
               label: Text('Kutu'), // L10n key: 'goods_receiving.modes.box'
               icon: Icon(Icons.inventory_2_outlined)),
         ],
-        selected: {_selectedMode},
-        onSelectionChanged: (Set<ReceivingMode> newSelection) {
+        selected: {_mode},
+        onSelectionChanged: (Set<GoodsReceivingMode> newSelection) {
           if (mounted) {
             setState(() {
-              _selectedMode = newSelection.first;
+              _mode = newSelection.first;
               // Mod değiştiğinde listeyi ve giriş alanlarını temizle
-              _addedItems.clear();
+              _receivedItems.clear();
               _resetInputFields();
             });
           }
@@ -511,7 +511,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         readOnly: true,
         decoration: _inputDecoration('goods_receiving.select_order'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
         onTap: () async {
-          final PurchaseOrder? selected = await _showSearchableDropdownDialog<PurchaseOrder>(
+          final PurchaseOrder? selected = await _showSearchableDropdown<PurchaseOrder>(
             context: context,
             title: 'goods_receiving.select_order'.tr(),
             items: _availableOrders,
@@ -539,10 +539,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         children: [
           Expanded(
             child: TextFormField(
-              controller: _palletIdController,
+              controller: _palletBarcodeController,
               decoration: _inputDecoration('Palet Barkodu Girin/Okutun', filled: false),
               validator: (value) {
-                if (_selectedMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+                if (_mode == GoodsReceivingMode.pallet && (value == null || value.isEmpty)) {
                   return "Palet barkodu zorunludur.";
                 }
                 return null;
@@ -572,7 +572,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               enabled: !isLocked,
               decoration: _inputDecoration('goods_receiving.select_product'.tr(), filled: true, suffixIcon: const Icon(Icons.arrow_drop_down), enabled: !isLocked),
               onTap: isLocked ? null : () async {
-                final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
+                final ProductInfo? selected = await _showSearchableDropdown<ProductInfo>(
                   context: context,
                   title: 'goods_receiving.select_product'.tr(),
                   items: _availableProducts,
@@ -618,7 +618,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         validator: (value) {
           if (isLocked) return null; // Do not validate if locked
           if (value == null || value.isEmpty) return tr('goods_receiving.enter_qty');
-          final number = int.tryParse(value);
+          final number = double.tryParse(value);
           if (number == null) return tr('goods_receiving.errors.invalid_qty');
           if (number <= 0) return tr('goods_receiving.errors.invalid_qty');
           return null;
@@ -643,7 +643,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildAddedItemsList() {
+  Widget _buildReceivedItemsList() {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.5).round()),
@@ -656,13 +656,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
-              tr('goods_receiving.items_added', namedArgs: {'count': _addedItems.length.toString()}),
+              tr('goods_receiving.items_added', namedArgs: {'count': _receivedItems.length.toString()}),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           const Divider(height: 1, thickness: 1),
           Expanded(
-            child: _addedItems.isEmpty
+            child: _receivedItems.isEmpty
                 ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -675,9 +675,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             )
                 : ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: _smallGap, horizontal: _smallGap / 2),
-              itemCount: _addedItems.length,
+              itemCount: _receivedItems.length,
               itemBuilder: (context, index) {
-                final item = _addedItems[index];
+                final item = _receivedItems[index];
                 return _buildItemCard(item, index);
               },
             ),
@@ -687,20 +687,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildItemCard(GoodsReceiptItem item, int index) {
+  Widget _buildItemCard(GoodsReceiptLogItem item, int index) {
     return Card(
-      key: ValueKey(item.product.id),
+      key: ValueKey(item.productId),
       margin: const EdgeInsets.symmetric(vertical: _smallGap / 2),
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
       elevation: 2,
       child: ListTile(
-        title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(item.productName, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('(${item.product.stockCode})'),
-            if (item.containerId != null && item.containerId!.isNotEmpty)
-              Text('Palet: ${item.containerId}'),
+            if (item.palletBarcode != null && item.palletBarcode!.isNotEmpty)
+              Text('Palet: ${item.palletBarcode}'),
             // Location is implicitly the default "MAL KABUL" location, so no need to display it per item.
           ],
         ),
@@ -711,7 +710,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             const SizedBox(width: _smallGap),
             IconButton(
               icon: Icon(Icons.delete_outline, color: Colors.redAccent[700]),
-              onPressed: () => _removeItemFromList(index),
+              onPressed: () => _removeItem(index),
               tooltip: 'goods_receiving.delete_item'.tr(),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
