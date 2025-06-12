@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:easy_localization/easy_localization.dart';
+import 'package:intl/intl.dart';
 
 // Palet ve Kutu modları için enum tanımı
 enum GoodsReceivingMode { pallet, box }
@@ -25,11 +26,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   final _formKey = GlobalKey<FormState>();
   late final GoodsReceivingRepository _repository;
 
-  final _productController = TextEditingController();
-  final _locationController = TextEditingController();
-  final _palletBarcodeController = TextEditingController();
-  final _quantityController = TextEditingController();
-
   ProductInfo? _selectedProduct;
   LocationInfo? _selectedLocation;
   
@@ -42,82 +38,90 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _loadInitialLogs();
   }
 
-  void _loadInitialLogs() async {
-    final logs = await _repository.getRecentReceipts(limit: 50);
-    if (mounted) {
-      setState(() {
-        _logItems = logs;
-      });
+  Future<void> _loadInitialLogs() async {
+    try {
+      final logs = await _repository.getRecentReceipts(limit: 50);
+      if (mounted) {
+        setState(() {
+          _logItems = logs;
+        });
+      }
+    } catch (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error loading logs: $e")));
     }
   }
 
-  void _onProductSelected(ProductInfo? product) {
+  void _onProductSelected(ProductInfo product, TextEditingController controller) {
     setState(() {
       _selectedProduct = product;
-      if (product != null) {
-        _productController.text = product.name;
-      }
+      controller.text = product.name;
     });
   }
 
-  void _onLocationSelected(LocationInfo? location) {
+  void _onLocationSelected(LocationInfo location, TextEditingController controller) {
     setState(() {
       _selectedLocation = location;
-       if (location != null) {
-        _locationController.text = location.name;
-      }
+      controller.text = location.name;
     });
   }
 
-  Future<void> _scanBarcode() async {
+  Future<void> _scanBarcode(TextEditingController controller) async {
     final barcode = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (context) => const QRScannerScreen()),
     );
     if (barcode != null && barcode.isNotEmpty) {
-      setState(() {
-        _palletBarcodeController.text = barcode;
-      });
+      controller.text = barcode;
     }
   }
 
-  Future<void> _saveReceipt() async {
-    if (_formKey.currentState!.validate() && _selectedProduct != null && _selectedLocation != null) {
-      final palletBarcode = _palletBarcodeController.text.trim();
-      final quantity = double.tryParse(_quantityController.text);
+  Future<void> _saveReceipt(BuildContext context, Map<String, TextEditingController> controllers) async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
-      if (quantity == null || quantity <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a valid quantity.')),
-        );
-        return;
-      }
-      
+    final palletBarcode = controllers['pallet']!.text.trim();
+    final quantity = double.tryParse(controllers['quantity']!.text);
+
+    try {
       await _repository.saveGoodsReceipt(
         productId: _selectedProduct!.id,
         locationId: _selectedLocation!.id,
-        quantity: quantity,
+        quantity: quantity!,
         palletBarcode: palletBarcode.isEmpty ? null : palletBarcode,
       );
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Goods receipt saved successfully!'), backgroundColor: Colors.green),
+      );
+
       _formKey.currentState!.reset();
-      _productController.clear();
-      _locationController.clear();
-      _palletBarcodeController.clear();
-      _quantityController.clear();
+      controllers.forEach((_, c) => c.clear());
       setState(() {
         _selectedProduct = null;
         _selectedLocation = null;
       });
-      _loadInitialLogs(); 
-
+      _loadInitialLogs();
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Goods receipt saved successfully!')),
+        SnackBar(content: Text('Error saving receipt: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final palletController = TextEditingController();
+    final quantityController = TextEditingController();
+    final productController = TextEditingController();
+    final locationController = TextEditingController();
+
+    final controllers = {
+      'pallet': palletController,
+      'quantity': quantityController,
+      'product': productController,
+      'location': locationController,
+    };
+    
     return Scaffold(
       appBar: AppBar(title: const Text('Goods Receiving')),
       body: Padding(
@@ -127,36 +131,30 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Product Autocomplete
               Autocomplete<ProductInfo>(
                 displayStringForOption: (option) => option.name,
                 optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) {
-                    return const Iterable<ProductInfo>.empty();
-                  }
+                  if (textEditingValue.text.isEmpty) return const Iterable.empty();
                   return _repository.getProducts(filter: textEditingValue.text);
                 },
-                onSelected: _onProductSelected,
+                onSelected: (product) => _onProductSelected(product, productController),
                 fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                   return TextFormField(
                     controller: controller,
                     focusNode: focusNode,
-                    decoration: const InputDecoration(labelText: 'Product', hintText: 'Start typing to search...'),
+                    decoration: const InputDecoration(labelText: 'Product', hintText: 'Search product...'),
                     validator: (value) => _selectedProduct == null ? 'Please select a product' : null,
                   );
                 },
               ),
               const SizedBox(height: 16),
-              // Location Autocomplete
               Autocomplete<LocationInfo>(
                 displayStringForOption: (option) => option.name,
                 optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) {
-                    return const Iterable<LocationInfo>.empty();
-                  }
+                  if (textEditingValue.text.isEmpty) return const Iterable.empty();
                   return _repository.getLocations(filter: textEditingValue.text);
                 },
-                onSelected: _onLocationSelected,
+                onSelected: (location) => _onLocationSelected(location, locationController),
                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                   return TextFormField(
                     controller: controller,
@@ -168,12 +166,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller: _quantityController,
+                controller: quantityController,
                 decoration: const InputDecoration(labelText: 'Quantity'),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
                 validator: (value) {
-                  if (value == null || value.isEmpty || double.tryParse(value) == null || double.parse(value) <= 0) {
+                  if (value == null || value.isEmpty || (double.tryParse(value) ?? 0) <= 0) {
                     return 'Please enter a valid quantity';
                   }
                   return null;
@@ -181,20 +178,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller: _palletBarcodeController,
+                controller: palletController,
                 decoration: InputDecoration(
                   labelText: 'Pallet Barcode (Optional)',
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.qr_code_scanner),
-                    onPressed: _scanBarcode,
+                    onPressed: () => _scanBarcode(palletController),
                   ),
                 ),
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _saveReceipt,
+                onPressed: () => _saveReceipt(context, controllers),
                 child: const Text('Save Receipt'),
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
               ),
               const Divider(height: 32),
               const Text('Recent Receipts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -207,12 +203,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
                         leading: const Icon(Icons.check_circle, color: Colors.green),
-                        title: Text(
-                          '${item.urun_name} (${item.quantity} units)',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                        title: Text('${item.urun_name} (${item.quantity} units)'),
                         subtitle: Text(
-                          'Pallet: ${item.container_id ?? 'N/A'}\nTo: ${item.location_name} at ${item.created_at}',
+                          'Pallet: ${item.container_id ?? "N/A"}\nTo: ${item.location_name} at ${DateFormat.yMd().add_Hms().format(DateTime.parse(item.created_at))}',
                         ),
                         isThreeLine: true,
                       ),

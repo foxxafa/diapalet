@@ -24,24 +24,23 @@ class NetworkInfoImpl implements NetworkInfo {
   }
 
   bool _hasConnection(List<ConnectivityResult> result) {
-    // If the list is not empty and does not contain 'none', we have a connection.
     return result.isNotEmpty && !result.contains(ConnectivityResult.none);
   }
 }
 
-class MockNetworkInfoImpl implements NetworkInfo {
+/// Mock implementation for testing purposes
+class MockNetworkInfo implements NetworkInfo {
   bool _isConnected;
 
-  MockNetworkInfoImpl(this._isConnected);
+  MockNetworkInfo(this._isConnected);
 
-  void setConnectionStatus(bool status) {
-    _isConnected = status;
+  void setConnectionStatus(bool isConnected) {
+    _isConnected = isConnected;
   }
 
   @override
-  Future<bool> get isConnected async => _isConnected;
+  Future<bool> get isConnected => Future.value(_isConnected);
 
-  // Mock implementation for the stream
   @override
   Stream<bool> get onConnectivityChanged => Stream.value(_isConnected);
 }

@@ -71,7 +71,6 @@ class DiapaletApp extends StatelessWidget {
       supportedLocales: context.supportedLocales,
       locale: context.locale,
       theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
       home: const HomeScreen(),
     );

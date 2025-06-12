@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_log_item.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
@@ -17,6 +18,53 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   static const int malKabulLocationId = 1;
 
   GoodsReceivingRepositoryImpl({required DatabaseHelper dbHelper}) : _dbHelper = dbHelper;
+
+  @override
+  Future<List<LocationInfo>> getLocations({String? filter}) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'location', 
+      where: filter != null ? 'name LIKE ?' : null,
+      whereArgs: filter != null ? ['%$filter%'] : null,
+      orderBy: 'name'
+    );
+    return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
+  }
+
+  @override
+  Future<List<ProductInfo>> getProducts({String? filter}) async {
+    final db = await _dbHelper.database;
+    String? whereClause = 'is_active = 1';
+    List<dynamic>? whereArgs = [];
+    if (filter != null && filter.isNotEmpty) {
+      whereClause += ' AND (name LIKE ? OR code LIKE ?)';
+      whereArgs.addAll(['%$filter%', '%$filter%']);
+    }
+
+    final List<Map<String, dynamic>> maps = await db.query('product', where: whereClause, whereArgs: whereArgs, orderBy: 'name');
+    return List.generate(maps.length, (i) {
+      return ProductInfo.fromMap(maps[i]);
+    });
+  }
+
+  @override
+  Future<List<GoodsReceiptLogItem>> getRecentReceipts({int limit = 50}) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        l.id, l.urun_id, l.location_id, l.quantity, l.container_id, l.created_at,
+        p.name as urun_name,
+        loc.name as location_name
+      FROM goods_receipt_log l
+      JOIN product p ON p.id = l.urun_id
+      JOIN location loc ON loc.id = l.location_id
+      ORDER BY l.created_at DESC
+      LIMIT ?
+    ''', [limit]);
+    return List.generate(maps.length, (i) {
+      return GoodsReceiptLogItem.fromMap(maps[i]);
+    });
+  }
 
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
@@ -44,17 +92,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       WHERE poi.siparis_id = ?
     ''', [orderId]);
     return List.generate(maps.length, (i) => PurchaseOrderItem.fromMap(maps[i]));
-  }
-
-  @override
-  Future<List<ProductInfo>> getAllProducts() async {
-    final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'product',
-      where: 'is_active = 1',
-      orderBy: 'name',
-    );
-    return List.generate(maps.length, (i) => ProductInfo.fromMap(maps[i]));
   }
 
   @override
@@ -125,7 +162,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final timestamp = DateTime.now().toIso8601String();
 
     await db.transaction((txn) async {
-      // 1. Log the receipt
       await txn.insert('goods_receipt_log', {
         'urun_id': productId,
         'location_id': locationId,
@@ -134,10 +170,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'created_at': timestamp,
       });
 
-      // 2. Update the inventory stock
       await _upsertStock(txn, productId, locationId, quantity, palletBarcode);
 
-      // 3. Create a pending operation for the server
       final payload = {
         'product_id': productId,
         'location_id': locationId,

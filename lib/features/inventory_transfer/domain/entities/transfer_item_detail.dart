@@ -10,6 +10,8 @@ class TransferItemDetail {
   final String productName;
   final String productCode;
   final int quantity;
+  final String? sourcePalletBarcode;
+  final String? targetPalletBarcode;
 
   const TransferItemDetail({
     this.id,
@@ -18,6 +20,8 @@ class TransferItemDetail {
     required this.productName,
     required this.productCode,
     required this.quantity,
+    this.sourcePalletBarcode,
+    this.targetPalletBarcode,
   });
 
   Map<String, dynamic> toMap() {
@@ -26,6 +30,8 @@ class TransferItemDetail {
       if (operationId != null) 'operation_id': operationId,
       'product_id': productId,
       'quantity': quantity,
+      'source_pallet_barcode': sourcePalletBarcode,
+      'target_pallet_barcode': targetPalletBarcode,
     };
   }
 
@@ -37,6 +43,8 @@ class TransferItemDetail {
       productName: map['product_name'] as String? ?? '',
       productCode: map['product_code'] as String? ?? '',
       quantity: map['quantity'] as int? ?? 0,
+      sourcePalletBarcode: map['source_pallet_barcode'] as String?,
+      targetPalletBarcode: map['target_pallet_barcode'] as String?,
     );
   }
 
@@ -47,6 +55,8 @@ class TransferItemDetail {
       productName: item.name,
       productCode: item.productCode,
       quantity: quantity ?? item.currentQuantity,
+      sourcePalletBarcode: null,
+      targetPalletBarcode: null,
     );
   }
 
@@ -60,7 +70,9 @@ class TransferItemDetail {
               productId == other.productId &&
               productName == other.productName &&
               productCode == other.productCode &&
-              quantity == other.quantity;
+              quantity == other.quantity &&
+              sourcePalletBarcode == other.sourcePalletBarcode &&
+              targetPalletBarcode == other.targetPalletBarcode;
 
   @override
   int get hashCode =>
@@ -69,5 +81,7 @@ class TransferItemDetail {
       productId.hashCode ^
       productName.hashCode ^
       productCode.hashCode ^
-      quantity.hashCode;
+      quantity.hashCode ^
+      sourcePalletBarcode.hashCode ^
+      targetPalletBarcode.hashCode;
 }

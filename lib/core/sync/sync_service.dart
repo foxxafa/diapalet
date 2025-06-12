@@ -45,7 +45,7 @@ class SyncService {
         _dbHelper = dbHelper,
         _connectivity = connectivity {
     _connectivity.onConnectivityChanged.listen((List<ConnectivityResult> result) {
-      final isConnected = result.contains(ConnectivityResult.mobile) || result.contains(ConnectivityResult.wifi);
+      final isConnected = result.isNotEmpty && !result.contains(ConnectivityResult.none);
       if (isConnected) {
         _syncStatusController.add(SyncStatus.online);
         // Automatically try to upload pending operations on reconnect

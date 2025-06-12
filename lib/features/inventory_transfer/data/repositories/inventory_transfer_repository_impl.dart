@@ -1,16 +1,15 @@
 // lib/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart
 
+import 'dart:convert';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
-import 'dart:convert';
-import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
-
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper _dbHelper;
@@ -31,7 +30,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<String>> getTargetLocations() async {
-    // In this model, source and target locations are the same list.
     return getSourceLocations();
   }
 
@@ -87,14 +85,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await _dbHelper.database;
     final localId = _uuid.v4();
 
-    String operationType;
-    if (header.operationType == AssignmentMode.pallet) {
-      operationType = 'pallet_transfer';
-    } else {
-      final sourceIsPallet = items.any((item) => item.sourcePalletBarcode != null);
-      operationType = sourceIsPallet ? 'box_from_pallet' : 'box_transfer';
-    }
-
     final sourceLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.sourceLocationName])).first;
     final targetLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.targetLocationName])).first;
     final int sourceLocationId = sourceLocationMap['id'] as int;
@@ -102,37 +92,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     await db.transaction((txn) async {
       final transferTimestamp = DateTime.now();
-      await txn.insert('inventory_transfer', {
-        'local_id': localId,
-        'urun_id': items.first.productId,
-        'from_location_id': sourceLocationId,
-        'to_location_id': targetLocationId,
-        'quantity': items.fold(0.0, (sum, item) => sum + item.quantity),
-        'pallet_barcode': header.containerId,
-        'employee_id': 1,
-        'transfer_date': transferTimestamp.toIso8601String(),
-        'created_at': transferTimestamp.toIso8601String(),
-      });
-
+      
       for (final item in items) {
         await _upsertStock(txn, item.productId, sourceLocationId, -item.quantity, item.sourcePalletBarcode);
         await _upsertStock(txn, item.productId, targetLocationId, item.quantity, item.targetPalletBarcode);
       }
 
       final payload = {
-        'header': {
-            'operation_type': operationType,
-            'source_location_id': sourceLocationId,
-            'target_location_id': targetLocationId,
-            'transfer_date': transferTimestamp.toIso8601String(),
-            'employee_id': 1,
-        },
-        'items': items.map((item) => {
-            'product_id': item.productId,
-            'quantity': item.quantity,
-            'source_pallet_barcode': item.sourcePalletBarcode,
-            'target_pallet_barcode': item.targetPalletBarcode,
-        }).toList(),
+        'header': header.toMap(),
+        'items': items.map((item) => item.toMap()).toList(),
       };
       
       await txn.insert('pending_operation', {
@@ -155,7 +123,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       );
 
       if (existing.isNotEmpty) {
-          final currentQty = (existing.first['quantity'] as num?)?.toDouble() ?? 0.0;
+          final currentQty = (existing.first['quantity'] as num).toDouble();
           final newQty = currentQty + qtyChange;
           if (newQty > 0.001) {
               await txn.update(

@@ -1,13 +1,14 @@
 // lib/features/pallet_assignment/domain/entities/transfer_operation_header.dart
 import 'package:flutter/foundation.dart'; // For @immutable and @override
 import 'assignment_mode.dart'; // Correct import
+import 'package:equatable/equatable.dart';
 
 @immutable
-class TransferOperationHeader {
+class TransferOperationHeader extends Equatable {
   final int? id;
   final AssignmentMode operationType;
-  final int sourceLocationId;
-  final int targetLocationId;
+  final String sourceLocationName;
+  final String targetLocationName;
   final String? containerId;
   final DateTime transferDate;
   final int synced;
@@ -15,19 +16,22 @@ class TransferOperationHeader {
   const TransferOperationHeader({
     this.id,
     required this.operationType,
-    required this.sourceLocationId,
-    required this.targetLocationId,
+    required this.sourceLocationName,
+    required this.targetLocationName,
     this.containerId,
     required this.transferDate,
     this.synced = 0,
   });
 
+  @override
+  List<Object?> get props => [id, operationType, sourceLocationName, targetLocationName, containerId, transferDate, synced];
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'operation_type': operationType.name,
-      'source_location_id': sourceLocationId,
-      'target_location_id': targetLocationId,
+      'source_location_name': sourceLocationName,
+      'target_location_name': targetLocationName,
       'pallet_id': containerId,
       'transfer_date': transferDate.toIso8601String(),
       'synced': synced,
@@ -40,8 +44,8 @@ class TransferOperationHeader {
       operationType: (map['operation_type'] as String) == AssignmentMode.pallet.name
           ? AssignmentMode.pallet
           : AssignmentMode.box,
-      sourceLocationId: map['source_location_id'],
-      targetLocationId: map['target_location_id'],
+      sourceLocationName: map['source_location_name'],
+      targetLocationName: map['target_location_name'],
       containerId: map['pallet_id'],
       transferDate: DateTime.parse(map['transfer_date'] as String),
       synced: map['synced'] as int? ?? 0,
@@ -51,8 +55,8 @@ class TransferOperationHeader {
   TransferOperationHeader copyWith({
     int? id,
     AssignmentMode? operationType,
-    int? sourceLocationId,
-    int? targetLocationId,
+    String? sourceLocationName,
+    String? targetLocationName,
     String? containerId,
     DateTime? transferDate,
     int? synced,
@@ -60,8 +64,8 @@ class TransferOperationHeader {
     return TransferOperationHeader(
       id: id ?? this.id,
       operationType: operationType ?? this.operationType,
-      sourceLocationId: sourceLocationId ?? this.sourceLocationId,
-      targetLocationId: targetLocationId ?? this.targetLocationId,
+      sourceLocationName: sourceLocationName ?? this.sourceLocationName,
+      targetLocationName: targetLocationName ?? this.targetLocationName,
       containerId: containerId ?? this.containerId,
       transferDate: transferDate ?? this.transferDate,
       synced: synced ?? this.synced,
@@ -75,8 +79,8 @@ class TransferOperationHeader {
               runtimeType == other.runtimeType &&
               id == other.id &&
               operationType == other.operationType &&
-              sourceLocationId == other.sourceLocationId &&
-              targetLocationId == other.targetLocationId &&
+              sourceLocationName == other.sourceLocationName &&
+              targetLocationName == other.targetLocationName &&
               containerId == other.containerId &&
               transferDate.isAtSameMomentAs(other.transferDate) && // For DateTime comparison
               synced == other.synced;
@@ -85,8 +89,8 @@ class TransferOperationHeader {
   int get hashCode =>
       id.hashCode ^
       operationType.hashCode ^
-      sourceLocationId.hashCode ^
-      targetLocationId.hashCode ^
+      sourceLocationName.hashCode ^
+      targetLocationName.hashCode ^
       containerId.hashCode ^
       transferDate.hashCode ^
       synced.hashCode;
@@ -94,8 +98,8 @@ class TransferOperationHeader {
   Map<String, dynamic> toMapForDb() {
     return {
       'operation_type': operationType.name,
-      'source_location_id': sourceLocationId,
-      'target_location_id': targetLocationId,
+      'source_location_name': sourceLocationName,
+      'target_location_name': targetLocationName,
       'pallet_id': containerId,
       'transfer_date': transferDate.toIso8601String(),
       'synced': synced,
