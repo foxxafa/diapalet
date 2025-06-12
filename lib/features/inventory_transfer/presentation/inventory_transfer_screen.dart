@@ -187,12 +187,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             ];
             _transferQuantityController.text = box.quantity.toString();
             _scannedContainerIdController.text =
-                '${box.productName} • ${box.productCode} • ${box.quantity} pcs';
+            '${box.productName} • ${box.productCode} • ${box.quantity} pcs';
           });
         }
       } else {
         final contents =
-            await _repo.getProductInfo(containerId, _selectedSourceLocation!);
+        await _repo.getProductInfo(containerId, _selectedSourceLocation!);
         if (!mounted) return;
         setState(() {
           _productsInContainer = contents;
@@ -263,8 +263,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         setState(() {
           _scannedContainerIdController.text = _selectedMode == AssignmentMode.box
               ? (_boxItems[result] != null
-                  ? '${_boxItems[result]!.productName} • ${_boxItems[result]!.productCode} • ${_boxItems[result]!.quantity} pcs'
-                  : result)
+              ? '${_boxItems[result]!.productName} • ${_boxItems[result]!.productCode} • ${_boxItems[result]!.quantity} pcs'
+              : result)
               : result;
         });
         successMessage = tr('pallet_assignment.qr_container_selected', namedArgs: {'mode': _selectedMode.displayName, 'val': result});
@@ -584,7 +584,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: _gap),
-                          child: Center(child: Text(tr('pallet_assignment.no_items_for_id', namedArgs: {'id': _scannedContainerIdController.text, 'mode': _selectedMode.displayName}), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
+                            child: Center(child: Text(tr('pallet_assignment.no_items_for_id', namedArgs: {'id': _scannedContainerIdController.text, 'mode': _selectedMode.displayName}), textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor))),
                           ),
                         )
                       else
@@ -704,14 +704,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       items: _availableContainerIds,
       itemLabelBuilder: (id) => _selectedMode == AssignmentMode.box
           ? (_boxItems[id] != null
-              ? '${_boxItems[id]!.productName} • ${_boxItems[id]!.productCode} • ${_boxItems[id]!.quantity} pcs'
-              : id)
+          ? '${_boxItems[id]!.productName} • ${_boxItems[id]!.productCode} • ${_boxItems[id]!.quantity} pcs'
+          : id)
           : id,
       filterFn: (id, query) {
         final label = _selectedMode == AssignmentMode.box
             ? (_boxItems[id] != null
-                ? '${_boxItems[id]!.productName} ${_boxItems[id]!.productCode} ${_boxItems[id]!.quantity}'
-                : id)
+            ? '${_boxItems[id]!.productName} ${_boxItems[id]!.productCode} ${_boxItems[id]!.quantity}'
+            : id)
             : id;
         return label.toLowerCase().contains(query.toLowerCase()) ||
             id.toLowerCase().contains(query.toLowerCase());
@@ -723,10 +723,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             _scannedContainerIdController.text = val == null
                 ? ''
                 : _selectedMode == AssignmentMode.box
-                    ? (_boxItems[val] != null
-                        ? '${_boxItems[val]!.productName} • ${_boxItems[val]!.productCode} • ${_boxItems[val]!.quantity} pcs'
-                        : val)
-                    : val;
+                ? (_boxItems[val] != null
+                ? '${_boxItems[val]!.productName} • ${_boxItems[val]!.productCode} • ${_boxItems[val]!.quantity} pcs'
+                : val)
+                : val;
           });
           if (val != null) await _fetchContainerContents();
         }
@@ -762,9 +762,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               isBox
                   ? tr('pallet_assignment.content_of', namedArgs: {'id': boxProduct?.name ?? _scannedContainerIdController.text})
                   : tr('pallet_assignment.content_of_count', namedArgs: {
-                      'id': _scannedContainerIdController.text,
-                      'count': _productsInContainer.length.toString()
-                    }),
+                'id': _scannedContainerIdController.text,
+                'count': _productsInContainer.length.toString()
+              }),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),

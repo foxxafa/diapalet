@@ -28,7 +28,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   ProductInfo? _selectedProduct;
   LocationInfo? _selectedLocation;
-  
+
   List<GoodsReceiptLogItem> _logItems = [];
 
   @override
@@ -121,7 +121,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       'product': productController,
       'location': locationController,
     };
-    
+
     return Scaffold(
       appBar: AppBar(title: const Text('Goods Receiving')),
       body: Padding(
@@ -155,12 +155,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   return _repository.getLocations(filter: textEditingValue.text);
                 },
                 onSelected: (location) => _onLocationSelected(location, locationController),
-                 fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                   return TextFormField(
                     controller: controller,
                     focusNode: focusNode,
                     decoration: const InputDecoration(labelText: 'Location'),
-                     validator: (value) => _selectedLocation == null ? 'Please select a location' : null,
+                    validator: (value) => _selectedLocation == null ? 'Please select a location' : null,
                   );
                 },
               ),
