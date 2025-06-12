@@ -1,56 +1,67 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:provider/provider.dart';
-
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
-
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/features/home/presentation/home_screen.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
-  // --- Singleton BINDINGS ---
-  final dbHelper = DatabaseHelper();
-  await dbHelper.initDatabase(); // Veritabanını başlat
-
+  // --- Bağımsız Singleton Servisler ---
+  final dbHelper = DatabaseHelper.instance;
+  await dbHelper.database;
   final dio = Dio();
   final connectivity = Connectivity();
+  final networkInfo = NetworkInfoImpl(connectivity);
 
   runApp(
     EasyLocalization(
-      supportedLocales: const [Locale('en'), Locale('tr')],
+      supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      fallbackLocale: const Locale('en'),
+      fallbackLocale: const Locale('tr'),
       child: MultiProvider(
         providers: [
+          // Temel, diğerleri tarafından kullanılacak servisleri sağla.
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<Dio>.value(value: dio),
-          Provider<Connectivity>.value(value: connectivity),
-          ProxyProvider<Connectivity, NetworkInfo>(
-            update: (_, connectivity, __) => NetworkInfoImpl(connectivity),
-          ),
-          ProxyProvider<DatabaseHelper, GoodsReceivingRepository>(
-            update: (_, db, __) => GoodsReceivingRepositoryImpl(dbHelper: db),
-          ),
-          ProxyProvider<DatabaseHelper, InventoryTransferRepository>(
-            update: (_, db, __) =>
-                InventoryTransferRepositoryImpl(dbHelper: db),
-          ),
-          ProxyProvider2<NetworkInfo, DatabaseHelper, SyncService>(
-            update: (context, networkInfo, db, __) => SyncService(
+          Provider<NetworkInfo>.value(value: networkInfo),
+
+          // Repository'ler: Diğer servislere bağımlı.
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
+              GoodsReceivingRepository>(
+            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
               dbHelper: db,
-              dio: Provider.of<Dio>(context, listen: false),
-              connectivity: Provider.of<Connectivity>(context, listen: false),
+              networkInfo: network,
+              dio: dio,
+            ),
+          ),
+
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
+              InventoryTransferRepository>(
+            update: (_, db, network, dio, __) =>
+                InventoryTransferRepositoryImpl(
+                  dbHelper: db,
+                  networkInfo: network,
+
+                  dio: dio,
+                ),
+          ),
+
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
+            update: (_, db, network, dio, __) => SyncService(
+              dbHelper: db,
+              dio: dio,
+              networkInfo: network,
             ),
           ),
         ],
@@ -72,8 +83,9 @@ class MyApp extends StatelessWidget {
       title: 'DiaPalet',
       theme: AppTheme.light,
       darkTheme: AppTheme.light,
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: const HomeScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

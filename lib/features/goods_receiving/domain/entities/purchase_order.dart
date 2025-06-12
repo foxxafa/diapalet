@@ -77,7 +77,7 @@ class PurchaseOrder {
       // Bu alanlar genellikle JOIN ile doldurulur, lokalde olmayabilir.
       supplierName: map['tedarikci_adi'] as String?,
       supplierId: map['tedarikci_id'] as int?,
-      items: [], // items field is not provided in the map, so we'll keep it empty
+      items: const [], // items field is not provided in the map, so we'll keep it empty
     );
   }
 } 

@@ -1,14 +1,12 @@
+// lib/core/sync/sync_service.dart
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
+import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:rxdart/rxdart.dart';
 
 class SyncResult {
@@ -28,126 +26,102 @@ enum SyncStatus {
 class SyncService {
   final Dio dio;
   final DatabaseHelper dbHelper;
-  final Connectivity connectivity;
-  static const _lastSyncKey = 'last_sync_timestamp';
-  late SharedPreferences _prefs;
+  final NetworkInfo networkInfo;
 
-  bool _isSyncingDownload = false;
-  bool _isSyncingUpload = false;
-
-  final _syncStatusController = BehaviorSubject<SyncStatus>.seeded(SyncStatus.offline);
+  // UYARI GİDERİLDİ: Bu alanlar private ve final yapıldı.
+  final BehaviorSubject<SyncStatus> _syncStatusController = BehaviorSubject<SyncStatus>.seeded(SyncStatus.offline);
   Stream<SyncStatus> get syncStatusStream => _syncStatusController.stream;
+
+  // UYARI GİDERİLDİ: Kullanılmayan alanlar kaldırıldı.
 
   SyncService({
     required this.dio,
     required this.dbHelper,
-    required this.connectivity,
+    required this.networkInfo,
   }) {
     _init();
   }
 
   Future<void> _init() async {
-    _prefs = await SharedPreferences.getInstance();
-    
-    connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
-      final isConnected = result != ConnectivityResult.none;
+    // SharedPreferences burada başlatılabilir ama şu an kullanılmıyor.
+    // _prefs = await SharedPreferences.getInstance();
+
+    networkInfo.onConnectivityChanged.listen((isConnected) {
       _syncStatusController.add(isConnected ? SyncStatus.online : SyncStatus.offline);
       if (isConnected) {
         uploadPendingOperations();
       }
     });
 
-    final initialConnectivity = await connectivity.checkConnectivity();
-    final isInitiallyConnected = initialConnectivity != ConnectivityResult.none;
+    final isInitiallyConnected = await networkInfo.isConnected;
     _syncStatusController
         .add(isInitiallyConnected ? SyncStatus.online : SyncStatus.offline);
   }
 
-  Future<String?> _getLastSyncTimestamp() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_lastSyncKey);
-  }
-
-  Future<void> _setLastSyncTimestamp(String timestamp) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastSyncKey, timestamp);
-  }
-
-  Future<bool> _isConnected() async {
-    final result = await connectivity.checkConnectivity();
-    return result != ConnectivityResult.none;
-  }
-
-  // --- PUBLIC API ---
-
   Future<SyncResult> downloadMasterData() async {
-    final hasConnection = await connectivity.checkConnectivity();
-    if (hasConnection == ConnectivityResult.none) {
-        return SyncResult(false, "No internet connection.");
+    if (!await networkInfo.isConnected) {
+      return SyncResult(false, "İnternet bağlantısı yok.");
     }
 
     _syncStatusController.add(SyncStatus.syncing);
 
     try {
-      final response = await dio.get(ApiConfig.syncDownload);
+      final response = await dio.post(ApiConfig.syncDownload, data: {});
 
       if (response.statusCode == 200) {
-        final data = response.data as Map<String, dynamic>;
+        final data = response.data['data'] as Map<String, dynamic>;
         await dbHelper.replaceTables(data);
         _syncStatusController.add(SyncStatus.upToDate);
-        return SyncResult(true, "Master data synced successfully.");
+        return SyncResult(true, "Ana veriler başarıyla senkronize edildi.");
       } else {
         _syncStatusController.add(SyncStatus.error);
-        return SyncResult(false, "Server error: ${response.statusCode}");
+        return SyncResult(false, "Sunucu hatası: ${response.statusCode}");
       }
     } catch (e) {
       _syncStatusController.add(SyncStatus.error);
-      debugPrint("Error during master data download: $e");
-      return SyncResult(false, "An error occurred: $e");
+      debugPrint("Ana veri indirme hatası: $e");
+      return SyncResult(false, "Bir hata oluştu: $e");
     }
   }
 
   Future<SyncResult> uploadPendingOperations() async {
-     final hasConnection = await connectivity.checkConnectivity();
-    if (hasConnection == ConnectivityResult.none) {
-        return SyncResult(false, "No internet connection.");
+    if (!await networkInfo.isConnected) {
+      return SyncResult(false, "İnternet bağlantısı yok.");
     }
-    
+
     _syncStatusController.add(SyncStatus.syncing);
 
     final pendingOperations = await getPendingOperations();
     if (pendingOperations.isEmpty) {
       _syncStatusController.add(SyncStatus.upToDate);
-      return SyncResult(true, "No pending operations to sync.");
+      return SyncResult(true, "Senkronize edilecek bekleyen işlem yok.");
     }
 
     try {
-      final response = await dio.post(
-        ApiConfig.syncUpload,
-        data: jsonEncode(pendingOperations.map((op) => op.toJson()).toList()),
-      );
+      final payload = {'operations': pendingOperations.map((op) => op.toUploadPayload()).toList()};
+      final response = await dio.post(ApiConfig.syncUpload, data: payload);
 
       if (response.statusCode == 200) {
         final results = response.data['results'] as List;
         for (var result in results) {
-          final int opId = result['operation_id'];
-          final bool success = result['success'];
+          final opId = result['operation']['id'];
+          final bool success = result['result']['status'] == 'success';
           if (success) {
             await dbHelper.deletePendingOperation(opId);
           } else {
-            await dbHelper.updatePendingOperationStatus(opId, 'failed', error: result['error']);
+            await dbHelper.updatePendingOperationStatus(opId, 'failed', error: result['result']['error']);
           }
         }
         _syncStatusController.add(SyncStatus.upToDate);
-        return SyncResult(true, "Sync process completed.");
+        return SyncResult(true, "Senkronizasyon tamamlandı.");
       } else {
         _syncStatusController.add(SyncStatus.error);
-        return SyncResult(false, "Server error: ${response.statusCode}");
+        return SyncResult(false, "Sunucu hatası: ${response.statusCode}");
       }
     } catch (e) {
       _syncStatusController.add(SyncStatus.error);
-      debugPrint("Error during pending operations upload: $e");
-      return SyncResult(false, "An error occurred: $e");
+      debugPrint("Bekleyen işlemleri yükleme hatası: $e");
+      return SyncResult(false, "Bir hata oluştu: $e");
     }
   }
 
@@ -155,63 +129,7 @@ class SyncService {
     return dbHelper.getPendingOperations();
   }
 
-  Future<void> deleteOperation(int operationId) async {
-    await dbHelper.deletePendingOperation(operationId);
-  }
-
-  Future<void> retryOperation(int operationId) async {
-    await dbHelper.updatePendingOperationStatus(operationId, 'pending');
-    uploadPendingOperations();
-  }
-
   void dispose() {
     _syncStatusController.close();
   }
-
-  // --- PRIVATE HELPERS ---
-
-  Future<void> _updateLocalDatabase(Map<String, dynamic> data) async {
-    final db = await dbHelper.database;
-    await db.transaction((txn) async {
-      // Helper to perform batch upserts. `ConflictAlgorithm.replace` is effectively an UPSERT.
-      Future<void> batchUpsert(String table, List<dynamic> records) async {
-        if (records.isEmpty) return;
-        
-        final batch = txn.batch();
-        for (var record in records) {
-          // The server might send back datetimes as strings. SQLite expects strings.
-          final sanitizedRecord = (record as Map<String, dynamic>).map((key, value) => MapEntry(key, value.toString()));
-          batch.insert(
-            table,
-            sanitizedRecord,
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-        await batch.commit(noResult: true);
-      }
-      
-      // The order of operations is critical due to foreign key constraints.
-      // 1. Master data that other tables depend on
-      await batchUpsert('location', data['locations'] ?? []);
-      await batchUpsert('product', data['urunler'] ?? []);
-      await batchUpsert('employee', data['employees'] ?? []);
-      await batchUpsert('purchase_order', data['satin_alma_siparis_fis'] ?? []);
-      await batchUpsert('purchase_order_item', data['satin_alma_siparis_fis_satir'] ?? []);
-
-      // 2. State data - It's often safer to wipe and replace state tables.
-      await txn.delete('inventory_stock');
-      await batchUpsert('inventory_stock', data['inventory_stock'] ?? []);
-
-      // 3. Transactional log data (handle with care, maybe append-only logic is needed in future)
-      await batchUpsert('goods_receipts', data['goods_receipts'] ?? []);
-      await batchUpsert('goods_receipt_items', data['goods_receipt_items'] ?? []);
-      await batchUpsert('inventory_transfers', data['inventory_transfers'] ?? []);
-    });
-    debugPrint("Local database updated from sync.");
-  }
-
-  Future<void> syncData() async {
-    await downloadMasterData();
-    await uploadPendingOperations();
-  }
-} 
+}

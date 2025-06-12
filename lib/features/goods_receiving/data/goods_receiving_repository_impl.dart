@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/network/network_info.dart'; // Eklendi
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
@@ -7,27 +7,35 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/recent_receipt_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:dio/dio.dart'; // Eklendi
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
+  final Dio dio; // Eklendi
+  final NetworkInfo networkInfo; // Eklendi
   final Uuid _uuid = const Uuid();
 
   // "MAL KABUL" lokasyonunun ID'sinin 1 olduğunu varsayıyoruz.
   // Gerçek bir uygulamada bu, yapılandırmadan veya veritabanından alınabilir.
   static const int malKabulLocationId = 1;
 
-  GoodsReceivingRepositoryImpl({required this.dbHelper});
+  // Constructor güncellendi
+  GoodsReceivingRepositoryImpl({
+    required this.dbHelper,
+    required this.dio,
+    required this.networkInfo,
+  });
 
   @override
   Future<List<LocationInfo>> getLocations({String? filter}) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
-      'location', 
-      where: filter != null && filter.isNotEmpty ? 'name LIKE ?' : null,
-      whereArgs: filter != null && filter.isNotEmpty ? ['%$filter%'] : null,
-      orderBy: 'name'
+        'location',
+        where: filter != null && filter.isNotEmpty ? 'name LIKE ?' : null,
+        whereArgs: filter != null && filter.isNotEmpty ? ['%$filter%'] : null,
+        orderBy: 'name'
     );
     return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
   }
@@ -145,7 +153,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     if (existing.isNotEmpty) {
       final currentQty = (existing.first['quantity'] as num).toDouble();
       final newQty = currentQty + qtyChange;
-      
+
       await txn.update(
         'inventory_stock',
         {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
@@ -162,4 +170,4 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       });
     }
   }
-} 
+}

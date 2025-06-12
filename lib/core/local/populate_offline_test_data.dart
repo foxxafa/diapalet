@@ -5,12 +5,14 @@ import 'package:flutter/foundation.dart';
 
 class TestDataPopulator {
   static Future<void> populate() async {
-    final db = await DatabaseHelper().database;
+    // DÜZELTME: DatabaseHelper'ın singleton örneğine .instance ile erişilir.
+    final db = await DatabaseHelper.instance.database;
     debugPrint("Checking if test data needs to be populated...");
 
-    // Check if products table is empty
-    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM products'));
-    if (count == 0) {
+    final countResult = await db.rawQuery('SELECT COUNT(*) FROM product');
+    final count = Sqflite.firstIntValue(countResult);
+
+    if ((count ?? 0) == 0) {
       debugPrint("Database is empty, populating with test data...");
       await _insertTestData(db);
     } else {
@@ -20,7 +22,7 @@ class TestDataPopulator {
 
   static Future<void> _insertTestData(Database db) async {
     await db.transaction((txn) async {
-      // Add test data here
+      // Test verileri buraya eklenebilir.
     });
   }
 }

@@ -1,4 +1,3 @@
-import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
@@ -12,19 +11,17 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.da
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 
-class TransferScreen extends StatefulWidget {
-  final SyncService syncService;
-
-  const TransferScreen({
+// DÜZELTME: Sınıf adı "InventoryTransferScreen" olarak değiştirildi ve gereksiz "syncService" kaldırıldı.
+class InventoryTransferScreen extends StatefulWidget {
+  const InventoryTransferScreen({
     super.key,
-    required this.syncService,
   });
 
   @override
-  State<TransferScreen> createState() => _TransferScreenState();
+  State<InventoryTransferScreen> createState() => _InventoryTransferScreenState();
 }
 
-class _TransferScreenState extends State<TransferScreen> {
+class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _formKey = GlobalKey<FormState>();
   late InventoryTransferRepository _repo;
   bool _isRepoInitialized = false;

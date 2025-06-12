@@ -1,6 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
-import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
+import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
+import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
@@ -8,12 +8,6 @@ import 'package:diapalet/features/goods_receiving/domain/repositories/goods_rece
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
-
-import '../../../core/widgets/barcode_scanner_button.dart';
-import '../../../core/widgets/custom_text_field.dart';
-import '../../../core/widgets/shared_app_bar.dart';
-
-enum GoodsReceivingMode { pallet, box }
 
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
@@ -26,25 +20,26 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   late final GoodsReceivingRepository _repository;
   final _formKey = GlobalKey<FormState>();
 
+  // Controllers
   final _receiptNumberController = TextEditingController();
   final _notesController = TextEditingController();
   final _searchController = TextEditingController();
+  final Map<int, TextEditingController> _quantityControllers = {};
 
+  // State
   List<PurchaseOrder> _allPurchaseOrders = [];
   List<PurchaseOrder> _filteredPurchaseOrders = [];
   PurchaseOrder? _selectedOrder;
   List<PurchaseOrderItem> _orderItems = [];
   final List<GoodsReceiptItem> _receiptItems = [];
-  final Map<int, TextEditingController> _quantityControllers = {};
 
   bool _isLoading = false;
   bool _isSaving = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final dbHelper = Provider.of<DatabaseHelper>(context, listen: false);
-    _repository = GoodsReceivingRepositoryImpl(dbHelper: dbHelper);
+  void initState() {
+    super.initState();
+    _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
     _loadPurchaseOrders();
   }
 
@@ -68,11 +63,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('goods_receiving.errors.load_orders'.tr(args: [e.toString()]))),
-        );
-      }
+      if (mounted) _showSnackBar('Siparişler yüklenemedi: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -80,11 +71,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _filterPurchaseOrders(String query) {
     setState(() {
-      _filteredPurchaseOrders = _allPurchaseOrders
-          .where((order) =>
-              (order.poId?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-              (order.supplierName?.toLowerCase().contains(query.toLowerCase()) ?? false))
-          .toList();
+      _filteredPurchaseOrders = _allPurchaseOrders.where((order) {
+        final poId = order.poId?.toLowerCase() ?? '';
+        final supplier = order.supplierName?.toLowerCase() ?? '';
+        final queryLower = query.toLowerCase();
+        return poId.contains(queryLower) || supplier.contains(queryLower);
+      }).toList();
     });
   }
 
@@ -109,55 +101,38 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('goods_receiving.errors.load_order_items'.tr(args: [e.toString()]))));
-      }
+      if (mounted) _showSnackBar('Sipariş kalemleri yüklenemedi: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _saveReceipt() async {
-    if (!_formKey.currentState!.validate() || _selectedOrder == null) return;
+    if (!(_formKey.currentState?.validate() ?? false) || _selectedOrder == null) return;
     if (_receiptItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('goods_receiving.errors.add_item_prompt'.tr())),
-      );
+      _showSnackBar('Kaydetmek için en az bir ürünün miktarını girin.', isError: true);
       return;
     }
 
     setState(() => _isSaving = true);
-
-    final receipt = GoodsReceipt(
-      id: 0,
-      purchaseOrderId: _selectedOrder!.id,
-      receiptNumber: _receiptNumberController.text,
-      receiptDate: DateTime.now(),
-      notes: _notesController.text,
-      status: 'pending',
-      items: _receiptItems,
-    );
-
     try {
+      // DÜZELTME: Eksik olan 'id' ve 'status' parametreleri eklendi.
+      final receipt = GoodsReceipt(
+        id: 0, // ID veritabanı tarafından atanacağı için 0 gönderilebilir.
+        purchaseOrderId: _selectedOrder!.id,
+        receiptNumber: _receiptNumberController.text,
+        receiptDate: DateTime.now(),
+        notes: _notesController.text,
+        status: 'pending', // Başlangıç durumu olarak 'pending' ayarlandı.
+        items: _receiptItems,
+      );
+
       await _repository.saveGoodsReceipt(receipt);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('goods_receiving.success.receipt_saved'.tr()),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      }
+      if (!mounted) return;
+      _showSnackBar("Mal kabul başarıyla kaydedildi.", isError: false);
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('goods_receiving.errors.save_receipt'.tr(args: [e.toString()])),
-              backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) _showSnackBar('Kayıt başarısız: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -168,21 +143,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _receiptItems.removeWhere((receiptItem) => receiptItem.productId == item.productId);
 
     if (quantity > 0) {
+      // DÜZELTME: Eksik olan 'id' ve 'goodsReceiptId' parametreleri eklendi.
       _receiptItems.add(
         GoodsReceiptItem(
-          id: 0,
-          goodsReceiptId: 0,
+          id: 0, // Bu ID veritabanı tarafından atanacak.
+          goodsReceiptId: 0, // Bu ID asıl fiş kaydedildikten sonra atanacak.
           productId: item.productId,
           quantity: quantity,
-          notes: '',
         ),
       );
     }
-    setState(() {});
-  }
-  
-  void _onBarcodeScanned(String barcode) {
-    // This could try to find a matching PO or item
   }
 
   void _reset() {
@@ -195,6 +165,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _searchController.clear();
       _filteredPurchaseOrders = _allPurchaseOrders;
     });
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? Colors.redAccent : Colors.green,
+    ));
   }
 
   @override
@@ -218,13 +196,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   Widget _buildBottomBar() {
     if (_selectedOrder == null || _orderItems.isEmpty) return const SizedBox.shrink();
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: ElevatedButton.icon(
         onPressed: _isSaving ? null : _saveReceipt,
         icon: _isSaving
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,))
             : const Icon(Icons.save_alt_outlined),
         label: Text('common.save'.tr()),
         style: ElevatedButton.styleFrom(
@@ -240,22 +217,21 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: CustomTextField(
+          child: TextFormField(
             controller: _searchController,
-            labelText: 'goods_receiving.search_po'.tr(),
-            hintText: 'goods_receiving.search_po_hint'.tr(),
-            prefixIcon: const Icon(Icons.search),
+            decoration: InputDecoration(
+                labelText: 'goods_receiving.search_po'.tr(),
+                hintText: 'goods_receiving.search_po_hint'.tr(),
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder()
+            ),
             onChanged: _filterPurchaseOrders,
           ),
         ),
         if (_isLoading && _filteredPurchaseOrders.isEmpty)
           const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (_filteredPurchaseOrders.isEmpty)
-          Expanded(
-            child: Center(
-              child: Text('goods_receiving.no_open_pos'.tr()),
-            ),
-          )
+          Expanded(child: Center(child: Text('goods_receiving.no_open_pos'.tr())))
         else
           Expanded(
             child: ListView.builder(
@@ -266,7 +242,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   child: ListTile(
                     title: Text(order.poId ?? 'PO #${order.id}'),
-                    subtitle: Text(order.supplierName ?? 'goods_receiving.unknown_supplier'.tr()),
+                    subtitle: Text(order.supplierName ?? 'Bilinmeyen Tedarikçi'),
                     trailing: const Icon(Icons.arrow_forward_ios),
                     onTap: () => _selectOrder(order),
                   ),
@@ -288,14 +264,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _orderItems.isEmpty
-                    ? Center(child: Text('goods_receiving.no_items_in_order'.tr()))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: _orderItems.length,
-                        itemBuilder: (context, index) {
-                          return _buildOrderItemCard(_orderItems[index]);
-                        },
-                      ),
+                ? const Center(child: Text('Bu siparişte ürün bulunmuyor.'))
+                : ListView.builder(
+              padding: const EdgeInsets.all(8),
+              itemCount: _orderItems.length,
+              itemBuilder: (context, index) => _buildOrderItemCard(_orderItems[index]),
+            ),
           ),
         ],
       ),
@@ -310,27 +284,33 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _selectedOrder?.poId ?? 'PO #${_selectedOrder?.id}',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            Text(
-              _selectedOrder?.supplierName ?? 'goods_receiving.unknown_supplier'.tr(),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(_selectedOrder?.poId ?? 'PO #${_selectedOrder?.id}', style: Theme.of(context).textTheme.headlineSmall),
+            Text(_selectedOrder?.supplierName ?? 'Bilinmeyen Tedarikçi', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 16),
-            CustomTextField(
+            TextFormField(
               controller: _receiptNumberController,
-              labelText: 'goods_receiving.delivery_note_number'.tr(),
-              hintText: 'goods_receiving.delivery_note_number_hint'.tr(),
-              validator: (val) => val == null || val.isEmpty ? 'validation.required'.tr() : null,
-              suffixIcon: BarcodeScannerButton(onScan: (code) => _receiptNumberController.text = code),
+              decoration: InputDecoration(
+                labelText: 'İrsaliye Numarası',
+                hintText: 'Varsa irsaliye numarasını girin',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  onPressed: () async {
+                    final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const QrScannerScreen()));
+                    if (code != null) _receiptNumberController.text = code;
+                  },
+                ),
+              ),
+              validator: (val) => val == null || val.isEmpty ? 'Bu alan zorunludur' : null,
             ),
             const SizedBox(height: 16),
-            CustomTextField(
+            TextFormField(
               controller: _notesController,
-              labelText: 'common.notes'.tr(),
-              hintText: 'common.notes_optional_hint'.tr(),
+              decoration: const InputDecoration(
+                labelText: 'Notlar',
+                hintText: 'İsteğe bağlı notlar',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
@@ -340,8 +320,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   Widget _buildOrderItemCard(PurchaseOrderItem item) {
     final qtyController = _quantityControllers[item.id]!;
-    final alreadyReceived = 0.0; // Placeholder
-    final remaining = (item.expectedQuantity ?? 0.0) - alreadyReceived;
+    const alreadyReceived = 0.0;
+    final remaining = item.expectedQuantity - alreadyReceived;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -350,41 +330,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.productName ?? 'goods_receiving.unknown_product'.tr(), style: Theme.of(context).textTheme.titleMedium),
-            Text(item.productCode ?? '', style: Theme.of(context).textTheme.bodySmall),
+            Text(item.productName ?? 'Bilinmeyen Ürün', style: Theme.of(context).textTheme.titleMedium),
+            Text(item.stockCode ?? '', style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('goods_receiving.ordered'.tr(), style: Theme.of(context).textTheme.bodySmall),
-                      Text(item.expectedQuantity.toString(), style: Theme.of(context).textTheme.titleMedium),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('goods_receiving.remaining'.tr(), style: Theme.of(context).textTheme.bodySmall),
-                      Text(remaining.toString(), style: Theme.of(context).textTheme.titleMedium),
-                    ],
-                  ),
-                ),
+                Expanded(child: _buildInfoColumn('Sipariş', item.expectedQuantity.toStringAsFixed(0))),
+                Expanded(child: _buildInfoColumn('Kalan', remaining.toStringAsFixed(0))),
                 Expanded(
                   flex: 2,
-                  child: CustomTextField(
+                  child: TextFormField(
                     controller: qtyController,
-                    labelText: 'goods_receiving.received_qty'.tr(),
+                    decoration: const InputDecoration(labelText: 'Gelen Miktar', border: OutlineInputBorder()),
                     keyboardType: TextInputType.number,
                     onChanged: (val) => _onOrderItemChanged(item, val),
                     validator: (val) {
-                      final num? entered = num.tryParse(val ?? '0');
-                      if (entered != null && entered > remaining) {
-                        return 'goods_receiving.errors.qty_exceeds_remaining'.tr();
-                      }
+                      final entered = num.tryParse(val ?? '0');
+                      if (entered != null && entered > remaining) return 'Kalanı aşamaz';
                       return null;
                     },
                   ),
@@ -394,6 +356,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildInfoColumn(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+      ],
     );
   }
 }

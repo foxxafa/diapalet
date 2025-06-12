@@ -1,23 +1,30 @@
-// lib/features/pallet_assignment/data/repositories/pallet_assignment_repository_impl.dart
-
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/network/network_info.dart'; // Eklendi
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
+import 'package:dio/dio.dart'; // Eklendi
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
-  final DatabaseHelper _dbHelper;
+  final DatabaseHelper dbHelper;
+  final Dio dio; // Eklendi
+  final NetworkInfo networkInfo; // Eklendi
   final Uuid _uuid = const Uuid();
 
-  InventoryTransferRepositoryImpl({required DatabaseHelper dbHelper}) : _dbHelper = dbHelper;
+  // Constructor güncellendi
+  InventoryTransferRepositoryImpl({
+    required this.dbHelper,
+    required this.dio,
+    required this.networkInfo,
+  });
 
   @override
   Future<List<String>> getSourceLocations() async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'location',
       where: 'is_active = 1',
@@ -33,7 +40,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<String>> getPalletIdsAtLocation(String locationName) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT DISTINCT T2.pallet_barcode
       FROM location T1
@@ -46,7 +53,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<BoxItem>> getBoxesAtLocation(String locationName) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
         p.id as productId,
@@ -64,7 +71,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<ProductItem>> getPalletContents(String palletId) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
         p.id,
@@ -80,7 +87,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<void> recordTransferOperation(TransferOperationHeader header, List<TransferItemDetail> items) async {
-    final db = await _dbHelper.database;
+    final db = await dbHelper.database;
     final localId = _uuid.v4();
 
     final sourceLocationMap = (await db.query('location', where: 'name = ?', whereArgs: [header.sourceLocationName])).first;
@@ -90,7 +97,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     await db.transaction((txn) async {
       final transferTimestamp = DateTime.now();
-      
+
       for (final item in items) {
         await _upsertStock(txn, item.productId, sourceLocationId, -item.quantity.toDouble(), item.sourcePalletBarcode);
         await _upsertStock(txn, item.productId, targetLocationId, item.quantity.toDouble(), item.targetPalletBarcode);
@@ -110,37 +117,37 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   Future<void> _upsertStock(DatabaseExecutor txn, int urunId, int locationId, double qtyChange, String? palletBarcode) async {
-      final palletClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
-      final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
+    final palletClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
+    final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
 
-      final List<Map<String, dynamic>> existing = await txn.query(
+    final List<Map<String, dynamic>> existing = await txn.query(
+      'inventory_stock',
+      where: 'urun_id = ? AND location_id = ? AND $palletClause',
+      whereArgs: whereArgs,
+    );
+
+    if (existing.isNotEmpty) {
+      final currentQty = (existing.first['quantity'] as num).toDouble();
+      final newQty = currentQty + qtyChange;
+      if (newQty > 0.001) {
+        await txn.update(
           'inventory_stock',
-          where: 'urun_id = ? AND location_id = ? AND $palletClause',
-          whereArgs: whereArgs,
-      );
-
-      if (existing.isNotEmpty) {
-          final currentQty = (existing.first['quantity'] as num).toDouble();
-          final newQty = currentQty + qtyChange;
-          if (newQty > 0.001) {
-              await txn.update(
-                  'inventory_stock',
-                  {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-                  where: 'id = ?',
-                  whereArgs: [existing.first['id']],
-              );
-          } else {
-              await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
-          }
-      } else if (qtyChange > 0) {
-          await txn.insert('inventory_stock', {
-              'urun_id': urunId,
-              'location_id': locationId,
-              'quantity': qtyChange,
-              'pallet_barcode': palletBarcode,
-              'created_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
-          });
+          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      } else {
+        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
       }
+    } else if (qtyChange > 0) {
+      await txn.insert('inventory_stock', {
+        'urun_id': urunId,
+        'location_id': locationId,
+        'quantity': qtyChange,
+        'pallet_barcode': palletBarcode,
+        'created_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    }
   }
 }
