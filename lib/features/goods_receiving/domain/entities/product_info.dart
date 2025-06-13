@@ -5,12 +5,14 @@ class ProductInfo extends Equatable {
   final int id;
   final String name;
   final String stockCode;
+  final String? barcode1; // GÜNCELLEME: Barkod alanı eklendi
   final bool isActive;
 
   const ProductInfo({
     required this.id,
     required this.name,
     required this.stockCode,
+    this.barcode1, // GÜNCELLEME: Constructor'a eklendi
     required this.isActive,
   });
 
@@ -20,6 +22,7 @@ class ProductInfo extends Equatable {
       id: map['UrunId'] as int,
       name: map['UrunAdi'] as String,
       stockCode: map['StokKodu'] as String,
+      barcode1: map['Barcode1'] as String?, // GÜNCELLEME: Veritabanından okunuyor
       isActive: (map['aktif'] as int? ?? 1) == 1,
     );
   }
@@ -30,6 +33,7 @@ class ProductInfo extends Equatable {
       id: json['id'] as int,
       name: json['name'] as String,
       stockCode: json['stockCode'] as String? ?? json['code'] as String? ?? '',
+      barcode1: json['barcode1'] as String?, // GÜNCELLEME: JSON'dan okunuyor
       isActive: (json['isActive'] as bool? ?? true),
     );
   }
@@ -40,10 +44,12 @@ class ProductInfo extends Equatable {
       'id': id,
       'name': name,
       'stockCode': stockCode,
+      'barcode1': barcode1, // GÜNCELLEME: JSON'a ekleniyor
       'isActive': isActive,
     };
   }
 
   @override
-  List<Object?> get props => [id, name, stockCode, isActive];
+  // GÜNCELLEME: Eşitlik kontrolü için props listesine eklendi
+  List<Object?> get props => [id, name, stockCode, barcode1, isActive];
 }

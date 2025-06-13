@@ -65,7 +65,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           if (query.isNotEmpty) {
             return products.where((p) =>
             p.name.toLowerCase().contains(query.toLowerCase()) ||
-                p.stockCode.toLowerCase().contains(query.toLowerCase())
+                p.stockCode.toLowerCase().contains(query.toLowerCase()) ||
+                (p.barcode1?.toLowerCase().contains(query.toLowerCase()) ?? false) // GÜNCELLEME: Barkoda göre de filtrele
             ).toList();
           }
           return products;
@@ -115,10 +116,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   Future<List<ProductInfo>> _searchProductsFromLocal(String query) async {
     final db = await dbHelper.database;
+    // GÜNCELLEME: Sorguya 'Barcode1' alanı eklendi
     final List<Map<String, dynamic>> maps = await db.query(
       'urunler',
-      where: 'UrunAdi LIKE ? OR StokKodu LIKE ?',
-      whereArgs: ['%$query%', '%$query%'],
+      where: 'UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?',
+      whereArgs: ['%$query%', '%$query%', '%$query%'],
       limit: 50,
     );
     return List.generate(maps.length, (i) => ProductInfo.fromDbMap(maps[i]));
@@ -186,4 +188,3 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
   }
 }
-

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'package:collection/collection.dart';
 
 class GoodsReceivingScreen extends StatefulWidget {
   const GoodsReceivingScreen({super.key});
@@ -18,21 +19,19 @@ class GoodsReceivingScreen extends StatefulWidget {
 }
 
 class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
-  // --- Sabitler ve Stil Değişkenleri (Eski tasarımdan) ---
+  // --- Sabitler ve Stil Değişkenleri ---
   static const double _fieldHeight = 56;
   static const double _gap = 12;
   static const double _smallGap = 8;
   final _borderRadius = BorderRadius.circular(12);
 
-  // --- State ve Controller'lar (Yeni mantıktan) ---
+  // --- State ve Controller'lar ---
   late final GoodsReceivingRepository _repository;
   final _formKey = GlobalKey<FormState>();
 
-  // Sayfa durumu
   bool _isLoading = true;
   bool _isSaving = false;
 
-  // Seçimler ve veriler
   ReceivingMode _receivingMode = ReceivingMode.palet;
   List<PurchaseOrder> _purchaseOrders = [];
   PurchaseOrder? _selectedOrder;
@@ -40,16 +39,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   ProductInfo? _selectedProduct;
   List<ReceiptItemDraft> _addedItems = [];
 
-  // Controller'lar
   final _orderController = TextEditingController();
   final _palletIdController = TextEditingController();
   final _productController = TextEditingController();
   final _quantityController = TextEditingController();
 
+  // GÜNCELLEME: Odaklanma yönetimi için FocusNode'lar eklendi.
+  final _orderFocusNode = FocusNode();
+  final _palletIdFocusNode = FocusNode();
+  final _productFocusNode = FocusNode();
+  final _quantityFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
-    // Provider'ı initState içinde, listen:false ile almak en güvenlisidir.
     _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
     _loadInitialData();
   }
@@ -60,25 +63,32 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _palletIdController.dispose();
     _productController.dispose();
     _quantityController.dispose();
+    // GÜNCELLEME: FocusNode'lar dispose ediliyor.
+    _orderFocusNode.dispose();
+    _palletIdFocusNode.dispose();
+    _productFocusNode.dispose();
+    _quantityFocusNode.dispose();
     super.dispose();
   }
 
-  // --- VERİ YÜKLEME (YENİ MANTIK) ---
+  // --- VERİ YÜKLEME ---
   Future<void> _loadInitialData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
         _repository.getOpenPurchaseOrders(),
-        _repository.searchProducts(''), // Başlangıçta tüm ürünleri veya bir kısmını getir
+        _repository.searchProducts(''),
       ]);
       if (!mounted) return;
 
       setState(() {
-        // HATA DÜZELTMESİ: Future.wait'ten dönen List<Object> doğru tiplere çevrildi (cast).
         _purchaseOrders = results[0] as List<PurchaseOrder>;
         _availableProducts = results[1] as List<ProductInfo>;
       });
+      // Başlangıçta sipariş alanına odaklan
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _orderFocusNode.requestFocus());
     } catch (e) {
       if (mounted) _showErrorSnackBar('Başlangıç verileri yüklenemedi: $e');
     } finally {
@@ -86,7 +96,34 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  // --- LİSTE VE KAYDETME İŞLEMLERİ (YENİ MANTIK) ---
+  // --- BARKOD/ÜRÜN İŞLEME ---
+  void _processScannedProduct(String scannedData) {
+    if (scannedData.isEmpty) return;
+    final foundProduct = _availableProducts.firstWhereOrNull(
+          (p) =>
+      p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
+          (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
+    );
+
+    if (foundProduct != null) {
+      _selectProduct(foundProduct);
+    } else {
+      _productController.clear();
+      _selectedProduct = null;
+      _showErrorSnackBar("Ürün bulunamadı: $scannedData");
+    }
+  }
+
+  void _selectProduct(ProductInfo product) {
+    setState(() {
+      _selectedProduct = product;
+      _productController.text = "${product.name} (${product.stockCode})";
+    });
+    // GÜNCELLEME: Ürün seçildikten sonra miktar alanına odaklan
+    _quantityFocusNode.requestFocus();
+  }
+
+  // --- LİSTE VE KAYDETME İŞLEMLERİ ---
   void _addItemToList() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -96,21 +133,28 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
+    final isKutuModeLocked =
+        _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
     if (isKutuModeLocked) {
       _showErrorSnackBar("Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.");
       return;
     }
 
     setState(() {
-      _addedItems.insert(0, ReceiptItemDraft(
-        product: _selectedProduct!,
-        quantity: quantity,
-        palletBarcode: _receivingMode == ReceivingMode.palet ? _palletIdController.text : null,
-      ));
+      _addedItems.insert(
+          0,
+          ReceiptItemDraft(
+            product: _selectedProduct!,
+            quantity: quantity,
+            palletBarcode: _receivingMode == ReceivingMode.palet
+                ? _palletIdController.text
+                : null,
+          ));
       _clearEntryFields();
     });
     _showSuccessSnackBar("${_selectedProduct!.name} listeye eklendi.");
+    // GÜNCELLEME: Ürün eklendikten sonra yeni ürün için tekrar odaklan
+    _productFocusNode.requestFocus();
   }
 
   void _removeItemFromList(int index) {
@@ -134,10 +178,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Mal Kabulü Onayla"),
-        content: Text("${_addedItems.length} kalem ürün 'MAL KABUL' lokasyonuna kaydedilecek. Emin misiniz?"),
+        content: Text(
+            "${_addedItems.length} kalem ürün 'MAL KABUL' lokasyonuna kaydedilecek. Emin misiniz?"),
         actions: [
-          TextButton(child: const Text("İptal"), onPressed: () => Navigator.of(ctx).pop(false)),
-          ElevatedButton(child: const Text("Onayla ve Kaydet"), onPressed: () => Navigator.of(ctx).pop(true)),
+          TextButton(
+              child: const Text("İptal"),
+              onPressed: () => Navigator.of(ctx).pop(false)),
+          ElevatedButton(
+              child: const Text("Onayla ve Kaydet"),
+              onPressed: () => Navigator.of(ctx).pop(true)),
         ],
       ),
     );
@@ -152,11 +201,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           invoiceNumber: _selectedOrder!.poId,
           receiptDate: DateTime.now(),
         ),
-        items: _addedItems.map((draft) => GoodsReceiptItemPayload(
+        items: _addedItems
+            .map((draft) => GoodsReceiptItemPayload(
           urunId: draft.product.id,
           quantity: draft.quantity,
           palletBarcode: draft.palletBarcode,
-        )).toList(),
+        ))
+            .toList(),
       );
       await _repository.saveGoodsReceipt(payload);
 
@@ -175,11 +226,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _productController.clear();
     _quantityController.clear();
     _selectedProduct = null;
-    // Palet modundaysa ve listede ürün varsa palet ID'si temizlenmemeli.
     if (_receivingMode == ReceivingMode.kutu || _addedItems.isEmpty) {
       _palletIdController.clear();
     }
-    FocusScope.of(context).unfocus();
   }
 
   void _resetScreen() {
@@ -189,13 +238,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _orderController.clear();
       _formKey.currentState?.reset();
       _clearEntryFields();
+      _orderFocusNode.requestFocus();
     });
   }
 
-  // --- ARAYÜZ (ESKİ TASARIMDAN UYARLANMIŞ) ---
+  // --- ARAYÜZ ---
   @override
   Widget build(BuildContext context) {
-    final bool isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
+    final bool isKutuModeLocked =
+        _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
 
     return Scaffold(
       appBar: SharedAppBar(title: 'Mal Kabul'),
@@ -219,7 +270,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   _buildPalletIdInput(),
                 ],
                 const SizedBox(height: _gap),
-                _buildSearchableProductInputRow(isLocked: isKutuModeLocked),
+                _buildSearchableProductInputRow(
+                    isLocked: isKutuModeLocked),
                 const SizedBox(height: _gap),
                 _buildQuantityInput(isLocked: isKutuModeLocked),
                 const SizedBox(height: _gap),
@@ -238,8 +290,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return Center(
       child: SegmentedButton<ReceivingMode>(
         segments: const [
-          ButtonSegment(value: ReceivingMode.palet, label: Text('Palet'), icon: Icon(Icons.pallet)),
-          ButtonSegment(value: ReceivingMode.kutu, label: Text('Kutu'), icon: Icon(Icons.inventory_2_outlined)),
+          ButtonSegment(
+              value: ReceivingMode.palet,
+              label: Text('Palet'),
+              icon: Icon(Icons.pallet)),
+          ButtonSegment(
+              value: ReceivingMode.kutu,
+              label: Text('Kutu'),
+              icon: Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_receivingMode},
         onSelectionChanged: (newSelection) {
@@ -251,7 +309,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           });
         },
         style: SegmentedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(75),
+          backgroundColor: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withAlpha(75),
           selectedBackgroundColor: Theme.of(context).colorScheme.primary,
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
           shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -263,23 +324,36 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildSearchableOrderDropdown() {
     return TextFormField(
       controller: _orderController,
+      focusNode: _orderFocusNode,
       readOnly: true,
-      decoration: _inputDecoration('Sipariş Seç', filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
+      decoration: _inputDecoration('Sipariş Seç',
+          filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
       onTap: () async {
-        final PurchaseOrder? selected = await _showSearchableDropdownDialog<PurchaseOrder>(
+        final PurchaseOrder? selected =
+        await _showSearchableDropdownDialog<PurchaseOrder>(
           title: 'Sipariş Seç',
           items: _purchaseOrders,
           itemToString: (item) => item.poId ?? "ID: ${item.id}",
-          filterCondition: (item, query) => (item.poId ?? "ID: ${item.id}").toLowerCase().contains(query.toLowerCase()),
+          filterCondition: (item, query) =>
+              (item.poId ?? "ID: ${item.id}")
+                  .toLowerCase()
+                  .contains(query.toLowerCase()),
         );
         if (selected != null) {
           setState(() {
             _selectedOrder = selected;
             _orderController.text = selected.poId ?? "ID: ${selected.id}";
           });
+          // GÜNCELLEME: Sipariş seçilince sonraki alana odaklan.
+          if (_receivingMode == ReceivingMode.palet) {
+            _palletIdFocusNode.requestFocus();
+          } else {
+            _productFocusNode.requestFocus();
+          }
         }
       },
-      validator: (value) => (value == null || value.isEmpty) ? 'Lütfen bir sipariş seçin.' : null,
+      validator: (value) =>
+      (value == null || value.isEmpty) ? 'Lütfen bir sipariş seçin.' : null,
       autovalidateMode: AutovalidateMode.onUserInteraction,
     );
   }
@@ -291,9 +365,17 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           child: TextFormField(
             controller: _palletIdController,
+            focusNode: _palletIdFocusNode,
             decoration: _inputDecoration('Palet Barkodu Girin/Okutun'),
+            // GÜNCELLEME: Donanım okuyucu için onFieldSubmitted eklendi.
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _productFocusNode.requestFocus();
+              }
+            },
             validator: (value) {
-              if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+              if (_receivingMode == ReceivingMode.palet &&
+                  (value == null || value.isEmpty)) {
                 return "Palet barkodu zorunludur.";
               }
               return null;
@@ -302,16 +384,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           ),
         ),
         const SizedBox(width: _smallGap),
-        _QrButton(onTap: () async {
-          final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-          if(result != null && result.isNotEmpty && mounted) {
-            _palletIdController.text = result;
-          }
-        }, size: _fieldHeight),
+        _QrButton(
+            onTap: () async {
+              final result = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const QrScannerScreen()));
+              if (result != null && result.isNotEmpty && mounted) {
+                _palletIdController.text = result;
+                _productFocusNode.requestFocus(); // Kameradan okutunca da odaklan
+              }
+            },
+            size: _fieldHeight),
       ],
     );
   }
 
+  // GÜNCELLEME: Bu widget, donanım okuyucu ve dokunmatik seçimi destekleyecek şekilde güncellendi.
   Widget _buildSearchableProductInputRow({required bool isLocked}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -319,31 +408,65 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           child: TextFormField(
             controller: _productController,
-            readOnly: true,
+            focusNode: _productFocusNode,
             enabled: !isLocked,
-            decoration: _inputDecoration('Ürün Seç', filled: true, suffixIcon: const Icon(Icons.arrow_drop_down), enabled: !isLocked),
-            onTap: isLocked ? null : () async {
-              final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
-                title: 'Ürün Seç',
-                items: _availableProducts,
-                itemToString: (product) => "${product.name} (${product.stockCode})",
-                filterCondition: (product, query) =>
-                product.name.toLowerCase().contains(query.toLowerCase()) ||
-                    product.stockCode.toLowerCase().contains(query.toLowerCase()),
-              );
-              if (selected != null) {
-                setState(() {
-                  _selectedProduct = selected;
-                  _productController.text = "${selected.name} (${selected.stockCode})";
-                });
+            decoration: _inputDecoration('Ürün Seç/Okut',
+                filled: true,
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.arrow_drop_down),
+                  tooltip: 'Listeden Ürün Seç',
+                  onPressed: isLocked
+                      ? null
+                      : () async {
+                    final ProductInfo? selected =
+                    await _showSearchableDropdownDialog<ProductInfo>(
+                      title: 'Ürün Seç',
+                      items: _availableProducts,
+                      itemToString: (product) =>
+                      "${product.name} (${product.stockCode})",
+                      filterCondition: (product, query) =>
+                      product.name
+                          .toLowerCase()
+                          .contains(query.toLowerCase()) ||
+                          product.stockCode
+                              .toLowerCase()
+                              .contains(query.toLowerCase()) ||
+                          (product.barcode1
+                              ?.toLowerCase()
+                              .contains(query.toLowerCase()) ??
+                              false),
+                    );
+                    if (selected != null) {
+                      _selectProduct(selected);
+                    }
+                  },
+                ),
+                enabled: !isLocked),
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedProduct(value);
               }
             },
-            validator: (value) => (value == null || value.isEmpty) ? 'Lütfen bir ürün seçin.' : null,
+            validator: (value) => (value == null || value.isEmpty)
+                ? 'Lütfen bir ürün seçin.'
+                : null,
             autovalidateMode: AutovalidateMode.onUserInteraction,
           ),
         ),
         const SizedBox(width: _smallGap),
-        _QrButton(onTap: (){}, size: _fieldHeight, isEnabled: !isLocked), // QR Butonun işlevi eklenebilir
+        _QrButton(
+            onTap: () async {
+              final result = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const QrScannerScreen()));
+              if (result != null && result.isNotEmpty && mounted) {
+                _productController.text = result;
+                _processScannedProduct(result);
+              }
+            },
+            size: _fieldHeight,
+            isEnabled: !isLocked),
       ],
     );
   }
@@ -351,14 +474,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildQuantityInput({required bool isLocked}) {
     return TextFormField(
       controller: _quantityController,
-      keyboardType: TextInputType.number,
+      focusNode: _quantityFocusNode,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+      ],
       enabled: !isLocked,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       decoration: _inputDecoration('Miktar Girin', enabled: !isLocked),
+      // GÜNCELLEME: Miktar girilip enter'a basılınca listeye ekle.
+      onFieldSubmitted: (value) {
+        if (value.isNotEmpty) {
+          _addItemToList();
+        }
+      },
       validator: (value) {
         if (isLocked) return null;
         if (value == null || value.isEmpty) return 'Miktar girin.';
-        final number = int.tryParse(value);
+        final number = double.tryParse(value);
         if (number == null || number <= 0) return 'Geçerli bir miktar girin.';
         return null;
       },
@@ -384,9 +516,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildAddedItemsList() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(125),
+        color:
+        Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(125),
         borderRadius: _borderRadius,
-        border: Border.all(color: Theme.of(context).dividerColor.withAlpha(180)),
+        border:
+        Border.all(color: Theme.of(context).dividerColor.withAlpha(180)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -395,7 +529,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Text(
               "Eklenen Ürünler (${_addedItems.length})",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           const Divider(height: 1, thickness: 1),
@@ -404,28 +541,39 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 ? Center(
               child: Text(
                 "Liste boş. Lütfen ürün ekleyin.",
-                style: TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
+                style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).hintColor),
               ),
             )
                 : ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: _smallGap, horizontal: _smallGap / 2),
+              padding: const EdgeInsets.symmetric(
+                  vertical: _smallGap, horizontal: _smallGap / 2),
               itemCount: _addedItems.length,
               itemBuilder: (context, index) {
                 final item = _addedItems[index];
                 return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                  margin: const EdgeInsets.symmetric(
+                      vertical: 4, horizontal: 8),
                   elevation: 1.5,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                   child: ListTile(
-                    title: Text(item.product.name, style: Theme.of(context).textTheme.titleSmall),
-                    subtitle: Text("Palet: ${item.palletBarcode ?? 'YOK'}"),
+                    title: Text(item.product.name,
+                        style: Theme.of(context).textTheme.titleSmall),
+                    subtitle:
+                    Text("Palet: ${item.palletBarcode ?? 'YOK'}"),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text("x${item.quantity.toInt()}", style: Theme.of(context).textTheme.bodyLarge),
+                        Text("x${item.quantity.toString()}",
+                            style:
+                            Theme.of(context).textTheme.bodyLarge),
                         const SizedBox(width: _smallGap),
                         IconButton(
-                          icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+                          icon: Icon(Icons.delete_outline,
+                              color:
+                              Theme.of(context).colorScheme.error),
                           onPressed: () => _removeItemFromList(index),
                           tooltip: 'Ürünü sil',
                         ),
@@ -448,28 +596,39 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       padding: const EdgeInsets.all(20),
       child: ElevatedButton.icon(
         onPressed: _addedItems.isEmpty || _isSaving ? null : _saveAndConfirm,
-        icon: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_outline),
+        icon: _isSaving
+            ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+                color: Colors.white, strokeWidth: 2))
+            : const Icon(Icons.check_circle_outline),
         label: const Text('Kaydet ve Onayla'),
         style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            textStyle:
+            const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       ),
     );
   }
 
-  // --- YARDIMCI METOTLAR (Eski tasarımdan) ---
+  // --- YARDIMCI METOTLAR ---
 
-  InputDecoration _inputDecoration(String label, {bool filled = false, Widget? suffixIcon, bool enabled = true}) {
+  InputDecoration _inputDecoration(String label,
+      {bool filled = false, Widget? suffixIcon, bool enabled = true}) {
     return InputDecoration(
       labelText: label,
       filled: filled,
-      fillColor: enabled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(75) : Colors.grey.shade200,
+      fillColor: enabled
+          ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(75)
+          : Colors.grey.shade200,
       border: OutlineInputBorder(borderRadius: _borderRadius),
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 0, height: 0.01), // Hata mesajını gizler
+      errorStyle: const TextStyle(
+          fontSize: 10, height: 0.8), // Hata mesajını küçült
       helperText: ' ', // Alanın altına boşluk ekler
       helperStyle: const TextStyle(fontSize: 0, height: 0.01),
     );
@@ -511,7 +670,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         String searchText = '';
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            final filteredItems = items.where((item) => filterCondition(item, searchText)).toList();
+            final filteredItems =
+            items.where((item) => filterCondition(item, searchText)).toList();
 
             return AlertDialog(
               title: Text(title),
@@ -545,7 +705,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                           final item = filteredItems[index];
                           return ListTile(
                             title: Text(itemToString(item)),
-                            onTap: () => Navigator.of(dialogContext).pop(item),
+                            onTap: () =>
+                                Navigator.of(dialogContext).pop(item),
                           );
                         },
                       ),
@@ -558,7 +719,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   child: const Text('İptal'),
                   onPressed: () => Navigator.of(dialogContext).pop(),
                 ),
-
               ],
             );
           },
@@ -573,7 +733,8 @@ class _QrButton extends StatelessWidget {
   final double size;
   final bool isEnabled;
 
-  const _QrButton({required this.onTap, required this.size, this.isEnabled = true});
+  const _QrButton(
+      {required this.onTap, required this.size, this.isEnabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -583,7 +744,8 @@ class _QrButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isEnabled ? onTap : null,
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
           backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
           foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
