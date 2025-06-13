@@ -9,6 +9,7 @@ class BoxItem extends Equatable {
   final String productName;
   final String productCode;
   final double quantity;
+  final String? barcode1; // GÜNCELLEME: Barkod alanı eklendi
 
   const BoxItem({
     this.boxId,
@@ -16,10 +17,12 @@ class BoxItem extends Equatable {
     required this.productName,
     required this.productCode,
     required this.quantity,
+    this.barcode1, // GÜNCELLEME: Constructor'a eklendi
   });
 
   @override
-  List<Object?> get props => [boxId, productId, productName, productCode, quantity];
+  // GÜNCELLEME: Eşitlik kontrolü için props listesine eklendi
+  List<Object?> get props => [boxId, productId, productName, productCode, quantity, barcode1];
 
   /// GÜNCELLEME: JSON'dan gelen 'quantity' alanı string veya num olabilir.
   /// Bu durumu yönetmek için daha güvenli bir parse metodu eklendi.
@@ -39,6 +42,7 @@ class BoxItem extends Equatable {
       productName: json['productName'] as String,
       productCode: json['productCode'] as String,
       quantity: parseQuantity(json['quantity']),
+      barcode1: json['barcode1'] as String?, // GÜNCELLEME: JSON'dan okunuyor
     );
   }
 
@@ -49,6 +53,7 @@ class BoxItem extends Equatable {
       productName: map['productName'] as String,
       productCode: map['productCode'] as String,
       quantity: (map['quantity'] as num).toDouble(),
+      barcode1: map['barcode1'] as String?, // GÜNCELLEME: Map'ten okunuyor
     );
   }
 }

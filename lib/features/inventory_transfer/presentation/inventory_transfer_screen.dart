@@ -27,21 +27,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
 
-  // GÜNCELLEME: Lokasyonlar {isim: id} formatında saklanacak.
   Map<String, int> _availableSourceLocations = {};
   String? _selectedSourceLocationName;
   final _sourceLocationController = TextEditingController();
+  final _sourceLocationFocusNode = FocusNode();
 
   Map<String, int> _availableTargetLocations = {};
   String? _selectedTargetLocationName;
   final _targetLocationController = TextEditingController();
+  final _targetLocationFocusNode = FocusNode();
 
   List<dynamic> _availableContainers = [];
   dynamic _selectedContainer;
   final _scannedContainerIdController = TextEditingController();
+  final _containerFocusNode = FocusNode();
 
   List<ProductItem> _productsInContainer = [];
   final Map<int, TextEditingController> _productQuantityControllers = {};
+  final Map<int, FocusNode> _productQuantityFocusNodes = {};
 
   static const double _fieldHeight = 56.0;
   static const double _gap = 16.0;
@@ -62,22 +65,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
+    _sourceLocationFocusNode.dispose();
+    _targetLocationFocusNode.dispose();
+    _containerFocusNode.dispose();
     _clearProductControllers();
     super.dispose();
   }
 
   void _clearProductControllers() {
-    for (var controller in _productQuantityControllers.values) {
-      controller.dispose();
-    }
+    _productQuantityControllers.forEach((_, controller) => controller.dispose());
+    _productQuantityFocusNodes.forEach((_, focusNode) => focusNode.dispose());
     _productQuantityControllers.clear();
+    _productQuantityFocusNodes.clear();
   }
 
   Future<void> _loadInitialData() async {
     if (!mounted) return;
     setState(() => _isLoadingInitialData = true);
     try {
-      // GÜNCELLEME: Repository'den Map<String, int> formatında veri bekleniyor.
       final results = await Future.wait([
         _repo.getSourceLocations(),
         _repo.getTargetLocations(),
@@ -87,6 +92,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _availableSourceLocations = results[0];
         _availableTargetLocations = results[1];
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+      });
     } catch (e) {
       if (mounted) _showSnackBar('Hata: ${e.toString()}', isError: true);
     } finally {
@@ -94,15 +102,90 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
+  Future<void> _processScannedData(String field, String data) async {
+    switch (field) {
+      case 'source':
+        final locationName = _availableSourceLocations.keys.firstWhere(
+                (k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
+        if (locationName.isNotEmpty) {
+          _handleSourceSelection(locationName);
+        } else {
+          _sourceLocationController.clear();
+          _showSnackBar("Geçersiz kaynak lokasyon kodu: $data", isError: true);
+        }
+        break;
+      case 'container':
+        dynamic foundItem;
+        if (_selectedMode == AssignmentMode.pallet) {
+          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id == data, orElse: () => null);
+        } else {
+          // GÜNCELLEME: Kutu modunda hem ürün kodu hem de barkod ile ara.
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere(
+                  (box) => box?.productCode == data || box?.barcode1 == data,
+              orElse: () => null
+          );
+        }
+
+        if (foundItem != null) {
+          _handleContainerSelection(foundItem);
+        } else {
+          _scannedContainerIdController.clear();
+          _showSnackBar("Okutulan ürün/palet listede bulunamadı: $data", isError: true);
+        }
+        break;
+      case 'target':
+        final locationName = _availableTargetLocations.keys.firstWhere(
+                (k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
+        if (locationName.isNotEmpty) {
+          _handleTargetSelection(locationName);
+        } else {
+          _targetLocationController.clear();
+          _showSnackBar("Geçersiz hedef lokasyon kodu: $data", isError: true);
+        }
+        break;
+    }
+  }
+
+  void _handleSourceSelection(String? locationName) {
+    if (locationName == null || locationName == _selectedSourceLocationName) return;
+    setState(() {
+      _selectedSourceLocationName = locationName;
+      _sourceLocationController.text = locationName;
+    });
+    _loadContainersForLocation();
+    _containerFocusNode.requestFocus();
+  }
+
+  Future<void> _handleContainerSelection(dynamic selectedItem) async {
+    if (selectedItem == null) return;
+    setState(() {
+      _selectedContainer = selectedItem;
+      _scannedContainerIdController.text = (selectedItem is BoxItem)
+          ? '${selectedItem.productName} (${selectedItem.productCode})'
+          : selectedItem.toString();
+    });
+    await _fetchContainerContents();
+    if(_productsInContainer.isNotEmpty && _productQuantityFocusNodes.isNotEmpty) {
+      _productQuantityFocusNodes[_productsInContainer.first.id]?.requestFocus();
+    } else {
+      _targetLocationFocusNode.requestFocus();
+    }
+  }
+
+  void _handleTargetSelection(String? locationName) {
+    if (locationName == null) return;
+    setState(() {
+      _selectedTargetLocationName = locationName;
+      _targetLocationController.text = locationName;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+
   Future<void> _loadContainersForLocation() async {
     if (_selectedSourceLocationName == null) return;
-
-    // GÜNCELLEME: Seçilen lokasyon isminden ID'yi al.
     final locationId = _availableSourceLocations[_selectedSourceLocationName];
-    if (locationId == null) {
-      _showSnackBar("Kaynak lokasyon ID'si bulunamadı!", isError: true);
-      return;
-    }
+    if (locationId == null) return;
 
     setState(() {
       _isLoadingContainerContents = true;
@@ -110,7 +193,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     });
     try {
       if (_selectedMode == AssignmentMode.pallet) {
-        // GÜNCELLEME: Metoda isim yerine ID gönder.
         _availableContainers = await _repo.getPalletIdsAtLocation(locationId);
       } else {
         _availableContainers = await _repo.getBoxesAtLocation(locationId);
@@ -144,15 +226,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _productsInContainer = contents;
         for (var product in contents) {
-          // GÜNCELLEME: Tam palet transferi için başlangıç miktarını ürünün mevcut miktarı yap.
-          final initialQty = _selectedMode == AssignmentMode.pallet ? product.currentQuantity : 0;
+          final initialQty = _selectedMode == AssignmentMode.pallet ? product.currentQuantity : 1.0;
           _productQuantityControllers[product.id] = TextEditingController(text: initialQty.toString());
+          _productQuantityFocusNodes[product.id] = FocusNode();
         }
       });
-
-      if (contents.isEmpty) {
-        _showSnackBar('Bu konteynerin içeriği boş veya bulunamadı.', isError: true);
-      }
     } catch (e) {
       if (mounted) _showSnackBar('İçerik yüklenemedi: ${e.toString()}', isError: true);
     } finally {
@@ -175,8 +253,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qty = double.tryParse(qtyText) ?? 0.0;
 
       if (qty > 0) {
-        // Eğer transfer edilen miktar mevcut miktardan az ise, bu tam bir palet transferi değildir.
-        if (qty < product.currentQuantity) {
+        if (qty.toStringAsFixed(2) != product.currentQuantity.toStringAsFixed(2)) {
           isFullPalletTransfer = false;
         }
         itemsToTransfer.add(TransferItemDetail(
@@ -201,7 +278,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
     if (confirm != true) return;
 
-    // GÜNCELLEME: Repo'ya göndermek için ID'leri al.
     final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
     final targetId = _availableTargetLocations[_selectedTargetLocationName!];
 
@@ -220,7 +296,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         transferDate: DateTime.now(),
       );
 
-      // GÜNCELLEME: Metot çağrısına ID'ler eklendi.
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
 
       if (mounted) {
@@ -253,9 +328,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _formKey.currentState?.reset();
+        FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
       });
     });
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -277,25 +354,29 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   children: [
                     _buildModeSelector(),
                     const SizedBox(height: _gap),
-                    _buildSearchableDropdownWithQr<String>(
+                    _buildHybridDropdownWithQr<String>(
                       controller: _sourceLocationController,
-                      label: "Kaynak Lokasyon",
-                      value: _selectedSourceLocationName,
+                      focusNode: _sourceLocationFocusNode,
+                      label: "1. Kaynak Lokasyon",
+                      fieldIdentifier: 'source',
                       items: _availableSourceLocations.keys.toList(),
                       itemToString: (item) => item,
-                      onSelected: (val) {
-                        if (val == null || val == _selectedSourceLocationName) return;
-                        setState(() {
-                          _selectedSourceLocationName = val;
-                          _sourceLocationController.text = val;
-                          _loadContainersForLocation();
-                        });
-                      },
-                      onQrTap: () => _scanQrAndUpdateField('source'),
-                      validator: (val) => (val == null || val.isEmpty) ? 'Bu alan zorunludur.' : null,
+                      onItemSelected: _handleSourceSelection,
                     ),
                     const SizedBox(height: _gap),
-                    _buildContainerSelector(),
+                    _buildHybridDropdownWithQr<dynamic>(
+                      controller: _scannedContainerIdController,
+                      focusNode: _containerFocusNode,
+                      label: "2. ${_selectedMode == AssignmentMode.pallet ? 'Palet' : 'Ürün'}",
+                      fieldIdentifier: 'container',
+                      items: _availableContainers,
+                      itemToString: (item) {
+                        if (item is String) return item;
+                        if (item is BoxItem) return '${item.productName} (${item.productCode})';
+                        return '';
+                      },
+                      onItemSelected: _handleContainerSelection,
+                    ),
                     const SizedBox(height: _smallGap),
                     if (_isLoadingContainerContents)
                       const Padding(
@@ -308,22 +389,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       const SizedBox.shrink(),
 
                     const SizedBox(height: _gap),
-                    _buildSearchableDropdownWithQr<String>(
+                    _buildHybridDropdownWithQr<String>(
                       controller: _targetLocationController,
-                      label: "Hedef Lokasyon",
-                      value: _selectedTargetLocationName,
+                      focusNode: _targetLocationFocusNode,
+                      label: "3. Hedef Lokasyon",
+                      fieldIdentifier: 'target',
                       items: _availableTargetLocations.keys.toList(),
                       itemToString: (item) => item,
-                      onSelected: (val) => setState(() {
-                        _selectedTargetLocationName = val;
-                        _targetLocationController.text = val ?? "";
-                      }),
-                      onQrTap: () => _scanQrAndUpdateField('target'),
-                      validator: (val) {
-                        if (val == null || val.isEmpty) return 'Bu alan zorunludur.';
-                        if (val == _selectedSourceLocationName) return 'Kaynak ile aynı olamaz!';
-                        return null;
-                      },
+                      onItemSelected: _handleTargetSelection,
                     ),
                   ],
                 ),
@@ -332,6 +405,132 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHybridDropdownWithQr<T>({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    required String fieldIdentifier,
+    required List<T> items,
+    required String Function(T item) itemToString,
+    required void Function(T? item) onItemSelected,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: controller,
+            focusNode: focusNode,
+            decoration: _inputDecoration(label, suffixIcon: IconButton(
+              icon: const Icon(Icons.arrow_drop_down),
+              tooltip: 'Listeden Seç',
+              onPressed: () async {
+                final T? selectedItem = await _showSearchableDropdownDialog<T>(
+                  title: label,
+                  items: items,
+                  itemToString: itemToString,
+                );
+                if (selectedItem != null) {
+                  onItemSelected(selectedItem);
+                }
+              },
+            )),
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedData(fieldIdentifier, value);
+              }
+            },
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Bu alan zorunludur.';
+              if (fieldIdentifier == 'target' && val == _sourceLocationController.text) {
+                return 'Kaynak ile aynı olamaz!';
+              }
+              return null;
+            },
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+          ),
+        ),
+        const SizedBox(width: _smallGap),
+        _QrButton(
+            onTap: () async {
+              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+              if (result != null && result.isNotEmpty) {
+                controller.text = result;
+                _processScannedData(fieldIdentifier, result);
+              }
+            },
+            size: _fieldHeight
+        ),
+      ],
+    );
+  }
+
+  Future<T?> _showSearchableDropdownDialog<T>({
+    required String title,
+    required List<T> items,
+    required String Function(T) itemToString,
+  }) {
+    return showDialog<T>(
+      context: context,
+      builder: (dialogContext) {
+        final filteredItems = ValueNotifier<List<T>>(items);
+        return AlertDialog(
+          title: Text(title),
+          contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 5),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15.0),
+                  child: TextField(
+                    autofocus: true,
+                    decoration: _inputDecoration('Ara...').copyWith(prefixIcon: const Icon(Icons.search)),
+                    onChanged: (value) {
+                      filteredItems.value = items
+                          .where((item) => itemToString(item)
+                          .toLowerCase()
+                          .contains(value.toLowerCase()))
+                          .toList();
+                    },
+                  ),
+                ),
+                const SizedBox(height: _gap),
+                Flexible(
+                  child: ValueListenableBuilder<List<T>>(
+                    valueListenable: filteredItems,
+                    builder: (context, value, child) {
+                      return value.isEmpty
+                          ? const Center(child: Text('Sonuç bulunamadı.'))
+                          : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: value.length,
+                        itemBuilder: (context, index) {
+                          final item = value[index];
+                          return ListTile(
+                            title: Text(itemToString(item)),
+                            onTap: () => Navigator.of(dialogContext).pop(item),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('İptal'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -362,34 +561,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildContainerSelector() {
-    String label = _selectedMode == AssignmentMode.pallet ? 'Palet Seç/Oku' : 'Ürün Seç/Oku';
-    return _buildSearchableDropdownWithQr<dynamic>(
-      controller: _scannedContainerIdController,
-      label: label,
-      value: _selectedContainer,
-      items: _availableContainers,
-      itemToString: (item) {
-        if (item is String) return item;
-        if (item is BoxItem) return '${item.productName} (${item.productCode})';
-        return '';
-      },
-      onSelected: (val) {
-        if (val != null) {
-          setState(() {
-            _selectedContainer = val;
-            _scannedContainerIdController.text = (val is BoxItem) ? '${val.productName} (${val.productCode})' : (val as String);
-            _fetchContainerContents();
-          });
-        }
-      },
-      onQrTap: () => _scanQrAndUpdateField('scannedId'),
-      validator: (value) => (_scannedContainerIdController.text.isEmpty) ? 'Bu alan zorunludur.' : null,
-    );
-  }
-
   Widget _buildProductsList() {
-    // İçerik listesini bir Column içinde oluşturup, dışarıdan SingleChildScrollView ile sarmala
     return Container(
       margin: const EdgeInsets.only(top: _smallGap),
       decoration: BoxDecoration(
@@ -407,18 +579,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               'İçerik: ${_scannedContainerIdController.text}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-
           ),
           const Divider(height: 1, thickness: 0.5),
           ListView.separated(
-            shrinkWrap: true, // Önemli: SingleChildScrollView içinde shrinkWrap true olmalı.
-            physics: const NeverScrollableScrollPhysics(), // Kaydırmayı dış widget yapacak.
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.all(_smallGap),
             itemCount: _productsInContainer.length,
             separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
               final controller = _productQuantityControllers[product.id]!;
+              final focusNode = _productQuantityFocusNodes[product.id]!;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
@@ -438,6 +610,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       width: 100,
                       child: TextFormField(
                         controller: controller,
+                        focusNode: focusNode,
                         textAlign: TextAlign.center,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
@@ -449,6 +622,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           if (qty > product.currentQuantity) return 'Max!';
                           if (qty < 0) return 'Negatif!';
                           return null;
+                        },
+                        onFieldSubmitted: (value) {
+                          final productIds = _productQuantityFocusNodes.keys.toList();
+                          final currentIndex = productIds.indexOf(product.id);
+                          if (currentIndex < productIds.length - 1) {
+                            _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+                          } else {
+                            _targetLocationFocusNode.requestFocus();
+                          }
                         },
                         autovalidateMode: AutovalidateMode.onUserInteraction,
                       ),
@@ -482,77 +664,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
-    );
-  }
-
-  Future<void> _scanQrAndUpdateField(String fieldIdentifier) async {
-    final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-    if (result == null || result.isEmpty || !mounted) return;
-
-    setState(() {
-      if (fieldIdentifier == 'source') {
-        if (_availableSourceLocations.containsKey(result)) {
-          _selectedSourceLocationName = result;
-          _sourceLocationController.text = result;
-          _loadContainersForLocation();
-        } else {
-          _showSnackBar("Geçersiz lokasyon kodu.", isError: true);
-        }
-      } else if (fieldIdentifier == 'target') {
-        if (_availableTargetLocations.containsKey(result)) {
-          _selectedTargetLocationName = result;
-          _targetLocationController.text = result;
-        } else {
-          _showSnackBar("Geçersiz lokasyon kodu.", isError: true);
-        }
-      } else if (fieldIdentifier == 'scannedId') {
-        dynamic foundItem;
-        if (_selectedMode == AssignmentMode.pallet) {
-          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id == result, orElse: () => null);
-        } else {
-          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode == result, orElse: () => null);
-        }
-
-        if(foundItem != null) {
-          _selectedContainer = foundItem;
-          _scannedContainerIdController.text = (foundItem is BoxItem) ? '${foundItem.productName} (${foundItem.productCode})' : foundItem;
-          _fetchContainerContents();
-        } else {
-          _showSnackBar("Okutulan kod listede bulunamadı.", isError: true);
-        }
-      }
-    });
-    _formKey.currentState?.validate();
-  }
-
-  InputDecoration _inputDecoration(String labelText, {Widget? suffixIcon, bool filled = false}) {
-    return InputDecoration(
-      labelText: labelText,
-      border: OutlineInputBorder(borderRadius: _borderRadius),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Theme.of(context).dividerColor),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 1.5),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
-      ),
-      filled: filled,
-      fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
-      suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(fontSize: 10, height: 0.8),
-      helperText: ' ',
-      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
     );
   }
 
@@ -600,110 +711,34 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     ));
   }
 
-  Widget _buildSearchableDropdownWithQr<T>({
-    required TextEditingController controller,
-    required String label,
-    required T? value,
-    required List<T> items,
-    required String Function(T) itemToString,
-    required void Function(T?) onSelected,
-    required VoidCallback onQrTap,
-    String? Function(String?)? validator,
-  }) {
-    return SizedBox(
-      height: _fieldHeight + 24,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: controller,
-              readOnly: true,
-              decoration: _inputDecoration(label, filled: true, suffixIcon: const Icon(Icons.arrow_drop_down)),
-              onTap: () async {
-                final T? selectedItem = await _showSearchableDropdownDialog<T>(
-                  title: label,
-                  items: items,
-                  itemToString: itemToString,
-                );
-                if (selectedItem != null) {
-                  onSelected(selectedItem);
-                }
-              },
-              validator: validator,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-            ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(onTap: onQrTap, size: _fieldHeight),
-        ],
+  InputDecoration _inputDecoration(String labelText, {Widget? suffixIcon, bool filled = false}) {
+    return InputDecoration(
+      labelText: labelText,
+      border: OutlineInputBorder(borderRadius: _borderRadius),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: _borderRadius,
+        borderSide: BorderSide(color: Theme.of(context).dividerColor),
       ),
-    );
-  }
-
-  Future<T?> _showSearchableDropdownDialog<T>({
-    required String title,
-    required List<T> items,
-    required String Function(T) itemToString,
-  }) {
-    return showDialog<T>(
-      context: context,
-      builder: (dialogContext) {
-        final filteredItems = ValueNotifier<List<T>>(items);
-        return AlertDialog(
-          title: Text(title),
-          contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 5),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15.0),
-                  child: TextField(
-                    autofocus: true,
-                    decoration: _inputDecoration('Ara...').copyWith(prefixIcon: const Icon(Icons.search)),
-                    onChanged: (value) {
-                      filteredItems.value = items
-                          .where((item) => itemToString(item)
-                          .toLowerCase()
-                          .contains(value.toLowerCase()))
-                          .toList();
-                    },
-                  ),
-                ),
-                const SizedBox(height: _gap),
-                Flexible( // Genişletilmiş yerine Flexible kullanıldı
-                  child: ValueListenableBuilder<List<T>>(
-                    valueListenable: filteredItems,
-                    builder: (context, value, child) {
-                      return value.isEmpty
-                          ? const Center(child: Text('Sonuç bulunamadı.'))
-                          : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: value.length,
-                        itemBuilder: (context, index) {
-                          final item = value[index];
-                          return ListTile(
-                            title: Text(itemToString(item)),
-                            onTap: () => Navigator.of(dialogContext).pop(item),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              child: const Text('İptal'),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-          ],
-        );
-      },
+      focusedBorder: OutlineInputBorder(
+        borderRadius: _borderRadius,
+        borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2.0),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: _borderRadius,
+        borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 1.5),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: _borderRadius,
+        borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
+      ),
+      filled: filled,
+      fillColor: filled ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha((255 * 0.3).round()) : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: (_fieldHeight - 24) / 2),
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
+      suffixIcon: suffixIcon,
+      errorStyle: const TextStyle(fontSize: 10, height: 0.8),
+      helperText: ' ',
+      helperStyle: const TextStyle(fontSize: 0, height: 0.01),
     );
   }
 }
@@ -711,6 +746,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
+
   const _QrButton({required this.onTap, required this.size});
 
   @override
