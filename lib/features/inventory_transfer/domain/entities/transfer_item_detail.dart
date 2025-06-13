@@ -1,6 +1,5 @@
-// lib/features/pallet_assignment/domain/entities/transfer_item_detail.dart
-import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
-import 'package:flutter/foundation.dart'; // For @immutable and @override
+// lib/features/inventory_transfer/domain/entities/transfer_item_detail.dart
+import 'package:flutter/foundation.dart';
 
 @immutable
 class TransferItemDetail {
@@ -9,7 +8,8 @@ class TransferItemDetail {
   final int productId;
   final String productName;
   final String productCode;
-  final int quantity;
+  // Miktar ondalıklı olabilir, double olarak güncellendi.
+  final double quantity;
   final String? sourcePalletBarcode;
   final String? targetPalletBarcode;
 
@@ -24,6 +24,32 @@ class TransferItemDetail {
     this.targetPalletBarcode,
   });
 
+  /// Değişikliklere izin veren copyWith metodu eklendi.
+  TransferItemDetail copyWith({
+    int? id,
+    int? operationId,
+    int? productId,
+    String? productName,
+    String? productCode,
+    double? quantity,
+    String? sourcePalletBarcode,
+    // Null atanabilmesine olanak tanımak için `targetPalletBarcode`
+    // direkt olarak kullanılır.
+    dynamic targetPalletBarcode,
+  }) {
+    return TransferItemDetail(
+      id: id ?? this.id,
+      operationId: operationId ?? this.operationId,
+      productId: productId ?? this.productId,
+      productName: productName ?? this.productName,
+      productCode: productCode ?? this.productCode,
+      quantity: quantity ?? this.quantity,
+      sourcePalletBarcode: sourcePalletBarcode ?? this.sourcePalletBarcode,
+      targetPalletBarcode: targetPalletBarcode,
+    );
+  }
+
+  // Diğer metodlar double tipine göre güncellendi.
   Map<String, dynamic> toMap() {
     return {
       if (id != null) 'id': id,
@@ -42,46 +68,9 @@ class TransferItemDetail {
       productId: (map['product_id'] as num?)?.toInt() ?? 0,
       productName: map['product_name'] as String? ?? '',
       productCode: map['product_code'] as String? ?? '',
-      quantity: map['quantity'] as int? ?? 0,
+      quantity: (map['quantity'] as num?)?.toDouble() ?? 0.0,
       sourcePalletBarcode: map['source_pallet_barcode'] as String?,
       targetPalletBarcode: map['target_pallet_barcode'] as String?,
     );
   }
-
-  factory TransferItemDetail.fromProductItem(ProductItem item, {int? quantity, int? operationId}) {
-    return TransferItemDetail(
-      operationId: operationId,
-      productId: item.id,
-      productName: item.name,
-      productCode: item.productCode,
-      quantity: quantity ?? item.currentQuantity,
-      sourcePalletBarcode: null,
-      targetPalletBarcode: null,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is TransferItemDetail &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              operationId == other.operationId &&
-              productId == other.productId &&
-              productName == other.productName &&
-              productCode == other.productCode &&
-              quantity == other.quantity &&
-              sourcePalletBarcode == other.sourcePalletBarcode &&
-              targetPalletBarcode == other.targetPalletBarcode;
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      operationId.hashCode ^
-      productId.hashCode ^
-      productName.hashCode ^
-      productCode.hashCode ^
-      quantity.hashCode ^
-      sourcePalletBarcode.hashCode ^
-      targetPalletBarcode.hashCode;
 }

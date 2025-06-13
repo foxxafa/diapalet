@@ -1,17 +1,19 @@
-// lib/features/pallet_assignment/domain/entities/box_item.dart
-import 'package:flutter/foundation.dart';
+// lib/features/inventory_transfer/domain/entities/box_item.dart
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 
 @immutable
 class BoxItem extends Equatable {
-  final int boxId;
+  // Bu ID her zaman mevcut olmayabilir, bu yüzden nullable yapıldı.
+  final int? boxId;
   final int productId;
   final String productName;
   final String productCode;
-  final int quantity;
+  // Miktar ondalıklı olabilir, double olarak güncellendi.
+  final double quantity;
 
   const BoxItem({
-    required this.boxId,
+    this.boxId,
     required this.productId,
     required this.productName,
     required this.productCode,
@@ -19,15 +21,27 @@ class BoxItem extends Equatable {
   });
 
   @override
-  List<Object> get props => [boxId, productId, productName, productCode, quantity];
+  List<Object?> get props => [boxId, productId, productName, productCode, quantity];
 
-  factory BoxItem.fromMap(Map<String, dynamic> map) {
+  /// API'den gelen JSON verisini parse eder.
+  factory BoxItem.fromJson(Map<String, dynamic> json) {
     return BoxItem(
-      boxId: map['box_id'] as int,
-      productId: map['urun_id'] as int,
-      productName: (map['product_name'] ?? '').toString(),
-      productCode: (map['product_code'] ?? '').toString(),
-      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+      // API'den gelen yanıtta 'boxId' olmayabilir.
+      productId: json['productId'] as int,
+      productName: json['productName'] as String,
+      productCode: json['productCode'] as String,
+      quantity: (json['quantity'] as num).toDouble(),
+    );
+  }
+
+  /// Lokal veritabanından gelen map verisini parse eder.
+  factory BoxItem.fromDbMap(Map<String, dynamic> map) {
+    return BoxItem(
+      // Veritabanı sorgusunda 'boxId' olmayabilir.
+      productId: map['productId'] as int,
+      productName: map['productName'] as String,
+      productCode: map['productCode'] as String,
+      quantity: (map['quantity'] as num).toDouble(),
     );
   }
 }
