@@ -1,8 +1,11 @@
 // lib/core/network/api_config.dart
 class ApiConfig {
   /// The root host for the backend service. **Do NOT** add a trailing slash here.
-  /// Android emülatörü için 'localhost' yerine bu IP kullanılır.
-  static const String _host = 'http://10.0.2.2:5000';
+  /// GÜNCELLEME: Fiziksel bir cihazdan (Unitech terminal gibi) sunucuya erişmek için,
+  /// geliştirme bilgisayarının yerel ağ IP adresi kullanılır.
+  /// Android emülatörü için '10.0.2.2' kullanılırken, ağdaki fiziksel cihazlar için
+  /// 'ipconfig' veya 'ifconfig' komutuyla bulunan IP adresi yazılmalıdır.
+  static const String _host = 'http://192.168.45.133:5000';
 
   /// Public getter for the host.
   static String get host => _host;
@@ -10,7 +13,7 @@ class ApiConfig {
   /// API version segment. Update this when the backend version changes.
   static const String apiVersion = 'v1';
 
-  /// Full base url composed of host and api version, e.g. `http://10.0.2.2:5000/v1`.
+  /// Full base url composed of host and api version, e.g. `http://192.168.45.133:5000/v1`.
   static String get baseUrl => '$host/$apiVersion';
 
   /// Same as [baseUrl] but guaranteed **not** to end with a trailing `/`.

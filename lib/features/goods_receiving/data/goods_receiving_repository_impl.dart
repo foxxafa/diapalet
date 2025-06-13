@@ -58,8 +58,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     // Online-first: Önce API'den çekmeyi dene.
     if (await networkInfo.isConnected) {
       try {
-        // Flask endpoint'i şu anda sorgu (query) desteklemiyor, tümünü çekiyor.
-        // Gerekirse endpoint'e query parametresi eklenebilir.
         final response = await dio.get(ApiConfig.productsDropdown);
         if (response.data is List) {
           final products = (response.data as List)
@@ -148,130 +146,46 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<LocationInfo>> getLocations() async {
-    // Lokasyonlar genellikle sabit olduğu için lokalden çekmek daha performanslı olabilir.
-    // İstenirse bu da online-first yapılabilir.
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query('locations');
     return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
   }
 
 
-  /// --- DATA SAVING AND SYNC LOGIC ---
+  /// --- DATA SAVING (ONLINE-ONLY) ---
 
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
-    final isConnected = await networkInfo.isConnected;
-
-    if (isConnected) {
-      try {
-        debugPrint("Online mod: Mal kabul API'ye gönderiliyor...");
-        // Flask sunucusu /v1/goods-receipts endpoint'ini bekliyor.
-        await dio.post(ApiConfig.goodsReceipts, data: payload.toApiJson());
-
-        // API'ye başarıyla kaydedildikten sonra, UI'ın güncel kalması için
-        // lokal veritabanını da hemen güncelliyoruz.
-        // Bir sonraki senkronizasyonda bu veri sunucudan tekrar gelecektir,
-        // bu geçici bir UI güncellemesidir.
-        await _updateLocalStockAndOrderStatus(payload);
-        debugPrint("API çağrısı başarılı. Lokal stok ve sipariş durumu güncellendi.");
-
-      } on DioException catch (e) {
-        debugPrint("API çağrısı başarısız oldu: ${e.message}. İşlem sıraya alınıyor.");
-        await _saveAsPendingOperation(payload);
-      } catch (e) {
-        debugPrint("Beklenmedik bir hata oluştu: $e. İşlem sıraya alınıyor.");
-        await _saveAsPendingOperation(payload);
-      }
-    } else {
-      debugPrint("Offline mod: İşlem senkronizasyon için sıraya alınıyor.");
-      await _saveAsPendingOperation(payload);
-    }
-  }
-
-  Future<void> _saveAsPendingOperation(GoodsReceiptPayload payload) async {
-    final db = await dbHelper.database;
-    await db.transaction((txn) async {
-      final operation = PendingOperation(
-          id: 0,
-          operationType: 'goods_receipt',
-          // JSON'a çevrilmiş payload'u string olarak saklıyoruz.
-          operationData: payload.toApiJson(),
-          createdAt: DateTime.now(),
-          status: 'pending',
-          tableName: 'goods_receipts' // Bu alan bilgi amaçlıdır
-      );
-      await txn.insert('pending_operation', operation.toMapForDb());
-
-      // Offline durumda da stokların lokalde güncel görünmesi için bu işlemi yapıyoruz.
-      await _updateLocalStockAndOrderStatus(payload, txn: txn);
-    });
-    debugPrint("Mal kabul işlemi sıraya alındı ve lokal stok/sipariş durumu güncellendi.");
-  }
-
-  /// Hem lokal stoğu günceller hem de ilgili siparişin durumunu 'tamamlandı' yapar.
-  Future<void> _updateLocalStockAndOrderStatus(GoodsReceiptPayload payload, {DatabaseExecutor? txn}) async {
-    final db = txn ?? await dbHelper.database;
-
-    // Stokları güncelle
-    for (final item in payload.items) {
-      await _upsertStock(
-        db,
-        urunId: item.urunId,
-        locationId: malKabulLocationId,
-        qtyChange: item.quantity,
-        palletBarcode: item.palletBarcode,
-      );
+    // GÜNCELLEME: Sadece online modda çalışacak şekilde yeniden düzenlendi.
+    // Lokal veritabanı işlemleri (offline'a kaydetme, lokal stoğu güncelleme)
+    // geçici olarak kaldırıldı.
+    if (!await networkInfo.isConnected) {
+      throw Exception("İnternet bağlantısı yok. Mal Kabul işlemi yalnızca online modda yapılabilir.");
     }
 
-    // Sipariş durumunu güncelle
-    if (payload.header.siparisId != null) {
-      await db.update(
-        'satin_alma_siparis_fis',
-        {'status': 1, 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [payload.header.siparisId],
-      );
-    }
-  }
+    try {
+      debugPrint("Online mod: Mal kabul API'ye gönderiliyor: ${jsonEncode(payload.toApiJson())}");
+      final response = await dio.post(ApiConfig.goodsReceipts, data: payload.toApiJson());
 
-  Future<void> _upsertStock(
-      DatabaseExecutor txn, {
-        required int urunId,
-        required int locationId,
-        required double qtyChange,
-        String? palletBarcode,
-      }) async {
-    final palletWhereClause = palletBarcode != null ? "pallet_barcode = ?" : "pallet_barcode IS NULL";
-    final whereArgs = palletBarcode != null ? [urunId, locationId, palletBarcode] : [urunId, locationId];
-
-    final List<Map<String, dynamic>> existing = await txn.query(
-      'inventory_stock',
-      where: 'urun_id = ? AND location_id = ? AND $palletWhereClause',
-      whereArgs: whereArgs,
-    );
-
-    if (existing.isNotEmpty) {
-      final currentQty = (existing.first['quantity'] as num).toDouble();
-      final newQty = currentQty + qtyChange;
-
-      if (newQty > 0.001) {
-        await txn.update(
-          'inventory_stock',
-          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint("Mal kabul işlemi başarıyla API'ye gönderildi.");
+        // Lokal veritabanına dokunmuyoruz.
       } else {
-        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
+        // API'den 2xx dışında bir status kodu gelirse hata fırlat.
+        final errorDetail = response.data is Map ? response.data['error'] : response.data;
+        debugPrint("API Hatası: Sunucu ${response.statusCode} koduyla yanıt verdi. Yanıt: $errorDetail");
+        throw Exception("Sunucu hatası (${response.statusCode}): $errorDetail");
       }
-    } else if (qtyChange > 0) {
-      await txn.insert('inventory_stock', {
-        'urun_id': urunId,
-        'location_id': locationId,
-        'quantity': qtyChange,
-        'pallet_barcode': palletBarcode,
-        'updated_at': DateTime.now().toIso8601String(),
-      });
+    } on DioException catch (e) {
+      // Dio kaynaklı hataları (network, timeout vb.) yakala ve daha anlaşılır bir hata fırlat.
+      final errorDetail = e.response?.data is Map ? e.response?.data['error'] : e.response?.data;
+      debugPrint("Dio Hatası: ${e.message}. Sunucu Yanıtı: $errorDetail");
+      throw Exception("Ağ hatası: Sunucuya ulaşılamadı. Detay: ${errorDetail ?? e.message}");
+    } catch (e) {
+      // Diğer beklenmedik hataları yakala.
+      debugPrint("Beklenmedik bir hata oluştu: $e");
+      throw Exception("İşlem sırasında beklenmedik bir hata oluştu: $e");
     }
   }
 }
+

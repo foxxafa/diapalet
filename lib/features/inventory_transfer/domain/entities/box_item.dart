@@ -4,12 +4,10 @@ import 'package:flutter/foundation.dart';
 
 @immutable
 class BoxItem extends Equatable {
-  // Bu ID her zaman mevcut olmayabilir, bu yüzden nullable yapıldı.
   final int? boxId;
   final int productId;
   final String productName;
   final String productCode;
-  // Miktar ondalıklı olabilir, double olarak güncellendi.
   final double quantity;
 
   const BoxItem({
@@ -23,21 +21,30 @@ class BoxItem extends Equatable {
   @override
   List<Object?> get props => [boxId, productId, productName, productCode, quantity];
 
-  /// API'den gelen JSON verisini parse eder.
+  /// GÜNCELLEME: JSON'dan gelen 'quantity' alanı string veya num olabilir.
+  /// Bu durumu yönetmek için daha güvenli bir parse metodu eklendi.
   factory BoxItem.fromJson(Map<String, dynamic> json) {
+    // String veya num olabilecek bir değeri güvenli bir şekilde double'a çevirir.
+    double parseQuantity(dynamic val) {
+      if (val == null) return 0.0;
+      if (val is double) return val;
+      if (val is int) return val.toDouble();
+      if (val is String) return double.tryParse(val) ?? 0.0;
+      // Beklenmedik bir tip gelirse (örn: Decimal'dan dönen nesne) toString ile dener.
+      return double.tryParse(val.toString()) ?? 0.0;
+    }
+
     return BoxItem(
-      // API'den gelen yanıtta 'boxId' olmayabilir.
       productId: json['productId'] as int,
       productName: json['productName'] as String,
       productCode: json['productCode'] as String,
-      quantity: (json['quantity'] as num).toDouble(),
+      quantity: parseQuantity(json['quantity']),
     );
   }
 
   /// Lokal veritabanından gelen map verisini parse eder.
   factory BoxItem.fromDbMap(Map<String, dynamic> map) {
     return BoxItem(
-      // Veritabanı sorgusunda 'boxId' olmayabilir.
       productId: map['productId'] as int,
       productName: map['productName'] as String,
       productCode: map['productCode'] as String,
