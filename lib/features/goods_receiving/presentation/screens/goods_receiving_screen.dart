@@ -544,14 +544,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           selected: {_receivingMode},
           onSelectionChanged: (newSelection) {
             if (_isSaving) return;
-            if (_addedItems.isNotEmpty) {
-              _showErrorSnackBar('goods_receiving_screen.error_change_mode'.tr());
-              return;
-            }
+            // Kullanıcının talebi üzerine: Mod değiştirirken uyarı verme, listeyi temizle ve devam et.
             setState(() {
+              _addedItems.clear();
+              _clearEntryFields(clearPallet: true); // Palet, ürün ve miktar alanlarını temizler.
               _receivingMode = newSelection.first;
-              if (_selectedOrder == null) {
-                _resetScreenForNewOrder();
+
+              // Eğer bir sipariş zaten seçiliyse, yeni moda uygun alana odaklan.
+              // Değilse, sipariş seçme alanına odaklan.
+              if (_selectedOrder != null) {
+                _setInitialFocusAfterOrderLoad();
+              } else {
+                _orderFocusNode.requestFocus();
               }
             });
           },

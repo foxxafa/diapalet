@@ -181,13 +181,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           : selectedItem.toString();
     });
     await _fetchContainerContents();
-    if (_productsInContainer.isNotEmpty &&
-        _productQuantityFocusNodes.isNotEmpty) {
-      _productQuantityFocusNodes[_productsInContainer.first.id]
-          ?.requestFocus();
-    } else {
-      _targetLocationFocusNode.requestFocus();
-    }
+    // After fetching contents, focus on the target location.
+    _targetLocationFocusNode.requestFocus();
   }
 
   void _handleTargetSelection(String? locationName) {
@@ -452,8 +447,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   _buildHybridDropdownWithQr<dynamic>(
                     controller: _scannedContainerIdController,
                     focusNode: _containerFocusNode,
-                    label:
-                        "2. ${_selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr()}",
+                    label: _selectedMode == AssignmentMode.pallet
+                        ? 'inventory_transfer.label_pallet'.tr()
+                        : 'inventory_transfer.label_product'.tr(),
                     fieldIdentifier: 'container',
                     items: _availableContainers,
                     itemToString: (item) {
@@ -613,6 +609,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       items: items,
                       itemToString: itemToString,
                       filterCondition: filterCondition,
+                      itemFontSize: labelFontSize,
                     );
                     if (selectedItem != null) {
                       onItemSelected(selectedItem);
@@ -725,7 +722,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                                     namedArgs: {
                                       'productCode': product.productCode,
                                       'quantity':
-                                          product.currentQuantity.toString()
+                                      product.currentQuantity.toString()
                                     }),
                                 style:
                                 TextStyle(fontSize: textFontSize * 0.9)),
@@ -872,6 +869,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required List<T> items,
     required String Function(T) itemToString,
     required bool Function(T, String) filterCondition,
+    required double itemFontSize,
   }) {
     String searchQuery = '';
 
@@ -883,79 +881,80 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             final filteredItems =
             items.where((item) => filterCondition(item, searchQuery)).toList();
 
-            return Padding(
-              padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                  top: 40,
-                  left: 16,
-                  right: 16),
-              child: Center(
-                child: Material(
-                  borderRadius: _borderRadius,
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    width: double.maxFinite,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(title,
-                            style: Theme.of(context).textTheme.headlineSmall),
-                        const SizedBox(height: _gap),
-                        TextField(
-                          autofocus: true,
-                          decoration: InputDecoration(
-                            hintText: 'inventory_transfer.dialog_search_hint'.tr(),
-                            prefixIcon: const Icon(Icons.search),
-                            border:
-                            OutlineInputBorder(borderRadius: _borderRadius),
-                          ),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              searchQuery = value;
-                            });
-                          },
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28)),
+              title:
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              titlePadding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+              contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Column(
+                  children: <Widget>[
+                    SizedBox(
+                      height: 40,
+                      child: TextField(
+                        autofocus: true,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText:
+                          'inventory_transfer.dialog_search_hint'.tr(),
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          border:
+                          OutlineInputBorder(borderRadius: _borderRadius),
+                          contentPadding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
                         ),
-                        const SizedBox(height: _gap),
-                        Expanded(
-                          child: filteredItems.isEmpty
-                              ? Center(
-                                  child: Text(
-                                      'inventory_transfer.dialog_search_no_results'
-                                          .tr()))
-                              : ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: filteredItems.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredItems[index];
-                              return ListTile(
-                                title: Text(itemToString(item)),
-                                onTap: () =>
-                                    Navigator.of(dialogContext).pop(item),
-                              );
-                            },
-                          ),
-                        ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            child: Text(
-                                'inventory_transfer.dialog_button_cancel'.tr()),
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(),
-                          ),
-                        ),
-                      ],
+                        onChanged: (value) {
+                          setDialogState(() {
+                            searchQuery = value;
+                          });
+                        },
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: _gap),
+                    Expanded(
+                      child: filteredItems.isEmpty
+                          ? Center(
+                          child: Text(
+                              'inventory_transfer.dialog_search_no_results'
+                                  .tr()))
+                          : ListView.builder(
+                        itemCount: filteredItems.length,
+                        itemBuilder: (context, index) {
+                          final item = filteredItems[index];
+                          return ListTile(
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 2.0),
+                            title: Text(itemToString(item),
+                                style: TextStyle(fontSize: itemFontSize)),
+                            onTap: () =>
+                                Navigator.of(dialogContext).pop(item),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text(
+                      'inventory_transfer.dialog_button_cancel'.tr()),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+              ],
             );
           },
         );
       },
     );
   }
+
 
   Future<bool?> _showConfirmationDialog(
       List<TransferItemDetail> items, AssignmentMode mode) async {
@@ -986,9 +985,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       return Text(
                           'inventory_transfer.dialog_confirm_transfer_item'
                               .tr(namedArgs: {
-                        'productName': item.productName,
-                        'quantity': item.quantity.toString()
-                      }));
+                            'productName': item.productName,
+                            'quantity': item.quantity.toString()
+                          }));
                     },
                   ),
                 ),
