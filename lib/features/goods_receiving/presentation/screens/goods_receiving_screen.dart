@@ -52,6 +52,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   final _productFocusNode = FocusNode();
   final _quantityFocusNode = FocusNode();
 
+  // --- Donanım Tarayıcı Buffer ---
+  final List<String> _barcodeBuffer = [];
+  DateTime? _lastScanTime;
+  final Duration _bufferTimeout = const Duration(milliseconds: 100);
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +75,43 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _productFocusNode.dispose();
     _quantityFocusNode.dispose();
     super.dispose();
+  }
+
+  // --- DONANIM TARAYICI OLAY DİNLEYİCİSİ ---
+  void _onKeyEvent(RawKeyEvent event) {
+    if (event is! RawKeyDownEvent) return;
+
+    // Eğer ürün alanı odaklıysa, onFieldSubmitted halledeceği için bu dinleyiciyi pas geç.
+    // readOnly olmayan alanlar klavye olaylarını kendileri yönetir.
+    if (_productFocusNode.hasFocus) return;
+
+    final now = DateTime.now();
+    if (_lastScanTime != null && now.difference(_lastScanTime!) > _bufferTimeout) {
+      _barcodeBuffer.clear();
+    }
+    _lastScanTime = now;
+
+    if (event.logicalKey == LogicalKeyboardKey.enter) {
+      if (_barcodeBuffer.isEmpty) return;
+
+      final scannedData = _barcodeBuffer.join().trim();
+      _barcodeBuffer.clear();
+
+      if (scannedData.isEmpty) return;
+
+      // Odaklanmış alana göre işlemi yönlendir.
+      // setState içinde çalıştırarak UI güncellemelerini garantile.
+      setState(() {
+        if (_palletIdFocusNode.hasFocus) {
+          _palletIdController.text = scannedData;
+          _productFocusNode.requestFocus();
+        }
+      });
+
+    } else if (event.character != null && event.character!.isNotEmpty) {
+      // Sadece yazdırılabilir karakterleri buffer'a ekle
+      _barcodeBuffer.add(event.character!);
+    }
   }
 
   // --- VERİ YÜKLEME ---
@@ -101,7 +143,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _addedItems.clear();
       _orderItems = [];
       _isOrderDetailsLoading = true;
-      _clearEntryFields();
+      _clearEntryFields(clearPallet: true);
     });
     _loadOrderDetails(order.id);
   }
@@ -121,13 +163,22 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     } finally {
       if (mounted) {
         setState(() => _isOrderDetailsLoading = false);
-        if (_receivingMode == ReceivingMode.palet) {
-          _palletIdFocusNode.requestFocus();
-        } else {
-          _productFocusNode.requestFocus();
-        }
+        _setInitialFocusAfterOrderLoad();
       }
     }
+  }
+
+  void _setInitialFocusAfterOrderLoad() {
+    // GÜNCELLEME: requestFocus'u bir sonraki frame'e erteleyerek
+    // widget ağacının hazır olmasını garantiliyoruz.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_receivingMode == ReceivingMode.palet) {
+        _palletIdFocusNode.requestFocus();
+      } else {
+        _productFocusNode.requestFocus();
+      }
+    });
   }
 
   // --- BARKOD/ÜRÜN İŞLEME ---
@@ -193,7 +244,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
 
       final alreadyAddedInUI = _addedItems
-          .where((item) => item.product.id == _selectedProduct!.id)
+          .where((item) => item.product.id == _selectedProduct!.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
           .map((item) => item.quantity)
           .fold(0.0, (prev, qty) => prev + qty);
 
@@ -222,9 +273,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
-    final String addedProductName = _selectedProduct!.name;
-    final PurchaseOrder? savedOrder = _selectedOrder;
-    final String savedOrderText = _orderController.text;
+    final addedProductName = _selectedProduct!.name;
 
     setState(() {
       _addedItems.insert(
@@ -238,15 +287,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ),
       );
 
-      _formKey.currentState?.reset();
-      _clearEntryFields();
-
-      _selectedOrder = savedOrder;
-      _orderController.text = savedOrderText;
+      _clearEntryFields(clearPallet: false);
     });
 
     _showSuccessSnackBar('goods_receiving_screen.success_item_added'
         .tr(namedArgs: {'productName': addedProductName}));
+
     _productFocusNode.requestFocus();
   }
 
@@ -267,6 +313,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
     if (_selectedOrder == null) {
       _showErrorSnackBar('goods_receiving_screen.error_select_order'.tr());
+      _orderFocusNode.requestFocus();
       return;
     }
 
@@ -274,11 +321,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (confirmed != true) return;
 
     setState(() => _isSaving = true);
+
+    final currentOrder = _selectedOrder!;
+
     try {
       final payload = GoodsReceiptPayload(
         header: GoodsReceiptHeader(
-          siparisId: _selectedOrder!.id,
-          invoiceNumber: _selectedOrder!.poId,
+          siparisId: currentOrder.id,
+          invoiceNumber: currentOrder.poId,
           receiptDate: DateTime.now(),
         ),
         items: _addedItems
@@ -293,7 +343,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
       if (mounted) {
         _showSuccessSnackBar('goods_receiving_screen.success_receipt_saved'.tr());
-        _resetScreen();
+        _handleSuccessfulSave(currentOrder.id);
       }
     } catch (e) {
       if (mounted) {
@@ -305,23 +355,31 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  void _clearEntryFields() {
+  void _handleSuccessfulSave(int savedOrderId) {
+    setState(() {
+      _addedItems.clear();
+      _isOrderDetailsLoading = true;
+      _clearEntryFields(clearPallet: true);
+    });
+    _loadOrderDetails(savedOrderId);
+  }
+
+  void _clearEntryFields({required bool clearPallet}) {
     _productController.clear();
     _quantityController.clear();
     _selectedProduct = null;
-    if (_receivingMode == ReceivingMode.kutu || _addedItems.isEmpty) {
+    if (clearPallet) {
       _palletIdController.clear();
     }
   }
 
-  void _resetScreen() {
+  void _resetScreenForNewOrder() {
     setState(() {
       _addedItems.clear();
       _selectedOrder = null;
       _orderController.clear();
       _orderItems.clear();
-      _formKey.currentState?.reset();
-      _clearEntryFields();
+      _clearEntryFields(clearPallet: true);
       _orderFocusNode.requestFocus();
     });
   }
@@ -356,7 +414,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final bool isKutuModeLocked =
         _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
-    final bool areFieldsEnabled = !_isOrderDetailsLoading;
+    final bool areFieldsEnabled = !_isOrderDetailsLoading && !_isSaving;
 
     return Scaffold(
       appBar: SharedAppBar(
@@ -372,85 +430,92 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         fontSize: buttonFontSize,
         iconSize: baseIconSize,
       ),
-      body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : GestureDetector(
-          onTap: () => FocusScope.of(context).unfocus(),
-          child: LayoutBuilder(builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: _gap),
-                          _buildModeSelector(
-                            height: segmentedButtonHeight,
-                            iconSize: segmentedButtonIconSize,
-                            fontSize: segmentedButtonFontSize,
-                          ),
-                          const SizedBox(height: _gap),
-                          _buildSearchableOrderDropdown(
-                            height: inputRowHeight,
-                            labelFontSize: labelFontSize,
-                            errorFontSize: errorFontSize,
-                          ),
-                          if (_isOrderDetailsLoading)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 4.0),
-                              child: LinearProgressIndicator(),
-                            ),
-                          if (_receivingMode == ReceivingMode.palet) ...[
+      body: RawKeyboardListener(
+        // GÜNCELLEME: Listener artık kendi FocusNode'una sahip değil.
+        // Bu, alt widget'lar odaklandığında bile olayları dinlemesini sağlar.
+        focusNode: FocusNode(),
+        autofocus: true,
+        onKey: _onKeyEvent,
+        child: SafeArea(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: LayoutBuilder(builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
                             const SizedBox(height: _gap),
-                            _buildPalletIdInput(
+                            _buildModeSelector(
+                              height: segmentedButtonHeight,
+                              iconSize: segmentedButtonIconSize,
+                              fontSize: segmentedButtonFontSize,
+                            ),
+                            const SizedBox(height: _gap),
+                            _buildSearchableOrderDropdown(
+                              height: inputRowHeight,
+                              labelFontSize: labelFontSize,
+                              errorFontSize: errorFontSize,
+                            ),
+                            if (_isOrderDetailsLoading)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 4.0),
+                                child: LinearProgressIndicator(),
+                              ),
+                            if (_receivingMode == ReceivingMode.palet) ...[
+                              const SizedBox(height: _gap),
+                              _buildPalletIdInput(
+                                height: inputRowHeight,
+                                labelFontSize: labelFontSize,
+                                errorFontSize: errorFontSize,
+                                iconSize: qrIconSize,
+                                isEnabled: areFieldsEnabled,
+                              ),
+                            ],
+                            const SizedBox(height: _gap),
+                            _buildSearchableProductInputRow(
+                              isLocked: isKutuModeLocked,
                               height: inputRowHeight,
                               labelFontSize: labelFontSize,
                               errorFontSize: errorFontSize,
                               iconSize: qrIconSize,
                               isEnabled: areFieldsEnabled,
                             ),
+                            const SizedBox(height: _gap),
+                            _buildQuantityAndStatusRow(
+                              isLocked: isKutuModeLocked,
+                              height: inputRowHeight,
+                              labelFontSize: labelFontSize,
+                              errorFontSize: errorFontSize,
+                              isEnabled: areFieldsEnabled,
+                              valueFontSize: summaryTitleFontSize,
+                            ),
+                            const SizedBox(height: _gap),
+                            const Spacer(),
+                            _buildLastAddedItemSummary(
+                              height: summaryHeight,
+                              headerFontSize: summaryHeaderFontSize,
+                              titleFontSize: summaryTitleFontSize,
+                              subtitleFontSize: summarySubtitleFontSize,
+                            ),
+                            const SizedBox(height: _gap),
                           ],
-                          const SizedBox(height: _gap),
-                          _buildSearchableProductInputRow(
-                            isLocked: isKutuModeLocked,
-                            height: inputRowHeight,
-                            labelFontSize: labelFontSize,
-                            errorFontSize: errorFontSize,
-                            iconSize: qrIconSize,
-                            isEnabled: areFieldsEnabled,
-                          ),
-                          const SizedBox(height: _gap),
-                          _buildQuantityAndStatusRow(
-                            isLocked: isKutuModeLocked,
-                            height: inputRowHeight,
-                            labelFontSize: labelFontSize,
-                            errorFontSize: errorFontSize,
-                            isEnabled: areFieldsEnabled,
-                            valueFontSize: summaryTitleFontSize,
-                          ),
-                          const SizedBox(height: _gap),
-                          const Spacer(),
-                          _buildLastAddedItemSummary(
-                            height: summaryHeight,
-                            headerFontSize: summaryHeaderFontSize,
-                            titleFontSize: summaryTitleFontSize,
-                            subtitleFontSize: summarySubtitleFontSize,
-                          ),
-                          const SizedBox(height: _gap),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ),
     );
@@ -479,14 +544,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           selected: {_receivingMode},
           onSelectionChanged: (newSelection) {
             if (_isSaving) return;
-            if (_selectedOrder != null) {
+            if (_addedItems.isNotEmpty) {
               _showErrorSnackBar('goods_receiving_screen.error_change_mode'.tr());
               return;
             }
             setState(() {
               _receivingMode = newSelection.first;
-              _addedItems.clear();
-              _clearEntryFields();
+              if (_selectedOrder == null) {
+                _resetScreenForNewOrder();
+              }
             });
           },
           style: SegmentedButton.styleFrom(
@@ -523,6 +589,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           suffixIcon: const Icon(Icons.arrow_drop_down),
         ),
         onTap: () async {
+          if (_isSaving) return;
           final PurchaseOrder? selected =
           await _showSearchableDropdownDialog<PurchaseOrder>(
             title: 'goods_receiving_screen.label_select_order'.tr(),
@@ -569,6 +636,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 errorFontSize: errorFontSize,
                 enabled: isEnabled,
               ),
+              onTap: () {
+                if (_palletIdController.text.isNotEmpty) {
+                  _palletIdController.clear();
+                }
+              },
               onFieldSubmitted: (value) {
                 if (value.isNotEmpty) {
                   _productFocusNode.requestFocus();
@@ -624,7 +696,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             child: TextFormField(
               controller: _productController,
               focusNode: _productFocusNode,
-              readOnly: true,
+              // DÜZELTME: readOnly kaldırıldı. Bu, donanım tarayıcısının
+              // bu alana yazmasına olanak tanır.
+              // readOnly: true,
+              showCursor: true,
               textAlignVertical: TextAlignVertical.center,
               style: TextStyle(
                   fontSize: labelFontSize, overflow: TextOverflow.ellipsis),
@@ -637,9 +712,17 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 suffixIcon: const Icon(Icons.arrow_drop_down),
                 enabled: fieldEnabled,
               ),
+              // DÜZELTME: onFieldSubmitted eklendi. Tarayıcı "Enter" gönderdiğinde
+              // veya klavyeden "Enter"a basıldığında bu fonksiyon tetiklenir.
+              onFieldSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  _processScannedProduct(value);
+                }
+              },
               onTap: !fieldEnabled
                   ? null
                   : () async {
+                // onTap davranışı aynı kalır, kullanıcıya hala dialog ile seçim yapma imkanı sunar.
                 final productList = _selectedOrder != null
                     ? _orderItems
                     .map((orderItem) => orderItem.product)
@@ -674,6 +757,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               },
               validator: (value) {
                 if (!fieldEnabled) return null;
+                // `_selectedProduct` kontrolü yerine `value` kontrolü kalır.
+                // Çünkü `_addItemToList` içinde `_selectedProduct` hala kontrol ediliyor.
                 return (value == null || value.isEmpty)
                     ? 'goods_receiving_screen.validator_select_product'.tr()
                     : null;
@@ -688,8 +773,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   MaterialPageRoute(
                       builder: (context) => const QrScannerScreen()));
               if (result != null && result.isNotEmpty && mounted) {
-                _productController.text = result;
-                // Since the field is readonly, we now process the scan result directly
+                // QR buton sonucu doğrudan product a işlenir
                 _processScannedProduct(result);
               }
             },
@@ -712,22 +796,26 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }) {
     final bool fieldEnabled = isEnabled && !isLocked;
 
-    // Status Info Logic
     final orderItem = _selectedProduct == null || _selectedOrder == null
         ? null
         : _orderItems.firstWhereOrNull(
           (item) => item.product?.id == _selectedProduct!.id,
     );
 
-    final receivedQty = orderItem?.receivedQuantity.toStringAsFixed(0) ?? '-';
-    final expectedQty = orderItem?.expectedQuantity.toStringAsFixed(0) ?? '-';
+    final alreadyAddedInUI = orderItem == null ? 0.0 : _addedItems
+        .where((item) => item.product.id == orderItem.product!.id)
+        .map((item) => item.quantity)
+        .fold(0.0, (prev, qty) => prev + qty);
+
+    final receivedQty = orderItem?.receivedQuantity ?? 0;
+    final expectedQty = orderItem?.expectedQuantity ?? 0;
+    final totalReceived = receivedQty + alreadyAddedInUI;
 
     return SizedBox(
       height: height,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch, // MODIFIED
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Quantity Input
           Expanded(
             child: TextFormField(
               controller: _quantityController,
@@ -767,7 +855,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             ),
           ),
           const SizedBox(width: _gap),
-          // Status Info Card
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -780,6 +867,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
               child: Center(
                 child: RichText(
+                  textAlign: TextAlign.center,
                   text: TextSpan(
                     style: TextStyle(
                       fontSize: valueFontSize,
@@ -788,14 +876,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     ),
                     children: [
                       TextSpan(
-                        text: '$receivedQty ',
+                        text: '${totalReceived.toStringAsFixed(0)} ',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       const TextSpan(text: '/ '),
-                      TextSpan(text: expectedQty),
+                      TextSpan(text: expectedQty.toStringAsFixed(0)),
                     ],
                   ),
                 ),
@@ -925,7 +1013,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         required double labelFontSize,
         required double errorFontSize,
       }) {
-    // MODIFIED: This function is now aligned with inventory_transfer_screen
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(fontSize: labelFontSize),
@@ -955,8 +1042,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      isDense: true, // ADDED
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16), // MODIFIED
+      isDense: true,
+      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       errorStyle: const TextStyle(height: 0, fontSize: 0),
     );
   }
@@ -1217,18 +1304,4 @@ class _QrButton extends StatelessWidget {
   }
 }
 
-// Bunların `domain/entities` klasöründe olduğunu varsayıyorum,
-// ancak referans için buraya ekliyorum.
 enum ReceivingMode { palet, kutu }
-
-class ReceiptItemDraft {
-  final ProductInfo product;
-  final double quantity;
-  final String? palletBarcode;
-
-  ReceiptItemDraft({
-    required this.product,
-    required this.quantity,
-    this.palletBarcode,
-  });
-}
