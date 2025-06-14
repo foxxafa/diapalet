@@ -5,7 +5,7 @@ class ApiConfig {
   /// geliştirme bilgisayarının yerel ağ IP adresi kullanılır.
   /// Android emülatörü için '10.0.2.2' kullanılırken, ağdaki fiziksel cihazlar için
   /// 'ipconfig' veya 'ifconfig' komutuyla bulunan IP adresi yazılmalıdır.
-  static const String _host = 'http://192.168.45.133:5000';
+  static const String _host = 'http://192.168.1.122:5000'; //http://10.0.2.2:5000  //http://192.168.1.122:5000
 
   /// Public getter for the host.
   static String get host => _host;
