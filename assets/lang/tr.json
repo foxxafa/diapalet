@@ -7,13 +7,13 @@
     "english": "İngilizce"
   },
   "home": {
-    "title": "Dia Palet Takip",
+    "title": "DiaPallet WMS",
     "reset_db": "Veritabanını Sıfırla",
     "db_reset_complete": "Veritabanı sıfırlandı",
     "populate_test": "Test Verisi Yükle",
     "test_data_populated": "Test verisi yüklendi",
     "goods_receiving": "Mal Kabul",
-    "pallet_transfer": "Palet/Kutu Taşıma",
+    "pallet_transfer": "Palet/Kutu Transfer",
     "pending_operations": "Bekleyen İşlemler"
   },
   "receive_mode": {
@@ -68,7 +68,7 @@
     "search_no_result": "Sonuç bulunamadı"
   },
   "pallet_assignment": {
-    "title": "Palet/Kutu Taşıma",
+    "title": "Transfer İşlemi",
     "save": "Kaydet",
     "saving": "Kaydediliyor...",
     "select_source": "Kaynak Lokasyon Seç",
@@ -96,48 +96,7 @@
     "amount_max": "En fazla {max}",
     "mode_switched": "{mode} moduna geçildi.",
     "transfer_saved_box": "{product} kutu transferi kaydedildi",
-    "transfer_saved": "{mode} transferi başarıyla kaydedildi!"
-  },
-  "qr_scanner": {
-    "title": "QR Kodu Tara",
-    "tip": "QR kodu çerçevenin içine getirin"
-  },
-  "common": {
-    "cancel": "İptal",
-    "close": "Kapat"
-  },
-  "pending_operations": {
-    "title": "Bekleyen İşlemler",
-    "no_pending": "Bekleyen İşlem Yok",
-    "all_synced": "Tüm işlemler senkronize edilmiş",
-    "operations_count": "{args} bekleyen işlem",
-    "sync_now": "Şimdi Senkronize Et",
-    "syncing": "Senkronize Ediliyor...",
-    "refresh": "Yenile",
-    "download_master_data": "Ana Verileri İndir",
-    "operation_details": "İşlem Detayları",
-    "type": "Tür:",
-    "created": "Oluşturulma:",
-    "data": "Veri:",
-    "status": {
-      "offline": "Çevrimdışı",
-      "syncing": "Senkronize Ediliyor",
-      "up_to_date": "Güncel",
-      "error": "Hata"
-    }
-  },
-  "dialog": {
-    "cancel": "İptal",
-    "confirm": "Onayla"
-  },
-  "home": {
-    "title": "DiaPallet WMS",
-    "goods_receiving": "Mal Kabul",
-    "pallet_transfer": "Palet/Kutu Transfer",
-    "pending_operations": "Bekleyen İşlemler"
-  },
-  "pallet_assignment": {
-    "title": "Transfer İşlemi",
+    "transfer_saved": "{mode} transferi başarıyla kaydedildi!",
     "mode": {
       "pallet": "Palet",
       "box": "Kutu"
@@ -151,7 +110,6 @@
     "scan_prompt": "Tara veya Seç...",
     "scan_button": "ID Tara",
     "contents_title": "İçerik",
-    "contents_empty": "Bu {mode} için ürün bulunamadı.",
     "quantity_to_transfer": "Transfer Miktarı",
     "save_button": "Transferi Onayla",
     "load_error": "Veri yüklenemedi: {error}",
@@ -165,20 +123,39 @@
     },
     "scan_error": "Taranan değer ({value}) mevcut seçeneklerde bulunamadı."
   },
+  "qr_scanner": {
+    "title": "QR Kodu Tara",
+    "tip": "QR kodu çerçevenin içine getirin"
+  },
+  "common": {
+    "cancel": "İptal",
+    "close": "Kapat"
+  },
   "pending_operations": {
     "title": "Bekleyenler & Senkronizasyon",
+    "no_pending": "Bekleyen İşlem Yok",
     "empty": "Bekleyen işlem yok.",
+    "all_synced": "Tüm işlemler senkronize edilmiş",
+    "operations_count": "{count} işlem senkronizasyon için bekliyor.",
+    "sync_now": "Şimdi Senkronize Et",
+    "syncing": "Senkronize Ediliyor...",
+    "refresh": "Yenile",
+    "download_master_data": "Ana Verileri İndir",
+    "operation_details": "İşlem Detayları",
+    "type": "Tür:",
+    "created": "Oluşturulma:",
+    "data": "Veri:",
     "tooltip": {
       "refresh": "Listeyi Yenile",
       "sync": "Sunucuya Yükle"
     },
     "status": {
       "offline": "Çevrimdışı",
+      "online": "Çevrimiçi",
       "syncing": "Senkronize ediliyor...",
       "up_to_date": "Güncel",
       "error": "Senkronizasyon Hatası"
     },
-    "operations_count": "{count} işlem senkronizasyon için bekliyor.",
     "admin": {
       "title": "Yönetici Eylemleri",
       "reset_db": "Temizle ve Sıfırla",
@@ -187,5 +164,9 @@
       "reset_confirm_body": "Bu, tüm yerel verileri ve işlemleri silecek. Bu işlem geri alınamaz. Emin misiniz?",
       "reset_success": "Yerel veritabanı temizlendi."
     }
+  },
+  "dialog": {
+    "cancel": "İptal",
+    "confirm": "Onayla"
   }
 }
