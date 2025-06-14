@@ -1116,8 +1116,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     const SizedBox(height: _gap),
                     Expanded(
                       child: filteredItems.isEmpty
-                          ? const Center(child: Text('goods_receiving_screen.dialog_search_no_results'
-                              .tr()))
+                          ? Center(
+                              child: Text(
+                                  'goods_receiving_screen.dialog_search_no_results'
+                                      .tr()))
                           : ListView.builder(
                         itemCount: filteredItems.length,
                         itemBuilder: (context, index) {

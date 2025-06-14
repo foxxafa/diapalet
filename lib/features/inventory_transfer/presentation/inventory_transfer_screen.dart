@@ -2,6 +2,7 @@
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -101,7 +102,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
       });
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Hata: ${e.toString()}');
+      if (mounted) {
+        _showErrorSnackBar('inventory_transfer.error_generic'
+            .tr(namedArgs: {'error': e.toString()}));
+      }
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
     }
@@ -117,7 +121,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _handleSourceSelection(locationName);
         } else {
           _sourceLocationController.clear();
-          _showErrorSnackBar("Geçersiz kaynak lokasyon kodu: $data");
+          _showErrorSnackBar('inventory_transfer.error_invalid_source_location'
+              .tr(namedArgs: {'data': data}));
         }
         break;
       case 'container':
@@ -136,8 +141,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _handleContainerSelection(foundItem);
         } else {
           _scannedContainerIdController.clear();
-          _showErrorSnackBar(
-              "Okutulan ürün/palet listede bulunamadı: $data");
+          _showErrorSnackBar('inventory_transfer.error_item_not_found'
+              .tr(namedArgs: {'data': data}));
         }
         break;
       case 'target':
@@ -148,7 +153,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _handleTargetSelection(locationName);
         } else {
           _targetLocationController.clear();
-          _showErrorSnackBar("Geçersiz hedef lokasyon kodu: $data");
+          _showErrorSnackBar('inventory_transfer.error_invalid_target_location'
+              .tr(namedArgs: {'data': data}));
         }
         break;
     }
@@ -210,7 +216,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('Konteynerler yüklenemedi: ${e.toString()}');
+        _showErrorSnackBar('inventory_transfer.error_loading_containers'
+            .tr(namedArgs: {'error': e.toString()}));
       }
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
@@ -249,7 +256,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       });
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('İçerik yüklenemedi: ${e.toString()}');
+        _showErrorSnackBar('inventory_transfer.error_loading_content'
+            .tr(namedArgs: {'error': e.toString()}));
       }
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
@@ -259,7 +267,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) {
-      _showErrorSnackBar('Lütfen tüm zorunlu alanları doldurun.');
+      _showErrorSnackBar('inventory_transfer.error_fill_required_fields'.tr());
       return;
     }
 
@@ -288,7 +296,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
 
     if (itemsToTransfer.isEmpty) {
-      _showErrorSnackBar('Transfer edilecek ürün veya miktar seçilmedi.');
+      _showErrorSnackBar('inventory_transfer.error_no_items_to_transfer'.tr());
       return;
     }
 
@@ -306,8 +314,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final targetId = _availableTargetLocations[_selectedTargetLocationName!];
 
     if (sourceId == null || targetId == null) {
-      _showErrorSnackBar(
-          "Lokasyon ID'leri bulunamadı. İşlem iptal edildi.");
+      _showErrorSnackBar('inventory_transfer.error_location_id_not_found'.tr());
       return;
     }
 
@@ -327,11 +334,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           header, itemsToTransfer, sourceId, targetId);
 
       if (mounted) {
-        _showSuccessSnackBar('Transfer başarıyla kaydedildi.');
+        _showSuccessSnackBar('inventory_transfer.success_transfer_saved'.tr());
         _resetForm(resetAll: true);
       }
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Kaydetme hatası: ${e.toString()}');
+      if (mounted) {
+        _showErrorSnackBar('inventory_transfer.error_saving'
+            .tr(namedArgs: {'error': e.toString()}));
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -392,7 +402,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     return Scaffold(
       appBar: SharedAppBar(
-        title: 'Stok Transferi',
+        title: 'inventory_transfer.title'.tr(),
         preferredHeight: appBarHeight,
         titleFontSize: appBarFontSize,
       ),
@@ -425,7 +435,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   _buildHybridDropdownWithQr<String>(
                     controller: _sourceLocationController,
                     focusNode: _sourceLocationFocusNode,
-                    label: "1. Kaynak Lokasyon",
+                    label: 'inventory_transfer.label_source_location'.tr(),
                     fieldIdentifier: 'source',
                     items: _availableSourceLocations.keys.toList(),
                     itemToString: (item) => item,
@@ -443,7 +453,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     controller: _scannedContainerIdController,
                     focusNode: _containerFocusNode,
                     label:
-                    "2. ${_selectedMode == AssignmentMode.pallet ? 'Palet' : 'Ürün'}",
+                        "2. ${_selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr()}",
                     fieldIdentifier: 'container',
                     items: _availableContainers,
                     itemToString: (item) {
@@ -496,7 +506,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   _buildHybridDropdownWithQr<String>(
                     controller: _targetLocationController,
                     focusNode: _targetLocationFocusNode,
-                    label: "3. Hedef Lokasyon",
+                    label: 'inventory_transfer.label_target_location'.tr(),
                     fieldIdentifier: 'target',
                     items: _availableTargetLocations.keys.toList(),
                     itemToString: (item) => item,
@@ -530,11 +540,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           segments: [
             ButtonSegment(
                 value: AssignmentMode.pallet,
-                label: Text('Palet', style: TextStyle(fontSize: fontSize)),
+                label: Text('inventory_transfer.mode_pallet'.tr(),
+                    style: TextStyle(fontSize: fontSize)),
                 icon: Icon(Icons.pallet, size: iconSize)),
             ButtonSegment(
                 value: AssignmentMode.box,
-                label: Text('Kutu', style: TextStyle(fontSize: fontSize)),
+                label: Text('inventory_transfer.mode_box'.tr(),
+                    style: TextStyle(fontSize: fontSize)),
                 icon: Icon(Icons.inventory_2_outlined, size: iconSize)),
           ],
           selected: {_selectedMode},
@@ -593,7 +605,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 errorFontSize: errorFontSize,
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_drop_down),
-                  tooltip: 'Listeden Seç',
+                  tooltip: 'inventory_transfer.tooltip_select_from_list'.tr(),
                   onPressed: () async {
                     final T? selectedItem =
                     await _showSearchableDropdownDialog<T>(
@@ -614,10 +626,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 }
               },
               validator: (val) {
-                if (val == null || val.isEmpty) return 'Bu alan zorunludur.';
+                if (val == null || val.isEmpty) {
+                  return 'inventory_transfer.validator_required_field'.tr();
+                }
                 if (fieldIdentifier == 'target' &&
                     val == _sourceLocationController.text) {
-                  return 'Kaynak ile aynı olamaz!';
+                  return 'inventory_transfer.validator_target_cannot_be_source'
+                      .tr();
                 }
                 return null;
               },
@@ -668,7 +683,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Text(
-              'İçerik: ${_scannedContainerIdController.text}',
+              'inventory_transfer.content_title'.tr(namedArgs: {
+                'containerId': _scannedContainerIdController.text
+              }),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold, fontSize: titleFontSize),
             ),
@@ -704,7 +721,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                                     fontSize: textFontSize),
                                 overflow: TextOverflow.ellipsis),
                             Text(
-                                '${product.productCode} - Mevcut: ${product.currentQuantity}',
+                                'inventory_transfer.label_current_quantity'.tr(
+                                    namedArgs: {
+                                      'productCode': product.productCode,
+                                      'quantity':
+                                          product.currentQuantity.toString()
+                                    }),
                                 style:
                                 TextStyle(fontSize: textFontSize * 0.9)),
                           ],
@@ -724,17 +746,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                             FilteringTextInputFormatter.allow(
                                 RegExp(r'^\d*\.?\d*'))
                           ],
-                          decoration: _inputDecoration('Miktar',
+                          decoration: _inputDecoration(
+                              'inventory_transfer.label_quantity'.tr(),
                               labelFontSize: labelFontSize,
                               errorFontSize: errorFontSize),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Gerekli';
+                              return 'inventory_transfer.validator_required'.tr();
                             }
                             final qty = double.tryParse(value);
-                            if (qty == null) return 'Geçersiz';
-                            if (qty > product.currentQuantity) return 'Max!';
-                            if (qty < 0) return 'Negatif!';
+                            if (qty == null) {
+                              return 'inventory_transfer.validator_invalid'.tr();
+                            }
+                            if (qty > product.currentQuantity) {
+                              return 'inventory_transfer.validator_max'.tr();
+                            }
+                            if (qty < 0) {
+                              return 'inventory_transfer.validator_negative'.tr();
+                            }
                             return null;
                           },
                           onFieldSubmitted: (value) {
@@ -780,7 +809,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               child:
               CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
               : Icon(Icons.check_circle_outline, size: iconSize),
-          label: Text(_isSaving ? 'Kaydediliyor...' : 'Kaydet',
+          label: Text(
+              _isSaving
+                  ? 'inventory_transfer.button_saving'.tr()
+                  : 'inventory_transfer.button_save'.tr(),
               style: TextStyle(fontSize: fontSize)),
           style: ElevatedButton.styleFrom(
             minimumSize: Size(double.infinity, height),
@@ -873,7 +905,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         TextField(
                           autofocus: true,
                           decoration: InputDecoration(
-                            hintText: 'Ara...',
+                            hintText: 'inventory_transfer.dialog_search_hint'.tr(),
                             prefixIcon: const Icon(Icons.search),
                             border:
                             OutlineInputBorder(borderRadius: _borderRadius),
@@ -887,7 +919,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         const SizedBox(height: _gap),
                         Expanded(
                           child: filteredItems.isEmpty
-                              ? const Center(child: Text('Sonuç bulunamadı.'))
+                              ? Center(
+                                  child: Text(
+                                      'inventory_transfer.dialog_search_no_results'
+                                          .tr()))
                               : ListView.builder(
                             shrinkWrap: true,
                             itemCount: filteredItems.length,
@@ -904,7 +939,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            child: const Text('İptal'),
+                            child: Text(
+                                'inventory_transfer.dialog_button_cancel'.tr()),
                             onPressed: () =>
                                 Navigator.of(dialogContext).pop(),
                           ),
@@ -926,15 +962,19 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Transferi Onayla (${mode.name})'),
+          title: Text('inventory_transfer.dialog_confirm_transfer_title'
+              .tr(namedArgs: {'mode': mode.name})),
           content: SizedBox(
             width: double.maxFinite,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                    'Aşağıdaki ürünler ${_selectedSourceLocationName} -> ${_selectedTargetLocationName} arasına transfer edilecek:'),
+                Text('inventory_transfer.dialog_confirm_transfer_body'.tr(
+                    namedArgs: {
+                      'source': _selectedSourceLocationName ?? '',
+                      'target': _selectedTargetLocationName ?? ''
+                    })),
                 const Divider(height: 20),
                 SizedBox(
                   height: 150,
@@ -944,7 +984,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       return Text(
-                          '• ${item.productName} (x${item.quantity})');
+                          'inventory_transfer.dialog_confirm_transfer_item'
+                              .tr(namedArgs: {
+                        'productName': item.productName,
+                        'quantity': item.quantity.toString()
+                      }));
                     },
                   ),
                 ),
@@ -953,10 +997,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
           actions: [
             TextButton(
-                child: const Text('İptal'),
+                child: Text(
+                    'inventory_transfer.dialog_button_cancel'.tr()),
                 onPressed: () => Navigator.of(ctx).pop(false)),
             ElevatedButton(
-                child: const Text('Onayla'),
+                child: Text(
+                    'inventory_transfer.dialog_button_confirm'.tr()),
                 onPressed: () => Navigator.of(ctx).pop(true)),
           ],
         ));
