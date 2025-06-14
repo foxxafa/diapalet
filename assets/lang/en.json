@@ -7,7 +7,7 @@
     "english": "English"
   },
   "home": {
-    "title": "Dia Pallet Tracking",
+    "title": "DiaPallet WMS",
     "reset_db": "Reset Database",
     "db_reset_complete": "Database reset complete",
     "populate_test": "Populate Test Data",
@@ -68,7 +68,7 @@
     "search_no_result": "No results found"
   },
   "pallet_assignment": {
-    "title": "Pallet/Box Transfer",
+    "title": "Transfer Operation",
     "save": "Save",
     "saving": "Saving...",
     "select_source": "Select Source Location",
@@ -96,48 +96,7 @@
     "amount_max": "Max {max}",
     "mode_switched": "{mode} mode activated.",
     "transfer_saved_box": "{product} box transfer recorded",
-    "transfer_saved": "{mode} transfer saved successfully!"
-  },
-  "qr_scanner": {
-    "title": "Scan QR Code",
-    "tip": "Align the QR code within the frame"
-  },
-  "common": {
-    "cancel": "Cancel",
-    "close": "Close"
-  },
-  "pending_operations": {
-    "title": "Pending Operations",
-    "no_pending": "No Pending Operations",
-    "all_synced": "All operations are synchronized",
-    "operations_count": "{args} pending operations",
-    "sync_now": "Sync Now",
-    "syncing": "Syncing...",
-    "refresh": "Refresh",
-    "download_master_data": "Download Master Data",
-    "operation_details": "Operation Details",
-    "type": "Type:",
-    "created": "Created:",
-    "data": "Data:",
-    "status": {
-      "offline": "Offline",
-      "syncing": "Syncing",
-      "up_to_date": "Up to Date",
-      "error": "Error"
-    }
-  },
-  "dialog": {
-    "cancel": "Cancel",
-    "confirm": "Confirm"
-  },
-  "home": {
-    "title": "DiaPallet WMS",
-    "goods_receiving": "Goods Receiving",
-    "pallet_transfer": "Pallet/Box Transfer",
-    "pending_operations": "Pending Operations"
-  },
-  "pallet_assignment": {
-    "title": "Transfer Operation",
+    "transfer_saved": "{mode} transfer saved successfully!",
     "mode": {
       "pallet": "Pallet",
       "box": "Box"
@@ -151,7 +110,6 @@
     "scan_prompt": "Scan or Select...",
     "scan_button": "Scan ID",
     "contents_title": "Contents",
-    "contents_empty": "No items found for this {mode}.",
     "quantity_to_transfer": "Quantity to Transfer",
     "save_button": "Confirm Transfer",
     "load_error": "Failed to load data: {error}",
@@ -165,20 +123,39 @@
     },
     "scan_error": "Scanned value {value} not found in available options."
   },
+  "qr_scanner": {
+    "title": "Scan QR Code",
+    "tip": "Align the QR code within the frame"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close"
+  },
   "pending_operations": {
     "title": "Pending & Sync",
+    "no_pending": "No Pending Operations",
     "empty": "No pending operations.",
+    "all_synced": "All operations are synchronized",
+    "operations_count": "{count} operations waiting for sync.",
+    "sync_now": "Sync Now",
+    "syncing": "Syncing...",
+    "refresh": "Refresh",
+    "download_master_data": "Download Master Data",
+    "operation_details": "Operation Details",
+    "type": "Type:",
+    "created": "Created:",
+    "data": "Data:",
     "tooltip": {
       "refresh": "Refresh List",
       "sync": "Upload to Server"
     },
     "status": {
       "offline": "Offline",
+      "online": "Online",
       "syncing": "Syncing...",
       "up_to_date": "Up to Date",
       "error": "Sync Error"
     },
-    "operations_count": "{count} operations waiting for sync.",
     "admin": {
       "title": "Admin Actions",
       "reset_db": "Clear & Reset",
@@ -187,5 +164,9 @@
       "reset_confirm_body": "This will delete all local data and operations. This cannot be undone. Are you sure?",
       "reset_success": "Local database has been cleared."
     }
+  },
+  "dialog": {
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   }
 }
