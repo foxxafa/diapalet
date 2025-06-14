@@ -20,53 +20,72 @@ class HomeScreen extends StatelessWidget {
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _HomeButton(
-              icon: Icons.input_outlined,
-              label: 'home.goods_receiving'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const GoodsReceivingScreen(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-            _HomeButton(
-              icon: Icons.warehouse_outlined,
-              label: 'home.pallet_transfer'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const InventoryTransferScreen(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-            _HomeButton(
-              icon: Icons.sync_alt,
-              label: 'home.pending_operations'.tr(),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PendingOperationsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final double verticalPadding = constraints.maxHeight * 0.05;
+        final double horizontalPadding = constraints.maxWidth * 0.05;
+        final double spacing = constraints.maxHeight * 0.03;
+        final double buttonHeight = constraints.maxHeight * 0.20;
+
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: verticalPadding,
+            horizontal: horizontalPadding,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: buttonHeight,
+                child: _HomeButton(
+                  icon: Icons.input_outlined,
+                  label: 'home.goods_receiving'.tr(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const GoodsReceivingScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(height: spacing),
+              SizedBox(
+                height: buttonHeight,
+                child: _HomeButton(
+                  icon: Icons.warehouse_outlined,
+                  label: 'home.pallet_transfer'.tr(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const InventoryTransferScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(height: spacing),
+              SizedBox(
+                height: buttonHeight,
+                child: _HomeButton(
+                  icon: Icons.sync_alt,
+                  label: 'home.pending_operations'.tr(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PendingOperationsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
       // Dil değiştirme butonu ve işlevselliği korundu.
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -115,25 +134,30 @@ class _HomeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SizedBox(
-      height: 120,
-      child: ElevatedButton.icon(
-        icon: Icon(icon, size: 44),
+    return LayoutBuilder(builder: (context, constraints) {
+      final double iconSize = constraints.maxHeight * 0.3;
+      final double fontSize = constraints.maxHeight * 0.12;
+
+      return ElevatedButton.icon(
+        icon: Icon(icon, size: iconSize),
         label: Text(
           label,
           textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: fontSize,
+          ),
         ),
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: theme.colorScheme.primaryContainer,
           foregroundColor: theme.colorScheme.onPrimaryContainer,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 3,
-          textStyle: const TextStyle(fontSize: 17),
         ),
-      ),
-    );
+      );
+    });
   }
 }
