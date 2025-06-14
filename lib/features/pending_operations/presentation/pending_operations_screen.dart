@@ -68,8 +68,20 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> {
     // SyncService'deki anlık durumu dinlemek için `watch` kullanılır.
     final syncStatus = context.watch<SyncService>().syncStatusStream;
 
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    final screenWidth = mediaQuery.size.width;
+
+    final appBarHeight = screenHeight * 0.07;
+    final sizeFactor = (screenWidth / 480.0).clamp(0.9, 1.3);
+    final appBarFontSize = 19.0 * sizeFactor;
+
     return Scaffold(
-      appBar: SharedAppBar(title: 'pending_operations.title'.tr()),
+      appBar: SharedAppBar(
+        title: 'pending_operations.title'.tr(),
+        preferredHeight: appBarHeight,
+        titleFontSize: appBarFontSize,
+      ),
       body: RefreshIndicator(
         onRefresh: _loadPendingOperations,
         child: StreamBuilder<SyncStatus>(

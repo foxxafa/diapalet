@@ -15,10 +15,19 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // SyncService, Provider tarafından oluşturulduğunda otomatik olarak başlatılır.
     // Bu yüzden burada manuel bir başlatma işlemine gerek yoktur.
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    final screenWidth = mediaQuery.size.width;
+
+    final appBarHeight = screenHeight * 0.07;
+    final sizeFactor = (screenWidth / 480.0).clamp(0.9, 1.3);
+    final appBarFontSize = 19.0 * sizeFactor;
 
     return Scaffold(
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
+        preferredHeight: appBarHeight,
+        titleFontSize: appBarFontSize,
       ),
       body: LayoutBuilder(builder: (context, constraints) {
         final double verticalPadding = constraints.maxHeight * 0.05;
@@ -136,7 +145,7 @@ class _HomeButton extends StatelessWidget {
     final theme = Theme.of(context);
     return LayoutBuilder(builder: (context, constraints) {
       final double iconSize = constraints.maxHeight * 0.3;
-      final double fontSize = constraints.maxHeight * 0.12;
+      final double fontSize = constraints.maxHeight * 0.14;
 
       return ElevatedButton.icon(
         icon: Icon(icon, size: iconSize),
