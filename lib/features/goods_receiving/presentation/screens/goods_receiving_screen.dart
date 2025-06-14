@@ -187,7 +187,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           .fold(0.0, (prev, qty) => prev + qty);
 
       final totalPreviouslyReceived = orderItem.receivedQuantity;
-      final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
+      final remainingQuantity =
+          orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
       if (quantity > remainingQuantity + 0.001) {
         _showErrorSnackBar(
@@ -314,6 +315,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final inputRowHeight = screenHeight * 0.075;
     final bottomButtonHeight = screenHeight * 0.09;
     final summaryHeight = screenHeight * 0.175;
+    final segmentedButtonHeight = screenHeight * 0.07;
+
 
     final sizeFactor = (screenWidth / 480.0).clamp(0.9, 1.3);
     final appBarFontSize = 19.0 * sizeFactor;
@@ -349,79 +352,83 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : LayoutBuilder(builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: _gap),
-                        _buildModeSelector(
-                          height: inputRowHeight,
-                          iconSize: segmentedButtonIconSize,
-                          fontSize: segmentedButtonFontSize,
-                        ),
-                        const SizedBox(height: _gap),
-                        _buildSearchableOrderDropdown(
-                          height: inputRowHeight,
-                          labelFontSize: labelFontSize,
-                          errorFontSize: errorFontSize,
-                        ),
-                        if (_isOrderDetailsLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 4.0),
-                            child: LinearProgressIndicator(),
-                          ),
-                        if (_receivingMode == ReceivingMode.palet) ...[
+            : GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: LayoutBuilder(builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
                           const SizedBox(height: _gap),
-                          _buildPalletIdInput(
+                          _buildModeSelector(
+                            height: segmentedButtonHeight,
+                            iconSize: segmentedButtonIconSize,
+                            fontSize: segmentedButtonFontSize,
+                          ),
+                          const SizedBox(height: _gap),
+                          _buildSearchableOrderDropdown(
+                            height: inputRowHeight,
+                            labelFontSize: labelFontSize,
+                            errorFontSize: errorFontSize,
+                          ),
+                          if (_isOrderDetailsLoading)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 4.0),
+                              child: LinearProgressIndicator(),
+                            ),
+                          if (_receivingMode == ReceivingMode.palet) ...[
+                            const SizedBox(height: _gap),
+                            _buildPalletIdInput(
+                              height: inputRowHeight,
+                              labelFontSize: labelFontSize,
+                              errorFontSize: errorFontSize,
+                              iconSize: qrIconSize,
+                              isEnabled: areFieldsEnabled,
+                            ),
+                          ],
+                          const SizedBox(height: _gap),
+                          _buildSearchableProductInputRow(
+                            isLocked: isKutuModeLocked,
                             height: inputRowHeight,
                             labelFontSize: labelFontSize,
                             errorFontSize: errorFontSize,
                             iconSize: qrIconSize,
                             isEnabled: areFieldsEnabled,
                           ),
+                          const SizedBox(height: _gap),
+                          _buildQuantityAndStatusRow(
+                            isLocked: isKutuModeLocked,
+                            height: inputRowHeight,
+                            labelFontSize: labelFontSize,
+                            errorFontSize: errorFontSize,
+                            isEnabled: areFieldsEnabled,
+                            valueFontSize: summaryTitleFontSize,
+                          ),
+                          const SizedBox(height: _gap),
+                          const Spacer(),
+                          _buildLastAddedItemSummary(
+                            height: summaryHeight,
+                            headerFontSize: summaryHeaderFontSize,
+                            titleFontSize: summaryTitleFontSize,
+                            subtitleFontSize: summarySubtitleFontSize,
+                          ),
+                          const SizedBox(height: _gap),
                         ],
-                        const SizedBox(height: _gap),
-                        _buildSearchableProductInputRow(
-                          isLocked: isKutuModeLocked,
-                          height: inputRowHeight,
-                          labelFontSize: labelFontSize,
-                          errorFontSize: errorFontSize,
-                          iconSize: qrIconSize,
-                          isEnabled: areFieldsEnabled,
-                        ),
-                        const SizedBox(height: _gap),
-                        _buildQuantityAndStatusRow(
-                          isLocked: isKutuModeLocked,
-                          height: inputRowHeight,
-                          labelFontSize: labelFontSize,
-                          errorFontSize: errorFontSize,
-                          isEnabled: areFieldsEnabled,
-                          valueFontSize: summaryTitleFontSize,
-                        ),
-                        const Spacer(),
-                        _buildLastAddedItemSummary(
-                          height: summaryHeight,
-                          headerFontSize: summaryHeaderFontSize,
-                          titleFontSize: summaryTitleFontSize,
-                          subtitleFontSize: summarySubtitleFontSize,
-                        ),
-                        const SizedBox(height: _gap),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -501,6 +508,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 (item.poId ?? "ID: ${item.id}")
                     .toLowerCase()
                     .contains(query.toLowerCase()),
+            itemFontSize: labelFontSize,
           );
           if (selected != null) {
             _onOrderSelected(selected);
@@ -594,7 +602,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               focusNode: _productFocusNode,
               readOnly: true,
               textAlignVertical: TextAlignVertical.center,
-              style: TextStyle(fontSize: labelFontSize),
+              style: TextStyle(
+                  fontSize: labelFontSize, overflow: TextOverflow.ellipsis),
               decoration: _inputDecoration(
                 _selectedOrder != null
                     ? 'Siparişteki Ürünü Seç'
@@ -633,6 +642,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             .contains(lowerQuery) ??
                             false);
                   },
+                  itemFontSize: labelFontSize,
                 );
                 if (selected != null) {
                   _selectProduct(selected);
@@ -691,14 +701,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return SizedBox(
       height: height,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch, // MODIFIED
         children: [
           // Quantity Input
           Expanded(
             child: TextFormField(
               controller: _quantityController,
               focusNode: _quantityFocusNode,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+              textAlign: TextAlign.center,
               textAlignVertical: TextAlignVertical.center,
               style: TextStyle(fontSize: labelFontSize),
               inputFormatters: [
@@ -720,7 +732,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 if (!fieldEnabled) return null;
                 if (value == null || value.isEmpty) return 'Miktar giriniz.';
                 final number = double.tryParse(value);
-                if (number == null || number <= 0) return 'Geçerli miktar giriniz.';
+                if (number == null || number <= 0)
+                  return 'Geçerli miktar giriniz.';
                 return null;
               },
             ),
@@ -729,7 +742,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           // Status Info Card
           Expanded(
             child: Container(
-              height: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainer,
@@ -739,12 +751,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 ),
               ),
               child: Center(
-                child: Text(
-                  '$receivedQty / $expectedQty',
-                  style: TextStyle(
-                    fontSize: valueFontSize,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
+                child: RichText(
+                  text: TextSpan(
+                    style: TextStyle(
+                      fontSize: valueFontSize,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: '$receivedQty ',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const TextSpan(text: '/ '),
+                      TextSpan(text: expectedQty),
+                    ],
                   ),
                 ),
               ),
@@ -850,6 +874,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           label: Text('Kaydet ve Onayla', style: TextStyle(fontSize: fontSize)),
           style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16),
+              minimumSize: Size(double.infinity, height),
               shape: RoundedRectangleBorder(borderRadius: _borderRadius),
               textStyle:
               TextStyle(fontSize: fontSize, fontWeight: FontWeight.w600)),
@@ -865,6 +890,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         required double labelFontSize,
         required double errorFontSize,
       }) {
+    // MODIFIED: This function is now aligned with inventory_transfer_screen
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(fontSize: labelFontSize),
@@ -894,8 +920,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      // Dikey hizalama sorununu çözmek için `isDense` kaldırıldı ve padding ayarlandı.
-      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      isDense: true, // ADDED
+      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16), // MODIFIED
       errorStyle: const TextStyle(height: 0, fontSize: 0),
     );
   }
@@ -991,12 +1017,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // DEĞİŞTİRİLDİ: Klavye sorununu çözmek için AlertDialog kullanıldı.
   Future<T?> _showSearchableDropdownDialog<T>({
     required String title,
     required List<T> items,
     required String Function(T) itemToString,
     required bool Function(T, String) filterCondition,
+    required double itemFontSize,
   }) {
     String searchQuery = '';
 
@@ -1005,41 +1031,57 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final filteredItems =
-            items.where((item) => filterCondition(item, searchQuery)).toList();
+            final filteredItems = items
+                .where((item) => filterCondition(item, searchQuery))
+                .toList();
 
             return AlertDialog(
-              title: Text(title),
-              contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28)),
+              title:
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              titlePadding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+              contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               content: SizedBox(
                 width: double.maxFinite,
+                height: MediaQuery.of(context).size.height * 0.6,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    TextField(
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: 'Ara...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: _borderRadius),
+                    SizedBox(
+                      height: 40,
+                      child: TextField(
+                        autofocus: true,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Ara...',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          border:
+                          OutlineInputBorder(borderRadius: _borderRadius),
+                          contentPadding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            searchQuery = value;
+                          });
+                        },
                       ),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          searchQuery = value;
-                        });
-                      },
                     ),
                     const SizedBox(height: _gap),
                     Expanded(
                       child: filteredItems.isEmpty
                           ? const Center(child: Text('Sonuç bulunamadı.'))
                           : ListView.builder(
-                        shrinkWrap: true,
                         itemCount: filteredItems.length,
                         itemBuilder: (context, index) {
                           final item = filteredItems[index];
                           return ListTile(
-                            title: Text(itemToString(item)),
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16.0, vertical: 2.0),
+                            title: Text(itemToString(item),
+                                style: TextStyle(fontSize: itemFontSize)),
                             onTap: () =>
                                 Navigator.of(dialogContext).pop(item),
                           );
