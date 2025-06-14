@@ -865,9 +865,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 subtitle: Text(
                   lastItem.palletBarcode != null
                       ? 'goods_receiving_screen.label_pallet_barcode_display'
-                          .tr(namedArgs: {'barcode': lastItem.palletBarcode!})
+                      .tr(namedArgs: {'barcode': lastItem.palletBarcode!})
                       : 'goods_receiving_screen.label_pallet_barcode_none'
-                          .tr(),
+                      .tr(),
                   style: TextStyle(fontSize: subtitleFontSize),
                 ),
                 trailing: Text(
@@ -983,9 +983,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 height: screenHeight * 0.5,
                 child: _addedItems.isEmpty
                     ? Center(
-                        child: Text(
-                            'goods_receiving_screen.dialog_list_empty'.tr(),
-                            style: TextStyle(fontSize: dialogContentFontSize)))
+                    child: Text(
+                        'goods_receiving_screen.dialog_list_empty'.tr(),
+                        style: TextStyle(fontSize: dialogContentFontSize)))
                     : ListView.builder(
                   itemCount: _addedItems.length,
                   itemBuilder: (context, index) {
@@ -1002,11 +1002,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                         subtitle: Text(
                             item.palletBarcode != null
                                 ? 'goods_receiving_screen.label_pallet_barcode_display'
-                                    .tr(namedArgs: {
-                                    'barcode': item.palletBarcode!
-                                  })
+                                .tr(namedArgs: {
+                              'barcode': item.palletBarcode!
+                            })
                                 : 'goods_receiving_screen.label_pallet_barcode_none'
-                                    .tr(),
+                                .tr(),
                             style: TextStyle(
                                 fontSize:
                                 dialogContentFontSize * 0.85)),
@@ -1117,9 +1117,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     Expanded(
                       child: filteredItems.isEmpty
                           ? Center(
-                              child: Text(
-                                  'goods_receiving_screen.dialog_search_no_results'
-                                      .tr()))
+                          child: Text(
+                              'goods_receiving_screen.dialog_search_no_results'
+                                  .tr()))
                           : ListView.builder(
                         itemCount: filteredItems.length,
                         itemBuilder: (context, index) {
