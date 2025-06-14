@@ -1,7 +1,7 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
-import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
+// import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart'; // Yorum satırına alındı
 // core/sync/sync_service.dart import'u artık bu dosyada doğrudan kullanılmadığı için kaldırılabilir.
 // Provider aracılığıyla dolaylı olarak kullanılır.
 import 'package:flutter/material.dart';
@@ -75,22 +75,23 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
               ),
-              SizedBox(height: spacing),
-              SizedBox(
-                height: buttonHeight,
-                child: _HomeButton(
-                  icon: Icons.sync_alt,
-                  label: 'home.pending_operations'.tr(),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const PendingOperationsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
+              // Bekleyen operasyonlar butonu yorum satırına alındı
+              // SizedBox(height: spacing),
+              // SizedBox(
+              //   height: buttonHeight,
+              //   child: _HomeButton(
+              //     icon: Icons.sync_alt,
+              //     label: 'home.pending_operations'.tr(),
+              //     onTap: () {
+              //       Navigator.push(
+              //         context,
+              //         MaterialPageRoute(
+              //           builder: (context) => const PendingOperationsScreen(),
+              //         ),
+              //       );
+              //     },
+              //   ),
+              // ),
             ],
           ),
         );
