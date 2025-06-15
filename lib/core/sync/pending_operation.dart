@@ -28,7 +28,7 @@ class PendingOperation {
     this.errorMessage,
   });
 
-  /// [YENİ] Kullanıcı arayüzünde gösterilecek ana başlığı oluşturur.
+  /// Kullanıcı arayüzünde gösterilecek ana başlığı oluşturur.
   String get displayTitle {
     try {
       final jsonData = jsonDecode(data) as Map<String, dynamic>;
@@ -38,15 +38,19 @@ class PendingOperation {
           final poId = header?['invoice_number'] as String?;
           return poId != null && poId.isNotEmpty ? 'Mal Kabul: $poId' : 'Siparişe Bağlı Olmayan Mal Kabul';
         case PendingOperationType.inventoryTransfer:
-          return 'Envanter Transferi'; // Gelecekte transfer detaylarına göre zenginleştirilebilir.
+          final header = jsonData['header'] as Map<String, dynamic>?;
+          final operationType = header?['operation_type'] as String?;
+          if (operationType == 'pallet_transfer') {
+            return 'Palet Transferi';
+          }
+          return 'Envanter Transferi';
       }
     } catch (e) {
-      debugPrint("displayTitle parse error: $e");
-      return 'Bilinmeyen Operasyon';
+      return 'Bilinmeyen İşlem';
     }
   }
 
-  /// [YENİ] Kullanıcı arayüzünde gösterilecek altyazıyı ve detayları oluşturur.
+  /// Kullanıcı arayüzünde gösterilecek alt başlığı oluşturur.
   String get displaySubtitle {
     try {
       final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
@@ -54,12 +58,7 @@ class PendingOperation {
       final items = jsonData['items'] as List<dynamic>?;
       final itemCount = items?.length ?? 0;
 
-      switch (type) {
-        case PendingOperationType.goodsReceipt:
-          return '$itemCount kalem ürün | Tarih: $formattedDate';
-        case PendingOperationType.inventoryTransfer:
-          return '$itemCount kalem ürün transferi | Tarih: $formattedDate';
-      }
+      return '$itemCount kalem ürün | Tarih: $formattedDate';
     } catch (e) {
       debugPrint("displaySubtitle parse error: $e");
       return 'Detaylar okunamadı';

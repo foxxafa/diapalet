@@ -6,11 +6,12 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+// [DÜZELTME] Eksik import eklendi.
 import 'package:diapalet/core/sync/pending_operation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet.db";
-  static const _databaseVersion = 11; // Version remains the same if schema doesn't change
+  static const _databaseVersion = 11;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -44,7 +45,6 @@ class DatabaseHelper {
 
   Future<void> _onCreate(Database db, [int? version]) async {
     debugPrint("Creating database schema version $_databaseVersion...");
-
     await db.execute('''
       CREATE TABLE locations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, code TEXT, is_active INTEGER DEFAULT 1, address TEXT, description TEXT, latitude REAL, longitude REAL, created_at TEXT, updated_at TEXT)
     ''');
@@ -94,7 +94,7 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> replaceTables(Map<String, dynamic> tableData) async {
+  Future<void> applyDownloadedData(Map<String, dynamic> tableData, {required bool isFullSync}) async {
     final db = await database;
     final orderedTableNames = [
       'locations', 'employees', 'urunler', 'satin_alma_siparis_fis',
@@ -103,23 +103,21 @@ class DatabaseHelper {
     ];
 
     await db.transaction((txn) async {
-      for (final tableName in orderedTableNames.reversed) {
-        if (tableData.containsKey(tableName)) {
-          await txn.delete(tableName);
+      if (isFullSync) {
+        debugPrint("Tam senkronizasyon: Mevcut tablolar temizleniyor...");
+        for (final tableName in orderedTableNames.reversed) {
+          if (tableData.containsKey(tableName)) {
+            await txn.delete(tableName);
+          }
         }
       }
-
       for (final tableName in orderedTableNames) {
         if (!tableData.containsKey(tableName)) continue;
-
         final records = tableData[tableName] as List<dynamic>?;
-        if (records == null) continue;
-
+        if (records == null || records.isEmpty) continue;
+        debugPrint("${records.length} kayıt $tableName tablosuna uygulanıyor...");
         for (final record in records) {
           final filteredRecord = Map<String, dynamic>.from(record);
-          final tableInfo = await txn.rawQuery('PRAGMA table_info($tableName)');
-          final columnNames = tableInfo.map((row) => row['name'] as String).toSet();
-          filteredRecord.removeWhere((key, value) => !columnNames.contains(key));
           await txn.insert(tableName, filteredRecord, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
@@ -137,8 +135,6 @@ class DatabaseHelper {
     return maps.map((map) => SyncLog.fromMap(map)).toList();
   }
 
-  /// [DÜZELTME] Bekleyen işlemleri "ilk giren ilk çıkar" (FIFO) mantığıyla almak
-  /// için sıralama `id ASC` olarak değiştirildi.
   Future<List<PendingOperation>> getPendingOperations() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('pending_operation', orderBy: 'id ASC');

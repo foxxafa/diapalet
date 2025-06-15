@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
+// [DÜZELTME] Eksik import eklendi.
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
@@ -13,8 +14,6 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_op
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:sqflite/sqflite.dart';
 
-// [DÜZELTME] Sınıf adı, dosyanın amacıyla eşleşecek ve isim çakışmasını
-// önleyecek şekilde 'InventoryTransferRepositoryImpl' olarak değiştirildi.
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;

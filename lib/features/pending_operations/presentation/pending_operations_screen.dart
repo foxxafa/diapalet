@@ -1,4 +1,5 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
+// [DÜZELTME] Eksik import eklendi.
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
@@ -25,11 +26,9 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
     _syncService = context.read<SyncService>();
     _tabController = TabController(length: 2, vsync: this);
 
-    // [DÜZELTME] Sayfa yüklendiğinde otomatik senkronizasyon yap.
-    // Bu, kullanıcı sayfaya her girdiğinde durumun güncel olmasını sağlar.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _syncService.performFullSync();
+        _syncService.checkServerStatus();
       }
     });
   }
@@ -42,8 +41,6 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
 
   Future<void> _handleSync() async {
     await _syncService.performFullSync();
-    // Senkronizasyon sonrası arayüzü yenilemek için setState çağırıyoruz,
-    // bu FutureBuilder'ları yeniden tetikleyecektir.
     if (mounted) {
       setState(() {});
     }
@@ -75,7 +72,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
             child: TabBarView(
               controller: _tabController,
               children: [
-                _PendingList(key: UniqueKey()), // Key ekleyerek yeniden çizimi garantile
+                _PendingList(key: UniqueKey()),
                 _HistoryList(key: UniqueKey()),
               ],
             ),
@@ -148,43 +145,35 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
   }
 }
 
-// --- AYRI WIDGET'LAR ---
-
 class _PendingList extends StatelessWidget {
   const _PendingList({super.key});
-
   @override
   Widget build(BuildContext context) {
-    final syncService = context.watch<SyncService>();
-    return FutureBuilder<List<PendingOperation>>(
-      future: syncService.getPendingOperations(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Hata: ${snapshot.error}'));
-        }
-        final operations = snapshot.data ?? [];
-        if (operations.isEmpty) {
-          return Center(child: Text('pending_operations.no_pending'.tr()));
-        }
-        return ListView.builder(
-          itemCount: operations.length,
-          itemBuilder: (context, index) {
-            final op = operations[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: ListTile(
-                leading: Icon(
-                  op.type == PendingOperationType.goodsReceipt ? Icons.call_received : Icons.swap_horiz,
-                ),
-                title: Text(op.displayTitle),
-                subtitle: Text(op.displaySubtitle),
-                trailing: op.status == 'failed'
-                    ? Tooltip(message: op.errorMessage ?? 'Bilinmeyen hata', child: const Icon(Icons.error, color: Colors.red))
-                    : (op.status == 'pending' ? const Icon(Icons.hourglass_top_outlined, color: Colors.orange) : null),
-              ),
+    return Consumer<SyncService>(
+      builder: (context, syncService, child) {
+        return FutureBuilder<List<PendingOperation>>(
+          future: syncService.getPendingOperations(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+            if (snapshot.hasError) return Center(child: Text('Hata: ${snapshot.error}'));
+            final operations = snapshot.data ?? [];
+            if (operations.isEmpty) return Center(child: Text('pending_operations.no_pending'.tr()));
+            return ListView.builder(
+              itemCount: operations.length,
+              itemBuilder: (context, index) {
+                final op = operations[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    leading: Icon(op.type == PendingOperationType.goodsReceipt ? Icons.call_received : Icons.swap_horiz),
+                    title: Text(op.displayTitle),
+                    subtitle: Text(op.displaySubtitle),
+                    trailing: op.status == 'failed'
+                        ? Tooltip(message: op.errorMessage ?? 'Bilinmeyen hata', child: const Icon(Icons.error, color: Colors.red))
+                        : (op.status == 'pending' ? const Icon(Icons.hourglass_top_outlined, color: Colors.orange) : null),
+                  ),
+                );
+              },
             );
           },
         );
@@ -195,34 +184,30 @@ class _PendingList extends StatelessWidget {
 
 class _HistoryList extends StatelessWidget {
   const _HistoryList({super.key});
-
   @override
   Widget build(BuildContext context) {
-    final syncService = context.watch<SyncService>();
-    return FutureBuilder<List<SyncLog>>(
-      future: syncService.getSyncHistory(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Hata: ${snapshot.error}'));
-        }
-        final logs = snapshot.data ?? [];
-        if (logs.isEmpty) {
-          return Center(child: Text('pending_operations.no_history'.tr()));
-        }
-        return ListView.builder(
-          itemCount: logs.length,
-          itemBuilder: (context, index) {
-            final log = logs[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: ListTile(
-                leading: _buildHistoryIcon(log.type, log.status),
-                title: Text(log.message),
-                subtitle: Text(DateFormat('dd.MM.yyyy HH:mm:ss').format(log.timestamp)),
-              ),
+    return Consumer<SyncService>(
+      builder: (context, syncService, child) {
+        return FutureBuilder<List<SyncLog>>(
+          future: syncService.getSyncHistory(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+            if (snapshot.hasError) return Center(child: Text('Hata: ${snapshot.error}'));
+            final logs = snapshot.data ?? [];
+            if (logs.isEmpty) return Center(child: Text('pending_operations.no_history'.tr()));
+            return ListView.builder(
+              itemCount: logs.length,
+              itemBuilder: (context, index) {
+                final log = logs[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    leading: _buildHistoryIcon(log.type, log.status),
+                    title: Text(log.message),
+                    subtitle: Text(DateFormat('dd.MM.yyyy HH:mm:ss').format(log.timestamp)),
+                  ),
+                );
+              },
             );
           },
         );
@@ -231,15 +216,11 @@ class _HistoryList extends StatelessWidget {
   }
 
   Widget _buildHistoryIcon(String type, String status) {
-    if (status == 'error') return const Icon(Icons.error_outline, color: Colors.red);
-
-    switch(type) {
+    if (status.contains('error')) return const Icon(Icons.error_outline, color: Colors.red);
+    switch (type) {
       case 'download': return const Icon(Icons.cloud_download_outlined, color: Colors.blue);
       case 'upload': return const Icon(Icons.cloud_upload_outlined, color: Colors.green);
-      case 'sync_status':
-        return status == 'success'
-            ? const Icon(Icons.check_circle_outline, color: Colors.green)
-            : const Icon(Icons.info_outline, color: Colors.orange);
+      case 'sync_status': return const Icon(Icons.check_circle_outline, color: Colors.green);
       default: return const Icon(Icons.info_outline, color: Colors.grey);
     }
   }
