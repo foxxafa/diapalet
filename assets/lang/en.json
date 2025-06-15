@@ -6,6 +6,14 @@
     "turkish": "Turkish",
     "english": "English"
   },
+  "settings": {
+    "title": "Settings"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System Default"
+  },
   "home": {
     "title": "DiaPallet WMS",
     "reset_db": "Reset Database",

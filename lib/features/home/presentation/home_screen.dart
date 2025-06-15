@@ -97,12 +97,13 @@ class HomeScreen extends StatelessWidget {
 
     showModalBottomSheet(
       context: context,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Başlık
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -160,7 +161,8 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
