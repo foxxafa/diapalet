@@ -4,6 +4,8 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
+// [YENİ] ThemeProvider import edildi.
+import 'package:diapalet/core/theme/theme_provider.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
@@ -36,9 +38,10 @@ void main() async {
           Provider<Dio>.value(value: dio),
           Provider<NetworkInfo>.value(value: networkInfo),
 
+          // [YENİ] ThemeProvider, uygulama genelinde tema durumunu yönetmek için eklendi.
+          ChangeNotifierProvider(create: (_) => ThemeProvider()),
+
           // Repository'ler: Diğer servislere bağımlı.
-          // ProxyProvider3, altındaki widget ağacına bir nesne (interface) sağlar
-          // ve bu nesneyi oluşturmak için diğer provider'lardan (db, network, dio) değerler alır.
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, GoodsReceivingRepository>(
             update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
               dbHelper: db,
@@ -55,7 +58,6 @@ void main() async {
           ),
 
           // SyncService'i bir ChangeNotifier olarak sağla.
-          // Bu, arayüzün senkronizasyon durumundaki değişikliklere tepki vermesini sağlar.
           ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
@@ -63,20 +65,26 @@ void main() async {
               networkInfo: context.read<NetworkInfo>(),
             ),
             update: (_, db, network, dio, previous) {
-              // Bağımlılıklar değişirse, mevcut SyncService örneğini yeni bağımlılıklarla güncelle.
-              // 'previous' null olamaz çünkü `create` ile her zaman bir örnek oluşturulur.
               return previous!..updateDependencies(db, dio, network);
             },
           ),
         ],
-        child: const MyApp(),
+        // [DEĞİŞİKLİK] MyApp widget'ı, tema değişikliklerini dinlemek için
+        // Consumer ile sarmalandı.
+        child: Consumer<ThemeProvider>(
+          builder: (context, themeProvider, child) {
+            return MyApp(themeProvider: themeProvider);
+          },
+        ),
       ),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  // [YENİ] ThemeProvider, constructor aracılığıyla alındı.
+  final ThemeProvider themeProvider;
+  const MyApp({super.key, required this.themeProvider});
 
   @override
   Widget build(BuildContext context) {
@@ -86,8 +94,9 @@ class MyApp extends StatelessWidget {
       locale: context.locale,
       title: 'DiaPalet',
       theme: AppTheme.light,
-      darkTheme: AppTheme.light,
-      themeMode: ThemeMode.light,
+      darkTheme: AppTheme.dark,
+      // [DEĞİŞİKLİK] themeMode artık sabit değil, ThemeProvider'dan dinamik olarak alınıyor.
+      themeMode: themeProvider.themeMode,
       home: const HomeScreen(),
       debugShowCheckedModeBanner: false,
     );

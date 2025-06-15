@@ -18,8 +18,7 @@ class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
 
   @override
-  State<InventoryTransferScreen> createState() =>
-      _InventoryTransferScreenState();
+  State<InventoryTransferScreen> createState() => _InventoryTransferScreenState();
 }
 
 class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
@@ -55,7 +54,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   List<ProductItem> _productsInContainer = [];
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
-
 
   @override
   void initState() {
@@ -103,8 +101,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       });
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('inventory_transfer.error_generic'
-            .tr(namedArgs: {'error': e.toString()}));
+        _showErrorSnackBar('inventory_transfer.error_generic'.tr(namedArgs: {'error': e.toString()}));
       }
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
@@ -114,56 +111,43 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Future<void> _processScannedData(String field, String data) async {
     switch (field) {
       case 'source':
-        final locationName = _availableSourceLocations.keys.firstWhere(
-                (k) => k.toLowerCase() == data.toLowerCase(),
-            orElse: () => '');
+        final locationName = _availableSourceLocations.keys.firstWhere((k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
         if (locationName.isNotEmpty) {
           _handleSourceSelection(locationName);
         } else {
           _sourceLocationController.clear();
-          _showErrorSnackBar('inventory_transfer.error_invalid_source_location'
-              .tr(namedArgs: {'data': data}));
+          _showErrorSnackBar('inventory_transfer.error_invalid_source_location'.tr(namedArgs: {'data': data}));
         }
         break;
       case 'container':
         dynamic foundItem;
         if (_selectedMode == AssignmentMode.pallet) {
-          foundItem = _availableContainers
-              .cast<String?>()
-              .firstWhere((id) => id == data, orElse: () => null);
+          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id == data, orElse: () => null);
         } else {
-          foundItem = _availableContainers.cast<BoxItem?>().firstWhere(
-                  (box) => box?.productCode == data || box?.barcode1 == data,
-              orElse: () => null);
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode == data || box?.barcode1 == data, orElse: () => null);
         }
 
         if (foundItem != null) {
           _handleContainerSelection(foundItem);
         } else {
           _scannedContainerIdController.clear();
-          _showErrorSnackBar('inventory_transfer.error_item_not_found'
-              .tr(namedArgs: {'data': data}));
+          _showErrorSnackBar('inventory_transfer.error_item_not_found'.tr(namedArgs: {'data': data}));
         }
         break;
       case 'target':
-        final locationName = _availableTargetLocations.keys.firstWhere(
-                (k) => k.toLowerCase() == data.toLowerCase(),
-            orElse: () => '');
+        final locationName = _availableTargetLocations.keys.firstWhere((k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
         if (locationName.isNotEmpty) {
           _handleTargetSelection(locationName);
         } else {
           _targetLocationController.clear();
-          _showErrorSnackBar('inventory_transfer.error_invalid_target_location'
-              .tr(namedArgs: {'data': data}));
+          _showErrorSnackBar('inventory_transfer.error_invalid_target_location'.tr(namedArgs: {'data': data}));
         }
         break;
     }
   }
 
   void _handleSourceSelection(String? locationName) {
-    if (locationName == null || locationName == _selectedSourceLocationName) {
-      return;
-    }
+    if (locationName == null || locationName == _selectedSourceLocationName) return;
     setState(() {
       _selectedSourceLocationName = locationName;
       _sourceLocationController.text = locationName;
@@ -181,7 +165,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           : selectedItem.toString();
     });
     await _fetchContainerContents();
-    // After fetching contents, focus on the target location.
     _targetLocationFocusNode.requestFocus();
   }
 
@@ -210,10 +193,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _availableContainers = await _repo.getBoxesAtLocation(locationId);
       }
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('inventory_transfer.error_loading_containers'
-            .tr(namedArgs: {'error': e.toString()}));
-      }
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
     }
@@ -241,19 +221,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _productsInContainer = contents;
         for (var product in contents) {
-          final initialQty = _selectedMode == AssignmentMode.pallet
-              ? product.currentQuantity
-              : 1.0;
-          _productQuantityControllers[product.id] =
-              TextEditingController(text: initialQty.toString());
+          final initialQty = _selectedMode == AssignmentMode.pallet ? product.currentQuantity : 1.0;
+          _productQuantityControllers[product.id] = TextEditingController(text: initialQty.toString());
           _productQuantityFocusNodes[product.id] = FocusNode();
         }
       });
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('inventory_transfer.error_loading_content'
-            .tr(namedArgs: {'error': e.toString()}));
-      }
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
     }
@@ -272,10 +246,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     for (var product in _productsInContainer) {
       final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
-
       if (qty > 0) {
-        if (qty.toStringAsFixed(2) !=
-            product.currentQuantity.toStringAsFixed(2)) {
+        if (qty.toStringAsFixed(2) != product.currentQuantity.toStringAsFixed(2)) {
           isFullPalletTransfer = false;
         }
         itemsToTransfer.add(TransferItemDetail(
@@ -283,9 +255,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
-          sourcePalletBarcode: _selectedMode == AssignmentMode.pallet
-              ? (_selectedContainer as String)
-              : null,
+          sourcePalletBarcode: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
         ));
       }
     }
@@ -296,13 +266,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
 
     final finalOperationMode = _selectedMode == AssignmentMode.pallet
-        ? (isFullPalletTransfer
-        ? AssignmentMode.pallet
-        : AssignmentMode.box_from_pallet)
+        ? (isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.box_from_pallet)
         : AssignmentMode.box;
 
-    final confirm =
-    await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
+    final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
     if (confirm != true) return;
 
     final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
@@ -319,24 +286,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         operationType: finalOperationMode,
         sourceLocationName: _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
-        containerId: (_selectedContainer is String)
-            ? _selectedContainer
-            : (_selectedContainer as BoxItem?)?.productCode,
+        containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as BoxItem?)?.productCode,
         transferDate: DateTime.now(),
       );
-
-      await _repo.recordTransferOperation(
-          header, itemsToTransfer, sourceId, targetId);
-
+      await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
       if (mounted) {
         _showSuccessSnackBar('inventory_transfer.success_transfer_saved'.tr());
         _resetForm(resetAll: true);
       }
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('inventory_transfer.error_saving'
-            .tr(namedArgs: {'error': e.toString()}));
-      }
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -368,46 +327,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // --- Responsive Boyutlandırma ---
-    final mediaQuery = MediaQuery.of(context);
-    final screenHeight = mediaQuery.size.height;
-    final screenWidth = mediaQuery.size.width;
-    final bool isKeyboardVisible = mediaQuery.viewInsets.bottom > 0;
-
-    // YÜKSEKLİKLER (Mal Kabul ile aynı)
-    final appBarHeight = screenHeight * 0.07;
-    final inputRowHeight = screenHeight * 0.075;
-    final segmentedButtonHeight = screenHeight * 0.07;
-    final buttonHeight = screenHeight * 0.09;
-
-    // Dinamik Font ve Ikon Boyutları
-    final sizeFactor = (screenWidth / 480.0).clamp(0.9, 1.3);
-
-    final appBarFontSize = 19.0 * sizeFactor;
-    final labelFontSize = 15.0 * sizeFactor;
-    final buttonFontSize = 16.0 * sizeFactor;
-    final contentTitleFontSize = 15.0 * sizeFactor;
-    final contentTextFontSize = 13.0 * sizeFactor;
-    final segmentedButtonFontSize = 13.0 * sizeFactor;
-    final errorFontSize = 11.0 * sizeFactor;
-
-    final baseIconSize = 24.0 * sizeFactor;
-    final qrIconSize = 28.0 * sizeFactor;
-    final segmentedButtonIconSize = 20.0 * sizeFactor;
+    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
-      appBar: SharedAppBar(
-        title: 'inventory_transfer.title'.tr(),
-        preferredHeight: appBarHeight,
-        titleFontSize: appBarFontSize,
-      ),
+      appBar: SharedAppBar(title: 'inventory_transfer.title'.tr()),
       resizeToAvoidBottomInset: true,
-      bottomNavigationBar: isKeyboardVisible
-          ? null
-          : _buildBottomBar(
-          height: buttonHeight,
-          fontSize: buttonFontSize,
-          iconSize: baseIconSize),
+      bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
       body: SafeArea(
         child: _isLoadingInitialData
             ? const Center(child: CircularProgressIndicator())
@@ -416,16 +341,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           child: Form(
             key: _formKey,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: _gap),
-                  _buildModeSelector(
-                    height: segmentedButtonHeight,
-                    fontSize: segmentedButtonFontSize,
-                    iconSize: segmentedButtonIconSize,
-                  ),
+                  _buildModeSelector(),
                   const SizedBox(height: _gap),
                   _buildHybridDropdownWithQr<String>(
                     controller: _sourceLocationController,
@@ -435,69 +355,37 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     items: _availableSourceLocations.keys.toList(),
                     itemToString: (item) => item,
                     onItemSelected: _handleSourceSelection,
-                    height: inputRowHeight,
-                    labelFontSize: labelFontSize,
-                    errorFontSize: errorFontSize,
-                    qrIconSize: qrIconSize,
-                    filterCondition: (item, query) => item
-                        .toLowerCase()
-                        .contains(query.toLowerCase()),
+                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                   ),
                   const SizedBox(height: _gap),
                   _buildHybridDropdownWithQr<dynamic>(
                     controller: _scannedContainerIdController,
                     focusNode: _containerFocusNode,
-                    label: _selectedMode == AssignmentMode.pallet
-                        ? 'inventory_transfer.label_pallet'.tr()
-                        : 'inventory_transfer.label_product'.tr(),
+                    label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
                     fieldIdentifier: 'container',
                     items: _availableContainers,
                     itemToString: (item) {
                       if (item is String) return item;
-                      if (item is BoxItem) {
-                        return '${item.productName} (${item.productCode})';
-                      }
+                      if (item is BoxItem) return '${item.productName} (${item.productCode})';
                       return '';
                     },
                     onItemSelected: _handleContainerSelection,
-                    height: inputRowHeight,
-                    labelFontSize: labelFontSize,
-                    errorFontSize: errorFontSize,
-                    qrIconSize: qrIconSize,
                     filterCondition: (item, query) {
                       final lowerQuery = query.toLowerCase();
-                      if (item is String) {
-                        return item.toLowerCase().contains(lowerQuery);
-                      }
+                      if (item is String) return item.toLowerCase().contains(lowerQuery);
                       if (item is BoxItem) {
-                        return item.productName
-                            .toLowerCase()
-                            .contains(lowerQuery) ||
-                            item.productCode
-                                .toLowerCase()
-                                .contains(lowerQuery) ||
-                            (item.barcode1
-                                ?.toLowerCase()
-                                .contains(lowerQuery) ??
-                                false);
+                        return item.productName.toLowerCase().contains(lowerQuery) ||
+                            item.productCode.toLowerCase().contains(lowerQuery) ||
+                            (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
                       }
                       return false;
                     },
                   ),
                   const SizedBox(height: _gap),
                   if (_isLoadingContainerContents)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: _gap),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
+                    const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
                   else if (_productsInContainer.isNotEmpty)
-                    _buildProductsList(
-                      titleFontSize: contentTitleFontSize,
-                      textFontSize: contentTextFontSize,
-                      labelFontSize: labelFontSize,
-                      errorFontSize: errorFontSize,
-                      inputHeight: inputRowHeight,
-                    ),
+                    _buildProductsList(),
                   const SizedBox(height: _gap),
                   _buildHybridDropdownWithQr<String>(
                     controller: _targetLocationController,
@@ -507,13 +395,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     items: _availableTargetLocations.keys.toList(),
                     itemToString: (item) => item,
                     onItemSelected: _handleTargetSelection,
-                    height: inputRowHeight,
-                    labelFontSize: labelFontSize,
-                    errorFontSize: errorFontSize,
-                    qrIconSize: qrIconSize,
-                    filterCondition: (item, query) => item
-                        .toLowerCase()
-                        .contains(query.toLowerCase()),
+                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                   ),
                   const SizedBox(height: _gap),
                 ],
@@ -525,46 +407,33 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildModeSelector(
-      {required double height,
-        required double fontSize,
-        required double iconSize}) {
-    return SizedBox(
-      height: height,
-      child: Center(
-        child: SegmentedButton<AssignmentMode>(
-          segments: [
-            ButtonSegment(
-                value: AssignmentMode.pallet,
-                label: Text('inventory_transfer.mode_pallet'.tr(),
-                    style: TextStyle(fontSize: fontSize)),
-                icon: Icon(Icons.pallet, size: iconSize)),
-            ButtonSegment(
-                value: AssignmentMode.box,
-                label: Text('inventory_transfer.mode_box'.tr(),
-                    style: TextStyle(fontSize: fontSize)),
-                icon: Icon(Icons.inventory_2_outlined, size: iconSize)),
-          ],
-          selected: {_selectedMode},
-          onSelectionChanged: (newSelection) {
-            setState(() {
-              _selectedMode = newSelection.first;
-              _resetContainerAndProducts();
-              if (_selectedSourceLocationName != null) {
-                _loadContainersForLocation();
-              }
-            });
-          },
-          style: SegmentedButton.styleFrom(
-            visualDensity: VisualDensity.comfortable,
-            backgroundColor: Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
-                .withAlpha(75),
-            selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-            selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-            shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-          ),
+  Widget _buildModeSelector() {
+    return Center(
+      child: SegmentedButton<AssignmentMode>(
+        segments: [
+          ButtonSegment(
+              value: AssignmentMode.pallet,
+              label: Text('inventory_transfer.mode_pallet'.tr()),
+              icon: const Icon(Icons.pallet)),
+          ButtonSegment(
+              value: AssignmentMode.box,
+              label: Text('inventory_transfer.mode_box'.tr()),
+              icon: const Icon(Icons.inventory_2_outlined)),
+        ],
+        selected: {_selectedMode},
+        onSelectionChanged: (newSelection) {
+          setState(() {
+            _selectedMode = newSelection.first;
+            _resetContainerAndProducts();
+            if (_selectedSourceLocationName != null) {
+              _loadContainersForLocation();
+            }
+          });
+        },
+        style: SegmentedButton.styleFrom(
+          visualDensity: VisualDensity.comfortable,
+          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
         ),
       ),
     );
@@ -579,99 +448,65 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required String Function(T item) itemToString,
     required void Function(T? item) onItemSelected,
     required bool Function(T item, String query) filterCondition,
-    required double height,
-    required double labelFontSize,
-    required double errorFontSize,
-    required double qrIconSize,
   }) {
-    return SizedBox(
-      height: height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: controller,
-              focusNode: focusNode,
-              style: TextStyle(fontSize: labelFontSize),
-              textAlignVertical: TextAlignVertical.center,
-              decoration: _inputDecoration(
-                label,
-                labelFontSize: labelFontSize,
-                errorFontSize: errorFontSize,
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.arrow_drop_down),
-                  tooltip: 'inventory_transfer.tooltip_select_from_list'.tr(),
-                  onPressed: () async {
-                    final T? selectedItem =
-                    await _showSearchableDropdownDialog<T>(
-                      title: label,
-                      items: items,
-                      itemToString: itemToString,
-                      filterCondition: filterCondition,
-                      itemFontSize: labelFontSize,
-                    );
-                    if (selectedItem != null) {
-                      onItemSelected(selectedItem);
-                    }
-                  },
-                ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: controller,
+            focusNode: focusNode,
+            decoration: _inputDecoration(
+              label,
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.arrow_drop_down),
+                tooltip: 'inventory_transfer.tooltip_select_from_list'.tr(),
+                onPressed: () async {
+                  final T? selectedItem = await _showSearchableDropdownDialog<T>(
+                    title: label,
+                    items: items,
+                    itemToString: itemToString,
+                    filterCondition: filterCondition,
+                  );
+                  if (selectedItem != null) {
+                    onItemSelected(selectedItem);
+                  }
+                },
               ),
-              onFieldSubmitted: (value) {
-                if (value.isNotEmpty) {
-                  _processScannedData(fieldIdentifier, value);
-                }
-              },
-              validator: (val) {
-                if (val == null || val.isEmpty) {
-                  return 'inventory_transfer.validator_required_field'.tr();
-                }
-                if (fieldIdentifier == 'target' &&
-                    val == _sourceLocationController.text) {
-                  return 'inventory_transfer.validator_target_cannot_be_source'
-                      .tr();
-                }
-                return null;
-              },
             ),
-          ),
-          const SizedBox(width: _smallGap),
-          _QrButton(
-            onTap: () async {
-              final result = await Navigator.push<String>(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const QrScannerScreen()));
-              if (result != null && result.isNotEmpty) {
-                controller.text = result;
-                _processScannedData(fieldIdentifier, result);
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedData(fieldIdentifier, value);
               }
             },
-            size: height,
-            iconSize: qrIconSize,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
+              if (fieldIdentifier == 'target' && val == _sourceLocationController.text) {
+                return 'inventory_transfer.validator_target_cannot_be_source'.tr();
+              }
+              return null;
+            },
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: _smallGap),
+        _QrButton(
+          onTap: () async {
+            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+            if (result != null && result.isNotEmpty) {
+              controller.text = result;
+              _processScannedData(fieldIdentifier, result);
+            }
+          },
+        ),
+      ],
     );
   }
 
-  Widget _buildProductsList({
-    required double titleFontSize,
-    required double textFontSize,
-    required double labelFontSize,
-    required double errorFontSize,
-    required double inputHeight,
-  }) {
+  Widget _buildProductsList() {
     return Container(
-      margin: const EdgeInsets.only(top: _smallGap),
       decoration: BoxDecoration(
-        border:
-        Border.all(color: Theme.of(context).dividerColor.withAlpha(120)),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
         borderRadius: _borderRadius,
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withAlpha((255 * 0.2).round()),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -680,105 +515,70 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Text(
-              'inventory_transfer.content_title'.tr(namedArgs: {
-                'containerId': _scannedContainerIdController.text
-              }),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold, fontSize: titleFontSize),
+              'inventory_transfer.content_title'.tr(namedArgs: {'containerId': _scannedContainerIdController.text}),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          const Divider(height: 1, thickness: 0.5),
+          const Divider(height: 1),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.all(_smallGap),
             itemCount: _productsInContainer.length,
-            separatorBuilder: (context, index) =>
-            const Divider(height: _smallGap, indent: 16, endIndent: 16),
+            separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16, thickness: 0.2),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
               final controller = _productQuantityControllers[product.id]!;
               final focusNode = _productQuantityFocusNodes[product.id]!;
               return Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: SizedBox(
-                  height: inputHeight,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(product.name,
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: textFontSize),
-                                overflow: TextOverflow.ellipsis),
-                            Text(
-                                'inventory_transfer.label_current_quantity'.tr(
-                                    namedArgs: {
-                                      'productCode': product.productCode,
-                                      'quantity':
-                                      product.currentQuantity.toString()
-                                    }),
-                                style:
-                                TextStyle(fontSize: textFontSize * 0.9)),
-                          ],
-                        ),
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(product.name, style: Theme.of(context).textTheme.bodyLarge, overflow: TextOverflow.ellipsis),
+                          Text(
+                              'inventory_transfer.label_current_quantity'.tr(
+                                  namedArgs: {'productCode': product.productCode, 'quantity': product.currentQuantity.toString()}),
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ],
                       ),
-                      const SizedBox(width: _gap),
-                      SizedBox(
-                        width: MediaQuery.of(context).size.width * 0.25,
-                        child: TextFormField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: labelFontSize),
-                          keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                                RegExp(r'^\d*\.?\d*'))
-                          ],
-                          decoration: _inputDecoration(
-                              'inventory_transfer.label_quantity'.tr(),
-                              labelFontSize: labelFontSize,
-                              errorFontSize: errorFontSize),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'inventory_transfer.validator_required'.tr();
-                            }
-                            final qty = double.tryParse(value);
-                            if (qty == null) {
-                              return 'inventory_transfer.validator_invalid'.tr();
-                            }
-                            if (qty > product.currentQuantity) {
-                              return 'inventory_transfer.validator_max'.tr();
-                            }
-                            if (qty < 0) {
-                              return 'inventory_transfer.validator_negative'.tr();
-                            }
-                            return null;
-                          },
-                          onFieldSubmitted: (value) {
-                            final productIds =
-                            _productQuantityFocusNodes.keys.toList();
-                            final currentIndex = productIds.indexOf(product.id);
-                            if (currentIndex < productIds.length - 1) {
-                              _productQuantityFocusNodes[
-                              productIds[currentIndex + 1]]
-                                  ?.requestFocus();
-                            } else {
-                              _targetLocationFocusNode.requestFocus();
-                            }
-                          },
-                        ),
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        textAlign: TextAlign.center,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                        decoration: _inputDecoration('inventory_transfer.label_quantity'.tr()),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
+                          final qty = double.tryParse(value);
+                          if (qty == null) return 'inventory_transfer.validator_invalid'.tr();
+                          if (qty > product.currentQuantity) return 'inventory_transfer.validator_max'.tr();
+                          if (qty < 0) return 'inventory_transfer.validator_negative'.tr();
+                          return null;
+                        },
+                        onFieldSubmitted: (value) {
+                          final productIds = _productQuantityFocusNodes.keys.toList();
+                          final currentIndex = productIds.indexOf(product.id);
+                          if (currentIndex < productIds.length - 1) {
+                            _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+                          } else {
+                            _targetLocationFocusNode.requestFocus();
+                          }
+                        },
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -788,79 +588,39 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildBottomBar(
-      {required double height,
-        required double fontSize,
-        required double iconSize}) {
+  Widget _buildBottomBar() {
     if (_isLoadingInitialData) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-      child: SizedBox(
-        height: height,
-        child: ElevatedButton.icon(
-          onPressed: _isSaving ? null : _onConfirmSave,
-          icon: _isSaving
-              ? const SizedBox(
-              width: 20,
-              height: 20,
-              child:
-              CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Icon(Icons.check_circle_outline, size: iconSize),
-          label: Text(
-              _isSaving
-                  ? 'inventory_transfer.button_saving'.tr()
-                  : 'inventory_transfer.button_save'.tr(),
-              style: TextStyle(fontSize: fontSize)),
-          style: ElevatedButton.styleFrom(
-            minimumSize: Size(double.infinity, height),
-            shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-            textStyle:
-            TextStyle(fontSize: fontSize, fontWeight: FontWeight.w600),
-          ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: ElevatedButton.icon(
+        onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
+        icon: _isSaving
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : const Icon(Icons.check_circle_outline),
+        label: FittedBox(child: Text('inventory_transfer.button_save'.tr())),
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+          textStyle: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
         ),
       ),
     );
   }
 
-  InputDecoration _inputDecoration(
-      String label, {
-        Widget? suffixIcon,
-        bool enabled = true,
-        required double labelFontSize,
-        required double errorFontSize,
-      }) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true}) {
+    final theme = Theme.of(context);
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(fontSize: labelFontSize),
       filled: true,
-      fillColor: enabled
-          ? Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(75)
-          : Colors.grey.shade200,
-      errorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide:
-        BorderSide(color: Theme.of(context).colorScheme.error, width: 2.0),
-      ),
-      border: OutlineInputBorder(borderRadius: _borderRadius),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide:
-        BorderSide(color: Theme.of(context).dividerColor.withAlpha(180)),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: Colors.grey.shade400),
-      ),
+      fillColor: enabled ? theme.colorScheme.surface.withOpacity(0.5) : Colors.grey.shade200,
+      border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      isDense: true,
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      isDense: true,
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      errorStyle: const TextStyle(height: 0, fontSize: 0),
+      errorStyle: const TextStyle(height: 0.8, fontSize: 10),
     );
   }
 
@@ -869,100 +629,61 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required List<T> items,
     required String Function(T) itemToString,
     required bool Function(T, String) filterCondition,
-    required double itemFontSize,
   }) {
     String searchQuery = '';
-
     return showDialog<T>(
       context: context,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final filteredItems =
-            items.where((item) => filterCondition(item, searchQuery)).toList();
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(28)),
-              title:
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              titlePadding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-              contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: MediaQuery.of(context).size.height * 0.6,
-                child: Column(
-                  children: <Widget>[
-                    SizedBox(
-                      height: 40,
-                      child: TextField(
-                        autofocus: true,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText:
-                          'inventory_transfer.dialog_search_hint'.tr(),
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          border:
-                          OutlineInputBorder(borderRadius: _borderRadius),
-                          contentPadding: const EdgeInsets.symmetric(
-                              vertical: 8, horizontal: 12),
-                        ),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            searchQuery = value;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: _gap),
-                    Expanded(
-                      child: filteredItems.isEmpty
-                          ? Center(
-                          child: Text(
-                              'inventory_transfer.dialog_search_no_results'
-                                  .tr()))
-                          : ListView.builder(
-                        itemCount: filteredItems.length,
-                        itemBuilder: (context, index) {
-                          final item = filteredItems[index];
-                          return ListTile(
-                            dense: true,
-                            visualDensity: VisualDensity.compact,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16.0, vertical: 2.0),
-                            title: Text(itemToString(item),
-                                style: TextStyle(fontSize: itemFontSize)),
-                            onTap: () =>
-                                Navigator.of(dialogContext).pop(item),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+        return StatefulBuilder(builder: (context, setDialogState) {
+          final filteredItems = items.where((item) => filterCondition(item, searchQuery)).toList();
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            title: Text(title),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(children: <Widget>[
+                TextField(
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'inventory_transfer.dialog_search_hint'.tr(),
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(borderRadius: _borderRadius),
+                  ),
+                  onChanged: (value) => setDialogState(() => searchQuery = value),
                 ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  child: Text(
-                      'inventory_transfer.dialog_button_cancel'.tr()),
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                const SizedBox(height: _gap),
+                Expanded(
+                  child: filteredItems.isEmpty
+                      ? Center(child: Text('inventory_transfer.dialog_search_no_results'.tr()))
+                      : ListView.builder(
+                    itemCount: filteredItems.length,
+                    itemBuilder: (context, index) {
+                      final item = filteredItems[index];
+                      return ListTile(
+                        title: Text(itemToString(item)),
+                        onTap: () => Navigator.of(dialogContext).pop(item),
+                      );
+                    },
+                  ),
                 ),
-              ],
-            );
-          },
+              ]),
+            ),
+            actions: <Widget>[
+              TextButton(child: Text('dialog.cancel'.tr()), onPressed: () => Navigator.of(dialogContext).pop()),
+            ],
+          );
+        },
         );
       },
     );
   }
 
-
-  Future<bool?> _showConfirmationDialog(
-      List<TransferItemDetail> items, AssignmentMode mode) async {
+  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('inventory_transfer.dialog_confirm_transfer_title'
-              .tr(namedArgs: {'mode': mode.name})),
+          title: Text('inventory_transfer.dialog_confirm_transfer_title'.tr(namedArgs: {'mode': mode.name})),
           content: SizedBox(
             width: double.maxFinite,
             child: Column(
@@ -970,10 +691,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('inventory_transfer.dialog_confirm_transfer_body'.tr(
-                    namedArgs: {
-                      'source': _selectedSourceLocationName ?? '',
-                      'target': _selectedTargetLocationName ?? ''
-                    })),
+                    namedArgs: {'source': _selectedSourceLocationName ?? '', 'target': _selectedTargetLocationName ?? ''})),
                 const Divider(height: 20),
                 SizedBox(
                   height: 150,
@@ -982,12 +700,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      return Text(
-                          'inventory_transfer.dialog_confirm_transfer_item'
-                              .tr(namedArgs: {
-                            'productName': item.productName,
-                            'quantity': item.quantity.toString()
-                          }));
+                      return Text('inventory_transfer.dialog_confirm_transfer_item'
+                          .tr(namedArgs: {'productName': item.productName, 'quantity': item.quantity.toString()}));
                     },
                   ),
                 ),
@@ -996,12 +710,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
           actions: [
             TextButton(
-                child: Text(
-                    'inventory_transfer.dialog_button_cancel'.tr()),
+                child: Text('inventory_transfer.dialog_button_cancel'.tr()),
                 onPressed: () => Navigator.of(ctx).pop(false)),
             ElevatedButton(
-                child: Text(
-                    'inventory_transfer.dialog_button_confirm'.tr()),
+                child: Text('inventory_transfer.dialog_button_confirm'.tr()),
                 onPressed: () => Navigator.of(ctx).pop(true)),
           ],
         ));
@@ -1034,38 +746,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
-  final double size;
   final bool isEnabled;
-  final double iconSize;
 
-  const _QrButton(
-      {required this.onTap,
-        required this.size,
-        this.isEnabled = true,
-        required this.iconSize});
+  const _QrButton({required this.onTap, this.isEnabled = true});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
+      height: 48, // Standart dokunma hedefi yüksekliği
+      width: 56,
       child: ElevatedButton(
         onPressed: isEnabled ? onTap : null,
         style: ElevatedButton.styleFrom(
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-        ).copyWith(
-          backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
-            if (states.contains(WidgetState.disabled)) {
-              return Colors.grey.shade300;
-            }
-            return Theme.of(context).colorScheme.secondaryContainer;
-          }),
         ),
-        child: Icon(Icons.qr_code_scanner, size: iconSize),
+        child: const Icon(Icons.qr_code_scanner),
       ),
     );
   }

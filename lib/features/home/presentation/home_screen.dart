@@ -1,35 +1,19 @@
+import 'package:diapalet/core/theme/theme_provider.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
-// import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart'; // Yorum satırına alındı
-// core/sync/sync_service.dart import'u artık bu dosyada doğrudan kullanılmadığı için kaldırılabilir.
-// Provider aracılığıyla dolaylı olarak kullanılır.
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 
-// Hata düzeltildi ve widget StatelessWidget'a dönüştürüldü.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // SyncService, Provider tarafından oluşturulduğunda otomatik olarak başlatılır.
-    // Bu yüzden burada manuel bir başlatma işlemine gerek yoktur.
-    final mediaQuery = MediaQuery.of(context);
-    final screenHeight = mediaQuery.size.height;
-    final screenWidth = mediaQuery.size.width;
-
-    final appBarHeight = screenHeight * 0.07;
-    final sizeFactor = (screenWidth / 480.0).clamp(0.9, 1.3);
-    final appBarFontSize = 19.0 * sizeFactor;
-
     return Scaffold(
-      appBar: SharedAppBar(
-        title: 'home.title'.tr(),
-        preferredHeight: appBarHeight,
-        titleFontSize: appBarFontSize,
-      ),
+      appBar: SharedAppBar(title: 'home.title'.tr()),
       body: LayoutBuilder(builder: (context, constraints) {
         final double verticalPadding = constraints.maxHeight * 0.05;
         final double horizontalPadding = constraints.maxWidth * 0.05;
@@ -76,7 +60,6 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
               ),
-              //Bekleyen operasyonlar butonu yorum satırına alındı
               SizedBox(height: spacing),
               SizedBox(
                 height: buttonHeight,
@@ -97,35 +80,85 @@ class HomeScreen extends StatelessWidget {
           ),
         );
       }),
-      // Dil değiştirme butonu ve işlevselliği korundu.
+      // [DEĞİŞİKLİK] FloatingActionButton, ayarlar menüsünü açacak şekilde güncellendi.
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (_) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.language),
-                  title: Text('language.turkish'.tr()),
-                  onTap: () {
-                    context.setLocale(const Locale('tr'));
-                    Navigator.pop(context);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.language),
-                  title: Text('language.english'.tr()),
-                  onTap: () {
-                    context.setLocale(const Locale('en'));
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
-            ),
-          );
+          _showSettingsMenu(context);
         },
-        child: const Icon(Icons.language),
+        child: const Icon(Icons.settings), // İkon çark olarak değiştirildi.
+      ),
+    );
+  }
+
+  // [YENİ] Ayarlar menüsünü gösteren private metod.
+  void _showSettingsMenu(BuildContext context) {
+    // ThemeProvider'a erişim (sadece metod çağırmak için, dinleme yok)
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: Text(
+                'settings.title'.tr(),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            // Dil Seçenekleri
+            ListTile(
+              leading: const Icon(Icons.translate_rounded),
+              title: Text('language.turkish'.tr()),
+              onTap: () {
+                context.setLocale(const Locale('tr'));
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.translate_rounded),
+              title: Text('language.english'.tr()),
+              onTap: () {
+                context.setLocale(const Locale('en'));
+                Navigator.pop(context);
+              },
+            ),
+            const Divider(),
+            // Tema Seçenekleri
+            ListTile(
+              leading: const Icon(Icons.light_mode_outlined),
+              title: Text('theme.light'.tr()),
+              onTap: () {
+                themeProvider.setThemeMode(ThemeMode.light);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.dark_mode_outlined),
+              title: Text('theme.dark'.tr()),
+              onTap: () {
+                themeProvider.setThemeMode(ThemeMode.dark);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_system_daydream_outlined),
+              title: Text('theme.system'.tr()),
+              onTap: () {
+                themeProvider.setThemeMode(ThemeMode.system);
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
