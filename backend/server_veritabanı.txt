@@ -1,0 +1,228 @@
+-- VTROWHUB Veritabanı Sıfırlama Betiği
+-- MySQL 8.0+ için optimize edilmiştir.
+-- Önce tabloları siler, sonra yeniden oluşturur ve örnek verileri ekler.
+
+-- -----------------------------------------------------
+-- MEVCUT TABLOLARI SİLME
+-- -----------------------------------------------------
+SET FOREIGN_KEY_CHECKS = 0; -- Foreign Key kontrollerini geçici olarak devre dışı bırak
+DROP TABLE IF EXISTS `inventory_transfers`;
+DROP TABLE IF EXISTS `inventory_stock`;
+DROP TABLE IF EXISTS `goods_receipt_items`;
+DROP TABLE IF EXISTS `goods_receipts`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis`;
+DROP TABLE IF EXISTS `employees`;
+DROP TABLE IF EXISTS `urunler`;
+DROP TABLE IF EXISTS `locations`;
+SET FOREIGN_KEY_CHECKS = 1; -- Foreign Key kontrollerini tekrar aktif et
+
+-- -----------------------------------------------------
+-- TABLO TANIMLAMALARI
+-- -----------------------------------------------------
+
+-- Tablo: `locations`
+CREATE TABLE IF NOT EXISTS `locations` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `code` VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `is_active` INT DEFAULT 1,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `address` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `description` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci,
+  `latitude` DECIMAL(10,8) DEFAULT NULL,
+  `longitude` DECIMAL(11,8) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `urunler`
+CREATE TABLE IF NOT EXISTS `urunler` (
+  `UrunId` INT NOT NULL AUTO_INCREMENT,
+  `StokKodu` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `UrunAdi` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `AdetFiyati` DECIMAL(10,2) DEFAULT NULL,
+  `KutuFiyati` DECIMAL(10,2) DEFAULT NULL,
+  `Pm1` DECIMAL(10,2) DEFAULT NULL,
+  `Pm2` DECIMAL(10,2) DEFAULT NULL,
+  `Pm3` DECIMAL(10,2) DEFAULT NULL,
+  `Barcode1` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `Barcode2` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `Barcode3` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `Vat` DECIMAL(5,2) DEFAULT NULL,
+  `Birim1` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `BirimKey1` INT DEFAULT NULL,
+  `Birim2` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `BirimKey2` INT DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `Barcode4` VARCHAR(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `aktif` INT DEFAULT 1,
+  `marka_id` INT DEFAULT NULL,
+  `kategori_id` INT DEFAULT NULL,
+  `grup_id` INT DEFAULT NULL,
+  `qty` INT DEFAULT NULL,
+  `size` VARCHAR(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `unitkg` DECIMAL(10,2) DEFAULT NULL,
+  `palletqty` INT DEFAULT NULL,
+  `HSCode` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `rafkoridor` VARCHAR(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `rafno` INT DEFAULT NULL,
+  `rafkat` VARCHAR(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `rafomru` INT DEFAULT NULL,
+  `imsrc` VARCHAR(155) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  PRIMARY KEY (`UrunId`),
+  UNIQUE KEY `uk_urunler_StokKodu` (`StokKodu`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `employees`
+CREATE TABLE IF NOT EXISTS `employees` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `first_name` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `last_name` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `location_id` TINYINT(1) DEFAULT NULL,
+  `role` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `password` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `start_date` DATE DEFAULT NULL,
+  `end_date` DATE DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `photo` VARCHAR(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_employees_username` (`username`),
+  KEY `idx_employees_location_id` (`location_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `satin_alma_siparis_fis`
+CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `tarih` DATE DEFAULT NULL,
+  `notlar` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci,
+  `user` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `gun` INT DEFAULT 0,
+  `lokasyon_id` INT DEFAULT NULL,
+  `invoice` VARCHAR(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `delivery` INT DEFAULT NULL,
+  `po_id` VARCHAR(11) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `status` INT DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `satin_alma_siparis_fis_satir`
+CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis_satir` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `siparis_id` INT DEFAULT NULL,
+  `urun_id` INT DEFAULT NULL,
+  `miktar` DECIMAL(10,2) DEFAULT NULL,
+  `ort_son_30` INT DEFAULT NULL,
+  `ort_son_60` INT DEFAULT NULL,
+  `ort_son_90` INT DEFAULT NULL,
+  `tedarikci_id` INT DEFAULT NULL,
+  `tedarikci_fis_id` INT DEFAULT NULL,
+  `invoice` VARCHAR(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `birim` VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `layer` TINYINT DEFAULT NULL,
+  `notes` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_satin_alma_siparis_fis_satir_siparis_id` (`siparis_id`),
+  CONSTRAINT `fk_satin_alma_siparis_fis_satir_siparis_fis` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `goods_receipts` (Mal Kabul Fişleri)
+CREATE TABLE IF NOT EXISTS `goods_receipts` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `siparis_id` INT NULL DEFAULT NULL COMMENT 'İlişkili satınalma sipariş fişi IDsi',
+  `invoice_number` VARCHAR(100) NULL DEFAULT NULL COMMENT 'Varsa fatura numarası',
+  `employee_id` INT NULL DEFAULT NULL COMMENT 'İşlemi yapan çalışan IDsi',
+  `receipt_date` DATETIME NOT NULL COMMENT 'Mal kabul tarihi',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_goods_receipts_siparis_id` (`siparis_id`),
+  CONSTRAINT `fk_goods_receipts_siparis_fis` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci COMMENT='Mal kabul işlemlerinin başlık bilgilerini içerir.';
+
+-- Tablo: `goods_receipt_items` (Mal Kabul Kalemleri)
+CREATE TABLE IF NOT EXISTS `goods_receipt_items` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `receipt_id` INT NOT NULL COMMENT 'İlişkili mal kabul fişi IDsi',
+  `urun_id` INT NOT NULL COMMENT 'Kabul edilen ürün IDsi',
+  `quantity_received` DECIMAL(10,2) NOT NULL COMMENT 'Kabul edilen miktar',
+  `pallet_barcode` VARCHAR(255) NULL DEFAULT NULL COMMENT 'Eğer palet olarak kabul edildiyse, palet barkodu',
+  PRIMARY KEY (`id`),
+  KEY `idx_goods_receipt_items_receipt_id` (`receipt_id`),
+  KEY `idx_goods_receipt_items_urun_id` (`urun_id`),
+  CONSTRAINT `fk_goods_receipt_items_receipt` FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_goods_receipt_items_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci COMMENT='Mal kabul işlemlerinin kalem (ürün) detaylarını içerir.';
+
+-- Tablo: `inventory_stock` (Envanter Durumu)
+CREATE TABLE IF NOT EXISTS `inventory_stock` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `urun_id` INT NOT NULL,
+  `location_id` INT NOT NULL,
+  `quantity` DECIMAL(10, 2) NOT NULL,
+  `pallet_barcode` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_inventory_stock_item` (`urun_id`, `location_id`, `pallet_barcode`),
+  KEY `idx_inventory_stock_location_id` (`location_id`),
+  KEY `idx_inventory_stock_pallet_barcode` (`pallet_barcode`),
+  CONSTRAINT `fk_inventory_stock_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE CASCADE,
+  CONSTRAINT `fk_inventory_stock_location` FOREIGN KEY (`location_id`) REFERENCES `locations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+-- Tablo: `inventory_transfers` (Envanter Transferleri)
+CREATE TABLE IF NOT EXISTS `inventory_transfers` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `urun_id` INT NOT NULL,
+  `from_location_id` INT NOT NULL,
+  `to_location_id` INT NOT NULL,
+  `quantity` DECIMAL(10, 2) NOT NULL,
+  `pallet_barcode` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL COMMENT 'Eğer bütün palet taşındıysa kaynak palet barkodu',
+  `employee_id` INT DEFAULT NULL,
+  `transfer_date` DATETIME NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_inventory_transfers_from_loc` (`from_location_id`),
+  KEY `idx_inventory_transfers_to_loc` (`to_location_id`),
+  KEY `idx_inventory_transfers_urun` (`urun_id`),
+  CONSTRAINT `fk_inventory_transfers_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`),
+  CONSTRAINT `fk_inventory_transfers_from_loc` FOREIGN KEY (`from_location_id`) REFERENCES `locations` (`id`),
+  CONSTRAINT `fk_inventory_transfers_to_loc` FOREIGN KEY (`to_location_id`) REFERENCES `locations` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+
+-- -----------------------------------------------------
+-- ÖRNEK VERİ GİRİŞLERİ
+-- -----------------------------------------------------
+
+-- Lokasyonlar (Depolar)
+INSERT INTO `locations` (`id`, `name`, `code`, `is_active`) VALUES
+(1, 'MAL KABUL', 'MK-01', 1),
+(2, 'RAF-A1', 'A1', 1),
+(3, 'RAF-B2', 'B2', 1),
+(4, 'SEVKİYAT ALANI', 'SEVK-01', 1);
+
+-- Ürünler
+INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `AdetFiyati`, `Barcode1`, `aktif`, `Birim1`) VALUES
+(101, 'ELM-001', 'Elma Kırmızı', 15.50, '869000000001', 1, 'Kutu'),
+(102, 'PRT-002', 'Portakal Sıkmalık', 12.00, '869000000002', 1, 'Kutu'),
+(103, 'MUZ-003', 'Muz Yerli', 25.00, '869000000003', 1, 'Kutu');
+
+-- Satın Alma Siparişi
+INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `notlar`, `po_id`, `status`, `lokasyon_id`) VALUES
+(5001, '2023-10-25', 'Acil sipariş', 'PO-2023-001', 0, 1);
+
+-- Sipariş Kalemleri
+INSERT INTO `satin_alma_siparis_fis_satir` (`siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
+(5001, 101, 100.00, 'Kutu'),
+(5001, 102, 200.00, 'Kutu');
+
+-- Örnek Çalışan
+INSERT INTO `employees` (`id`, `first_name`, `last_name`, `is_active`) VALUES
+(1, 'Ahmet', 'Yılmaz', 1);
+
