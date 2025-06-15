@@ -6,6 +6,14 @@
     "turkish": "Türkçe",
     "english": "İngilizce"
   },
+  "settings": {
+    "title": "Ayarlar"
+  },
+  "theme": {
+    "light": "Açık",
+    "dark": "Koyu",
+    "system": "Sistem Varsayılanı"
+  },
   "home": {
     "title": "DiaPallet WMS",
     "reset_db": "Veritabanını Sıfırla",
