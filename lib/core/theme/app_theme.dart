@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Uygulama için açık ve kapalı temaları içeren sınıf.
-///
-/// Bu sınıf, hem aydınlık hem de karanlık mod için tutarlı ve modern
-/// tema verileri sağlar.
 class AppTheme {
   // --- AÇIK TEMA RENKLERİ ---
   static const Color lightPrimaryColor = Color(0xFF0D47A1);
@@ -24,9 +20,9 @@ class AppTheme {
   static const Color warningColor = Color(0xFFFFA000);
 
   static final TextTheme _lightTextTheme =
-      GoogleFonts.interTextTheme(ThemeData.light().textTheme);
+  GoogleFonts.interTextTheme(ThemeData.light().textTheme);
   static final TextTheme _darkTextTheme =
-      GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+  GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
 
   // --- AÇIK TEMA TANIMI ---
   static final ThemeData light = ThemeData(
@@ -61,11 +57,13 @@ class AppTheme {
         color: Colors.white,
       ),
     ),
+    // [DÜZELTME] TabBar renkleri, AppBar üzerinde okunabilir olacak şekilde güncellendi.
     tabBarTheme: TabBarThemeData(
-      labelColor: lightPrimaryColor,
-      unselectedLabelColor: Colors.grey,
-      indicator: UnderlineTabIndicator(
-        borderSide: BorderSide(color: lightPrimaryColor, width: 2.5),
+      labelColor: Colors.white, // Seçili sekme metni AppBar başlığı gibi beyaz yapıldı.
+      unselectedLabelColor: Colors.white.withOpacity(0.75), // Seçili olmayan sekme rengi ayarlandı.
+      indicatorColor: Colors.white, // Alt çizgi rengi beyaz yapıldı.
+      indicator: const UnderlineTabIndicator(
+        borderSide: BorderSide(color: Colors.white, width: 2.5),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -81,7 +79,7 @@ class AppTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: lightPrimaryColor, width: 2.0),
+        borderSide: const BorderSide(color: lightPrimaryColor, width: 2.0),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -108,7 +106,7 @@ class AppTheme {
       tileColor: lightSurfaceColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
-    floatingActionButtonTheme: FloatingActionButtonThemeData(
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: lightSecondaryColor,
       foregroundColor: Colors.white,
     ),
@@ -137,7 +135,7 @@ class AppTheme {
       brightness: Brightness.dark,
     ),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // Karanlık temada AppBar'ı transparan yapar.
       foregroundColor: Colors.white,
       elevation: 0,
       centerTitle: true,
@@ -147,9 +145,10 @@ class AppTheme {
         color: Colors.white,
       ),
     ),
-    tabBarTheme: TabBarThemeData(
+    // [DÜZELTME] Karanlık temada okunurluk için seçili olmayan sekme rengi güncellendi.
+    tabBarTheme: const TabBarThemeData(
       labelColor: darkPrimaryColor,
-      unselectedLabelColor: Colors.grey,
+      unselectedLabelColor: Colors.white70, // Colors.grey'den değiştirildi.
       indicator: UnderlineTabIndicator(
         borderSide: BorderSide(color: darkPrimaryColor, width: 2.5),
       ),
@@ -168,7 +167,7 @@ class AppTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: darkPrimaryColor, width: 2.0),
+        borderSide: const BorderSide(color: darkPrimaryColor, width: 2.0),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -192,7 +191,7 @@ class AppTheme {
       tileColor: darkSurfaceColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
-    floatingActionButtonTheme: FloatingActionButtonThemeData(
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: darkSecondaryColor,
       foregroundColor: Colors.white,
     ),

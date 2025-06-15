@@ -80,89 +80,82 @@ class HomeScreen extends StatelessWidget {
           ),
         );
       }),
-      // [DEĞİŞİKLİK] FloatingActionButton, ayarlar menüsünü açacak şekilde güncellendi.
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           _showSettingsMenu(context);
         },
-        child: const Icon(Icons.settings), // İkon çark olarak değiştirildi.
+        child: const Icon(Icons.settings),
       ),
     );
   }
 
-  // [YENİ] Ayarlar menüsünü gösteren private metod.
+  // Ayarlar menüsünü gösteren private metod.
   void _showSettingsMenu(BuildContext context) {
-    // ThemeProvider'a erişim (sadece metod çağırmak için, dinleme yok)
     final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
 
     showModalBottomSheet(
       context: context,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            // Başlık
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Text(
-                'settings.title'.tr(),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
+      // [HATA DÜZELTMESİ] isScrollControlled ve SingleChildScrollView,
+      // içeriğin küçük ekranlarda taşmasını (overflow) engeller.
+      isScrollControlled: true,
+      builder: (_) => SingleChildScrollView(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  child: Text(
+                    'settings.title'.tr(),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
+                ListTile(
+                  leading: const Icon(Icons.translate_rounded),
+                  title: Text('language.turkish'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('tr'));
+                    Navigator.pop(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.translate_rounded),
+                  title: Text('language.english'.tr()),
+                  onTap: () {
+                    context.setLocale(const Locale('en'));
+                    Navigator.pop(context);
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.light_mode_outlined),
+                  title: Text('theme.light'.tr()),
+                  onTap: () {
+                    themeProvider.setThemeMode(ThemeMode.light);
+                    Navigator.pop(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.dark_mode_outlined),
+                  title: Text('theme.dark'.tr()),
+                  onTap: () {
+                    themeProvider.setThemeMode(ThemeMode.dark);
+                    Navigator.pop(context);
+                  },
+                ),
+                // [DEĞİŞİKLİK] Sistem teması seçeneği kaldırıldı.
+                const SizedBox(height: 16),
+              ],
             ),
-            // Dil Seçenekleri
-            ListTile(
-              leading: const Icon(Icons.translate_rounded),
-              title: Text('language.turkish'.tr()),
-              onTap: () {
-                context.setLocale(const Locale('tr'));
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.translate_rounded),
-              title: Text('language.english'.tr()),
-              onTap: () {
-                context.setLocale(const Locale('en'));
-                Navigator.pop(context);
-              },
-            ),
-            const Divider(),
-            // Tema Seçenekleri
-            ListTile(
-              leading: const Icon(Icons.light_mode_outlined),
-              title: Text('theme.light'.tr()),
-              onTap: () {
-                themeProvider.setThemeMode(ThemeMode.light);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.dark_mode_outlined),
-              title: Text('theme.dark'.tr()),
-              onTap: () {
-                themeProvider.setThemeMode(ThemeMode.dark);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_system_daydream_outlined),
-              title: Text('theme.system'.tr()),
-              onTap: () {
-                themeProvider.setThemeMode(ThemeMode.system);
-                Navigator.pop(context);
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 

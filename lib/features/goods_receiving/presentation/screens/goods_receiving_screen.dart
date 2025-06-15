@@ -390,7 +390,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // [DÜZELTME] Dikey hizalama için `crossAxisAlignment: CrossAxisAlignment.center` eklendi.
   Widget _buildPalletIdInput({required bool isEnabled}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -428,7 +427,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // [DÜZELTME] Dikey hizalama için `crossAxisAlignment: CrossAxisAlignment.center` eklendi.
   Widget _buildSearchableProductInputRow({required bool isLocked, required bool isEnabled}) {
     final bool fieldEnabled = isEnabled && !isLocked;
     return Row(
@@ -436,9 +434,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       children: [
         Expanded(
           child: TextFormField(
+            readOnly: true, // Always readonly, tap shows the dialog
             controller: _productController,
             focusNode: _productFocusNode,
-            showCursor: true,
             decoration: _inputDecoration(
               _selectedOrder != null
                   ? 'goods_receiving_screen.label_select_product_in_order'.tr()
@@ -446,9 +444,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: fieldEnabled,
             ),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) _processScannedProduct(value);
-            },
             onTap: !fieldEnabled ? null : () async {
               final productList = _selectedOrder != null
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
@@ -488,27 +483,30 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // [DÜZELTME] `Wrap` yerine `Row` ve `Expanded` kullanılarak taşma sorunu giderildi.
-  // Elemanlar artık ekran boyutuna göre esneyerek her zaman yan yana kalacak.
   Widget _buildQuantityAndStatusRow({required bool isLocked, required bool isEnabled}) {
     final bool fieldEnabled = isEnabled && !isLocked;
     final orderItem = _selectedProduct == null || _selectedOrder == null
         ? null
         : _orderItems.firstWhereOrNull((item) => item.product?.id == _selectedProduct!.id);
-    final alreadyAddedInUI = orderItem == null ? 0.0 : _addedItems
-        .where((item) => item.product.id == orderItem.product!.id)
-        .map((item) => item.quantity)
-        .fold(0.0, (prev, qty) => prev + qty);
-    final receivedQty = orderItem?.receivedQuantity ?? 0;
-    final expectedQty = orderItem?.expectedQuantity ?? 0;
-    final totalReceived = receivedQty + alreadyAddedInUI;
+
+    double totalReceived = 0;
+    double expectedQty = 0;
+
+    if (orderItem != null) {
+      final alreadyAddedInUI = _addedItems
+          .where((item) => item.product.id == orderItem.product!.id)
+          .map((item) => item.quantity)
+          .fold(0.0, (prev, qty) => prev + qty);
+      final receivedQty = orderItem.receivedQuantity;
+      expectedQty = orderItem.expectedQuantity;
+      totalReceived = receivedQty + alreadyAddedInUI;
+    }
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start, // Hizalamayı `start` olarak ayarlamak daha iyi görünebilir.
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Miktar Giriş Alanı
         Expanded(
-          flex: 2, // Miktar alanına biraz daha az yer ver
+          flex: 1,
           child: TextFormField(
             controller: _quantityController,
             focusNode: _quantityFocusNode,
@@ -528,33 +526,31 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             },
           ),
         ),
-        // Sadece sipariş seçiliyse araya boşluk ve durum göstergesini koy.
-        if (_selectedOrder != null) ...[
-          const SizedBox(width: _gap),
-          // Sipariş Durum Göstergesi
-          Expanded(
-            flex: 3, // Durum göstergesine daha fazla yer ver
-            child: InputDecorator(
-              decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
-              child: Center(
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                    children: [
-                      TextSpan(
-                        text: '${totalReceived.toStringAsFixed(0)} ',
-                        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
-                      ),
-                      const TextSpan(text: '/ '),
-                      TextSpan(text: expectedQty.toStringAsFixed(0)),
-                    ],
-                  ),
+        const SizedBox(width: _gap),
+        Expanded(
+          flex: 1,
+          child: InputDecorator(
+            decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
+            child: Center(
+              child: (_selectedOrder == null || _selectedProduct == null)
+                  ? Text("- / -", style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.grey))
+                  : RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  children: [
+                    TextSpan(
+                      text: '${totalReceived.toStringAsFixed(0)} ',
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
+                    ),
+                    const TextSpan(text: '/ '),
+                    TextSpan(text: expectedQty.toStringAsFixed(0)),
+                  ],
                 ),
               ),
             ),
           ),
-        ]
+        ),
       ],
     );
   }
@@ -645,114 +641,43 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
+  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<bool?> _showConfirmationListDialog() {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height * 0.5,
-              child: _addedItems.isEmpty
-                  ? Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()))
-                  : ListView.builder(
-                itemCount: _addedItems.length,
-                itemBuilder: (context, index) {
-                  final item = _addedItems[index];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: ListTile(
-                      title: Text(item.product.name, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(item.palletBarcode != null
-                          ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                          : 'goods_receiving_screen.label_pallet_barcode_none'.tr()),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text('goods_receiving_screen.label_quantity_display'.tr(namedArgs: {'quantity': item.quantity.toString()}),
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                        IconButton(
-                          icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                          onPressed: () => setDialogState(() => _removeItemFromList(index)),
-                        ),
-                      ]),
-                    ),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                child: Text('dialog.cancel'.tr()),
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-              ),
-              ElevatedButton(
-                child: Text('goods_receiving_screen.dialog_button_confirm_and_save'.tr()),
-                onPressed: _addedItems.isEmpty ? null : () => Navigator.of(dialogContext).pop(true),
-              ),
-            ],
-          );
-        },
-        );
-      },
+    return Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _FullscreenConfirmationPage(
+          items: _addedItems,
+          onItemRemoved: (item) {
+            final index = _addedItems.indexOf(item);
+            if (index != -1) {
+              _removeItemFromList(index);
+            }
+          },
+        ),
+      ),
     );
   }
 
+  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<T?> _showSearchableDropdownDialog<T>({
     required String title,
     required List<T> items,
     required String Function(T) itemToString,
     required bool Function(T, String) filterCondition,
   }) {
-    String searchQuery = '';
-    return showDialog<T>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(builder: (context, setDialogState) {
-          final filteredItems = items.where((item) => filterCondition(item, searchQuery)).toList();
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-            title: Text(title),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: Column(children: <Widget>[
-                TextField(
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'goods_receiving_screen.dialog_search_hint'.tr(),
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: _borderRadius),
-                  ),
-                  onChanged: (value) => setDialogState(() => searchQuery = value),
-                ),
-                const SizedBox(height: _gap),
-                Expanded(
-                  child: filteredItems.isEmpty
-                      ? Center(child: Text('goods_receiving_screen.dialog_search_no_results'.tr()))
-                      : ListView.builder(
-                    itemCount: filteredItems.length,
-                    itemBuilder: (context, index) {
-                      final item = filteredItems[index];
-                      return ListTile(
-                        title: Text(itemToString(item)),
-                        onTap: () => Navigator.of(dialogContext).pop(item),
-                      );
-                    },
-                  ),
-                ),
-              ]),
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: Text('dialog.cancel'.tr()),
-                onPressed: () => Navigator.of(dialogContext).pop(),
-              ),
-            ],
-          );
-        },
-        );
-      },
+    return Navigator.push<T>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _FullscreenSearchPage<T>(
+          title: title,
+          items: items,
+          itemToString: itemToString,
+          filterCondition: filterCondition,
+        ),
+      ),
     );
   }
 
@@ -790,7 +715,7 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48, // Standart dokunma hedefi yüksekliği
+      height: 48,
       width: 56,
       child: ElevatedButton(
         onPressed: isEnabled ? onTap : null,
@@ -798,10 +723,194 @@ class _QrButton extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
         ),
-        child: const Icon(Icons.qr_code_scanner),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Butonun yüksekliğine göre ikon boyutunu ayarla
+            final iconSize = constraints.maxHeight * 0.6;
+            return Icon(Icons.qr_code_scanner, size: iconSize);
+          },
+        ),
       ),
     );
   }
 }
 
 enum ReceivingMode { palet, kutu }
+
+
+// [YENİ WIDGET] Arama işlevi için tam ekran sayfası.
+class _FullscreenSearchPage<T> extends StatefulWidget {
+  final String title;
+  final List<T> items;
+  final String Function(T) itemToString;
+  final bool Function(T, String) filterCondition;
+
+  const _FullscreenSearchPage({
+    super.key,
+    required this.title,
+    required this.items,
+    required this.itemToString,
+    required this.filterCondition,
+  });
+
+  @override
+  State<_FullscreenSearchPage<T>> createState() => _FullscreenSearchPageState<T>();
+}
+
+class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
+  String _searchQuery = '';
+  late List<T> _filteredItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredItems = widget.items;
+  }
+
+  void _filterItems(String query) {
+    setState(() {
+      _searchQuery = query;
+      _filteredItems = widget.items
+          .where((item) => widget.filterCondition(item, _searchQuery))
+          .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title, style: theme.textTheme.titleMedium),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: <Widget>[
+            TextField(
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'goods_receiving_screen.dialog_search_hint'.tr(),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: _filterItems,
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _filteredItems.isEmpty
+                  ? Center(child: Text('goods_receiving_screen.dialog_search_no_results'.tr()))
+                  : ListView.separated(
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemCount: _filteredItems.length,
+                itemBuilder: (context, index) {
+                  final item = _filteredItems[index];
+                  return ListTile(
+                    title: Text(widget.itemToString(item)),
+                    onTap: () => Navigator.of(context).pop(item),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// [YENİ WIDGET] Onay listesi için tam ekran sayfası.
+class _FullscreenConfirmationPage extends StatefulWidget {
+  final List<ReceiptItemDraft> items;
+  final ValueChanged<ReceiptItemDraft> onItemRemoved;
+
+  const _FullscreenConfirmationPage({
+    super.key,
+    required this.items,
+    required this.onItemRemoved,
+  });
+
+  @override
+  State<_FullscreenConfirmationPage> createState() => _FullscreenConfirmationPageState();
+}
+
+class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage> {
+  late final List<ReceiptItemDraft> _currentItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentItems = List.from(widget.items);
+  }
+
+  void _handleRemoveItem(ReceiptItemDraft item) {
+    widget.onItemRemoved(item);
+    setState(() {
+      _currentItems.remove(item);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('goods_receiving_screen.dialog_confirmation_title'.tr(),
+            style: theme.textTheme.titleMedium),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+      ),
+      body: _currentItems.isEmpty
+          ? Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()))
+          : ListView.builder(
+        padding: const EdgeInsets.all(8),
+        itemCount: _currentItems.length,
+        itemBuilder: (context, index) {
+          final item = _currentItems[index];
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: ListTile(
+              title: Text(item.product.name, overflow: TextOverflow.ellipsis),
+              subtitle: Text(item.palletBarcode != null
+                  ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(
+                  namedArgs: {'barcode': item.palletBarcode!})
+                  : 'goods_receiving_screen.label_pallet_barcode_none'.tr()),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('goods_receiving_screen.label_quantity_display'.tr(
+                    namedArgs: {'quantity': item.quantity.toString()}),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: Icon(
+                      Icons.delete_outline, color: theme.colorScheme.error),
+                  onPressed: () => _handleRemoveItem(item),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: _currentItems.isEmpty ? null : () =>
+              Navigator.of(context).pop(true),
+          child: Text(
+              'goods_receiving_screen.dialog_button_confirm_and_save'.tr()),
+        ),
+      ),
+    );
+  }
+}

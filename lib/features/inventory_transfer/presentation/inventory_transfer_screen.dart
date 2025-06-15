@@ -456,27 +456,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           child: TextFormField(
             controller: controller,
             focusNode: focusNode,
+            readOnly: true, // Make field read-only to force selection from dialog
             decoration: _inputDecoration(
               label,
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.arrow_drop_down),
-                tooltip: 'inventory_transfer.tooltip_select_from_list'.tr(),
-                onPressed: () async {
-                  final T? selectedItem = await _showSearchableDropdownDialog<T>(
-                    title: label,
-                    items: items,
-                    itemToString: itemToString,
-                    filterCondition: filterCondition,
-                  );
-                  if (selectedItem != null) {
-                    onItemSelected(selectedItem);
-                  }
-                },
-              ),
+              suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) {
-                _processScannedData(fieldIdentifier, value);
+            onTap: () async {
+              final T? selectedItem = await _showSearchableDropdownDialog<T>(
+                title: label,
+                items: items,
+                itemToString: itemToString,
+                filterCondition: filterCondition,
+              );
+              if (selectedItem != null) {
+                onItemSelected(selectedItem);
               }
             },
             validator: (val) {
@@ -493,7 +486,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           onTap: () async {
             final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
             if (result != null && result.isNotEmpty) {
-              controller.text = result;
               _processScannedData(fieldIdentifier, result);
             }
           },
@@ -563,7 +555,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
                           final qty = double.tryParse(value);
                           if (qty == null) return 'inventory_transfer.validator_invalid'.tr();
-                          if (qty > product.currentQuantity) return 'inventory_transfer.validator_max'.tr();
+                          if (qty > product.currentQuantity + 0.001) return 'inventory_transfer.validator_max'.tr();
                           if (qty < 0) return 'inventory_transfer.validator_negative'.tr();
                           return null;
                         },
@@ -624,99 +616,41 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
+  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<T?> _showSearchableDropdownDialog<T>({
     required String title,
     required List<T> items,
     required String Function(T) itemToString,
     required bool Function(T, String) filterCondition,
   }) {
-    String searchQuery = '';
-    return showDialog<T>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(builder: (context, setDialogState) {
-          final filteredItems = items.where((item) => filterCondition(item, searchQuery)).toList();
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-            title: Text(title),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: Column(children: <Widget>[
-                TextField(
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'inventory_transfer.dialog_search_hint'.tr(),
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: _borderRadius),
-                  ),
-                  onChanged: (value) => setDialogState(() => searchQuery = value),
-                ),
-                const SizedBox(height: _gap),
-                Expanded(
-                  child: filteredItems.isEmpty
-                      ? Center(child: Text('inventory_transfer.dialog_search_no_results'.tr()))
-                      : ListView.builder(
-                    itemCount: filteredItems.length,
-                    itemBuilder: (context, index) {
-                      final item = filteredItems[index];
-                      return ListTile(
-                        title: Text(itemToString(item)),
-                        onTap: () => Navigator.of(dialogContext).pop(item),
-                      );
-                    },
-                  ),
-                ),
-              ]),
-            ),
-            actions: <Widget>[
-              TextButton(child: Text('dialog.cancel'.tr()), onPressed: () => Navigator.of(dialogContext).pop()),
-            ],
-          );
-        },
-        );
-      },
+    return Navigator.push<T>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _InventorySearchPage<T>(
+          title: title,
+          items: items,
+          itemToString: itemToString,
+          filterCondition: filterCondition,
+        ),
+      ),
     );
   }
 
+  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
-    return showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('inventory_transfer.dialog_confirm_transfer_title'.tr(namedArgs: {'mode': mode.name})),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('inventory_transfer.dialog_confirm_transfer_body'.tr(
-                    namedArgs: {'source': _selectedSourceLocationName ?? '', 'target': _selectedTargetLocationName ?? ''})),
-                const Divider(height: 20),
-                SizedBox(
-                  height: 150,
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return Text('inventory_transfer.dialog_confirm_transfer_item'
-                          .tr(namedArgs: {'productName': item.productName, 'quantity': item.quantity.toString()}));
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                child: Text('inventory_transfer.dialog_button_cancel'.tr()),
-                onPressed: () => Navigator.of(ctx).pop(false)),
-            ElevatedButton(
-                child: Text('inventory_transfer.dialog_button_confirm'.tr()),
-                onPressed: () => Navigator.of(ctx).pop(true)),
-          ],
-        ));
+    return Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _InventoryConfirmationPage(
+          items: items,
+          mode: mode,
+          sourceLocationName: _selectedSourceLocationName ?? '',
+          targetLocationName: _selectedTargetLocationName ?? '',
+        ),
+      ),
+    );
   }
 
   void _showErrorSnackBar(String message) {
@@ -761,7 +695,162 @@ class _QrButton extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
         ),
-        child: const Icon(Icons.qr_code_scanner),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Butonun yüksekliğine göre ikon boyutunu ayarla
+            final iconSize = constraints.maxHeight * 0.6;
+            return Icon(Icons.qr_code_scanner, size: iconSize);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// [YENİ WIDGET] Arama işlevi için tam ekran sayfası.
+class _InventorySearchPage<T> extends StatefulWidget {
+  final String title;
+  final List<T> items;
+  final String Function(T) itemToString;
+  final bool Function(T, String) filterCondition;
+
+  const _InventorySearchPage({
+    super.key,
+    required this.title,
+    required this.items,
+    required this.itemToString,
+    required this.filterCondition,
+  });
+
+  @override
+  State<_InventorySearchPage<T>> createState() => _InventorySearchPageState<T>();
+}
+
+class _InventorySearchPageState<T> extends State<_InventorySearchPage<T>> {
+  String _searchQuery = '';
+  late List<T> _filteredItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredItems = widget.items;
+  }
+
+  void _filterItems(String query) {
+    setState(() {
+      _searchQuery = query;
+      _filteredItems = widget.items
+          .where((item) => widget.filterCondition(item, _searchQuery))
+          .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title, style: theme.textTheme.titleMedium),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: <Widget>[
+            TextField(
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'inventory_transfer.dialog_search_hint'.tr(),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: _filterItems,
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _filteredItems.isEmpty
+                  ? Center(child: Text('inventory_transfer.dialog_search_no_results'.tr()))
+                  : ListView.separated(
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemCount: _filteredItems.length,
+                itemBuilder: (context, index) {
+                  final item = _filteredItems[index];
+                  return ListTile(
+                    title: Text(widget.itemToString(item)),
+                    onTap: () => Navigator.of(context).pop(item),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// [YENİ WIDGET] Onay listesi için tam ekran sayfası.
+class _InventoryConfirmationPage extends StatelessWidget {
+  final List<TransferItemDetail> items;
+  final AssignmentMode mode;
+  final String sourceLocationName;
+  final String targetLocationName;
+
+  const _InventoryConfirmationPage({
+    super.key,
+    required this.items,
+    required this.mode,
+    required this.sourceLocationName,
+    required this.targetLocationName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('inventory_transfer.dialog_confirm_transfer_title'.tr(namedArgs: {'mode': mode.name})),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          Text(
+            'inventory_transfer.dialog_confirm_transfer_body'.tr(
+              namedArgs: {'source': sourceLocationName, 'target': targetLocationName},
+            ),
+            style: theme.textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const Divider(height: 24),
+          ...items.map((item) => ListTile(
+            title: Text(item.productName),
+            subtitle: Text(item.productCode),
+            trailing: Text(
+              item.quantity.toString(),
+              style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          )),
+        ],
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text('inventory_transfer.dialog_button_confirm'.tr()),
+        ),
       ),
     );
   }
