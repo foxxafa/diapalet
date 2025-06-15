@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Uygulama için açık ve kapalı temaları içeren sınıf.
 ///
@@ -22,12 +23,24 @@ class AppTheme {
   static const Color errorColor = Color(0xFFD32F2F);
   static const Color warningColor = Color(0xFFFFA000);
 
+  static final TextTheme _lightTextTheme =
+      GoogleFonts.interTextTheme(ThemeData.light().textTheme);
+  static final TextTheme _darkTextTheme =
+      GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+
   // --- AÇIK TEMA TANIMI ---
   static final ThemeData light = ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
     primaryColor: lightPrimaryColor,
     scaffoldBackgroundColor: lightBackgroundColor,
+    textTheme: _lightTextTheme.copyWith(
+      bodyLarge: _lightTextTheme.bodyLarge?.copyWith(color: Colors.black87),
+      bodyMedium: _lightTextTheme.bodyMedium?.copyWith(color: Colors.black87),
+      titleLarge: _lightTextTheme.titleLarge?.copyWith(color: Colors.black),
+      titleMedium: _lightTextTheme.titleMedium?.copyWith(color: Colors.black),
+      titleSmall: _lightTextTheme.titleSmall?.copyWith(color: Colors.black),
+    ),
     colorScheme: ColorScheme.fromSeed(
       seedColor: lightPrimaryColor,
       primary: lightPrimaryColor,
@@ -77,6 +90,9 @@ class AppTheme {
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: _lightTextTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
     cardTheme: CardThemeData(
@@ -104,6 +120,13 @@ class AppTheme {
     brightness: Brightness.dark,
     primaryColor: darkPrimaryColor,
     scaffoldBackgroundColor: darkBackgroundColor,
+    textTheme: _darkTextTheme.copyWith(
+      bodyLarge: _darkTextTheme.bodyLarge?.copyWith(color: Colors.white70),
+      bodyMedium: _darkTextTheme.bodyMedium?.copyWith(color: Colors.white70),
+      titleLarge: _darkTextTheme.titleLarge?.copyWith(color: Colors.white),
+      titleMedium: _darkTextTheme.titleMedium?.copyWith(color: Colors.white),
+      titleSmall: _darkTextTheme.titleSmall?.copyWith(color: Colors.white),
+    ),
     colorScheme: ColorScheme.fromSeed(
       seedColor: darkPrimaryColor,
       primary: darkPrimaryColor,
@@ -154,7 +177,9 @@ class AppTheme {
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        textStyle: _darkTextTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
     cardTheme: CardThemeData(
