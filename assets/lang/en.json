@@ -175,7 +175,12 @@
   },
   "pending_operations": {
     "title": "Pending & Sync",
+    "tabs": {
+      "pending": "Pending",
+      "history": "History"
+    },
     "no_pending": "No Pending Operations",
+    "no_history": "No synchronization history found.",
     "empty": "No pending operations.",
     "all_synced": "All operations are synchronized",
     "operations_count": "{count} operations waiting for sync.",
@@ -187,6 +192,8 @@
     "type": "Type:",
     "created": "Created:",
     "data": "Data:",
+    "error_loading": "Error loading data: {error}",
+    "unknown_error": "Unknown error",
     "tooltip": {
       "refresh": "Refresh List",
       "sync": "Upload to Server"

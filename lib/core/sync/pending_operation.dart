@@ -1,86 +1,95 @@
 // lib/core/sync/pending_operation.dart
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
+enum PendingOperationType {
+  goodsReceipt,
+  inventoryTransfer,
+}
+
+@immutable
 class PendingOperation {
-  final int id;
-  final String operationType;
-  final Map<String, dynamic> operationData;
+  final int? id;
+  final PendingOperationType type;
+  final String data; // JSON string of the payload
   final DateTime createdAt;
   final String status;
   final int attempts;
   final String? errorMessage;
-  final String tableName;
 
-  PendingOperation({
-    required this.id,
-    required this.operationType,
-    required this.operationData,
+  const PendingOperation({
+    this.id,
+    required this.type,
+    required this.data,
     required this.createdAt,
-    required this.status,
+    this.status = 'pending',
     this.attempts = 0,
     this.errorMessage,
-    required this.tableName,
   });
 
-  /// Pending Operations ekranında gösterilecek ana başlık.
+  /// [YENİ] Kullanıcı arayüzünde gösterilecek ana başlığı oluşturur.
   String get displayTitle {
-    final header = operationData['header'] as Map<String, dynamic>? ?? {};
-    switch (operationType) {
-      case 'goods_receipt':
-        return 'Mal Kabul: ${header['invoice_number'] ?? 'Fiş N/A'}';
-      case 'pallet_transfer':
-        return 'Palet Transferi';
-      case 'box_transfer':
-        return 'Kutu Transferi';
-      default:
-        return 'Bilinmeyen İşlem: $operationType';
+    try {
+      final jsonData = jsonDecode(data) as Map<String, dynamic>;
+      switch (type) {
+        case PendingOperationType.goodsReceipt:
+          final header = jsonData['header'] as Map<String, dynamic>?;
+          final poId = header?['invoice_number'] as String?;
+          return poId != null && poId.isNotEmpty ? 'Mal Kabul: $poId' : 'Siparişe Bağlı Olmayan Mal Kabul';
+        case PendingOperationType.inventoryTransfer:
+          return 'Envanter Transferi'; // Gelecekte transfer detaylarına göre zenginleştirilebilir.
+      }
+    } catch (e) {
+      debugPrint("displayTitle parse error: $e");
+      return 'Bilinmeyen Operasyon';
     }
   }
 
-  /// Pending Operations ekranında gösterilecek alt başlık.
+  /// [YENİ] Kullanıcı arayüzünde gösterilecek altyazıyı ve detayları oluşturur.
   String get displaySubtitle {
-    // HATA DÜZELTMESİ: 'header' değişkeni burada tanımlanmamıştı.
-    final header = operationData['header'] as Map<String, dynamic>? ?? {};
-    final items = operationData['items'] as List<dynamic>? ?? [];
-    final dateString = header['receipt_date'] as String?;
-    final date = dateString != null ? DateTime.tryParse(dateString) : null;
-    final formattedDate = date != null
-        ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'
-        : 'Tarih N/A';
-    return '${items.length} kalem ürün • $formattedDate';
+    try {
+      final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
+      final jsonData = jsonDecode(data) as Map<String, dynamic>;
+      final items = jsonData['items'] as List<dynamic>?;
+      final itemCount = items?.length ?? 0;
+
+      switch (type) {
+        case PendingOperationType.goodsReceipt:
+          return '$itemCount kalem ürün | Tarih: $formattedDate';
+        case PendingOperationType.inventoryTransfer:
+          return '$itemCount kalem ürün transferi | Tarih: $formattedDate';
+      }
+    } catch (e) {
+      debugPrint("displaySubtitle parse error: $e");
+      return 'Detaylar okunamadı';
+    }
   }
 
-  /// Veritabanına kaydetmek için modeli Map'e dönüştürür.
-  Map<String, dynamic> toMapForDb() {
+  factory PendingOperation.fromMap(Map<String, dynamic> map) {
+    return PendingOperation(
+      id: map['id'],
+      type: PendingOperationType.values.firstWhere(
+            (e) => e.name == map['type'],
+        orElse: () => throw ArgumentError('Unknown operation type: ${map['type']}'),
+      ),
+      data: map['data'],
+      createdAt: DateTime.parse(map['created_at']),
+      status: map['status'] as String,
+      attempts: map['attempts'] as int,
+      errorMessage: map['error_message'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toDbMap() {
     return {
-      'id': id == 0 ? null : id,
-      'type': operationType,
-      'data': jsonEncode(operationData),
+      'id': id,
+      'type': type.name,
+      'data': data,
       'created_at': createdAt.toIso8601String(),
       'status': status,
       'attempts': attempts,
       'error_message': errorMessage,
     };
-  }
-
-  /// Sunucuya yükleme için uygun payload formatını oluşturur.
-  Map<String, dynamic> toUploadPayload() {
-    return {
-      'type': operationType,
-      'data': operationData,
-    };
-  }
-
-  factory PendingOperation.fromMap(Map<String, dynamic> map) {
-    return PendingOperation(
-      id: map['id'] as int,
-      operationType: map['type'] as String,
-      operationData: jsonDecode(map['data'] as String) as Map<String, dynamic>,
-      createdAt: DateTime.parse(map['created_at'] as String),
-      status: map['status'] as String? ?? 'pending',
-      attempts: map['attempts'] as int? ?? 0,
-      errorMessage: map['error_message'] as String?,
-      tableName: map['table_name'] as String? ?? '',
-    );
   }
 }

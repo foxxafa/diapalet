@@ -175,7 +175,12 @@
   },
   "pending_operations": {
     "title": "Bekleyenler & Senkronizasyon",
+    "tabs": {
+      "pending": "Bekleyenler",
+      "history": "Geçmiş"
+    },
     "no_pending": "Bekleyen İşlem Yok",
+    "no_history": "Senkronizasyon geçmişi bulunmuyor.",
     "empty": "Bekleyen işlem yok.",
     "all_synced": "Tüm işlemler senkronize edilmiş",
     "operations_count": "{count} işlem senkronizasyon için bekliyor.",
@@ -187,6 +192,8 @@
     "type": "Tür:",
     "created": "Oluşturulma:",
     "data": "Veri:",
+    "error_loading": "Veri yüklenirken hata oluştu: {error}",
+    "unknown_error": "Bilinmeyen hata",
     "tooltip": {
       "refresh": "Listeyi Yenile",
       "sync": "Sunucuya Yükle"

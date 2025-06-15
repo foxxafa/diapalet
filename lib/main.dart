@@ -40,8 +40,8 @@ void main() async {
 
           // Repository'ler: Diğer servislere bağımlı.
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
-              GoodsReceivingRepository>( // Arayüz (soyut) tipini belirtiyoruz
-            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl( // Implementasyonu (somut) oluşturuyoruz
+              GoodsReceivingRepository>(
+            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
               dbHelper: db,
               networkInfo: network,
               dio: dio,
@@ -58,13 +58,21 @@ void main() async {
                 ),
           ),
 
-          // SyncService
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
-            update: (_, db, network, dio, __) => SyncService(
-              dbHelper: db,
-              dio: dio,
-              networkInfo: network,
+          // [DÜZELTME] SyncService için ChangeNotifierProxyProvider kullanıldı.
+          // Bu, SyncService'in bir ChangeNotifier olduğunu ve arayüzü
+          // güncelleyebileceğini belirtir.
+          ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
+            create: (context) => SyncService(
+              dbHelper: context.read<DatabaseHelper>(),
+              dio: context.read<Dio>(),
+              networkInfo: context.read<NetworkInfo>(),
             ),
+            update: (_, db, network, dio, previous) {
+              // 'previous' servisi, bağımlılıklar değiştiğinde yeniden yapılandırılır.
+              // Burada yeni bir örnek oluşturmak genellikle en güvenli yoldur.
+              // `previous` null olamaz çünkü `create` ile oluşturuluyor.
+              return previous!..updateDependencies(db, dio, network);
+            },
           ),
         ],
         child: const MyApp(),
@@ -91,3 +99,4 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+

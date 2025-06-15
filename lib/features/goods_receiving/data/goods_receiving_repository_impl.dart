@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
@@ -12,13 +13,14 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
 
-  static const int malKabulLocationId = 1; // Sabit: Mal Kabul lokasyon ID'si
+  static const int malKabulLocationId = 1;
 
   GoodsReceivingRepositoryImpl({
     required this.dbHelper,
@@ -26,11 +28,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     required this.networkInfo,
   });
 
-  /// --- ONLINE-FIRST DATA FETCHING METHODS ---
-
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
-    // Online-first: Önce API'den çekmeyi dene.
     if (await networkInfo.isConnected) {
       try {
         final response = await dio.get(ApiConfig.purchaseOrders);
@@ -43,42 +42,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         throw Exception('Unexpected response format.');
       } catch (e) {
         debugPrint("API'den siparişler çekilemedi, lokale başvuruluyor: $e");
-        // Hata olursa lokale fallback yap
         return _getOpenPurchaseOrdersFromLocal();
       }
     }
-    // Offline: Lokal veritabanından çek.
     return _getOpenPurchaseOrdersFromLocal();
-  }
-
-  @override
-  Future<List<ProductInfo>> searchProducts(String query) async {
-    // Online-first: Önce API'den çekmeyi dene.
-    if (await networkInfo.isConnected) {
-      try {
-        final response = await dio.get(ApiConfig.productsDropdown);
-        if (response.data is List) {
-          final products = (response.data as List)
-              .map((json) => ProductInfo.fromJson(json))
-              .toList();
-          // Client-side filtreleme
-          if (query.isNotEmpty) {
-            return products.where((p) =>
-            p.name.toLowerCase().contains(query.toLowerCase()) ||
-                p.stockCode.toLowerCase().contains(query.toLowerCase()) ||
-                (p.barcode1?.toLowerCase().contains(query.toLowerCase()) ?? false) // GÜNCELLEME: Barkoda göre de filtrele
-            ).toList();
-          }
-          return products;
-        }
-        throw Exception('Unexpected response format.');
-      } catch (e) {
-        debugPrint("API'den ürünler çekilemedi, lokale başvuruluyor: $e");
-        return _searchProductsFromLocal(query);
-      }
-    }
-    // Offline: Lokal veritabanından çek.
-    return _searchProductsFromLocal(query);
   }
 
   @override
@@ -93,15 +60,110 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           return items;
         }
         throw Exception('Unexpected response format.');
-      } catch(e) {
-        debugPrint("API'den sipariş kalemleri çekilemedi, lokale başvuruluyor: $e");
+      } catch (e) {
+        debugPrint(
+            "API'den sipariş kalemleri çekilemedi, lokale başvuruluyor: $e");
         return _getPurchaseOrderItemsFromLocal(orderId);
       }
     }
     return _getPurchaseOrderItemsFromLocal(orderId);
   }
 
-  /// --- LOCAL DATABASE FALLBACK METHODS ---
+  @override
+  Future<List<ProductInfo>> searchProducts(String query) async {
+    // Arama hem online hem offline modda lokal veritabanından yapılır.
+    // Bu, tutarlılığı sağlar ve API'ye gereksiz yük bindirmez.
+    return _searchProductsFromLocal(query);
+  }
+
+  @override
+  Future<List<LocationInfo>> getLocations() async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query('locations');
+    return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
+  }
+
+  @override
+  Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
+    // İşlem her zaman önce lokale kaydedilir.
+    await _saveGoodsReceiptLocally(payload);
+
+    // İnternet varsa, bekleyen işlemleri göndermeyi dene.
+    // Bu, sync_service tarafından periyodik olarak da yapılabilir,
+    // ancak anında deneme kullanıcı deneyimini iyileştirir.
+    if (await networkInfo.isConnected) {
+      // Not: Bu kısım `SyncService` tarafından yönetiliyorsa burada çağrılmasına gerek olmayabilir.
+      // Ancak anlık geri bildirim için burada bir gönderme denemesi yapılabilir.
+      // simdilik sadece lokale kaydedip syncService'e bırakıyoruz.
+    }
+  }
+
+  Future<void> _saveGoodsReceiptLocally(
+      GoodsReceiptPayload payload) async {
+    final db = await dbHelper.database;
+
+    try {
+      await db.transaction((txn) async {
+        final receiptHeaderData = {
+          'siparis_id': payload.header.siparisId,
+          'invoice_number': payload.header.invoiceNumber,
+          'employee_id': payload.header.employeeId,
+          'receipt_date': payload.header.receiptDate.toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+        };
+        final receiptId = await txn.insert('goods_receipts', receiptHeaderData);
+
+        for (final item in payload.items) {
+          await txn.insert('goods_receipt_items', {
+            'receipt_id': receiptId,
+            'urun_id': item.urunId,
+            'quantity_received': item.quantity,
+            'pallet_barcode': item.palletBarcode,
+          });
+
+          final existingStock = await txn.query(
+            'inventory_stock',
+            where: 'urun_id = ? AND location_id = ? AND pallet_barcode IS ?',
+            whereArgs: [item.urunId, malKabulLocationId, item.palletBarcode],
+          );
+
+          if (existingStock.isNotEmpty) {
+            final currentQuantity =
+            (existingStock.first['quantity'] as num).toDouble();
+            await txn.update(
+              'inventory_stock',
+              {
+                'quantity': currentQuantity + item.quantity,
+                'updated_at': DateTime.now().toIso8601String(),
+              },
+              where: 'id = ?',
+              whereArgs: [existingStock.first['id']],
+            );
+          } else {
+            await txn.insert('inventory_stock', {
+              'urun_id': item.urunId,
+              'location_id': malKabulLocationId,
+              'quantity': item.quantity,
+              'pallet_barcode': item.palletBarcode,
+              'updated_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+
+        final pendingOp = PendingOperation(
+          type: PendingOperationType.goodsReceipt,
+          data: jsonEncode(payload.toApiJson()),
+          createdAt: DateTime.now(),
+        );
+        await txn.insert('pending_operation', pendingOp.toDbMap());
+      });
+      debugPrint(
+          "Mal kabul işlemi başarıyla lokale kaydedildi ve senkronizasyon için sıraya alındı.");
+    } catch (e) {
+      debugPrint("Lokal mal kabul kaydı sırasında kritik hata: $e");
+      throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
+    }
+  }
 
   Future<List<PurchaseOrder>> _getOpenPurchaseOrdersFromLocal() async {
     final db = await dbHelper.database;
@@ -116,75 +178,75 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   Future<List<ProductInfo>> _searchProductsFromLocal(String query) async {
     final db = await dbHelper.database;
-    // GÜNCELLEME: Sorguya 'Barcode1' alanı eklendi
-    final List<Map<String, dynamic>> maps = await db.query(
-      'urunler',
-      where: 'UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?',
-      whereArgs: ['%$query%', '%$query%', '%$query%'],
-      limit: 50,
-    );
+    List<Map<String, dynamic>> maps;
+    if (query.isNotEmpty) {
+      maps = await db.query(
+        'urunler',
+        where: 'aktif = 1 AND (UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?)',
+        whereArgs: ['%$query%', '%$query%', '%$query%'],
+        limit: 50,
+      );
+    } else {
+      maps = await db.query(
+        'urunler',
+        where: 'aktif = 1',
+        limit: 50,
+      );
+    }
     return List.generate(maps.length, (i) => ProductInfo.fromDbMap(maps[i]));
   }
 
   Future<List<PurchaseOrderItem>> _getPurchaseOrderItemsFromLocal(int orderId) async {
     final db = await dbHelper.database;
+    // **DÜZELTME:** Bu sorgu, sunucudaki mantığa daha çok benzemesi için LEFT JOIN kullanacak şekilde güncellendi.
+    // Bu, hem daha performanslıdır hem de SUM(NULL) gibi durumlarda daha tutarlı sonuç verir.
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
-        satir.id,
-        satir.siparis_id,
-        satir.urun_id,
-        satir.miktar,
-        satir.birim,
-        urun.UrunAdi,
-        urun.StokKodu
-      FROM satin_alma_siparis_fis_satir AS satir
-      JOIN urunler AS urun ON urun.UrunId = satir.urun_id
-      WHERE satir.siparis_id = ?
-    ''', [orderId]);
-    return List.generate(maps.length, (i) => PurchaseOrderItem.fromDbJoinMap(maps[i]));
-  }
+        s.id,
+        s.siparis_id,
+        s.urun_id,
+        s.miktar,
+        s.birim,
+        u.UrunAdi,
+        u.StokKodu,
+        u.Barcode1,
+        u.aktif,
+        COALESCE(gri.total_received, 0) as receivedQuantity
+      FROM satin_alma_siparis_fis_satir AS s
+      JOIN urunler AS u ON u.UrunId = s.urun_id
+      LEFT JOIN (
+        SELECT
+          gr.siparis_id,
+          gri.urun_id,
+          SUM(gri.quantity_received) as total_received
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE gr.siparis_id = ?
+        GROUP BY gr.siparis_id, gri.urun_id
+      ) AS gri ON gri.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id
+      WHERE s.siparis_id = ?
+    ''', [orderId, orderId]);
 
-  @override
-  Future<List<LocationInfo>> getLocations() async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('locations');
-    return List.generate(maps.length, (i) => LocationInfo.fromMap(maps[i]));
-  }
-
-
-  /// --- DATA SAVING (ONLINE-ONLY) ---
-
-  @override
-  Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
-    // GÜNCELLEME: Sadece online modda çalışacak şekilde yeniden düzenlendi.
-    // Lokal veritabanı işlemleri (offline'a kaydetme, lokal stoğu güncelleme)
-    // geçici olarak kaldırıldı.
-    if (!await networkInfo.isConnected) {
-      throw Exception("İnternet bağlantısı yok. Mal Kabul işlemi yalnızca online modda yapılabilir.");
-    }
-
-    try {
-      debugPrint("Online mod: Mal kabul API'ye gönderiliyor: ${jsonEncode(payload.toApiJson())}");
-      final response = await dio.post(ApiConfig.goodsReceipts, data: payload.toApiJson());
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint("Mal kabul işlemi başarıyla API'ye gönderildi.");
-        // Lokal veritabanına dokunmuyoruz.
-      } else {
-        // API'den 2xx dışında bir status kodu gelirse hata fırlat.
-        final errorDetail = response.data is Map ? response.data['error'] : response.data;
-        debugPrint("API Hatası: Sunucu ${response.statusCode} koduyla yanıt verdi. Yanıt: $errorDetail");
-        throw Exception("Sunucu hatası (${response.statusCode}): $errorDetail");
-      }
-    } on DioException catch (e) {
-      // Dio kaynaklı hataları (network, timeout vb.) yakala ve daha anlaşılır bir hata fırlat.
-      final errorDetail = e.response?.data is Map ? e.response?.data['error'] : e.response?.data;
-      debugPrint("Dio Hatası: ${e.message}. Sunucu Yanıtı: $errorDetail");
-      throw Exception("Ağ hatası: Sunucuya ulaşılamadı. Detay: ${errorDetail ?? e.message}");
-    } catch (e) {
-      // Diğer beklenmedik hataları yakala.
-      debugPrint("Beklenmedik bir hata oluştu: $e");
-      throw Exception("İşlem sırasında beklenmedik bir hata oluştu: $e");
-    }
+    // Düzeltmenin etkili olması için PurchaseOrderItem.fromDbJoinMap'in doğru alanları okuduğundan emin olalım.
+    return List.generate(maps.length, (i) {
+      final map = maps[i];
+      return PurchaseOrderItem(
+        id: map['id'] as int,
+        orderId: map['siparis_id'] as int,
+        productId: map['urun_id'] as int,
+        // SQL sorgusunda alias kullanmadığımız için direkt 'miktar'ı okuyoruz.
+        expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
+        // LEFT JOIN'dan gelen ve COALESCE ile null kontrolü yapılan alan.
+        receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
+        unit: map['birim'] as String?,
+        product: ProductInfo(
+          id: map['urun_id'] as int,
+          name: map['UrunAdi'] as String,
+          stockCode: map['StokKodu'] as String,
+          barcode1: map['Barcode1'] as String?,
+          isActive: (map['aktif'] as int? ?? 1) == 1,
+        ),
+      );
+    });
   }
 }
