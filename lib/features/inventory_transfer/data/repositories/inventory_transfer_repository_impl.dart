@@ -1,18 +1,20 @@
+// lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
-
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
+import 'package:sqflite/sqflite.dart';
 
+// [DÜZELTME] Sınıf adı, dosyanın amacıyla eşleşecek ve isim çakışmasını
+// önleyecek şekilde 'InventoryTransferRepositoryImpl' olarak değiştirildi.
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
@@ -26,83 +28,29 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<Map<String, int>> getSourceLocations() async {
-    if (await networkInfo.isConnected) {
-      try {
-        final response = await dio.get(ApiConfig.locations);
-        if (response.statusCode == 200 && response.data is List) {
-          final locations = response.data as List;
-          return {for (var loc in locations) (loc['name'] as String): (loc['id'] as int)};
-        }
-      } catch (e) {
-        debugPrint("API getSourceLocations failed, fallback to local DB. Error: $e");
-      }
-    }
-
-    debugPrint("Fetching source locations from local database.");
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'locations',
-      columns: ['id', 'name'],
-      where: 'is_active = 1',
-      orderBy: 'name',
-    );
+    final List<Map<String, dynamic>> maps = await db.query('locations',
+        columns: ['id', 'name'], where: 'is_active = 1', orderBy: 'name');
     return {for (var map in maps) (map['name'] as String): (map['id'] as int)};
   }
 
   @override
-  Future<Map<String, int>> getTargetLocations() async {
-    return getSourceLocations();
-  }
+  Future<Map<String, int>> getTargetLocations() async => getSourceLocations();
 
   @override
   Future<List<String>> getPalletIdsAtLocation(int locationId) async {
-    if (await networkInfo.isConnected) {
-      try {
-        final response = await dio.get(
-          '${ApiConfig.sanitizedBaseUrl}/containers/$locationId/ids',
-          queryParameters: {'mode': 'pallet'},
-        );
-        if (response.statusCode == 200 && response.data is List) {
-          debugPrint("Fetched pallet IDs from API for location $locationId.");
-          return List<String>.from(response.data);
-        }
-      } catch (e) {
-        debugPrint("API getPalletIdsAtLocation failed, fallback to local DB. Error: $e");
-      }
-    }
-
-    debugPrint("Fetching pallet IDs from local DB for location $locationId.");
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT DISTINCT pallet_barcode
       FROM inventory_stock
-      WHERE location_id = ? AND pallet_barcode IS NOT NULL
+      WHERE location_id = ? AND pallet_barcode IS NOT NULL AND quantity > 0
     ''', [locationId]);
     return maps.map((map) => map['pallet_barcode'] as String).toList();
   }
 
   @override
   Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
-    if (await networkInfo.isConnected) {
-      try {
-        final response = await dio.get(
-          '${ApiConfig.sanitizedBaseUrl}/containers/$locationId/ids',
-          queryParameters: {'mode': 'box'},
-        );
-        if (response.statusCode == 200 && response.data is List) {
-          debugPrint("Fetched box items from API for location $locationId.");
-          return (response.data as List)
-              .map((item) => BoxItem.fromJson(item as Map<String, dynamic>))
-              .toList();
-        }
-      } catch (e) {
-        debugPrint("API getBoxesAtLocation failed, fallback to local DB. Error: $e");
-      }
-    }
-
-    debugPrint("Fetching box items from local DB for location $locationId.");
     final db = await dbHelper.database;
-    // GÜNCELLEME: Sorguya `u.Barcode1` alanı eklendi.
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
         u.UrunId as productId,
@@ -112,7 +60,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON u.UrunId = s.urun_id
-      WHERE s.location_id = ? AND s.pallet_barcode IS NULL
+      WHERE s.location_id = ? AND s.pallet_barcode IS NULL AND s.quantity > 0
       GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
     ''', [locationId]);
     return maps.map((map) => BoxItem.fromDbMap(map)).toList();
@@ -120,21 +68,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<ProductItem>> getPalletContents(String palletId) async {
-    if (await networkInfo.isConnected) {
-      try {
-        final response = await dio.get('${ApiConfig.sanitizedBaseUrl}/containers/$palletId/contents');
-        if (response.statusCode == 200 && response.data is List) {
-          debugPrint("Fetched pallet contents from API for pallet $palletId.");
-          return (response.data as List)
-              .map((item) => ProductItem.fromJson(item as Map<String, dynamic>))
-              .toList();
-        }
-      } catch (e) {
-        debugPrint("API getPalletContents failed, fallback to local DB. Error: $e");
-      }
-    }
-
-    debugPrint("Fetching pallet contents from local DB for pallet $palletId.");
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT
@@ -156,18 +89,135 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int sourceLocationId,
       int targetLocationId,
       ) async {
-    if (!await networkInfo.isConnected) {
-      throw Exception("İnternet bağlantısı yok. İşlem yalnızca online modda yapılabilir.");
+    final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
+    await _saveForSync(apiPayload);
+  }
+
+  Future<void> _saveForSync(Map<String, dynamic> apiPayload) async {
+    final db = await dbHelper.database;
+    try {
+      await db.transaction((txn) async {
+        await _performLocalStockUpdate(txn, apiPayload, createTransferRecord: true);
+
+        final pendingOp = PendingOperation(
+          type: PendingOperationType.inventoryTransfer,
+          data: jsonEncode(apiPayload),
+          createdAt: DateTime.now(),
+        );
+        await txn.insert('pending_operation', pendingOp.toDbMap());
+      });
+      debugPrint("Transfer işlemi başarıyla lokale kaydedildi ve senkronizasyon için sıraya alındı.");
+    } catch (e) {
+      debugPrint("Lokal transfer kaydı sırasında kritik hata: $e");
+      throw Exception("Lokal veritabanına transfer kaydedilirken bir hata oluştu: $e");
     }
+  }
 
-    final transferDateString = DateFormat('yyyy-MM-dd HH:mm:ss').format(header.transferDate);
+  Future<void> _performLocalStockUpdate(
+      Transaction txn, Map<String, dynamic> apiPayload,
+      {required bool createTransferRecord}) async {
+    final headerData = apiPayload['header'] as Map<String, dynamic>;
+    final itemsData = apiPayload['items'] as List<dynamic>;
+    final sourceLocationId = headerData['source_location_id'] as int;
+    final targetLocationId = headerData['target_location_id'] as int;
+    final operationType = AssignmentMode.values.firstWhere(
+            (e) => e.apiName == headerData['operation_type'],
+        orElse: () => AssignmentMode.box);
 
-    final apiPayload = {
+    for (final itemDynamic in itemsData) {
+      final itemMap = itemDynamic as Map<String, dynamic>;
+      final int productId = itemMap['product_id'] as int;
+      final double quantity = (itemMap['quantity'] as num).toDouble();
+      final String? sourcePalletBarcode = itemMap['pallet_id'] as String?;
+
+      if (createTransferRecord) {
+        await txn.insert('inventory_transfers', {
+          'urun_id': productId,
+          'from_location_id': sourceLocationId,
+          'to_location_id': targetLocationId,
+          'quantity': quantity,
+          'pallet_barcode': sourcePalletBarcode,
+          'employee_id': headerData['employee_id'] as int,
+          'transfer_date': headerData['transfer_date'] as String,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      await _updateStockInTransaction(
+        txn,
+        urunId: productId,
+        locationId: sourceLocationId,
+        quantityChange: -quantity,
+        palletBarcode: sourcePalletBarcode,
+      );
+
+      final String? targetPalletBarcode = (operationType == AssignmentMode.pallet) ? sourcePalletBarcode : null;
+      await _updateStockInTransaction(
+        txn,
+        urunId: productId,
+        locationId: targetLocationId,
+        quantityChange: quantity,
+        palletBarcode: targetPalletBarcode,
+      );
+    }
+  }
+
+  Future<void> _updateStockInTransaction(
+      Transaction txn, {
+        required int urunId,
+        required int locationId,
+        required double quantityChange,
+        String? palletBarcode,
+      }) async {
+    final palletClause = palletBarcode != null && palletBarcode.isNotEmpty
+        ? "pallet_barcode = ?"
+        : "pallet_barcode IS NULL";
+    final params = palletBarcode != null && palletBarcode.isNotEmpty
+        ? [urunId, locationId, palletBarcode]
+        : [urunId, locationId];
+
+    final List<Map<String, dynamic>> existingStock = await txn.query(
+      'inventory_stock',
+      where: 'urun_id = ? AND location_id = ? AND $palletClause',
+      whereArgs: params,
+    );
+
+    if (existingStock.isNotEmpty) {
+      final stock = existingStock.first;
+      final currentQuantity = (stock['quantity'] as num).toDouble();
+      final newQuantity = currentQuantity + quantityChange;
+
+      if (newQuantity > 0.001) {
+        await txn.update(
+          'inventory_stock',
+          {'quantity': newQuantity, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?', whereArgs: [stock['id']],
+        );
+      } else {
+        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stock['id']]);
+      }
+    } else if (quantityChange > 0) {
+      await txn.insert('inventory_stock', {
+        'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
+        'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
+      });
+    } else {
+      debugPrint("UYARI: Kaynak lokasyonda ($locationId) bulunmayan bir stok (Ürün ID: $urunId, Palet: $palletBarcode) düşülmeye çalışıldı. İşlem atlandı.");
+    }
+  }
+
+  Map<String, dynamic> _buildApiPayload(
+      TransferOperationHeader header,
+      List<TransferItemDetail> items,
+      int sourceLocationId,
+      int targetLocationId,
+      ) {
+    return {
       "header": {
         "operation_type": header.operationType.apiName,
         "source_location_id": sourceLocationId,
         "target_location_id": targetLocationId,
-        "transfer_date": transferDateString,
+        "transfer_date": header.transferDate.toIso8601String(),
         "employee_id": 1, // Placeholder
       },
       "items": items.map((item) => {
@@ -176,25 +226,5 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         "pallet_id": item.sourcePalletBarcode,
       }).toList(),
     };
-
-    try {
-      debugPrint("Transfer API'sine gönderiliyor: ${jsonEncode(apiPayload)}");
-      final response = await dio.post(ApiConfig.transfers, data: apiPayload);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint("Transfer işlemi başarıyla API'ye gönderildi.");
-      } else {
-        final errorDetail = response.data is Map ? response.data['error'] : response.data;
-        debugPrint("API Hatası: Sunucu ${response.statusCode} koduyla yanıt verdi. Yanıt: $errorDetail");
-        throw Exception("Sunucu hatası (${response.statusCode}): $errorDetail");
-      }
-    } on DioError catch (e) {
-      final errorDetail = e.response?.data is Map ? e.response?.data['error'] : e.response?.data;
-      debugPrint("Dio Hatası: ${e.message}. Sunucu Yanıtı: $errorDetail");
-      throw Exception("Ağ hatası: Sunucuya ulaşılamadı. Detay: ${errorDetail ?? e.message}");
-    } catch (e) {
-      debugPrint("Beklenmedik bir hata oluştu: $e");
-      throw Exception("İşlem sırasında beklenmedik bir hata oluştu: $e");
-    }
   }
 }

@@ -4,9 +4,7 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
-// SOMUT implementasyon buradan geliyor
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
-// SOYUT arayüz buradan geliyor
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
@@ -39,28 +37,25 @@ void main() async {
           Provider<NetworkInfo>.value(value: networkInfo),
 
           // Repository'ler: Diğer servislere bağımlı.
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
-              GoodsReceivingRepository>(
+          // ProxyProvider3, altındaki widget ağacına bir nesne (interface) sağlar
+          // ve bu nesneyi oluşturmak için diğer provider'lardan (db, network, dio) değerler alır.
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, GoodsReceivingRepository>(
             update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
               dbHelper: db,
               networkInfo: network,
               dio: dio,
             ),
           ),
-
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio,
-              InventoryTransferRepository>(
-            update: (_, db, network, dio, __) =>
-                InventoryTransferRepositoryImpl(
-                  dbHelper: db,
-                  networkInfo: network,
-                  dio: dio,
-                ),
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, InventoryTransferRepository>(
+            update: (_, db, network, dio, __) => InventoryTransferRepositoryImpl(
+              dbHelper: db,
+              networkInfo: network,
+              dio: dio,
+            ),
           ),
 
-          // [DÜZELTME] SyncService için ChangeNotifierProxyProvider kullanıldı.
-          // Bu, SyncService'in bir ChangeNotifier olduğunu ve arayüzü
-          // güncelleyebileceğini belirtir.
+          // SyncService'i bir ChangeNotifier olarak sağla.
+          // Bu, arayüzün senkronizasyon durumundaki değişikliklere tepki vermesini sağlar.
           ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
@@ -68,9 +63,8 @@ void main() async {
               networkInfo: context.read<NetworkInfo>(),
             ),
             update: (_, db, network, dio, previous) {
-              // 'previous' servisi, bağımlılıklar değiştiğinde yeniden yapılandırılır.
-              // Burada yeni bir örnek oluşturmak genellikle en güvenli yoldur.
-              // `previous` null olamaz çünkü `create` ile oluşturuluyor.
+              // Bağımlılıklar değişirse, mevcut SyncService örneğini yeni bağımlılıklarla güncelle.
+              // 'previous' null olamaz çünkü `create` ile her zaman bir örnek oluşturulur.
               return previous!..updateDependencies(db, dio, network);
             },
           ),
@@ -99,4 +93,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-

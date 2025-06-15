@@ -10,8 +10,7 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet.db";
-  // [GÜNCELLEME] Hata yönetimini düzeltmek için versiyon artırıldı.
-  static const _databaseVersion = 11;
+  static const _databaseVersion = 11; // Version remains the same if schema doesn't change
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -97,14 +96,12 @@ class DatabaseHelper {
 
   Future<void> replaceTables(Map<String, dynamic> tableData) async {
     final db = await database;
-
     final orderedTableNames = [
       'locations', 'employees', 'urunler', 'satin_alma_siparis_fis',
       'goods_receipts', 'satin_alma_siparis_fis_satir', 'goods_receipt_items',
       'inventory_stock', 'inventory_transfers'
     ];
 
-    // [DÜZELTME] Transaction artık tek bir hata olduğunda tamamen geri alınacak (rollback).
     await db.transaction((txn) async {
       for (final tableName in orderedTableNames.reversed) {
         if (tableData.containsKey(tableName)) {
@@ -129,25 +126,30 @@ class DatabaseHelper {
     });
   }
 
-  // Diğer metotlar aynı kalır...
   Future<void> addSyncLog(String type, String status, String message) async {
     final db = await database;
     await db.insert('sync_log', {'timestamp': DateTime.now().toIso8601String(), 'type': type, 'status': status, 'message': message,});
   }
+
   Future<List<SyncLog>> getSyncLogs() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('sync_log', orderBy: 'timestamp DESC', limit: 100);
     return maps.map((map) => SyncLog.fromMap(map)).toList();
   }
+
+  /// [DÜZELTME] Bekleyen işlemleri "ilk giren ilk çıkar" (FIFO) mantığıyla almak
+  /// için sıralama `id ASC` olarak değiştirildi.
   Future<List<PendingOperation>> getPendingOperations() async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('pending_operation', orderBy: 'id DESC');
+    final List<Map<String, dynamic>> maps = await db.query('pending_operation', orderBy: 'id ASC');
     return maps.map((map) => PendingOperation.fromMap(map)).toList();
   }
+
   Future<void> deletePendingOperation(int id) async {
     final db = await database;
     await db.delete('pending_operation', where: 'id = ?', whereArgs: [id]);
   }
+
   Future<void> updatePendingOperationStatus(int id, String status, {String? error}) async {
     final db = await database;
     await db.update('pending_operation', {'status': status, 'error_message': error}, where: 'id = ?', whereArgs: [id]);

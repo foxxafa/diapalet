@@ -24,6 +24,14 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
     super.initState();
     _syncService = context.read<SyncService>();
     _tabController = TabController(length: 2, vsync: this);
+
+    // [DÜZELTME] Sayfa yüklendiğinde otomatik senkronizasyon yap.
+    // Bu, kullanıcı sayfaya her girdiğinde durumun güncel olmasını sağlar.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _syncService.performFullSync();
+      }
+    });
   }
 
   @override
