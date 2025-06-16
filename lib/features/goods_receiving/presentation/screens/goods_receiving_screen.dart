@@ -158,23 +158,27 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _addItemToList() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final quantity = double.tryParse(_quantityController.text);
-    if (_selectedProduct == null || quantity == null || quantity <= 0) {
+    final currentProduct = _selectedProduct; // Use a local variable for null safety.
+
+    if (currentProduct == null || quantity == null || quantity <= 0) {
       _showErrorSnackBar('goods_receiving_screen.error_select_product_and_quantity'.tr());
       return;
     }
+
     if (_selectedOrder != null) {
       if (_isOrderDetailsLoading) {
         _showErrorSnackBar('goods_receiving_screen.error_loading_order_details'.tr());
         return;
       }
-      final orderItem = _orderItems.firstWhereOrNull((item) => item.product?.id == _selectedProduct!.id);
+      final orderItem = _orderItems.firstWhereOrNull((item) => item.product?.id == currentProduct.id);
       if (orderItem == null) {
         _showErrorSnackBar('goods_receiving_screen.error_product_not_in_order'.tr());
         return;
       }
       final alreadyAddedInUI = _addedItems
-          .where((item) => item.product.id == _selectedProduct!.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
+          .where((item) => item.product.id == currentProduct.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
           .map((item) => item.quantity)
           .fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
@@ -193,15 +197,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
     setState(() {
       _addedItems.insert(0, ReceiptItemDraft(
-        product: _selectedProduct!,
+        product: currentProduct,
         quantity: quantity,
         palletBarcode: _receivingMode == ReceivingMode.palet ? _palletIdController.text : null,
       ));
       _clearEntryFields(clearPallet: false);
     });
-    _showSuccessSnackBar('goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': _selectedProduct!.name}));
+    _showSuccessSnackBar('goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': currentProduct.name}));
     _productFocusNode.requestFocus();
   }
+
 
   void _removeItemFromList(int index) {
     if (!mounted) return;
@@ -484,6 +489,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildQuantityAndStatusRow({required bool isLocked, required bool isEnabled}) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
     final bool fieldEnabled = isEnabled && !isLocked;
     final orderItem = _selectedProduct == null || _selectedOrder == null
         ? null
@@ -533,18 +540,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
             child: Center(
               child: (_selectedOrder == null || _selectedProduct == null)
-                  ? Text("- / -", style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.grey))
+                  ? Text("- / -", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor))
                   : RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                   children: [
                     TextSpan(
                       text: '${totalReceived.toStringAsFixed(0)} ',
-                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
+                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900),
                     ),
-                    const TextSpan(text: '/ '),
-                    TextSpan(text: expectedQty.toStringAsFixed(0)),
+                    TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color)),
+                    TextSpan(text: expectedQty.toStringAsFixed(0), style: TextStyle(color: textTheme.bodyLarge?.color)),
                   ],
                 ),
               ),
@@ -629,7 +636,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.colorScheme.surface.withOpacity(0.5) : Colors.grey.shade200,
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface.withOpacity(0.04),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -779,9 +786,13 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final appBarTheme = theme.appBarTheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title, style: theme.textTheme.titleMedium),
+        title: Text(widget.title, style: appBarTheme.titleTextStyle),
+        backgroundColor: appBarTheme.backgroundColor,
+        foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(),
@@ -859,10 +870,12 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final appBarTheme = theme.appBarTheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('goods_receiving_screen.dialog_confirmation_title'.tr(),
-            style: theme.textTheme.titleMedium),
+        title: Text('goods_receiving_screen.dialog_confirmation_title'.tr(), style: appBarTheme.titleTextStyle),
+        backgroundColor: appBarTheme.backgroundColor,
+        foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(false),
