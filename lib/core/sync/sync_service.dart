@@ -1,5 +1,4 @@
 // lib/core/sync/sync_service.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
@@ -40,10 +39,10 @@ class SyncService with ChangeNotifier {
   }
 
   void _initialize() {
-    checkServerStatus();
     _connectivitySubscription = networkInfo.onConnectivityChanged.listen((_) {
       performFullSync();
     });
+    performFullSync();
     _setupPeriodicSync();
   }
 
@@ -81,17 +80,20 @@ class SyncService with ChangeNotifier {
       debugPrint("SyncService: Zaten bir senkronizasyon işlemi devam ediyor. Atlanıyor.");
       return;
     }
-    if (!await _canConnectToServer()) {
-      debugPrint("SyncService: Sunucuya ulaşılamıyor. Senkronizasyon atlanıyor.");
+    if (!await networkInfo.isConnected) {
+      debugPrint("SyncService: İnternet bağlantısı yok. Senkronizasyon atlanıyor.");
       _statusController.add(SyncStatus.offline);
       return;
     }
+
     _isSyncing = true;
     _statusController.add(SyncStatus.syncing);
     notifyListeners();
     try {
       await _uploadPendingOperations();
       await _downloadDataFromServer();
+      await _downloadAndSaveEmployees();
+
       final remainingOps = await dbHelper.getPendingOperations();
       if (remainingOps.isEmpty) {
         _statusController.add(SyncStatus.upToDate);
@@ -108,12 +110,60 @@ class SyncService with ChangeNotifier {
     }
   }
 
+  Future<void> _downloadAndSaveEmployees() async {
+    debugPrint("SyncService: Çalışan verileri indirme işlemi başlıyor...");
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // DÜZELTME: Sunucunun beklediği 'warehouse_id' SharedPreferences'dan okunuyor.
+      final warehouseId = prefs.getInt('warehouse_id');
+
+      if (warehouseId == null) {
+        debugPrint("SyncService: Çalışanları indirmek için warehouse_id bulunamadı. Atlanıyor.");
+        return;
+      }
+
+      // DÜZELTME: API isteğinin gövdesine 'apikey' yerine 'warehouse_id' eklendi.
+      final response = await dio.post(
+        ApiConfig.getAllUsers,
+        data: {'warehouse_id': warehouseId},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+
+      debugPrint("Sunucudan gelen çalışan listesi yanıtı (warehouse_id: $warehouseId): \n${response.data}");
+
+      if (response.statusCode == 200 && response.data['status'] == 200) {
+        final employees = List<Map<String, dynamic>>.from(response.data['users']);
+        if (employees.isNotEmpty) {
+          await dbHelper.saveEmployees(employees);
+          debugPrint("SyncService: ${employees.length} çalışan başarıyla yerel veritabanına kaydedildi.");
+          await dbHelper.addSyncLog('download_employees', 'success', '${employees.length} çalışan kaydedildi.');
+        } else {
+          debugPrint("SyncService: Sunucudan çalışan verisi bulunamadı.");
+        }
+      } else {
+        throw Exception("Çalışan API yanıtı başarısız: ${response.data['message'] ?? 'Bilinmeyen sunucu hatası'}");
+      }
+    } on DioException catch (e) {
+      final errorMessage = "Çalışan verilerini indirme hatası (Dio): ${e.response?.statusCode} - ${e.message}";
+      debugPrint("SyncService: $errorMessage \nResponse Data: ${e.response?.data}");
+      await dbHelper.addSyncLog('download_employees', 'error', errorMessage);
+    }
+    catch (e) {
+      final errorMessage = "Çalışan verilerini indirme hatası: $e";
+      debugPrint("SyncService: $errorMessage");
+      await dbHelper.addSyncLog('download_employees', 'error', errorMessage);
+    }
+  }
+
   Future<void> _downloadDataFromServer() async {
     debugPrint("SyncService: Sunucudan veri indirme başlıyor...");
     try {
+      if (!await _canConnectToServer()) {
+        debugPrint("SyncService: Yerel sunucuya ulaşılamıyor. Veri indirme atlanıyor.");
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final lastSync = prefs.getString(_lastSyncTimestampKey);
-      debugPrint("Son senkronizasyon zamanı: $lastSync");
       final response = await dio.post(
         ApiConfig.syncDownload,
         data: {'last_sync_timestamp': lastSync},
@@ -128,9 +178,7 @@ class SyncService with ChangeNotifier {
         await dbHelper.applyDownloadedData(rawData, isFullSync: lastSync == null);
         final newTimestamp = response.data['timestamp'] as String;
         await prefs.setString(_lastSyncTimestampKey, newTimestamp);
-        final message = "$tablesCount tablo için yeni veriler sunucudan indirilip güncellendi.";
-        debugPrint("SyncService: $message");
-        await dbHelper.addSyncLog('download', 'success', message);
+        await dbHelper.addSyncLog('download', 'success', "$tablesCount tablo güncellendi.");
       } else {
         throw Exception("API yanıtı başarısız: ${response.data['error']}");
       }
@@ -143,6 +191,10 @@ class SyncService with ChangeNotifier {
   }
 
   Future<void> _uploadPendingOperations() async {
+    if (!await _canConnectToServer()) {
+      debugPrint("SyncService: Yerel sunucuya ulaşılamıyor. Bekleyen işlemlerin yüklenmesi atlanıyor.");
+      return;
+    }
     final pendingOps = await dbHelper.getPendingOperations();
     if (pendingOps.isEmpty) {
       debugPrint("SyncService: Yüklenecek bekleyen operasyon bulunmuyor.");
@@ -161,14 +213,11 @@ class SyncService with ChangeNotifier {
           final result = results[i]['result'];
           if (result != null && result['error'] == null) {
             await dbHelper.deletePendingOperation(op.id!);
-            final successMessage = "'${op.displayTitle}' başarıyla gönderildi.";
-            await dbHelper.addSyncLog('upload', 'success', successMessage);
+            await dbHelper.addSyncLog('upload', 'success', "'${op.displayTitle}' gönderildi.");
           } else {
             final errorMsg = result?['error'] ?? 'Bilinmeyen sunucu hatası';
             await dbHelper.updatePendingOperationStatus(op.id!, 'failed', error: errorMsg);
-            final failureMessage = "'${op.displayTitle}' gönderilemedi: $errorMsg";
-            await dbHelper.addSyncLog('upload', 'error', failureMessage);
-            debugPrint("Operasyon #${op.id} sunucuda işlenemedi: $errorMsg");
+            await dbHelper.addSyncLog('upload', 'error', "'${op.displayTitle}' gönderilemedi: $errorMsg");
           }
         }
       } else {

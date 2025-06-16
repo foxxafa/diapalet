@@ -1,38 +1,37 @@
 // lib/core/network/api_config.dart
 class ApiConfig {
-  static const String _host = 'http://192.168.45.133:5000'; //http://10.0.2.2:5000  //http://192.168.1.122:5000
+  // Yerel sunucu, genel senkronizasyon ve veri işlemleri için
+  static const String _host = 'http://192.168.45.133:5000';
 
-  /// Public getter for the host.
+  // Uzak sunucu, kimlik doğrulama ve kullanıcı yönetimi için
+  static const String _remoteHost = 'https://test.rowhub.net';//http://localhost:8000/index.php?r=terminal
+
+  /// Yerel sunucu için public getter.
   static String get host => _host;
 
-  /// API version segment. Update this when the backend version changes.
+  /// Yerel sunucu için API versiyonu.
   static const String apiVersion = 'v1';
 
-  /// Full base url composed of host and api version, e.g. `http://192.168.45.133:5000/v1`.
+  /// Yerel sunucu için temel URL.
   static String get baseUrl => '$host/$apiVersion';
 
-  /// Same as [baseUrl] but guaranteed **not** to end with a trailing `/`.
+  /// [baseUrl] ile aynı, ancak sonunda '/' olmadan.
   static String get sanitizedBaseUrl =>
       baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
 
-  // --- Auth Endpoint ---
-  static final String login = 'https://test.rowhub.net/index.php?r=apimobil/login';
+  // --- Uzak Sunucu Endpoint'leri ---
+  static final String login = '$_remoteHost/index.php?r=terminal/login';
 
-  // --- Sync Endpoints ---
+  // DÜZELTME: Endpoint, kullanıcı tarafından sağlanan doğru URL ile değiştirildi.
+  static final String getAllUsers = '$_remoteHost/index.php?r=terminal/alluser';
+
+  // --- Yerel Sunucu Endpoint'leri ---
   static final String syncDownload = '$host/api/sync/download';
   static final String syncUpload = '$host/api/sync/upload';
-
-  // --- Master Data Endpoints ---
   static final String locations = '$sanitizedBaseUrl/locations';
   static final String productsDropdown = '$sanitizedBaseUrl/products/dropdown';
-
-  // --- Purchase Order Endpoints ---
   static final String purchaseOrders = '$sanitizedBaseUrl/purchase-orders';
   static String purchaseOrderItems(int orderId) => '$purchaseOrders/$orderId/items';
-
-  // --- Goods Receipt Endpoints ---
   static final String goodsReceipts = '$sanitizedBaseUrl/goods-receipts';
-
-  // --- Transfer Endpoints ---
   static final String transfers = '$sanitizedBaseUrl/transfers';
 }

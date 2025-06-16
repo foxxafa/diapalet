@@ -1,4 +1,5 @@
 // lib/features/auth/presentation/login_screen.dart
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:flutter/material.dart';
@@ -36,6 +37,11 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (success && mounted) {
+          // GÜNCELLEME: Giriş başarılı olduktan hemen sonra senkronizasyonu tetikle.
+          // Bu, çalışan listesinin anında indirilmesini ve offline login için
+          // lokal veritabanının hazır olmasını sağlar.
+          await context.read<SyncService>().performFullSync();
+
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );

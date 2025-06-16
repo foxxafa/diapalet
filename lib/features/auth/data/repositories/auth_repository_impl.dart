@@ -5,6 +5,7 @@ import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final DatabaseHelper dbHelper;
@@ -19,7 +20,6 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<bool> login(String username, String password) async {
-    // İnternet bağlantısı kontrolü bu metoda taşındı.
     if (await networkInfo.isConnected) {
       return _loginOnline(username, password);
     } else {
@@ -37,42 +37,49 @@ class AuthRepositoryImpl implements AuthRepository {
           'username': username,
           'password': password,
         },
-        // Backend kodu (Yii2) post verisi beklediği için Content-Type değiştirildi.
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
-      // Sunucudan gelen yanıtı her durumda konsola yazdıralım.
       debugPrint("Sunucu Yanıtı (Status ${response.statusCode}): ${response.data}");
 
       if (response.statusCode == 200 && response.data != null) {
-        final responseData = response.data;
+        final responseData = response.data as Map<String, dynamic>;
 
-        // DÜZELTME: Sunucudan gelen 'status' alanı kontrol ediliyor.
-        final status = responseData['status'] as String?;
-
-        if (status == 'success') {
+        // HATA DÜZELTMESİ: Sunucudan 'status' alanı integer (200) olarak geliyor.
+        // String olarak kontrol etmek yerine sayı olarak kontrol edildi.
+        if (responseData['status'] == 200) {
           debugPrint("Online login başarılı.");
-          // Burada apikey gibi verileri saklama işlemi yapılabilir.
-          // Örneğin: final apiKey = responseData['apikey'];
+
+          // YENİ ÖZELLİK: Kullanıcı bilgilerini SharedPreferences'a kaydet.
+          final user = responseData['user'] as Map<String, dynamic>;
+          final apiKey = responseData['apikey'] as String;
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('apikey', apiKey);
+          await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+          await prefs.setInt('branch_id', user['branch_id'] as int);
+          await prefs.setString('first_name', user['first_name'] as String);
+          await prefs.setString('last_name', user['last_name'] as String);
+
+          debugPrint("Kullanıcı bilgileri SharedPreferences'a kaydedildi.");
+
           return true;
         } else {
-          // Sunucudan gelen hata mesajını kullanalım.
           final errorMessage = responseData['message'] ?? 'Kullanıcı adı veya şifre hatalı.';
           throw Exception(errorMessage);
         }
       } else {
-        // 200 dışında bir status kodu geldiyse
         throw Exception('Sunucudan geçersiz yanıt alındı (Kod: ${response.statusCode})');
       }
     } on DioException catch (e) {
-      // Dio hatası durumunda daha detaylı loglama yapalım.
       debugPrint("API Hatası (DioException): ${e.message}");
       debugPrint("Sunucudan Gelen Hata Yanıtı: ${e.response?.data}");
       final errorMessage = e.response?.data?['message'] ?? "Sunucuya bağlanırken bir hata oluştu.";
       throw Exception(errorMessage);
     } catch (e) {
       debugPrint("Bilinmeyen Hata: $e");
-      throw Exception("Bilinmeyen bir hata oluştu.");
+      // Orijinal hatayı daha iyi anlamak için yeniden fırlat.
+      rethrow;
     }
   }
 
@@ -89,11 +96,9 @@ class AuthRepositoryImpl implements AuthRepository {
       if (result.isNotEmpty) {
         return true;
       }
-      // Çevrimdışı modda da kullanıcıya bilgi vermek için hata fırlatıldı.
       throw Exception("Çevrimdışı giriş başarısız. İnternet yok ve bilgileriniz yerel veritabanında bulunamadı.");
     } catch (e) {
       debugPrint("Veritabanı Hatası: $e");
-      // Hatanın UI'a yansıması için tekrar fırlatılıyor.
       rethrow;
     }
   }

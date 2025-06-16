@@ -6,12 +6,12 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
-// [DÜZELTME] Eksik import eklendi.
 import 'package:diapalet/core/sync/pending_operation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet.db";
-  static const _databaseVersion = 11;
+  // DÜZELTME: Veritabanı şeması değiştiği için sürüm artırıldı.
+  static const _databaseVersion = 13;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -38,6 +38,7 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Upgrading database from version $oldVersion to $newVersion...");
+    // Yükseltme stratejisi: eski tabloları sil ve yeniden oluştur.
     await _dropAllTables(db);
     await _onCreate(db);
     debugPrint("Database upgrade complete.");
@@ -48,9 +49,28 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE locations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, code TEXT, is_active INTEGER DEFAULT 1, address TEXT, description TEXT, latitude REAL, longitude REAL, created_at TEXT, updated_at TEXT)
     ''');
+
+    // DÜZELTME: employees tablosuna branch_id ve warehouse_id eklendi.
     await db.execute('''
-      CREATE TABLE employees (id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, location_id INTEGER, role TEXT, username TEXT, password TEXT, start_date TEXT, end_date TEXT, is_active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT, photo TEXT)
+      CREATE TABLE employees (
+        id INTEGER PRIMARY KEY, 
+        first_name TEXT, 
+        last_name TEXT, 
+        location_id INTEGER, 
+        role TEXT, 
+        username TEXT, 
+        password TEXT, 
+        start_date TEXT, 
+        end_date TEXT, 
+        is_active INTEGER DEFAULT 1, 
+        created_at TEXT, 
+        updated_at TEXT, 
+        photo TEXT,
+        branch_id INTEGER,
+        warehouse_id INTEGER
+      )
     ''');
+
     await db.execute('''
       CREATE TABLE urunler (UrunId INTEGER PRIMARY KEY, StokKodu TEXT UNIQUE, UrunAdi TEXT NOT NULL, AdetFiyati REAL, KutuFiyati REAL, Pm1 REAL, Pm2 REAL, Pm3 REAL, Barcode1 TEXT, Barcode2 TEXT, Barcode3 TEXT, Vat REAL, Birim1 TEXT, BirimKey1 INTEGER, Birim2 TEXT, BirimKey2 INTEGER, Barcode4 TEXT, aktif INTEGER DEFAULT 1, marka_id INTEGER, kategori_id INTEGER, grup_id INTEGER, qty INTEGER, size TEXT, unitkg REAL, palletqty INTEGER, HSCode TEXT, rafkoridor TEXT, rafno INTEGER, rafkat TEXT, rafomru INTEGER, imsrc TEXT, created_at TEXT, updated_at TEXT)
     ''');
@@ -81,16 +101,28 @@ class DatabaseHelper {
     debugPrint("All tables created for version $_databaseVersion.");
   }
 
-  Future<void> _dropAllTables(Database db) {
-    final tables = [
+  Future<void> _dropAllTables(Database db) async {
+    const tables = [
       'pending_operation', 'sync_log', 'inventory_transfers', 'inventory_stock',
       'goods_receipt_items', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'satin_alma_siparis_fis', 'urunler', 'employees', 'locations',
     ];
-    return db.transaction((txn) async {
+    await db.transaction((txn) async {
       for (final table in tables) {
         await txn.execute('DROP TABLE IF EXISTS $table');
       }
+    });
+    debugPrint("All tables dropped for upgrade.");
+  }
+
+  Future<void> saveEmployees(List<Map<String, dynamic>> employees) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final employee in employees) {
+        batch.insert('employees', employee, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
     });
   }
 
@@ -107,12 +139,15 @@ class DatabaseHelper {
         debugPrint("Tam senkronizasyon: Mevcut tablolar temizleniyor...");
         for (final tableName in orderedTableNames.reversed) {
           if (tableData.containsKey(tableName)) {
+            if (tableName == 'employees') continue;
             await txn.delete(tableName);
           }
         }
       }
       for (final tableName in orderedTableNames) {
         if (!tableData.containsKey(tableName)) continue;
+        if (tableName == 'employees') continue;
+
         final records = tableData[tableName] as List<dynamic>?;
         if (records == null || records.isEmpty) continue;
         debugPrint("${records.length} kayıt $tableName tablosuna uygulanıyor...");
