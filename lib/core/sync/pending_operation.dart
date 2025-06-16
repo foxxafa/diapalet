@@ -91,4 +91,27 @@ class PendingOperation {
       'error_message': errorMessage,
     };
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is PendingOperation &&
+              runtimeType == other.runtimeType &&
+              id == other.id &&
+              type == other.type &&
+              data == other.data &&
+              createdAt == other.createdAt &&
+              status == other.status &&
+              attempts == other.attempts &&
+              errorMessage == other.errorMessage;
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      type.hashCode ^
+      data.hashCode ^
+      createdAt.hashCode ^
+      status.hashCode ^
+      attempts.hashCode ^
+      errorMessage.hashCode;
 }

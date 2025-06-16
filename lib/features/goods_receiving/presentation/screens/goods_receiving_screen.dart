@@ -56,11 +56,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   void initState() {
     super.initState();
     _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
+    // [YENİ] Ürün alanına odaklanıldığında içindeki metni seçmek için listener eklendi.
+    _productFocusNode.addListener(_onProductFocusChange);
     _loadInitialData();
   }
 
   @override
   void dispose() {
+    // [YENİ] Ekrandan çıkarken klavyeyi kapatır ve odağı temizler.
+    FocusScope.of(context).unfocus();
+    _productFocusNode.removeListener(_onProductFocusChange);
     _orderController.dispose();
     _palletIdController.dispose();
     _productController.dispose();
@@ -70,6 +75,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _productFocusNode.dispose();
     _quantityFocusNode.dispose();
     super.dispose();
+  }
+
+  // [YENİ] Ürün alanı odaklandığında metni seçen yardımcı metod.
+  void _onProductFocusChange() {
+    if (_productFocusNode.hasFocus && _productController.text.isNotEmpty) {
+      _productController.selection = TextSelection(
+          baseOffset: 0, extentOffset: _productController.text.length);
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -130,10 +143,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _processScannedProduct(String scannedData) {
     if (scannedData.isEmpty) return;
+
+    // Arama yapılacak ürün listesini belirle (siparişe bağlı veya tüm ürünler)
     final productSource = _selectedOrder != null
         ? _orderItems.map((item) => item.product).whereNotNull().toList()
         : _availableProducts;
 
+    // Stok kodu veya barkoda göre ürünü bul
     final foundProduct = productSource.firstWhereOrNull((p) =>
     p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
         (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
@@ -160,13 +176,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final quantity = double.tryParse(_quantityController.text);
-    final currentProduct = _selectedProduct; // Use a local variable for null safety.
+    final currentProduct = _selectedProduct; // Null check için yerel değişkene ata
 
     if (currentProduct == null || quantity == null || quantity <= 0) {
       _showErrorSnackBar('goods_receiving_screen.error_select_product_and_quantity'.tr());
       return;
     }
 
+    // Sipariş seçiliyse miktar kontrolü yap
     if (_selectedOrder != null) {
       if (_isOrderDetailsLoading) {
         _showErrorSnackBar('goods_receiving_screen.error_loading_order_details'.tr());
@@ -177,12 +194,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _showErrorSnackBar('goods_receiving_screen.error_product_not_in_order'.tr());
         return;
       }
+      // Bu ekranda eklenen miktarı hesapla
       final alreadyAddedInUI = _addedItems
           .where((item) => item.product.id == currentProduct.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
           .map((item) => item.quantity)
           .fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
+
+      // Küsürat hatalarını tolere etmek için küçük bir epsilon değeri
       if (quantity > remainingQuantity + 0.001) {
         _showErrorSnackBar('goods_receiving_screen.error_quantity_exceeds_order'.tr(
           namedArgs: {'remainingQuantity': remainingQuantity.toStringAsFixed(2), 'unit': orderItem.unit ?? ''},
@@ -190,6 +210,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         return;
       }
     }
+    // Kutu modunda sadece tek tip ürün eklenmesine izin ver
     final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
     if (isKutuModeLocked) {
       _showErrorSnackBar('goods_receiving_screen.error_box_mode_single_product'.tr());
@@ -432,6 +453,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
+  // [DEĞİŞİKLİK] Bu metodun içindeki TextFormField güncellendi.
   Widget _buildSearchableProductInputRow({required bool isLocked, required bool isEnabled}) {
     final bool fieldEnabled = isEnabled && !isLocked;
     return Row(
@@ -439,7 +461,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       children: [
         Expanded(
           child: TextFormField(
-            readOnly: true, // Always readonly, tap shows the dialog
+            // [DEĞİŞİKLİK] `readOnly: true` kaldırıldı. Alan artık klavye girişi alabilir.
+            // `enabled` özelliği alanın interaktif olup olmadığını kontrol eder.
+            enabled: fieldEnabled,
             controller: _productController,
             focusNode: _productFocusNode,
             decoration: _inputDecoration(
@@ -449,6 +473,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: fieldEnabled,
             ),
+            // [YENİ] El terminali "Enter" tuşuna bastığında bu metot tetiklenir.
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty && fieldEnabled) {
+                _processScannedProduct(value);
+              }
+            },
             onTap: !fieldEnabled ? null : () async {
               final productList = _selectedOrder != null
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
@@ -648,7 +678,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<bool?> _showConfirmationListDialog() {
     return Navigator.push<bool>(
       context,
@@ -667,7 +696,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<T?> _showSearchableDropdownDialog<T>({
     required String title,
     required List<T> items,
@@ -732,7 +760,6 @@ class _QrButton extends StatelessWidget {
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Butonun yüksekliğine göre ikon boyutunu ayarla
             final iconSize = constraints.maxHeight * 0.6;
             return Icon(Icons.qr_code_scanner, size: iconSize);
           },
@@ -745,7 +772,6 @@ class _QrButton extends StatelessWidget {
 enum ReceivingMode { palet, kutu }
 
 
-// [YENİ WIDGET] Arama işlevi için tam ekran sayfası.
 class _FullscreenSearchPage<T> extends StatefulWidget {
   final String title;
   final List<T> items;
@@ -836,7 +862,6 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
   }
 }
 
-// [YENİ WIDGET] Onay listesi için tam ekran sayfası.
 class _FullscreenConfirmationPage extends StatefulWidget {
   final List<ReceiptItemDraft> items;
   final ValueChanged<ReceiptItemDraft> onItemRemoved;

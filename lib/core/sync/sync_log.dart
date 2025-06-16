@@ -27,4 +27,23 @@ class SyncLog {
       message: map['message'],
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SyncLog &&
+              runtimeType == other.runtimeType &&
+              id == other.id &&
+              timestamp == other.timestamp &&
+              type == other.type &&
+              status == other.status &&
+              message == other.message;
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      timestamp.hashCode ^
+      type.hashCode ^
+      status.hashCode ^
+      message.hashCode;
 }

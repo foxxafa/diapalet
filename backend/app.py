@@ -412,19 +412,52 @@ def sync_upload():
 
 @app.route("/api/sync/download", methods=["POST"])
 def sync_download():
-    try:
-        data = {
-            "locations": query_all("SELECT * FROM locations"),
-            "urunler": query_all("SELECT * FROM urunler"),
-            "employees": query_all("SELECT * FROM employees"),
-            "satin_alma_siparis_fis": query_all("SELECT * FROM satin_alma_siparis_fis"),
-            "satin_alma_siparis_fis_satir": query_all("SELECT * FROM satin_alma_siparis_fis_satir"),
-            "goods_receipts": query_all("SELECT * FROM goods_receipts"),
-            "goods_receipt_items": query_all("SELECT * FROM goods_receipt_items"),
-            "inventory_stock": query_all("SELECT * FROM inventory_stock"),
-            "inventory_transfers": query_all("SELECT * FROM inventory_transfers"),
-        }
+    payload = request.get_json() or {}
+    last_sync_ts = payload.get("last_sync_timestamp")
+    print(f"Delta sync request received. Last sync timestamp: {last_sync_ts}")
 
+    data = {}
+
+    try:
+        # Zaman damgası olan tablolar için delta (değişen) sorguları
+        if last_sync_ts:
+            data["locations"] = query_all("SELECT * FROM locations WHERE updated_at > %s", (last_sync_ts,))
+            data["urunler"] = query_all("SELECT * FROM urunler WHERE updated_at > %s", (last_sync_ts,))
+            data["employees"] = query_all("SELECT * FROM employees WHERE updated_at > %s", (last_sync_ts,))
+            data["satin_alma_siparis_fis"] = query_all("SELECT * FROM satin_alma_siparis_fis WHERE updated_at > %s",
+                                                       (last_sync_ts,))
+            data["inventory_stock"] = query_all("SELECT * FROM inventory_stock WHERE updated_at > %s", (last_sync_ts,))
+            # 'created_at' kullanılan ve güncellenmeyen tablolar
+            data["goods_receipts"] = query_all("SELECT * FROM goods_receipts WHERE created_at > %s", (last_sync_ts,))
+            data["inventory_transfers"] = query_all("SELECT * FROM inventory_transfers WHERE created_at > %s",
+                                                    (last_sync_ts,))
+
+            # Zaman damgası olmayan, join gerektiren tablolar
+            data["satin_alma_siparis_fis_satir"] = query_all("""
+                SELECT s.* FROM satin_alma_siparis_fis_satir s
+                JOIN satin_alma_siparis_fis f ON s.siparis_id = f.id
+                WHERE f.updated_at > %s
+            """, (last_sync_ts,))
+            data["goods_receipt_items"] = query_all("""
+                SELECT i.* FROM goods_receipt_items i
+                JOIN goods_receipts h ON i.receipt_id = h.id
+                WHERE h.created_at > %s
+            """, (last_sync_ts,))
+
+        # İlk senkronizasyon (full sync)
+        else:
+            print("Full sync request received.")
+            data["locations"] = query_all("SELECT * FROM locations")
+            data["urunler"] = query_all("SELECT * FROM urunler")
+            data["employees"] = query_all("SELECT * FROM employees")
+            data["satin_alma_siparis_fis"] = query_all("SELECT * FROM satin_alma_siparis_fis")
+            data["satin_alma_siparis_fis_satir"] = query_all("SELECT * FROM satin_alma_siparis_fis_satir")
+            data["goods_receipts"] = query_all("SELECT * FROM goods_receipts")
+            data["goods_receipt_items"] = query_all("SELECT * FROM goods_receipt_items")
+            data["inventory_stock"] = query_all("SELECT * FROM inventory_stock")
+            data["inventory_transfers"] = query_all("SELECT * FROM inventory_transfers")
+
+        # Tarih/saat ve ondalık sayıları string'e çevir
         for table_name, records in data.items():
             for record in records:
                 for key, value in record.items():

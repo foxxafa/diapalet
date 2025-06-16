@@ -58,6 +58,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   @override
   void initState() {
     super.initState();
+    // [YENİ] Odak değişikliklerini dinlemek için listener'lar eklendi.
+    _sourceLocationFocusNode.addListener(_onFocusChange);
+    _containerFocusNode.addListener(_onFocusChange);
+    _targetLocationFocusNode.addListener(_onFocusChange);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
       _loadInitialData();
@@ -66,6 +71,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   void dispose() {
+    // [YENİ] Ekrandan çıkarken klavyeyi kapatır.
+    FocusScope.of(context).unfocus();
+
+    // [YENİ] Listener'lar temizlendi.
+    _sourceLocationFocusNode.removeListener(_onFocusChange);
+    _containerFocusNode.removeListener(_onFocusChange);
+    _targetLocationFocusNode.removeListener(_onFocusChange);
+
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
@@ -74,6 +87,19 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _containerFocusNode.dispose();
     _clearProductControllers();
     super.dispose();
+  }
+
+  // [YENİ] Giriş alanları odaklandığında metni seçen yardımcı metod.
+  void _onFocusChange() {
+    if (_sourceLocationFocusNode.hasFocus && _sourceLocationController.text.isNotEmpty) {
+      _sourceLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _sourceLocationController.text.length);
+    }
+    if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
+      _scannedContainerIdController.selection = TextSelection(baseOffset: 0, extentOffset: _scannedContainerIdController.text.length);
+    }
+    if (_targetLocationFocusNode.hasFocus && _targetLocationController.text.isNotEmpty) {
+      _targetLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _targetLocationController.text.length);
+    }
   }
 
   void _clearProductControllers() {
@@ -122,9 +148,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       case 'container':
         dynamic foundItem;
         if (_selectedMode == AssignmentMode.pallet) {
-          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id == data, orElse: () => null);
+          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == data.toLowerCase(), orElse: () => null);
         } else {
-          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode == data || box?.barcode1 == data, orElse: () => null);
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode.toLowerCase() == data.toLowerCase() || box?.barcode1?.toLowerCase() == data.toLowerCase(), orElse: () => null);
         }
 
         if (foundItem != null) {
@@ -221,8 +247,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _productsInContainer = contents;
         for (var product in contents) {
-          final initialQty = _selectedMode == AssignmentMode.pallet ? product.currentQuantity : 1.0;
-          _productQuantityControllers[product.id] = TextEditingController(text: initialQty.toString());
+          // [DEĞİŞİKLİK] Miktar alanına her zaman ürünün mevcut miktarı girilir.
+          final initialQty = product.currentQuantity;
+          // Miktarı tam sayı ise .0 olmadan göster
+          final initialQtyText = initialQty == initialQty.truncate()
+              ? initialQty.toInt().toString()
+              : initialQty.toString();
+          _productQuantityControllers[product.id] = TextEditingController(text: initialQtyText);
           _productQuantityFocusNodes[product.id] = FocusNode();
         }
       });
@@ -247,7 +278,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
-        if (qty.toStringAsFixed(2) != product.currentQuantity.toStringAsFixed(2)) {
+        if (qty != product.currentQuantity) {
           isFullPalletTransfer = false;
         }
         itemsToTransfer.add(TransferItemDetail(
@@ -312,15 +343,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   void _resetForm({bool resetAll = false}) {
     setState(() {
       _resetContainerAndProducts();
+      _selectedTargetLocationName = null;
+      _targetLocationController.clear();
+
       if (resetAll) {
         _selectedSourceLocationName = null;
         _sourceLocationController.clear();
-        _selectedTargetLocationName = null;
-        _targetLocationController.clear();
       }
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _formKey.currentState?.reset();
-        FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+        FocusScope.of(context).requestFocus(resetAll ? _sourceLocationFocusNode : _containerFocusNode);
       });
     });
   }
@@ -439,6 +472,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
+  // [DEĞİŞİKLİK] Bu metodun içindeki TextFormField güncellendi.
   Widget _buildHybridDropdownWithQr<T>({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -456,11 +490,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           child: TextFormField(
             controller: controller,
             focusNode: focusNode,
-            readOnly: true, // Make field read-only to force selection from dialog
+            // [DEĞİŞİKLİK] `readOnly` kaldırıldı, alan artık el terminali girişine açık.
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
+            // [YENİ] El terminali "Enter" tuşuna bastığında tetiklenir.
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedData(fieldIdentifier, value);
+              }
+            },
             onTap: () async {
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
                 title: label,
@@ -536,7 +576,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           Text(product.name, style: Theme.of(context).textTheme.bodyLarge, overflow: TextOverflow.ellipsis),
                           Text(
                               'inventory_transfer.label_current_quantity'.tr(
-                                  namedArgs: {'productCode': product.productCode, 'quantity': product.currentQuantity.toString()}),
+                                  namedArgs: {'productCode': product.productCode, 'quantity': product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}),
                               style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ),
@@ -549,7 +589,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         focusNode: focusNode,
                         textAlign: TextAlign.center,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
                         decoration: _inputDecoration('inventory_transfer.label_quantity'.tr()),
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
@@ -604,7 +644,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.colorScheme.surface.withOpacity(0.5) : Colors.grey.shade200,
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface.withOpacity(0.04),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -616,7 +656,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<T?> _showSearchableDropdownDialog<T>({
     required String title,
     required List<T> items,
@@ -637,7 +676,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  // [DEĞİŞİKLİK] AlertDialog, fullscreen bir sayfaya dönüştürüldü.
   Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return Navigator.push<bool>(
       context,
@@ -687,7 +725,7 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48, // Standart dokunma hedefi yüksekliği
+      height: 48,
       width: 56,
       child: ElevatedButton(
         onPressed: isEnabled ? onTap : null,
@@ -697,7 +735,6 @@ class _QrButton extends StatelessWidget {
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Butonun yüksekliğine göre ikon boyutunu ayarla
             final iconSize = constraints.maxHeight * 0.6;
             return Icon(Icons.qr_code_scanner, size: iconSize);
           },
@@ -707,7 +744,6 @@ class _QrButton extends StatelessWidget {
   }
 }
 
-// [YENİ WIDGET] Arama işlevi için tam ekran sayfası.
 class _InventorySearchPage<T> extends StatefulWidget {
   final String title;
   final List<T> items;
@@ -750,7 +786,7 @@ class _InventorySearchPageState<T> extends State<_InventorySearchPage<T>> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title, style: theme.textTheme.titleMedium),
+        title: Text(widget.title, style: theme.appBarTheme.titleTextStyle),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(),
@@ -794,7 +830,6 @@ class _InventorySearchPageState<T> extends State<_InventorySearchPage<T>> {
   }
 }
 
-// [YENİ WIDGET] Onay listesi için tam ekran sayfası.
 class _InventoryConfirmationPage extends StatelessWidget {
   final List<TransferItemDetail> items;
   final AssignmentMode mode;
@@ -835,7 +870,7 @@ class _InventoryConfirmationPage extends StatelessWidget {
             title: Text(item.productName),
             subtitle: Text(item.productCode),
             trailing: Text(
-              item.quantity.toString(),
+              item.quantity.toStringAsFixed(item.quantity.truncateToDouble() == item.quantity ? 0 : 2),
               style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
           )),

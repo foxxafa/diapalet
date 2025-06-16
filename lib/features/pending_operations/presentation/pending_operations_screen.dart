@@ -1,10 +1,13 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
+import 'dart:convert';
+
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
-import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -20,18 +23,59 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
   late final SyncService _syncService;
   late final TabController _tabController;
 
+  List<PendingOperation> _pendingOperations = [];
+  List<SyncLog> _syncLogs = [];
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
     _syncService = context.read<SyncService>();
     _tabController = TabController(length: 2, vsync: this);
-    _syncService.checkServerStatus();
+
+    _syncService.addListener(_onSyncServiceUpdate);
+    _loadData(); // Initial data load
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _syncService.removeListener(_onSyncServiceUpdate);
     super.dispose();
+  }
+
+  void _onSyncServiceUpdate() {
+    // SyncService'te notifyListeners çağrıldığında tetiklenir.
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Verileri her zaman yeniden çek ve state'i güncelle.
+      // Bu, senkronizasyon sonrası geçmişin güncellenmesini garantiler.
+      final newPending = await _syncService.getPendingOperations();
+      final newHistory = await _syncService.getSyncHistory();
+
+      if (mounted) {
+        setState(() {
+          _pendingOperations = newPending;
+          _syncLogs = newHistory;
+        });
+      }
+    } catch (e) {
+      debugPrint("Veri yüklenirken hata oluştu: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleSync() async {
@@ -57,6 +101,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
         children: [
           StreamBuilder<SyncStatus>(
             stream: _syncService.syncStatusStream,
+            initialData: SyncStatus.online,
             builder: (context, statusSnapshot) {
               final status = statusSnapshot.data ?? SyncStatus.offline;
               return _buildSyncStatusBanner(status, textTheme);
@@ -65,9 +110,9 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: const [
-                _PendingList(),
-                _HistoryList(),
+              children: [
+                _PendingList(operations: _pendingOperations, isLoading: _isLoading),
+                _HistoryList(logs: _syncLogs, isLoading: _isLoading),
               ],
             ),
           ),
@@ -139,28 +184,24 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen> with 
 }
 
 class _PendingList extends StatelessWidget {
-  const _PendingList();
+  final List<PendingOperation> operations;
+  final bool isLoading;
+  const _PendingList({required this.operations, required this.isLoading});
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<SyncService>(
-      builder: (context, syncService, child) {
-        return FutureBuilder<List<PendingOperation>>(
-          future: syncService.getPendingOperations(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-            if (snapshot.hasError) return Center(child: Text('Hata: ${snapshot.error}'));
-            final operations = snapshot.data ?? [];
-            if (operations.isEmpty) return Center(child: Text('pending_operations.no_pending'.tr(), style: Theme.of(context).textTheme.bodyMedium));
-            return ListView.builder(
-              padding: const EdgeInsets.only(bottom: 80), // FAB için boşluk
-              itemCount: operations.length,
-              itemBuilder: (context, index) {
-                final op = operations[index];
-                return _PendingOperationCard(operation: op);
-              },
-            );
-          },
-        );
+    if (isLoading && operations.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (operations.isEmpty) {
+      return Center(child: Text('pending_operations.no_pending'.tr(), style: Theme.of(context).textTheme.bodyMedium));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80),
+      itemCount: operations.length,
+      itemBuilder: (context, index) {
+        final op = operations[index];
+        return _PendingOperationCard(operation: op);
       },
     );
   }
@@ -169,6 +210,123 @@ class _PendingList extends StatelessWidget {
 class _PendingOperationCard extends StatelessWidget {
   final PendingOperation operation;
   const _PendingOperationCard({required this.operation});
+
+  void _showDetailsDialog(BuildContext context, PendingOperation operation) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(operation.displayTitle),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: FutureBuilder<Widget>(
+              future: _buildSimplifiedDetails(context, operation),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ));
+                }
+                if (snapshot.hasError) {
+                  return Text("Detaylar yüklenemedi: ${snapshot.error}");
+                }
+                if (!snapshot.hasData) {
+                  return const Text("Detay bulunamadı.");
+                }
+                return snapshot.data!;
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text('dialog.ok'.tr()),
+            onPressed: () => Navigator.of(ctx).pop(),
+          )
+        ],
+        contentPadding: const EdgeInsets.fromLTRB(0.0, 12.0, 0.0, 0.0),
+        titlePadding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 0.0),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 8.0),
+      ),
+    );
+  }
+
+  Future<Widget> _buildSimplifiedDetails(BuildContext context, PendingOperation operation) async {
+    final db = await DatabaseHelper.instance.database;
+    final data = jsonDecode(operation.data);
+    final header = data['header'] as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>;
+    final textTheme = Theme.of(context).textTheme;
+
+    List<Widget> details = [];
+
+    // Header Bilgileri
+    if (operation.type == PendingOperationType.goodsReceipt) {
+      details.add(ListTile(
+        title: Text("İşlem Tipi", style: textTheme.bodySmall),
+        subtitle: Text("Mal Kabul", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+      ));
+      final invoice = header['invoice_number'] as String?;
+      if (invoice != null && invoice.isNotEmpty) {
+        details.add(ListTile(
+          title: Text("Fatura/İrsaliye No", style: textTheme.bodySmall),
+          subtitle: Text(invoice, style: textTheme.bodyLarge),
+        ));
+      }
+    } else if (operation.type == PendingOperationType.inventoryTransfer) {
+      final fromLocId = header['source_location_id'];
+      final toLocId = header['target_location_id'];
+
+      final fromLocMap = await db.query('locations', where: 'id = ?', whereArgs: [fromLocId]);
+      final toLocMap = await db.query('locations', where: 'id = ?', whereArgs: [toLocId]);
+      final fromLocName = fromLocMap.isNotEmpty ? fromLocMap.first['name'] as String : 'Bilinmeyen ($fromLocId)';
+      final toLocName = toLocMap.isNotEmpty ? toLocMap.first['name'] as String : 'Bilinmeyen ($toLocId)';
+
+      details.add(ListTile(
+        title: Text("İşlem Tipi", style: textTheme.bodySmall),
+        subtitle: Text("Envanter Transferi", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+      ));
+      details.add(ListTile(
+        leading: const Icon(Icons.arrow_upward_rounded, color: Colors.redAccent),
+        title: Text("Kaynak Lokasyon", style: textTheme.bodySmall),
+        subtitle: Text(fromLocName, style: textTheme.bodyLarge),
+      ));
+      details.add(ListTile(
+        leading: const Icon(Icons.arrow_downward_rounded, color: Colors.green),
+        title: Text("Hedef Lokasyon", style: textTheme.bodySmall),
+        subtitle: Text(toLocName, style: textTheme.bodyLarge),
+      ));
+    }
+
+    details.add(const Divider(height: 20));
+    details.add(Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Text("Ürünler (${items.length})", style: textTheme.titleMedium),
+    ));
+
+    // Kalem Bilgileri
+    for (var item in items) {
+      final productId = item['urun_id'] ?? item['product_id'];
+      final quantity = item['quantity'];
+      final pallet = item['pallet_barcode'] ?? item['pallet_id'] as String?;
+
+      final productMaps = await db.query('urunler', columns: ['UrunAdi'], where: 'UrunId = ?', whereArgs: [productId]);
+      final productName = productMaps.isNotEmpty ? productMaps.first['UrunAdi'] as String : "Bilinmeyen Ürün ($productId)";
+
+      details.add(ListTile(
+        title: Text(productName, style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+        subtitle: Text("Miktar: $quantity${pallet != null && pallet.isNotEmpty ? '\nPalet: $pallet' : ''}"),
+        isThreeLine: pallet != null && pallet.isNotEmpty,
+      ));
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: details,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,57 +344,57 @@ class _PendingOperationCard extends StatelessWidget {
     }
 
     return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
-          foregroundColor: theme.colorScheme.primary,
-          child: Icon(iconData),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showDetailsDialog(context, operation),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+            foregroundColor: theme.colorScheme.primary,
+            child: Icon(iconData),
+          ),
+          title: Text(operation.displayTitle, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          subtitle: Text(operation.displaySubtitle, style: theme.textTheme.bodySmall),
+          trailing: isFailed
+              ? IconButton(
+            icon: Icon(Icons.info_outline_rounded, color: theme.colorScheme.error),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text('pending_operations.error_details'.tr()),
+                  content: Text(operation.errorMessage ?? 'Bilinmeyen bir hata oluştu.'),
+                  actions: [TextButton(child: Text('dialog.ok'.tr()), onPressed: () => Navigator.of(ctx).pop())],
+                ),
+              );
+            },
+          )
+              : Icon(Icons.hourglass_top_rounded, color: Colors.orange.shade700),
         ),
-        title: Text(operation.displayTitle, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-        subtitle: Text(operation.displaySubtitle, style: theme.textTheme.bodySmall),
-        trailing: isFailed
-            ? IconButton(
-          icon: Icon(Icons.info_outline_rounded, color: theme.colorScheme.error),
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: Text('pending_operations.error_details'.tr()),
-                content: Text(operation.errorMessage ?? 'Bilinmeyen bir hata oluştu.'),
-                actions: [TextButton(child: Text('dialog.ok'.tr()), onPressed: () => Navigator.of(ctx).pop())],
-              ),
-            );
-          },
-        )
-            : Icon(Icons.hourglass_top_rounded, color: Colors.orange.shade700),
       ),
     );
   }
 }
 
 class _HistoryList extends StatelessWidget {
-  const _HistoryList();
+  final List<SyncLog> logs;
+  final bool isLoading;
+  const _HistoryList({required this.logs, required this.isLoading});
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<SyncService>(
-      builder: (context, syncService, child) {
-        return FutureBuilder<List<SyncLog>>(
-          future: syncService.getSyncHistory(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-            if (snapshot.hasError) return Center(child: Text('Hata: ${snapshot.error}'));
-            final logs = snapshot.data ?? [];
-            if (logs.isEmpty) return Center(child: Text('pending_operations.no_history'.tr(), style: Theme.of(context).textTheme.bodyMedium));
-            return ListView.builder(
-              padding: const EdgeInsets.only(bottom: 80),
-              itemCount: logs.length,
-              itemBuilder: (context, index) {
-                final log = logs[index];
-                return _HistoryLogCard(log: log);
-              },
-            );
-          },
-        );
+    if (isLoading && logs.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (logs.isEmpty) {
+      return Center(child: Text('pending_operations.no_history'.tr(), style: Theme.of(context).textTheme.bodyMedium));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80),
+      itemCount: logs.length,
+      itemBuilder: (context, index) {
+        final log = logs[index];
+        return _HistoryLogCard(log: log);
       },
     );
   }
@@ -262,7 +420,7 @@ class _HistoryLogCard extends StatelessWidget {
       switch (log.type) {
         case 'download': icon = Icons.cloud_download_rounded; color = theme.colorScheme.primary; break;
         case 'upload': icon = Icons.cloud_upload_rounded; color = theme.colorScheme.secondary; break;
-        default: icon = Icons.check_circle_rounded; color = AppTheme.accentColor; break;
+        default: icon = Icons.info_outline_rounded; color = Colors.grey.shade700; break;
       }
     }
 

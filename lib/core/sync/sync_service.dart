@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
-// [DÜZELTME] Eksik import eklendi.
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:dio/dio.dart';
@@ -96,10 +95,8 @@ class SyncService with ChangeNotifier {
       final remainingOps = await dbHelper.getPendingOperations();
       if (remainingOps.isEmpty) {
         _statusController.add(SyncStatus.upToDate);
-        await dbHelper.addSyncLog('sync_status', 'success', 'Cihaz güncel. Bekleyen işlem yok.');
       } else {
         _statusController.add(SyncStatus.error);
-        await dbHelper.addSyncLog('sync_status', 'error', '${remainingOps.length} işlem senkronize edilemedi.');
       }
     } catch (e) {
       debugPrint("SyncService: performFullSync sırasında hata: $e");
@@ -126,7 +123,6 @@ class SyncService with ChangeNotifier {
         final tablesCount = rawData.keys.where((k) => (rawData[k] as List).isNotEmpty).length;
         if (tablesCount == 0) {
           debugPrint("SyncService: Sunucudan yeni veya güncel veri gelmedi.");
-          await dbHelper.addSyncLog('download', 'success', 'Cihaz zaten günceldi.');
           return;
         }
         await dbHelper.applyDownloadedData(rawData, isFullSync: lastSync == null);
@@ -160,27 +156,27 @@ class SyncService with ChangeNotifier {
       final response = await dio.post(ApiConfig.syncUpload, data: {"operations": operationsPayload});
       if (response.statusCode == 200 && response.data['success'] == true) {
         final results = List<Map<String, dynamic>>.from(response.data['results']);
-        int successCount = 0;
         for (int i = 0; i < pendingOps.length; i++) {
           final op = pendingOps[i];
           final result = results[i]['result'];
           if (result != null && result['error'] == null) {
             await dbHelper.deletePendingOperation(op.id!);
-            successCount++;
+            final successMessage = "'${op.displayTitle}' başarıyla gönderildi.";
+            await dbHelper.addSyncLog('upload', 'success', successMessage);
           } else {
             final errorMsg = result?['error'] ?? 'Bilinmeyen sunucu hatası';
             await dbHelper.updatePendingOperationStatus(op.id!, 'failed', error: errorMsg);
+            final failureMessage = "'${op.displayTitle}' gönderilemedi: $errorMsg";
+            await dbHelper.addSyncLog('upload', 'error', failureMessage);
             debugPrint("Operasyon #${op.id} sunucuda işlenemedi: $errorMsg");
-            throw Exception("$successCount / ${pendingOps.length} işlem sonrası hata: $errorMsg");
           }
         }
-        final message = "$successCount / ${pendingOps.length} bekleyen işlem başarıyla yüklendi.";
-        await dbHelper.addSyncLog('upload', 'success', message);
       } else {
         throw Exception("Toplu yükleme API yanıtı başarısız: ${response.data['error']}");
       }
     } catch (e) {
-      await dbHelper.addSyncLog('upload', 'error', "Yükleme hatası: ${e.toString()}");
+      final errorMessage = "Tüm bekleyen işlemler için genel yükleme hatası: ${e.toString()}";
+      await dbHelper.addSyncLog('upload', 'error', errorMessage);
       rethrow;
     }
   }

@@ -4,11 +4,13 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
-// [YENİ] ThemeProvider import edildi.
 import 'package:diapalet/core/theme/theme_provider.dart';
+import 'package:diapalet/features/auth/data/repositories/auth_repository_impl.dart'; // YENİ
+import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart'; // YENİ
+import 'package:diapalet/features/auth/presentation/login_screen.dart'; // YENİ
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/features/home/presentation/home_screen.dart';
+// import 'package:diapalet/features/home/presentation/home_screen.dart'; // ARTIK BAŞLANGIÇ DEĞİL
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -38,7 +40,6 @@ void main() async {
           Provider<Dio>.value(value: dio),
           Provider<NetworkInfo>.value(value: networkInfo),
 
-          // [YENİ] ThemeProvider, uygulama genelinde tema durumunu yönetmek için eklendi.
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
 
           // Repository'ler: Diğer servislere bağımlı.
@@ -57,6 +58,15 @@ void main() async {
             ),
           ),
 
+          // YENİ AuthRepository provider'ı eklendi.
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, AuthRepository>(
+            update: (_, db, network, dio, __) => AuthRepositoryImpl(
+              dbHelper: db,
+              networkInfo: network,
+              dio: dio,
+            ),
+          ),
+
           // SyncService'i bir ChangeNotifier olarak sağla.
           ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             create: (context) => SyncService(
@@ -69,8 +79,6 @@ void main() async {
             },
           ),
         ],
-        // [DEĞİŞİKLİK] MyApp widget'ı, tema değişikliklerini dinlemek için
-        // Consumer ile sarmalandı.
         child: Consumer<ThemeProvider>(
           builder: (context, themeProvider, child) {
             return MyApp(themeProvider: themeProvider);
@@ -82,7 +90,6 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
-  // [YENİ] ThemeProvider, constructor aracılığıyla alındı.
   final ThemeProvider themeProvider;
   const MyApp({super.key, required this.themeProvider});
 
@@ -95,9 +102,9 @@ class MyApp extends StatelessWidget {
       title: 'DiaPalet',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      // [DEĞİŞİKLİK] themeMode artık sabit değil, ThemeProvider'dan dinamik olarak alınıyor.
       themeMode: themeProvider.themeMode,
-      home: const HomeScreen(),
+      // DEĞİŞİKLİK: Uygulama artık LoginScreen ile başlıyor.
+      home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
