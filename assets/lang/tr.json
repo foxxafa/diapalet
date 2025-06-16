@@ -115,7 +115,8 @@
     "dialog_button_cancel": "İptal",
     "dialog_button_confirm_and_save": "Onayla ve Kaydet",
     "dialog_search_hint": "Ara...",
-    "dialog_search_no_results": "Sonuç bulunamadı."
+    "dialog_search_no_results": "Sonuç bulunamadı.",
+    "label_order_status": "Sipariş Durumu"
   },
   "pallet_assignment": {
     "title": "Transfer İşlemi",

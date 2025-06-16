@@ -115,7 +115,8 @@
     "dialog_button_cancel": "Cancel",
     "dialog_button_confirm_and_save": "Confirm and Save",
     "dialog_search_hint": "Search...",
-    "dialog_search_no_results": "No results found."
+    "dialog_search_no_results": "No results found.",
+    "label_order_status": "Order Status"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",
