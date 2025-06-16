@@ -267,5 +267,16 @@
     "dialog_confirm_transfer_body": "The following items will be transferred from {source} to {target}:",
     "dialog_confirm_transfer_item": "• {productName} (x{quantity})",
     "dialog_button_confirm": "Confirm"
+  },
+  "login": {
+    "title": "Login",
+    "username": "Username",
+    "password": "Password",
+    "button": "Login",
+    "forgot_password": "Forgot Password",
+    "error_invalid_credentials": "Invalid username or password.",
+    "loading": "Logging in...",
+    "language_select": "Select Language",
+    "subtitle": "Please enter your credentials to log in."
   }
 }

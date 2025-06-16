@@ -45,13 +45,15 @@ class AuthRepositoryImpl implements AuthRepository {
       debugPrint("Sunucu Yanıtı (Status ${response.statusCode}): ${response.data}");
 
       if (response.statusCode == 200 && response.data != null) {
-        // Sunucu yanıtı bir String ise, onu JSON'a çevirmeyi deneyebiliriz.
-        // Ancak API doğru kurulduysa, 'response.data' zaten bir Map olmalıdır.
         final responseData = response.data;
 
-        final success = responseData['success'] ?? false;
-        if (success == true) {
+        // DÜZELTME: Sunucudan gelen 'status' alanı kontrol ediliyor.
+        final status = responseData['status'] as String?;
+
+        if (status == 'success') {
           debugPrint("Online login başarılı.");
+          // Burada apikey gibi verileri saklama işlemi yapılabilir.
+          // Örneğin: final apiKey = responseData['apikey'];
           return true;
         } else {
           // Sunucudan gelen hata mesajını kullanalım.

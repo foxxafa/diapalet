@@ -267,5 +267,16 @@
     "dialog_confirm_transfer_body": "Aşağıdaki ürünler {source} -> {target} arasına transfer edilecek:",
     "dialog_confirm_transfer_item": "• {productName} (x{quantity})",
     "dialog_button_confirm": "Onayla"
+  },
+  "login": {
+    "title": "Giriş Yap",
+    "username": "Kullanıcı Adı",
+    "password": "Şifre",
+    "button": "Giriş",
+    "forgot_password": "Şifremi Unuttum",
+    "error_invalid_credentials": "Kullanıcı adı veya şifre hatalı.",
+    "loading": "Giriş yapılıyor...",
+    "language_select": "Dil Seçimi",
+    "subtitle": "Lütfen giriş yapmak için bilgilerinizi girin."
   }
 }
