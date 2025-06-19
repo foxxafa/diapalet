@@ -29,13 +29,13 @@ class PurchaseOrder {
       poId: map['po_id'] as String?,
       date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
       notes: map['notlar'] as String?,
+      // ANA DÜZELTME: Sunucudan gelen `status` alanı burada doğru bir şekilde okunuyor.
       status: map['status'] as int?,
       supplierName: map['supplierName'] as String?,
     );
   }
 
   /// API'den gelen JSON verisinden model oluşturma.
-  /// Flask API'nizin döndürdüğü anahtarlarla eşleşir.
   factory PurchaseOrder.fromJson(Map<String, dynamic> json) {
     var itemsList = <PurchaseOrderItem>[];
     if (json['items'] != null) {
@@ -45,9 +45,7 @@ class PurchaseOrder {
     }
     return PurchaseOrder(
       id: json['id'] as int,
-      // API 'po_id' dönerse 'poId' alanına map'lenir.
       poId: json['po_id'] as String? ?? json['poId'] as String?,
-      // API 'tarih' dönerse 'date' alanına map'lenir.
       date: json['tarih'] != null ? DateTime.tryParse(json['tarih']) :
       (json['date'] != null ? DateTime.parse(json['date']) : null),
       notes: json['notes'] as String?,

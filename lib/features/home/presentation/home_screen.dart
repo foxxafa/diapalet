@@ -1,6 +1,8 @@
+// lib/features/home/presentation/home_screen.dart
 import 'package:diapalet/core/theme/theme_provider.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
-import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_screen.dart';
+// GÜNCELLEME: Yeni seçenekler ekranı import edildi.
+import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_options_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/inventory_transfer_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
 import 'package:flutter/material.dart';
@@ -35,10 +37,12 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.input_outlined,
                   label: 'home.goods_receiving'.tr(),
                   onTap: () {
+                    // GÜNCELLEME: Artık doğrudan GoodsReceivingScreen'e değil,
+                    // seçenekler ekranına yönlendiriyor.
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const GoodsReceivingScreen(),
+                        builder: (context) => const GoodsReceivingOptionsScreen(),
                       ),
                     );
                   },
@@ -89,14 +93,11 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // Ayarlar menüsünü gösteren private metod.
   void _showSettingsMenu(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
 
     showModalBottomSheet(
       context: context,
-      // [HATA DÜZELTMESİ] isScrollControlled ve SingleChildScrollView,
-      // içeriğin küçük ekranlarda taşmasını (overflow) engeller.
       isScrollControlled: true,
       builder: (_) => SingleChildScrollView(
         child: SafeArea(
@@ -148,7 +149,6 @@ class HomeScreen extends StatelessWidget {
                     Navigator.pop(context);
                   },
                 ),
-                // [DEĞİŞİKLİK] Sistem teması seçeneği kaldırıldı.
                 const SizedBox(height: 16),
               ],
             ),

@@ -1,61 +1,54 @@
+// lib/features/goods_receiving/domain/entities/purchase_order_item.dart
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
-import 'package:flutter/foundation.dart';
 
-@immutable
 class PurchaseOrderItem {
   final int id;
   final int orderId;
   final int productId;
   final double expectedQuantity;
-  final double receivedQuantity; // YENİ: Daha önce kabul edilen miktar
+  final double receivedQuantity;
   final String? unit;
-  final ProductInfo? product;
+  final ProductInfo product;
 
-  const PurchaseOrderItem({
+  PurchaseOrderItem({
     required this.id,
     required this.orderId,
     required this.productId,
     required this.expectedQuantity,
-    required this.receivedQuantity, // YENİ: Constructor'a eklendi
+    required this.receivedQuantity,
     this.unit,
-    this.product,
+    required this.product,
   });
 
-  factory PurchaseOrderItem.fromDbJoinMap(Map<String, dynamic> map) {
+  factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
     return PurchaseOrderItem(
       id: map['id'] as int,
       orderId: map['siparis_id'] as int,
       productId: map['urun_id'] as int,
       expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
-      receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(), // YENİ
+      receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       unit: map['birim'] as String?,
       product: ProductInfo(
         id: map['urun_id'] as int,
-        name: map['UrunAdi'] as String,
-        stockCode: map['StokKodu'] as String,
+        // HATA DÜZELTMESİ: Nullable string ataması, boş string varsayılanı ile düzeltildi.
+        name: map['UrunAdi'] as String? ?? '',
+        stockCode: map['StokKodu'] as String? ?? '',
         barcode1: map['Barcode1'] as String?,
-        isActive: (map['aktif'] as int? ?? 1) == 1,
+        isActive: (map['aktif'] as int? ?? 0) == 1,
       ),
     );
   }
 
+  // HATA DÜZELTMESİ: Eksik JSON metotları eklendi.
   factory PurchaseOrderItem.fromJson(Map<String, dynamic> json) {
-    double parseLenientDouble(dynamic value) {
-      if (value is num) return value.toDouble();
-      if (value is String) return double.tryParse(value) ?? 0.0;
-      return 0.0;
-    }
-
     return PurchaseOrderItem(
-      id: json['id'] as int,
-      orderId: json['orderId'] as int,
-      productId: json['productId'] as int,
-      expectedQuantity: parseLenientDouble(json['expectedQuantity']),
-      receivedQuantity: parseLenientDouble(json['receivedQuantity']), // YENİ: JSON'dan parse ediliyor
-      unit: json['unit'] as String?,
-      product: json['product'] != null
-          ? ProductInfo.fromJson(json['product'] as Map<String, dynamic>)
-          : null,
+      id: json['id'],
+      orderId: json['orderId'],
+      productId: json['productId'],
+      expectedQuantity: (json['expectedQuantity'] as num).toDouble(),
+      receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
+      unit: json['unit'],
+      product: ProductInfo.fromJson(json['product']),
     );
   }
 
@@ -65,9 +58,9 @@ class PurchaseOrderItem {
       'orderId': orderId,
       'productId': productId,
       'expectedQuantity': expectedQuantity,
-      'receivedQuantity': receivedQuantity, // YENİ
+      'receivedQuantity': receivedQuantity,
       'unit': unit,
-      'product': product?.toJson(),
+      'product': product.toJson(),
     };
   }
 }

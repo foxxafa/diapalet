@@ -12,7 +12,7 @@ enum PendingOperationType {
 class PendingOperation {
   final int? id;
   final PendingOperationType type;
-  final String data; // JSON string of the payload
+  final String data;
   final DateTime createdAt;
   final String status;
   final int attempts;
@@ -28,7 +28,19 @@ class PendingOperation {
     this.errorMessage,
   });
 
-  /// Kullanıcı arayüzünde gösterilecek ana başlığı oluşturur.
+  // HATA DÜZELTMESİ: createTableQuery statik getter'ı eklendi.
+  static const String createTableQuery = '''
+    CREATE TABLE pending_operation (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL,
+      error_message TEXT
+    )
+  ''';
+
   String get displayTitle {
     try {
       final jsonData = jsonDecode(data) as Map<String, dynamic>;
@@ -50,7 +62,6 @@ class PendingOperation {
     }
   }
 
-  /// Kullanıcı arayüzünde gösterilecek alt başlığı oluşturur.
   String get displaySubtitle {
     try {
       final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
@@ -68,15 +79,12 @@ class PendingOperation {
   factory PendingOperation.fromMap(Map<String, dynamic> map) {
     return PendingOperation(
       id: map['id'],
-      type: PendingOperationType.values.firstWhere(
-            (e) => e.name == map['type'],
-        orElse: () => throw ArgumentError('Unknown operation type: ${map['type']}'),
-      ),
+      type: PendingOperationType.values.firstWhere((e) => e.name == map['type']),
       data: map['data'],
       createdAt: DateTime.parse(map['created_at']),
-      status: map['status'] as String,
-      attempts: map['attempts'] as int,
-      errorMessage: map['error_message'] as String?,
+      status: map['status'],
+      attempts: map['attempts'],
+      errorMessage: map['error_message'],
     );
   }
 
@@ -91,27 +99,4 @@ class PendingOperation {
       'error_message': errorMessage,
     };
   }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is PendingOperation &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              type == other.type &&
-              data == other.data &&
-              createdAt == other.createdAt &&
-              status == other.status &&
-              attempts == other.attempts &&
-              errorMessage == other.errorMessage;
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      type.hashCode ^
-      data.hashCode ^
-      createdAt.hashCode ^
-      status.hashCode ^
-      attempts.hashCode ^
-      errorMessage.hashCode;
 }

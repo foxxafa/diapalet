@@ -5,21 +5,28 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
+  // YENİ: Geri butonunun görünürlüğünü kontrol etmek için eklendi.
+  final bool showBackButton;
 
   const SharedAppBar({
     super.key,
     required this.title,
     this.actions,
     this.bottom,
+    // YENİ: Varsayılan olarak geri butonunu gösterir.
+    // Bu sayede mevcut kullanımların bozulması engellenir.
+    this.showBackButton = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Artık stilini doğrudan AppTheme'deki appBarTheme'den alıyor.
+    // AppBar'ın geri butonunu `showBackButton` değerine göre yönetir.
     return AppBar(
       title: Text(title),
       actions: actions,
       bottom: bottom,
+      // YENİ: `AppBar`'ın kendi geri butonunu kontrol eden parametre.
+      automaticallyImplyLeading: showBackButton,
     );
   }
 

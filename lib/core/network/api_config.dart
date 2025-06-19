@@ -1,37 +1,44 @@
 // lib/core/network/api_config.dart
 class ApiConfig {
-  // Yerel sunucu, genel senkronizasyon ve veri işlemleri için
-  static const String _host = 'http://192.168.45.133:5000';
+  // --- YEREL DOCKER SUNUCUSU ---
+  // Android emülatöründen PC'nizdeki localhost'a erişmek için '10.0.2.2' kullanılır.
+  // Docker sunucunuzun çalıştığı portu (örn: 5000) buraya yazın.
+  static const String _localHost = 'http://10.0.2.2:5000';
 
-  // Uzak sunucu, kimlik doğrulama ve kullanıcı yönetimi için
-  static const String _remoteHost = 'https://test.rowhub.net';//http://localhost:8000/index.php?r=terminal
+  // --- TEMEL YOL (BASE PATH) ---
+  // Sunucudaki Yii2 controller'ı 'TerminalController' olduğu için,
+  // framework bunu varsayılan olarak 'terminal' yoluna (route) eşler.
+  // Tüm istekler bu temel yol üzerinden yapılır.
+  static const String baseUrl = '$_localHost/terminal';
 
-  /// Yerel sunucu için public getter.
-  static String get host => _host;
+  // --- ENDPOINT'LER ---
+  // Her bir endpoint, TerminalController içindeki bir 'action' metoduna karşılık gelir.
+  // Yii2, action isimlerini (örn: actionLogin) URL formatına (örn: /login) dönüştürür.
+  // Yii2, action metodlarındaki parametreleri (örn: $order_id) query string olarak bekler.
 
-  /// Yerel sunucu için API versiyonu.
-  static const String apiVersion = 'v1';
+  // Kimlik Doğrulama
+  static const String login = '$baseUrl/login';
 
-  /// Yerel sunucu için temel URL.
-  static String get baseUrl => '$host/$apiVersion';
+  // Senkronizasyon
+  static const String syncUpload = '$baseUrl/sync-upload';
+  static const String syncDownload = '$baseUrl/sync-download';
 
-  /// [baseUrl] ile aynı, ancak sonunda '/' olmadan.
-  static String get sanitizedBaseUrl =>
-      baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+  // Ana Veri
+  static const String locations = '$baseUrl/locations';
+  static const String productsDropdown = '$baseUrl/products-dropdown';
+  static const String purchaseOrders = '$baseUrl/purchase-orders';
+  // Düzeltme: Parametreler path yerine query string olarak gönderiliyor.
+  static String purchaseOrderItems(int orderId) => '$baseUrl/purchase-order-items?order_id=$orderId';
 
-  // --- Uzak Sunucu Endpoint'leri ---
-  static final String login = '$_remoteHost/index.php?r=terminal/login';
+  // İşlemler
+  static const String goodsReceipts = '$baseUrl/goods-receipts';
+  static const String transfers = '$baseUrl/transfers';
 
-  // DÜZELTME: Endpoint, kullanıcı tarafından sağlanan doğru URL ile değiştirildi.
-  static final String getAllUsers = '$_remoteHost/index.php?r=terminal/alluser';
+  // Sorgular
+  // Düzeltme: Parametreler path yerine query string olarak gönderiliyor.
+  static String containerIds(int locationId) => '$baseUrl/container-ids?location_id=$locationId';
+  static String containerContents(String palletBarcode) => '$baseUrl/container-contents?pallet_barcode=$palletBarcode';
 
-  // --- Yerel Sunucu Endpoint'leri ---
-  static final String syncDownload = '$host/api/sync/download';
-  static final String syncUpload = '$host/api/sync/upload';
-  static final String locations = '$sanitizedBaseUrl/locations';
-  static final String productsDropdown = '$sanitizedBaseUrl/products/dropdown';
-  static final String purchaseOrders = '$sanitizedBaseUrl/purchase-orders';
-  static String purchaseOrderItems(int orderId) => '$purchaseOrders/$orderId/items';
-  static final String goodsReceipts = '$sanitizedBaseUrl/goods-receipts';
-  static final String transfers = '$sanitizedBaseUrl/transfers';
+  // Sunucu Sağlık Kontrolü
+  static final String healthCheck = '$baseUrl/health-check';
 }

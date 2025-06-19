@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
@@ -58,7 +59,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   @override
   void initState() {
     super.initState();
-    // [YENİ] Odak değişikliklerini dinlemek için listener'lar eklendi.
     _sourceLocationFocusNode.addListener(_onFocusChange);
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
@@ -71,14 +71,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   void dispose() {
-    // [YENİ] Ekrandan çıkarken klavyeyi kapatır.
     FocusScope.of(context).unfocus();
-
-    // [YENİ] Listener'lar temizlendi.
     _sourceLocationFocusNode.removeListener(_onFocusChange);
     _containerFocusNode.removeListener(_onFocusChange);
     _targetLocationFocusNode.removeListener(_onFocusChange);
-
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
@@ -89,7 +85,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     super.dispose();
   }
 
-  // [YENİ] Giriş alanları odaklandığında metni seçen yardımcı metod.
   void _onFocusChange() {
     if (_sourceLocationFocusNode.hasFocus && _sourceLocationController.text.isNotEmpty) {
       _sourceLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _sourceLocationController.text.length);
@@ -247,9 +242,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _productsInContainer = contents;
         for (var product in contents) {
-          // [DEĞİŞİKLİK] Miktar alanına her zaman ürünün mevcut miktarı girilir.
           final initialQty = product.currentQuantity;
-          // Miktarı tam sayı ise .0 olmadan göster
           final initialQtyText = initialQty == initialQty.truncate()
               ? initialQty.toInt().toString()
               : initialQty.toString();
@@ -281,11 +274,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (qty != product.currentQuantity) {
           isFullPalletTransfer = false;
         }
+        // HATA DÜZELTMESİ: TransferItemDetail kurucusu güncellendi.
         itemsToTransfer.add(TransferItemDetail(
           productId: product.id,
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
+          palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
           sourcePalletBarcode: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
         ));
       }
@@ -303,17 +298,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
     if (confirm != true) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    final employeeId = prefs.getInt('user_id');
+
     final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
     final targetId = _availableTargetLocations[_selectedTargetLocationName!];
 
-    if (sourceId == null || targetId == null) {
+    if (sourceId == null || targetId == null || employeeId == null) {
       _showErrorSnackBar('inventory_transfer.error_location_id_not_found'.tr());
       return;
     }
 
     setState(() => _isSaving = true);
     try {
+      // HATA DÜZELTMESİ: TransferOperationHeader kurucusu güncellendi.
       final header = TransferOperationHeader(
+        employeeId: employeeId,
         operationType: finalOperationMode,
         sourceLocationName: _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
@@ -472,7 +472,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  // [DEĞİŞİKLİK] Bu metodun içindeki TextFormField güncellendi.
   Widget _buildHybridDropdownWithQr<T>({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -490,12 +489,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           child: TextFormField(
             controller: controller,
             focusNode: focusNode,
-            // [DEĞİŞİKLİK] `readOnly` kaldırıldı, alan artık el terminali girişine açık.
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
-            // [YENİ] El terminali "Enter" tuşuna bastığında tetiklenir.
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) {
                 _processScannedData(fieldIdentifier, value);

@@ -29,14 +29,11 @@ class AuthRepositoryImpl implements AuthRepository {
 
   Future<bool> _loginOnline(String username, String password) async {
     try {
-      debugPrint("Online login denemesi (form-data): $username");
+      debugPrint("Online login denemesi yapılıyor: $username");
 
       final response = await dio.post(
         ApiConfig.login,
-        data: {
-          'username': username,
-          'password': password,
-        },
+        data: {'username': username, 'password': password,},
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
@@ -45,23 +42,26 @@ class AuthRepositoryImpl implements AuthRepository {
       if (response.statusCode == 200 && response.data != null) {
         final responseData = response.data as Map<String, dynamic>;
 
-        // HATA DÜZELTMESİ: Sunucudan 'status' alanı integer (200) olarak geliyor.
-        // String olarak kontrol etmek yerine sayı olarak kontrol edildi.
         if (responseData['status'] == 200) {
           debugPrint("Online login başarılı.");
-
-          // YENİ ÖZELLİK: Kullanıcı bilgilerini SharedPreferences'a kaydet.
           final user = responseData['user'] as Map<String, dynamic>;
           final apiKey = responseData['apikey'] as String;
 
+          // API Anahtarını tüm sonraki istekler için Dio istemcisine ekle
+          dio.options.headers['Authorization'] = 'Bearer $apiKey';
+          debugPrint("API Key ($apiKey) Dio istemcisine eklendi.");
+
+          // ===== ÖNEMLİ: Kullanıcı ID'sini kaydet =====
+          // 'user_id' anahtarını kullanarak SharedPreferences'a kaydediyoruz.
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('apikey', apiKey);
+          await prefs.setInt('user_id', user['id'] as int);
           await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
-          await prefs.setInt('branch_id', user['branch_id'] as int);
+          await prefs.setString('apikey', apiKey);
           await prefs.setString('first_name', user['first_name'] as String);
           await prefs.setString('last_name', user['last_name'] as String);
 
-          debugPrint("Kullanıcı bilgileri SharedPreferences'a kaydedildi.");
+          await prefs.remove('last_sync_timestamp');
+          debugPrint("Kullanıcı bilgileri (user_id: ${user['id']}) SharedPreferences'a kaydedildi.");
 
           return true;
         } else {
@@ -72,13 +72,9 @@ class AuthRepositoryImpl implements AuthRepository {
         throw Exception('Sunucudan geçersiz yanıt alındı (Kod: ${response.statusCode})');
       }
     } on DioException catch (e) {
-      debugPrint("API Hatası (DioException): ${e.message}");
-      debugPrint("Sunucudan Gelen Hata Yanıtı: ${e.response?.data}");
       final errorMessage = e.response?.data?['message'] ?? "Sunucuya bağlanırken bir hata oluştu.";
       throw Exception(errorMessage);
     } catch (e) {
-      debugPrint("Bilinmeyen Hata: $e");
-      // Orijinal hatayı daha iyi anlamak için yeniden fırlat.
       rethrow;
     }
   }
@@ -88,17 +84,23 @@ class AuthRepositoryImpl implements AuthRepository {
       final db = await dbHelper.database;
       final List<Map<String, dynamic>> result = await db.query(
         'employees',
-        where: 'username = ? AND password = ?',
+        where: 'username = ? AND password = ? AND is_active = 1',
         whereArgs: [username, password],
         limit: 1,
       );
-      debugPrint("Offline login sonucu: ${result.isNotEmpty}");
+
       if (result.isNotEmpty) {
+        debugPrint("Offline login başarılı: $username");
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('user_id', result.first['id'] as int);
+        await prefs.setInt('warehouse_id', result.first['warehouse_id'] as int);
+        await prefs.setString('first_name', result.first['first_name'] as String);
+        await prefs.setString('last_name', result.first['last_name'] as String);
         return true;
+      } else {
+        throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");
       }
-      throw Exception("Çevrimdışı giriş başarısız. İnternet yok ve bilgileriniz yerel veritabanında bulunamadı.");
     } catch (e) {
-      debugPrint("Veritabanı Hatası: $e");
       rethrow;
     }
   }

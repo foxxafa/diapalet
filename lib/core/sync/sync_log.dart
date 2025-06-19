@@ -18,6 +18,17 @@ class SyncLog {
     required this.message,
   });
 
+  // HATA DÜZELTMESİ: Veritabanı oluşturma sorgusu eklendi.
+  static const String createTableQuery = '''
+    CREATE TABLE sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT NOT NULL
+    )
+  ''';
+
   factory SyncLog.fromMap(Map<String, dynamic> map) {
     return SyncLog(
       id: map['id'],

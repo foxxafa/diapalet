@@ -1,108 +1,30 @@
-// lib/features/pallet_assignment/domain/entities/transfer_operation_header.dart
-import 'package:flutter/foundation.dart'; // For @immutable and @override
-import 'assignment_mode.dart'; // Correct import
-import 'package:equatable/equatable.dart';
+// lib/features/inventory_transfer/domain/entities/transfer_operation_header.dart
+import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 
-@immutable
-class TransferOperationHeader extends Equatable {
-  final int? id;
-  final AssignmentMode operationType;
-  final String sourceLocationName;
-  final String targetLocationName;
-  final String? containerId;
+class TransferOperationHeader {
+  final int employeeId;
   final DateTime transferDate;
-  final int synced;
+  final AssignmentMode operationType;
+  final String sourceLocationName; // HATA DÜZELTMESİ: UI'da kullanılmak üzere eklendi.
+  final String targetLocationName; // HATA DÜZELTMESİ: UI'da kullanılmak üzere eklendi.
+  final String? containerId;
 
   const TransferOperationHeader({
-    this.id,
+    required this.employeeId,
+    required this.transferDate,
     required this.operationType,
     required this.sourceLocationName,
     required this.targetLocationName,
     this.containerId,
-    required this.transferDate,
-    this.synced = 0,
   });
 
-  @override
-  List<Object?> get props => [id, operationType, sourceLocationName, targetLocationName, containerId, transferDate, synced];
-
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toApiJson(int sourceLocationId, int targetLocationId) {
     return {
-      'id': id,
-      'operation_type': operationType.name,
-      'source_location_name': sourceLocationName,
-      'target_location_name': targetLocationName,
-      'pallet_id': containerId,
+      'employee_id': employeeId,
       'transfer_date': transferDate.toIso8601String(),
-      'synced': synced,
-    };
-  }
-
-  factory TransferOperationHeader.fromMap(Map<String, dynamic> map) {
-    return TransferOperationHeader(
-      id: map['id'],
-      operationType: (map['operation_type'] as String) == AssignmentMode.pallet.name
-          ? AssignmentMode.pallet
-          : AssignmentMode.box,
-      sourceLocationName: map['source_location_name'],
-      targetLocationName: map['target_location_name'],
-      containerId: map['pallet_id'],
-      transferDate: DateTime.parse(map['transfer_date'] as String),
-      synced: map['synced'] as int? ?? 0,
-    );
-  }
-
-  TransferOperationHeader copyWith({
-    int? id,
-    AssignmentMode? operationType,
-    String? sourceLocationName,
-    String? targetLocationName,
-    String? containerId,
-    DateTime? transferDate,
-    int? synced,
-  }) {
-    return TransferOperationHeader(
-      id: id ?? this.id,
-      operationType: operationType ?? this.operationType,
-      sourceLocationName: sourceLocationName ?? this.sourceLocationName,
-      targetLocationName: targetLocationName ?? this.targetLocationName,
-      containerId: containerId ?? this.containerId,
-      transferDate: transferDate ?? this.transferDate,
-      synced: synced ?? this.synced,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is TransferOperationHeader &&
-              runtimeType == other.runtimeType &&
-              id == other.id &&
-              operationType == other.operationType &&
-              sourceLocationName == other.sourceLocationName &&
-              targetLocationName == other.targetLocationName &&
-              containerId == other.containerId &&
-              transferDate.isAtSameMomentAs(other.transferDate) && // For DateTime comparison
-              synced == other.synced;
-
-  @override
-  int get hashCode =>
-      id.hashCode ^
-      operationType.hashCode ^
-      sourceLocationName.hashCode ^
-      targetLocationName.hashCode ^
-      containerId.hashCode ^
-      transferDate.hashCode ^
-      synced.hashCode;
-
-  Map<String, dynamic> toMapForDb() {
-    return {
-      'operation_type': operationType.name,
-      'source_location_name': sourceLocationName,
-      'target_location_name': targetLocationName,
-      'pallet_id': containerId,
-      'transfer_date': transferDate.toIso8601String(),
-      'synced': synced,
+      'operation_type': operationType.apiName,
+      'source_location_id': sourceLocationId,
+      'target_location_id': targetLocationId,
     };
   }
 }

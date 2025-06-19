@@ -1,3 +1,4 @@
+// main.dart
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
@@ -5,26 +6,59 @@ import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/theme/theme_provider.dart';
-import 'package:diapalet/features/auth/data/repositories/auth_repository_impl.dart'; // YENİ
-import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart'; // YENİ
-import 'package:diapalet/features/auth/presentation/login_screen.dart'; // YENİ
+import 'package:diapalet/features/auth/data/repositories/auth_repository_impl.dart';
+import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
+import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-// import 'package:diapalet/features/home/presentation/home_screen.dart'; // ARTIK BAŞLANGIÇ DEĞİL
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Loglama için kDebugMode
 import 'package:provider/provider.dart';
+
+// DÜZELTME: Dio istemcisini oluşturan ve loglama interceptor'ı ekleyen fonksiyon.
+Dio createDioClient() {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+      headers: { 'Accept': 'application/json', },
+    ),
+  );
+
+  // Sadece debug modunda çalışacak olan LogInterceptor'ı ekliyoruz.
+  if (kDebugMode) {
+    dio.interceptors.add(
+      LogInterceptor(
+        request: true,
+        requestHeader: true,
+        requestBody: true,
+        responseHeader: true,
+        responseBody: true,
+        error: true,
+        logPrint: (object) {
+          // Logları debugPrint ile konsola daha okunaklı yazdır.
+          debugPrint(object.toString());
+        },
+      ),
+    );
+  }
+
+  return dio;
+}
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
-  // --- Bağımsız Singleton Servisler ---
   final dbHelper = DatabaseHelper.instance;
-  await dbHelper.database; // Veritabanının başlatıldığından emin ol
-  final dio = Dio();
+  await dbHelper.database;
+
+  // DÜZELTME: Dio istemcisi artık loglama yapabilen fonksiyonumuzdan oluşturuluyor.
+  final dio = createDioClient();
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
 
@@ -35,39 +69,29 @@ void main() async {
       fallbackLocale: const Locale('tr'),
       child: MultiProvider(
         providers: [
-          // Temel, diğerleri tarafından kullanılacak servisleri sağla.
           Provider<DatabaseHelper>.value(value: dbHelper),
-          Provider<Dio>.value(value: dio),
+          Provider<Dio>.value(value: dio), // Loglama yeteneği olan Dio nesnesi sağlanıyor.
           Provider<NetworkInfo>.value(value: networkInfo),
-
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
 
-          // Repository'ler: Diğer servislere bağımlı.
+          // Repository'ler
+          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, AuthRepository>(
+            update: (_, db, network, dio, __) => AuthRepositoryImpl(
+              dbHelper: db, networkInfo: network, dio: dio,
+            ),
+          ),
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, GoodsReceivingRepository>(
             update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
-              dbHelper: db,
-              networkInfo: network,
-              dio: dio,
+              dbHelper: db, networkInfo: network, dio: dio,
             ),
           ),
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, InventoryTransferRepository>(
             update: (_, db, network, dio, __) => InventoryTransferRepositoryImpl(
-              dbHelper: db,
-              networkInfo: network,
-              dio: dio,
+              dbHelper: db, networkInfo: network, dio: dio,
             ),
           ),
 
-          // YENİ AuthRepository provider'ı eklendi.
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, AuthRepository>(
-            update: (_, db, network, dio, __) => AuthRepositoryImpl(
-              dbHelper: db,
-              networkInfo: network,
-              dio: dio,
-            ),
-          ),
-
-          // SyncService'i bir ChangeNotifier olarak sağla.
+          // SyncService
           ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
@@ -75,7 +99,8 @@ void main() async {
               networkInfo: context.read<NetworkInfo>(),
             ),
             update: (_, db, network, dio, previous) {
-              return previous!..updateDependencies(db, dio, network);
+              previous!.updateDependencies(dbHelper: db, dio: dio, networkInfo: network);
+              return previous;
             },
           ),
         ],
@@ -103,7 +128,6 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeProvider.themeMode,
-      // DEĞİŞİKLİK: Uygulama artık LoginScreen ile başlıyor.
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );
