@@ -1,4 +1,5 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
@@ -11,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:collection/collection.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // <-- GEREKLİ IMPORT
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GoodsReceivingScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -90,7 +91,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     setState(() => _isLoading = true);
     try {
       if (_isFreeReceiveMode) {
-        // Serbest modda tüm ürünleri önceden yükle
         _availableProducts = await _repository.searchProducts('');
       }
 
@@ -235,7 +235,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _showSuccessSnackBar('Ürün silindi: $removedItemName', isError: true);
   }
 
-  // =========== ANA DEĞİŞİKLİK BURADA ===========
   Future<void> _saveAndConfirm() async {
     if (_addedItems.isEmpty) {
       _showErrorSnackBar('Kaydetmek için en az bir ürün eklemelisiniz.');
@@ -246,24 +245,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     setState(() => _isSaving = true);
 
     try {
-      // 1. Giriş yapan kullanıcının ID'sini al
       final prefs = await SharedPreferences.getInstance();
       final employeeId = prefs.getInt('user_id');
 
       if (employeeId == null) {
-        // Bu durum normalde olmamalı ama bir güvenlik kontrolü.
-        _showErrorSnackBar('Hata: Kullanıcı ID bulunamadı. Lütfen tekrar giriş yapın.');
-        setState(() => _isSaving = false);
-        return;
+        throw Exception('Kullanıcı ID bulunamadı. Lütfen tekrar giriş yapın.');
       }
 
-      // 2. Payload'ı oluştururken employeeId'yi ekle
       final payload = GoodsReceiptPayload(
         header: GoodsReceiptHeader(
           siparisId: _selectedOrder?.id,
           invoiceNumber: _selectedOrder?.poId,
           receiptDate: DateTime.now(),
-          employeeId: employeeId, // <-- ÇALIŞAN ID'Sİ EKLENDİ
+          employeeId: employeeId,
         ),
         items: _addedItems.map((draft) => GoodsReceiptItemPayload(
           urunId: draft.product.id,
@@ -272,11 +266,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         )).toList(),
       );
 
-      // 3. Repository'e gönder
       await _repository.saveGoodsReceipt(payload);
 
       if (mounted) {
-        _showSuccessSnackBar('Mal kabul işlemi başarıyla kaydedildi ve senkronizasyon için sıraya eklendi.');
+        _showSuccessSnackBar('İşlem kaydedildi. Sunucu ile eşitleniyor...');
+
+        // Eşitlemeyi arayüzü bloklamadan arka planda tetikle.
+        context.read<SyncService>().performFullSync(force: true);
+
         _handleSuccessfulSave(_selectedOrder?.id);
       }
     } catch (e) {
@@ -285,17 +282,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (mounted) setState(() => _isSaving = false);
     }
   }
-  // ===============================================
 
   void _handleSuccessfulSave(int? savedOrderId) {
     setState(() {
       _addedItems.clear();
+      _clearEntryFields(clearPallet: _receivingMode == ReceivingMode.palet);
       if(isOrderBased && savedOrderId != null){
         _isOrderDetailsLoading = true;
-        _clearEntryFields(clearPallet: true);
         _loadOrderDetails(savedOrderId);
       } else {
-        _resetScreenForNewFreeReceipt();
+        _palletIdFocusNode.requestFocus();
       }
     });
   }
@@ -319,7 +315,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     });
   }
 
-  // --- ARAYÜZ ---
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -332,7 +327,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     return Scaffold(
       appBar: SharedAppBar(
-        title: 'Mal Kabul'.tr(),
+        title: 'Mal Kabul',
         showBackButton: true,
       ),
       resizeToAvoidBottomInset: true,
@@ -416,14 +411,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return Center(
       child: SegmentedButton<ReceivingMode>(
         segments: [
-          ButtonSegment(
+          const ButtonSegment(
               value: ReceivingMode.palet,
-              label: Text('Paletle'.tr()),
-              icon: const Icon(Icons.pallet)),
-          ButtonSegment(
+              label: Text('Paletle'),
+              icon: Icon(Icons.pallet)),
+          const ButtonSegment(
               value: ReceivingMode.kutu,
-              label: Text('Kutu/Adet'.tr()),
-              icon: const Icon(Icons.inventory_2_outlined)),
+              label: Text('Kutu/Adet'),
+              icon: Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_receivingMode},
         onSelectionChanged: (newSelection) {
@@ -457,14 +452,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             controller: _palletIdController,
             focusNode: _palletIdFocusNode,
             enabled: isEnabled,
-            decoration: _inputDecoration('Palet Barkodu'.tr(), enabled: isEnabled),
+            decoration: _inputDecoration('Palet Barkodu', enabled: isEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _productFocusNode.requestFocus();
             },
             validator: (value) {
               if (!isEnabled) return null;
               if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
-                return 'Palet barkodu zorunludur.'.tr();
+                return 'Palet barkodu zorunludur.';
               }
               return null;
             },
@@ -495,11 +490,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             enabled: fieldEnabled,
             controller: _productController,
             focusNode: _productFocusNode,
-            readOnly: true, // Dokunmayla açılan dialog için
+            readOnly: true,
             decoration: _inputDecoration(
               isOrderBased
-                  ? 'Siparişten Ürün Seç'.tr()
-                  : 'Serbest Ürün Seç'.tr(),
+                  ? 'Siparişten Ürün Seç'
+                  : 'Serbest Ürün Seç',
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: fieldEnabled,
             ),
@@ -508,7 +503,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
                   : _availableProducts;
               final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
-                title: 'Ürün Seç'.tr(),
+                title: 'Ürün Seç',
                 items: productList,
                 itemToString: (product) => "${product.name} (${product.stockCode})",
                 filterCondition: (product, query) {
@@ -524,7 +519,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              return (value == null || value.isEmpty) ? 'Lütfen bir ürün seçin.'.tr() : null;
+              return (value == null || value.isEmpty) ? 'Lütfen bir ürün seçin.' : null;
             },
           ),
         ),
@@ -574,15 +569,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             enabled: fieldEnabled,
-            decoration: _inputDecoration('Miktar'.tr(), enabled: fieldEnabled),
+            decoration: _inputDecoration('Miktar', enabled: fieldEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _addItemToList();
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              if (value == null || value.isEmpty) return 'Girin'.tr();
+              if (value == null || value.isEmpty) return 'Girin';
               final number = double.tryParse(value);
-              if (number == null || number <= 0) return 'Geçerli sayı girin'.tr();
+              if (number == null || number <= 0) return 'Geçerli sayı girin';
               return null;
             },
           ),
@@ -591,7 +586,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           flex: 1,
           child: InputDecorator(
-            decoration: _inputDecoration('Sipariş Durumu'.tr(), enabled: false),
+            decoration: _inputDecoration('Sipariş Durumu', enabled: false),
             child: Center(
               child: (!isOrderBased || _selectedProduct == null)
                   ? Text("- / -", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor))
@@ -675,7 +670,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         icon: _isSaving
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : const Icon(Icons.check_circle_outline),
-        label: FittedBox(
+        label: const FittedBox(
           child: Text('Kaydet ve Onayla'),
         ),
         style: ElevatedButton.styleFrom(
@@ -853,7 +848,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             TextField(
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Arama yap...'.tr(),
+                hintText: 'Arama yap...',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -864,7 +859,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             const SizedBox(height: 16),
             Expanded(
               child: _filteredItems.isEmpty
-                  ? Center(child: Text('Sonuç bulunamadı.'.tr()))
+                  ? const Center(child: Text('Sonuç bulunamadı.'))
                   : ListView.separated(
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemCount: _filteredItems.length,
@@ -920,7 +915,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
     final appBarTheme = theme.appBarTheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Onay ve Kaydet'.tr(), style: appBarTheme.titleTextStyle),
+        title: const Text('Onay ve Kaydet'),
         backgroundColor: appBarTheme.backgroundColor,
         foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
@@ -929,7 +924,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
         ),
       ),
       body: _currentItems.isEmpty
-          ? Center(child: Text('Onaylanacak ürün yok.'.tr()))
+          ? const Center(child: Text('Onaylanacak ürün yok.'))
           : ListView.builder(
         padding: const EdgeInsets.all(8),
         itemCount: _currentItems.length,
@@ -965,8 +960,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
           ),
           onPressed: _currentItems.isEmpty ? null : () =>
               Navigator.of(context).pop(true),
-          child: Text(
-              'Onayla ve Kaydet'.tr()),
+          child: const Text('Onayla ve Kaydet'),
         ),
       ),
     );
