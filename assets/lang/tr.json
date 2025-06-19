@@ -268,6 +268,17 @@
     "dialog_confirm_transfer_item": "• {productName} (x{quantity})",
     "dialog_button_confirm": "Onayla"
   },
+  "options": {
+    "receive_by_order": "Siparişe Göre Alma",
+    "free_receive": "Serbest Alma"
+  },
+  "orders": {
+    "title": "Satınalma Siparişleri",
+    "search_hint": "Sipariş Ara...",
+    "no_results": "Uygun sipariş bulunamadı.",
+    "error_loading": "Siparişler yüklenemedi: {error}",
+    "no_supplier": "Tedarikçi Bilinmiyor"
+  },
   "login": {
     "title": "Giriş Yap",
     "username": "Kullanıcı Adı",
@@ -277,6 +288,9 @@
     "error_invalid_credentials": "Kullanıcı adı veya şifre hatalı.",
     "loading": "Giriş yapılıyor...",
     "language_select": "Dil Seçimi",
-    "subtitle": "Lütfen giriş yapmak için bilgilerinizi girin."
+    "subtitle": "Lütfen giriş yapmak için bilgilerinizi girin.",
+    "error": {
+      "required_field": "Bu alan zorunludur."
+    }
   }
 }
