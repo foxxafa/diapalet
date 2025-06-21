@@ -90,7 +90,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // listen to controller for torchState :contentReference[oaicite:1]{index=1}
+                // listen to controller for torchState
                 ValueListenableBuilder<MobileScannerState>(
                   valueListenable: controller,
                   builder: (context, state, child) {
@@ -103,7 +103,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                     );
                   },
                 ),
-                // listen to controller for cameraDirection :contentReference[oaicite:2]{index=2}
+                // listen to controller for cameraDirection
                 ValueListenableBuilder<MobileScannerState>(
                   valueListenable: controller,
                   builder: (context, state, child) {

@@ -18,7 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // Loglama için kDebugMode
 import 'package:provider/provider.dart';
 
-// DÜZELTME: Dio istemcisini oluşturan ve loglama interceptor'ı ekleyen fonksiyon.
+// Dio istemcisini oluşturan ve loglama interceptor'ı ekleyen fonksiyon.
 Dio createDioClient() {
   final dio = Dio(
     BaseOptions(
@@ -57,21 +57,24 @@ void main() async {
   final dbHelper = DatabaseHelper.instance;
   await dbHelper.database;
 
-  // DÜZELTME: Dio istemcisi artık loglama yapabilen fonksiyonumuzdan oluşturuluyor.
+  // Dio istemcisi artık loglama yapabilen fonksiyonumuzdan oluşturuluyor.
   final dio = createDioClient();
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
 
   runApp(
     EasyLocalization(
+      // GÜNCELLEME: Dil ayarları İngilizce'ye sabitlendi.
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      fallbackLocale: const Locale('tr'),
+      startLocale: const Locale('en'), // Uygulama İngilizce başlasın.
+      fallbackLocale: const Locale('en'), // Hata durumunda İngilizce'ye dönsün.
       child: MultiProvider(
         providers: [
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<Dio>.value(value: dio), // Loglama yeteneği olan Dio nesnesi sağlanıyor.
           Provider<NetworkInfo>.value(value: networkInfo),
+          // GÜNCELLEME: ThemeProvider artık state yönetimi için gerekli değil ama provider ağacında kalabilir.
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
 
           // Repository'ler
@@ -104,30 +107,27 @@ void main() async {
             },
           ),
         ],
-        child: Consumer<ThemeProvider>(
-          builder: (context, themeProvider, child) {
-            return MyApp(themeProvider: themeProvider);
-          },
-        ),
+        // GÜNCELLEME: Consumer<ThemeProvider> kaldırıldı, MyApp doğrudan çağrılıyor.
+        child: const MyApp(),
       ),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  final ThemeProvider themeProvider;
-  const MyApp({super.key, required this.themeProvider});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
-      locale: context.locale,
+      locale: context.locale, // EasyLocalization'dan gelen dili kullanır.
       title: 'DiaPalet',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: themeProvider.themeMode,
+      // GÜNCELLEME: Tema modu açık temaya sabitlendi.
+      themeMode: ThemeMode.light,
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );

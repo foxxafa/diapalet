@@ -1,49 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// Uygulamanın tema modunu (Açık, Koyu) yöneten ve bu tercihi
-/// cihaz hafızasında saklayan ChangeNotifier sınıfı.
+/// Uygulamanın tema modunu (Açık, Koyu) yöneten ChangeNotifier sınıfı.
+/// GÜNCELLEME: Tema artık main.dart'ta sabitlendiği için bu sınıfın
+/// SharedPreferences ile olan bağlantısı kaldırılmıştır. Gelecekte
+/// tekrar aktif edilebilir diye yapı korunmuştur.
 class ThemeProvider with ChangeNotifier {
-  static const String _themePrefKey = 'themeMode';
-  ThemeMode _themeMode = ThemeMode.system;
+  // Varsayılan tema modu sistem teması veya istenilen bir başlangıç teması olabilir.
+  ThemeMode _themeMode = ThemeMode.light;
 
   /// Mevcut tema modunu döndürür.
   ThemeMode get themeMode => _themeMode;
 
-  /// Provider oluşturulduğunda kayıtlı tema tercihini yükler.
+  /// Provider oluşturulduğunda herhangi bir işlem yapmaz.
   ThemeProvider() {
-    _loadThemeMode();
+    // Tema yükleme mantığı kaldırıldı.
   }
 
-  /// Kayıtlı tema modunu cihaz hafızasından yükler.
-  /// Kayıtlı bir tercih yoksa, sistem temasını kullanır.
-  Future<void> _loadThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final themeString = prefs.getString(_themePrefKey);
-    if (themeString == 'light') {
-      _themeMode = ThemeMode.light;
-    } else if (themeString == 'dark') {
-      _themeMode = ThemeMode.dark;
-    } else {
-      _themeMode = ThemeMode.system; // Kayıt yoksa varsayılan sistem temasıdır.
-    }
-    notifyListeners();
-  }
-
-  /// Yeni bir tema modu ayarlar, dinleyicileri bilgilendirir ve
-  /// tercihi cihaz hafızasına kaydeder.
+  /// Yeni bir tema modu ayarlar ve dinleyicileri bilgilendirir.
   Future<void> setThemeMode(ThemeMode mode) async {
     if (_themeMode == mode) return;
 
     _themeMode = mode;
     notifyListeners();
-
-    final prefs = await SharedPreferences.getInstance();
-    if (mode == ThemeMode.light) {
-      await prefs.setString(_themePrefKey, 'light');
-    } else if (mode == ThemeMode.dark) {
-      await prefs.setString(_themePrefKey, 'dark');
-    }
-    // Sistem teması bir seçenek olmadığı için kaydedilmez.
+    // Tema kaydetme mantığı kaldırıldı.
   }
 }

@@ -12,7 +12,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: SharedAppBar(
-        title: "Transfer Tipini Seçin",
+        title: "Select Transfer Type", // Çeviri anahtarı eklenebilir.
         showBackButton: true,
       ),
       body: Padding(
@@ -24,7 +24,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
             _buildSelectionButton(
               context: context,
               icon: Icons.article_outlined,
-              label: "Siparişe Göre Transfer",
+              label: "Transfer by Order", // Çeviri anahtarı eklenebilir.
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
@@ -35,7 +35,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
             _buildSelectionButton(
               context: context,
               icon: Icons.move_up_rounded,
-              label: "Serbest Transfer",
+              label: "Free Transfer", // Çeviri anahtarı eklenebilir.
               onPressed: () {
                 // Mevcut serbest transfer ekranına yönlendirir.
                 Navigator.of(context).push(
@@ -49,6 +49,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
     );
   }
 
+  // GÜNCELLEME: Buton stili, uygulamanın diğer seçenek ekranlarıyla tutarlı hale getirildi.
   Widget _buildSelectionButton({
     required BuildContext context,
     required IconData icon,
@@ -57,14 +58,23 @@ class TransferTypeSelectionScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     return ElevatedButton.icon(
-      icon: Icon(icon, size: 28),
-      label: Text(label, style: theme.textTheme.titleMedium),
+      icon: Icon(icon, size: 32),
+      label: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 24),
+        backgroundColor: theme.colorScheme.primaryContainer,
+        foregroundColor: theme.colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(vertical: 40),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
+        elevation: 3,
       ),
     );
   }

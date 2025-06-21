@@ -104,7 +104,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('Hata: Başlangıç verileri yüklenemedi. $e');
+        _showErrorSnackBar('Error: Could not load initial data. $e');
         setState(() => _isLoading = false);
       }
     }
@@ -127,7 +127,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (!mounted) return;
       setState(() => _orderItems = items);
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Hata: Sipariş detayları yüklenemedi. $e');
+      if (mounted) _showErrorSnackBar('Error: Could not load order details. $e');
     } finally {
       if (mounted) {
         setState(() => _isOrderDetailsLoading = false);
@@ -164,7 +164,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     } else {
       _productController.clear();
       _selectedProduct = null;
-      _showErrorSnackBar('Ürün bulunamadı: $scannedData');
+      _showErrorSnackBar('Product not found: $scannedData');
     }
   }
 
@@ -183,18 +183,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final currentProduct = _selectedProduct;
 
     if (currentProduct == null || quantity == null || quantity <= 0) {
-      _showErrorSnackBar('Lütfen ürün seçip miktar giriniz.');
+      _showErrorSnackBar('Please select a product and enter quantity.');
       return;
     }
 
     if (isOrderBased) {
       if (_isOrderDetailsLoading) {
-        _showErrorSnackBar('Sipariş detayları hala yükleniyor, lütfen bekleyin.');
+        _showErrorSnackBar('Order details are still loading, please wait.');
         return;
       }
       final orderItem = _orderItems.firstWhereOrNull((item) => item.product?.id == currentProduct.id);
       if (orderItem == null) {
-        _showErrorSnackBar('Bu ürün siparişte bulunmuyor.');
+        _showErrorSnackBar('This product is not in the order.');
         return;
       }
       final alreadyAddedInUI = _addedItems
@@ -205,13 +205,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
       if (quantity > remainingQuantity + 0.001) {
-        _showErrorSnackBar('Miktar siparişi aşıyor. Kalan: ${remainingQuantity.toStringAsFixed(2)} ${orderItem.unit ?? ''}');
+        _showErrorSnackBar('Quantity exceeds order. Remaining: ${remainingQuantity.toStringAsFixed(2)} ${orderItem.unit ?? ''}');
         return;
       }
     }
     final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
     if (isKutuModeLocked) {
-      _showErrorSnackBar('Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.');
+      _showErrorSnackBar('You can only add one type of product in Box mode.');
       return;
     }
     setState(() {
@@ -224,7 +224,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     });
 
     FocusScope.of(context).unfocus();
-    _showSuccessSnackBar('Ürün eklendi: ${currentProduct.name}');
+    _showSuccessSnackBar('Product added: ${currentProduct.name}');
     _productFocusNode.requestFocus();
   }
 
@@ -232,12 +232,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (!mounted) return;
     final removedItemName = _addedItems[index].product.name;
     setState(() => _addedItems.removeAt(index));
-    _showSuccessSnackBar('Ürün silindi: $removedItemName', isError: true);
+    _showSuccessSnackBar('Product removed: $removedItemName', isError: true);
   }
 
   Future<void> _saveAndConfirm() async {
     if (_addedItems.isEmpty) {
-      _showErrorSnackBar('Kaydetmek için en az bir ürün eklemelisiniz.');
+      _showErrorSnackBar('You must add at least one item to save.');
       return;
     }
     final bool? confirmed = await _showConfirmationListDialog();
@@ -249,7 +249,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final employeeId = prefs.getInt('user_id');
 
       if (employeeId == null) {
-        throw Exception('Kullanıcı ID bulunamadı. Lütfen tekrar giriş yapın.');
+        throw Exception('User ID not found. Please log in again.');
       }
 
       final payload = GoodsReceiptPayload(
@@ -269,7 +269,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       await _repository.saveGoodsReceipt(payload);
 
       if (mounted) {
-        _showSuccessSnackBar('İşlem kaydedildi. Sunucu ile eşitleniyor...');
+        _showSuccessSnackBar('Operation saved. Syncing with server...');
 
         // Eşitlemeyi arayüzü bloklamadan arka planda tetikle.
         context.read<SyncService>().performFullSync(force: true);
@@ -277,7 +277,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _handleSuccessfulSave(_selectedOrder?.id);
       }
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Kaydetme hatası: $e');
+      if (mounted) _showErrorSnackBar('Save error: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -327,7 +327,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     return Scaffold(
       appBar: SharedAppBar(
-        title: 'Mal Kabul',
+        title: 'Goods Receiving',
         showBackButton: true,
       ),
       resizeToAvoidBottomInset: true,
@@ -379,7 +379,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Sipariş Bilgileri',
+              'Order Information',
               style: theme.textTheme.labelLarge?.copyWith(
                   color: theme.colorScheme.onTertiaryContainer
               ),
@@ -410,14 +410,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<ReceivingMode>(
-        segments: [
-          const ButtonSegment(
+        segments: const [
+          ButtonSegment(
               value: ReceivingMode.palet,
-              label: Text('Paletle'),
+              label: Text('With Pallet'),
               icon: Icon(Icons.pallet)),
-          const ButtonSegment(
+          ButtonSegment(
               value: ReceivingMode.kutu,
-              label: Text('Kutu/Adet'),
+              label: Text('Box/Unit'),
               icon: Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_receivingMode},
@@ -452,14 +452,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             controller: _palletIdController,
             focusNode: _palletIdFocusNode,
             enabled: isEnabled,
-            decoration: _inputDecoration('Palet Barkodu', enabled: isEnabled),
+            decoration: _inputDecoration('Pallet Barcode', enabled: isEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _productFocusNode.requestFocus();
             },
             validator: (value) {
               if (!isEnabled) return null;
               if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
-                return 'Palet barkodu zorunludur.';
+                return 'Pallet barcode is required.';
               }
               return null;
             },
@@ -493,8 +493,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             readOnly: true,
             decoration: _inputDecoration(
               isOrderBased
-                  ? 'Siparişten Ürün Seç'
-                  : 'Serbest Ürün Seç',
+                  ? 'Select Product from Order'
+                  : 'Select Free Product',
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: fieldEnabled,
             ),
@@ -503,7 +503,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
                   : _availableProducts;
               final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
-                title: 'Ürün Seç',
+                title: 'Select Product',
                 items: productList,
                 itemToString: (product) => "${product.name} (${product.stockCode})",
                 filterCondition: (product, query) {
@@ -519,7 +519,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              return (value == null || value.isEmpty) ? 'Lütfen bir ürün seçin.' : null;
+              return (value == null || value.isEmpty) ? 'Please select a product.' : null;
             },
           ),
         ),
@@ -569,15 +569,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             enabled: fieldEnabled,
-            decoration: _inputDecoration('Miktar', enabled: fieldEnabled),
+            decoration: _inputDecoration('Quantity', enabled: fieldEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _addItemToList();
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              if (value == null || value.isEmpty) return 'Girin';
+              if (value == null || value.isEmpty) return 'Enter';
               final number = double.tryParse(value);
-              if (number == null || number <= 0) return 'Geçerli sayı girin';
+              if (number == null || number <= 0) return 'Enter valid number';
               return null;
             },
           ),
@@ -586,7 +586,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           flex: 1,
           child: InputDecorator(
-            decoration: _inputDecoration('Sipariş Durumu', enabled: false),
+            decoration: _inputDecoration('Order Status', enabled: false),
             child: Center(
               child: (!isOrderBased || _selectedProduct == null)
                   ? Text("- / -", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor))
@@ -625,7 +625,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           Padding(
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
-              'Eklenen Kalemler (${_addedItems.length})',
+              'Added Items (${_addedItems.length})',
               style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
@@ -635,7 +635,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Center(
                 child: Text(
-                  'Henüz ürün eklenmedi.',
+                  'No items added yet.',
                   style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
                 ),
               ),
@@ -646,8 +646,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               title: Text(lastItem.product.name, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
               subtitle: Text(
                 lastItem.palletBarcode != null
-                    ? 'Palet: ${lastItem.palletBarcode!}'
-                    : 'Paletsiz Giriş',
+                    ? 'Pallet: ${lastItem.palletBarcode!}'
+                    : 'Receipt without Pallet',
                 style: textTheme.bodySmall,
               ),
 
@@ -671,7 +671,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : const Icon(Icons.check_circle_outline),
         label: const FittedBox(
-          child: Text('Kaydet ve Onayla'),
+          child: Text('Save and Confirm'),
         ),
         style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -848,7 +848,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             TextField(
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Arama yap...',
+                hintText: 'Search...',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -859,7 +859,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             const SizedBox(height: 16),
             Expanded(
               child: _filteredItems.isEmpty
-                  ? const Center(child: Text('Sonuç bulunamadı.'))
+                  ? const Center(child: Text('No results found.'))
                   : ListView.separated(
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemCount: _filteredItems.length,
@@ -915,7 +915,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
     final appBarTheme = theme.appBarTheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Onay ve Kaydet'),
+        title: const Text('Confirm and Save'),
         backgroundColor: appBarTheme.backgroundColor,
         foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
@@ -924,7 +924,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
         ),
       ),
       body: _currentItems.isEmpty
-          ? const Center(child: Text('Onaylanacak ürün yok.'))
+          ? const Center(child: Text('No items to confirm.'))
           : ListView.builder(
         padding: const EdgeInsets.all(8),
         itemCount: _currentItems.length,
@@ -935,8 +935,8 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
             child: ListTile(
               title: Text(item.product.name, overflow: TextOverflow.ellipsis),
               subtitle: Text(item.palletBarcode != null
-                  ? 'Palet: ${item.palletBarcode!}'
-                  : 'Paletsiz'),
+                  ? 'Pallet: ${item.palletBarcode!}'
+                  : 'Without Pallet'),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text('${item.quantity}',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -960,7 +960,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
           ),
           onPressed: _currentItems.isEmpty ? null : () =>
               Navigator.of(context).pop(true),
-          child: const Text('Onayla ve Kaydet'),
+          child: const Text('Confirm and Save'),
         ),
       ),
     );
