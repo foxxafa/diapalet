@@ -8,7 +8,7 @@ class TransferItemDetail {
 
   // Transferin kaynağıyla ilgili bilgiler
   final String? palletId; // Serbest transferde palet ID'si
-  final String? sourcePalletBarcode; // Serbest transferde kaynak palet
+  final String? sourcePalletBarcode; // Sipariş transferinden gelen kaynak palet
 
   // Arayüzde (sepet) kullanılacak ve işlem sırasında gruplama için gerekli bilgiler
   final int? targetLocationId;
@@ -21,7 +21,6 @@ class TransferItemDetail {
     required this.quantity,
     this.palletId,
     this.sourcePalletBarcode,
-    // Bu alanlar artık zorunlu
     required this.targetLocationId,
     required this.targetLocationName,
   });
@@ -31,9 +30,11 @@ class TransferItemDetail {
     return {
       'product_id': productId,
       'quantity': quantity,
-      // API, operasyon tipine göre bu palet ID'sini farklı yorumlayabilir.
-      // Bu mantık repository katmanında yönetilir.
-      'pallet_id': palletId,
+      // --- GÜNCELLEME BAŞLANGICI ---
+      // Serbest transferden gelen `palletId` veya sipariş transferinden gelen
+      // `sourcePalletBarcode`'u kullan. Hangisi dolu ise onu 'pallet_id' olarak gönder.
+      'pallet_id': palletId ?? sourcePalletBarcode,
+      // --- GÜNCELLEME SONU ---
     };
   }
 }

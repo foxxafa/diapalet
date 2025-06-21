@@ -1,4 +1,5 @@
 // lib/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart
+import 'package:diapalet/core/sync/sync_service.dart'; // GÜNCELLEME: SyncService import edildi.
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
@@ -71,10 +72,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   void dispose() {
-    // HATA DÜZELTMESİ: Bu satır, widget ağaçtan kaldırıldığında çökme hatasına neden oluyordu.
-    // FocusNode'ların dispose edilmesi yeterlidir.
-    // FocusScope.of(context).unfocus();
-
     _sourceLocationFocusNode.removeListener(_onFocusChange);
     _containerFocusNode.removeListener(_onFocusChange);
     _targetLocationFocusNode.removeListener(_onFocusChange);
@@ -326,6 +323,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
       if (mounted) {
         _showSuccessSnackBar('inventory_transfer.success_transfer_saved'.tr());
+
+        // GÜNCELLEME: Anında senkronizasyon burada tetikleniyor.
+        context.read<SyncService>().performFullSync(force: true);
+
         _resetForm(resetAll: true);
       }
     } catch (e) {

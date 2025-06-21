@@ -1,5 +1,6 @@
 // lib/features/inventory_transfer/presentation/screens/order_transfer_screen.dart
 import 'package:collection/collection.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
@@ -28,8 +29,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   List<TransferableContainer> _transferableContainers = [];
   final List<TransferItemDetail> _transferCart = [];
 
-  // Bu ID'yi repository'den alıyoruz, bu yüzden sabit ID'ye gerek kalmadı.
-  // static const int sourceLocationId = 1;
   static const String sourceLocationName = "Mal Kabul Alanı";
 
   @override
@@ -64,7 +63,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   Future<void> _transferContainer(TransferableContainer container) async {
-    // Dialog artık MapEntry döndürüyor, bu kısım değişmedi.
     final selectedLocation = await showDialog<MapEntry<String, int>>(
       context: context,
       barrierDismissible: false,
@@ -80,7 +78,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         productName: item.product.name,
         productCode: item.product.stockCode,
         quantity: item.quantity,
-        // DİKKAT: Sipariş bazlı transferde kaynak paleti TransferableItem'dan alıyoruz.
         sourcePalletBarcode: item.sourcePalletBarcode,
         targetLocationId: selectedLocation.value,
         targetLocationName: selectedLocation.key,
@@ -120,7 +117,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
       final groupedByTarget = groupBy(_transferCart, (item) => item.targetLocationId);
 
-      // Mal kabul alanının ID'sini repo'dan almamız gerekebilir, şimdilik sabit kabul ediyoruz.
       const sourceLocationId = 1;
 
       for (var entry in groupedByTarget.entries) {
@@ -128,19 +124,32 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         final itemsForTarget = entry.value;
         final targetLocationName = itemsForTarget.first.targetLocationName;
 
+        // --- GÜNCELLEME BAŞLANGICI: Operasyon tipini dinamik olarak belirle ---
+        // Eğer transfer sepetindeki ilk ürünün bir kaynak paleti varsa,
+        // bu bir tam palet transferidir. Yoksa, kutu transferidir.
+        final operationMode = itemsForTarget.first.sourcePalletBarcode != null
+            ? AssignmentMode.pallet
+            : AssignmentMode.box;
+
         final header = TransferOperationHeader(
           employeeId: employeeId,
           transferDate: DateTime.now(),
-          operationType: AssignmentMode.box, // Siparişten transfer her zaman kutu bazlıdır
+          // HATA BURADAYDI: Eskiden sabit olarak 'AssignmentMode.box' idi.
+          operationType: operationMode,
           sourceLocationName: sourceLocationName,
           targetLocationName: targetLocationName,
         );
+        // --- GÜNCELLEME SONU ---
+
         await _repo.recordTransferOperation(header, itemsForTarget, sourceLocationId, targetLocationId!);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Tüm transferler başarıyla kaydedildi!"), backgroundColor: Colors.green));
+            const SnackBar(content: Text("Tüm transferler başarıyla kaydedildi! Senkronizasyon başlatılıyor..."), backgroundColor: Colors.green));
+
+        context.read<SyncService>().performFullSync(force: true);
+
         setState(() => _transferCart.clear());
         _loadContainers();
       }
@@ -237,8 +246,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         children: [
           Text("SİPARİŞ", style: Theme.of(context).textTheme.labelSmall),
           Text(widget.order.poId ?? 'PO-XXXX', style: Theme.of(context).textTheme.titleLarge),
-          // Tedarikçi adı için bir alan ekleyebiliriz, PurchaseOrder entity'sinde varsa.
-          // Text(widget.order.supplierName ?? 'Tedarikçi bilgisi yok', style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
     );
@@ -252,14 +259,10 @@ class _SelectTargetLocationDialog extends StatefulWidget {
   State<_SelectTargetLocationDialog> createState() => _SelectTargetLocationDialogState();
 }
 
-// GÜNCELLEME BAŞLANGIÇ: Bu State sınıfı hatayı çözmek için güncellendi.
 class _SelectTargetLocationDialogState extends State<_SelectTargetLocationDialog> {
   final _formKey = GlobalKey<FormState>();
   Map<String, int> _targetLocations = {};
-
-  // Değer olarak 'MapEntry' yerine basit ve benzersiz olan 'int' (ID) kullanıyoruz.
   int? _selectedLocationId;
-
   bool _isLoading = true;
 
   @override
@@ -277,12 +280,8 @@ class _SelectTargetLocationDialogState extends State<_SelectTargetLocationDialog
 
   void _onConfirm() {
     if (!(_formKey.currentState?.validate() ?? false) || _selectedLocationId == null) return;
-
-    // Dialog'dan çıkarken, seçilen ID'ye karşılık gelen tam MapEntry'yi bulup döndürüyoruz.
-    // Böylece bu değişikliği çağıran kod (`_transferContainer`) etkilenmiyor.
     final selectedEntry = _targetLocations.entries
         .firstWhere((entry) => entry.value == _selectedLocationId);
-
     Navigator.of(context).pop(selectedEntry);
   }
 
@@ -294,15 +293,13 @@ class _SelectTargetLocationDialogState extends State<_SelectTargetLocationDialog
           ? const Center(child: CircularProgressIndicator())
           : Form(
         key: _formKey,
-        // Dropdown'ın tipi artık <int> oldu.
         child: DropdownButtonFormField<int>(
           value: _selectedLocationId,
           hint: const Text("Hedef Raf Seçin"),
-          // Öğeleri oluştururken `value` olarak ID'yi (`entry.value`) atıyoruz.
           items: _targetLocations.entries.map((entry) {
             return DropdownMenuItem<int>(
-              value: entry.value, // Değer: Lokasyon ID'si (int)
-              child: Text(entry.key), // Görünen yazı: Lokasyon adı (String)
+              value: entry.value,
+              child: Text(entry.key),
             );
           }).toList(),
           onChanged: (val) => setState(() => _selectedLocationId = val),
@@ -318,7 +315,6 @@ class _SelectTargetLocationDialogState extends State<_SelectTargetLocationDialog
     );
   }
 }
-// GÜNCELLEME SONU
 
 class _ConfirmationDialog extends StatelessWidget {
   final List<TransferItemDetail> transferItems;
