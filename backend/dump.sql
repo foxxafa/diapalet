@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS `goods_receipt_items` (
   FOREIGN KEY (`urun_id`) REFERENCES `urunler`(`UrunId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
--- DÜZELTME: PHP KODUNUN KULLANDIĞI TABLO
+-- Stok Envanter Tablosu
 CREATE TABLE IF NOT EXISTS `inventory_stock` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `urun_id` INT NOT NULL,
@@ -157,14 +157,15 @@ CREATE TABLE IF NOT EXISTS `inventory_stock` (
   FOREIGN KEY (`location_id`) REFERENCES `warehouses_shelfs`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
--- DÜZELTME: PHP KODUNUN KULLANDIĞI TABLO
+-- Envanter Transferleri Tablosu (GÜNCELLENDİ)
 CREATE TABLE IF NOT EXISTS `inventory_transfers` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `urun_id` INT NOT NULL,
   `from_location_id` INT NULL,
   `to_location_id` INT NOT NULL,
   `quantity` DECIMAL(10, 2) NOT NULL,
-  `pallet_barcode` VARCHAR(50) NULL,
+  `from_pallet_barcode` VARCHAR(50) NULL COMMENT 'Transferin yapıldığı KAYNAK palet barkodu.',
+  `pallet_barcode` VARCHAR(50) NULL COMMENT 'Transferin vardığı HEDEF palet barkodu (tam palet transferinde).',
   `employee_id` INT NOT NULL,
   `transfer_date` DATETIME NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -216,4 +217,3 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`siparis_id`, `urun_id`, `miktar`, `
 (101, 1, 50.00, 'KUTU'), (101, 2, 100.00, 'KUTU'),
 (102, 2, 200.00, 'KUTU'),
 (201, 3, 300.00, 'ADET');
-

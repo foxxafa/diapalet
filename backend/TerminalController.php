@@ -108,6 +108,7 @@ class TerminalController extends Controller
         $payload = $this->getJsonBody();
         $operations = $payload['operations'] ?? [];
         $results = [];
+        Yii::$app->response->statusCode = 200; // Varsayılan yanıt kodu
 
         foreach ($operations as $op) {
             $opType = $op['type'] ?? null;
@@ -115,17 +116,22 @@ class TerminalController extends Controller
             try {
                 if ($opType === 'goodsReceipt') {
                     $result = $this->_createGoodsReceipt($opData);
+                } elseif ($opType === 'inventoryTransfer') {
+                    $result = $this->_createInventoryTransfer($opData);
                 } else {
                     $result = ['error' => "Bilinmeyen operasyon tipi: {$opType}"];
+                    Yii::$app->response->statusCode = 400; // Hatalı istek
                 }
                 $results[] = ['operation' => $op, 'result' => $result];
             } catch (\Exception $e) {
                 Yii::error("SyncUpload Hatası ({$opType}): {$e->getMessage()}", __METHOD__);
                 $results[] = ['operation' => $op, 'result' => ['error' => $e->getMessage()]];
+                 Yii::$app->response->statusCode = 500;
             }
         }
         return ['success' => true, 'results' => $results];
     }
+
 
     /**
      * Sunucudan cihaza veri indirmek için.
@@ -196,6 +202,67 @@ class TerminalController extends Controller
     // İŞLEM YARDIMCI FONKSİYONLARI (HELPERS)
     // -----------------------------------------------------------------------------
 
+    /**
+     * GÜNCELLEME: Envanter transfer işlemini veritabanına kaydeder.
+     */
+    private function _createInventoryTransfer($data) {
+        $header = $data['header'] ?? [];
+        $items = $data['items'] ?? [];
+
+        if (empty($header) || empty($items) || !isset($header['employee_id'], $header['source_location_id'], $header['target_location_id'])) {
+            Yii::$app->response->statusCode = 400;
+            return ['error' => 'Geçersiz transfer verisi: "header", "items" veya gerekli ID\'ler eksik.'];
+        }
+
+        $db = Yii::$app->db;
+        $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
+
+        try {
+            $operationType = $header['operation_type'] ?? 'box_transfer';
+
+            foreach ($items as $item) {
+                $productId = $item['product_id'];
+                $quantity = (float)$item['quantity'];
+
+                // Flutter uygulamasından gelen 'pallet_id' kaynak paleti temsil eder.
+                $sourcePallet = $item['pallet_id'] ?? null;
+                $targetPallet = null;
+
+                if ($operationType === 'pallet_transfer') {
+                    $targetPallet = $sourcePallet; // Tam palet transferinde kaynak ve hedef palet aynıdır.
+                }
+
+                // 1. Kaynak lokasyondaki stoğu azalt
+                $this->upsertStock($db, $productId, $header['source_location_id'], -$quantity, $sourcePallet);
+
+                // 2. Hedef lokasyondaki stoğu artır
+                $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet);
+
+                // 3. Transfer işlemini logla
+                $db->createCommand()->insert('inventory_transfers', [
+                    'urun_id' => $productId,
+                    'from_location_id' => $header['source_location_id'],
+                    'to_location_id' => $header['target_location_id'],
+                    'quantity' => $quantity,
+                    'from_pallet_barcode' => $sourcePallet, // GÜNCELLEME: Kaynak palet kaydediliyor
+                    'pallet_barcode' => $targetPallet,
+                    'employee_id' => $header['employee_id'],
+                    'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                    'created_at' => new \yii\db\Expression('NOW()'),
+                ])->execute();
+            }
+
+            $transaction->commit();
+            return ['status' => 'success'];
+
+        } catch (\Exception $e) {
+            $transaction->rollBack();
+            Yii::error("Envanter Transfer DB Hatası: {$e->getMessage()}", __METHOD__);
+            Yii::$app->response->statusCode = 500;
+            return ['error' => 'Veritabanı hatası: ' . $e->getMessage()];
+        }
+    }
+
     private function _createGoodsReceipt($data) {
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
@@ -233,7 +300,7 @@ class TerminalController extends Controller
             }
 
             $transaction->commit();
-            Yii::$app->response->statusCode = 201;
+            Yii::$app->response->statusCode = 201; // Created
             return ['receipt_id' => $receiptId, 'status' => 'success'];
 
         } catch (\Exception $e) {
@@ -246,7 +313,12 @@ class TerminalController extends Controller
 
     private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode) {
         $condition = ['urun_id' => $urunId, 'location_id' => $locationId];
-        $condition['pallet_barcode'] = $palletBarcode ? $palletBarcode : null;
+
+        if ($palletBarcode === null) {
+            $condition['pallet_barcode'] = null;
+        } else {
+            $condition['pallet_barcode'] = $palletBarcode;
+        }
 
         $stock = (new Query())->select(['id', 'quantity'])->from('inventory_stock')->where($condition)->one($db);
         $qtyChangeDecimal = (float) $qtyChange;
@@ -263,6 +335,9 @@ class TerminalController extends Controller
                 'urun_id' => $urunId, 'location_id' => $locationId,
                 'quantity' => $qtyChangeDecimal, 'pallet_barcode' => $palletBarcode,
             ])->execute();
+        } else {
+            $warning = "Negatif envanter engellendi: Lokasyon #$locationId, Ürün #$urunId, Palet: " . ($palletBarcode ?? 'YOK');
+            Yii::warning($warning, __METHOD__);
         }
     }
 
@@ -292,7 +367,7 @@ class TerminalController extends Controller
         if ($allCompleted) {
             $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute(); // 3: Tamamlandı
         } elseif ($hasAnyReceipts) {
-             $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute(); // 2: Kısmi Kabul
+            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute(); // 2: Kısmi Kabul
         }
     }
 }
