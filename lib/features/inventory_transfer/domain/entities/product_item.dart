@@ -7,7 +7,6 @@ class ProductItem {
   final int id;
   final String name;
   final String productCode;
-  // Miktar ondalıklı olabilir, double olarak güncellendi.
   final double currentQuantity;
 
   ProductItem({
@@ -54,6 +53,16 @@ class ProductItem {
       productCode: (map['code'] ?? '').toString(),
       currentQuantity: (map['currentQuantity'] as num?)?.toDouble() ?? 0.0,
     );
+  }
+
+  // DÜZELTME: Eksik olan toJson metodu eklendi.
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'productCode': productCode,
+      'currentQuantity': currentQuantity,
+    };
   }
 
   @override
