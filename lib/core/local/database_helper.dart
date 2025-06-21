@@ -9,9 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // DÜZELTME: Şema tekrar değiştiği için veritabanı versiyonunu artırıyoruz.
-  // Bu, onUpgrade metodunun çalışmasını ve tabloların doğru şema ile yeniden kurulmasını sağlar.
-  static const _databaseVersion = 9;
+  // ANA GÜNCELLEME: Şema değiştiği için versiyonu artırıyoruz.
+  static const _databaseVersion = 10;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -73,7 +72,6 @@ class DatabaseHelper {
         created_at TEXT, updated_at TEXT
       )
     ''');
-    // ANA DÜZELTME: Sunucudan gelen `gun`, `invoice`, `delivery` sütunları eklendi.
     batch.execute('''
       CREATE TABLE satin_alma_siparis_fis (
         id INTEGER PRIMARY KEY, po_id TEXT, tarih TEXT, status INTEGER,
@@ -106,10 +104,20 @@ class DatabaseHelper {
         quantity REAL NOT NULL, pallet_barcode TEXT, updated_at TEXT
       )
     ''');
+
+    // ANA GÜNCELLEME: inventory_transfers tablosuna 'from_pallet_barcode' eklendi.
     batch.execute('''
       CREATE TABLE inventory_transfers (
-        id INTEGER PRIMARY KEY, urun_id INTEGER, from_location_id INTEGER, to_location_id INTEGER,
-        quantity REAL, pallet_barcode TEXT, employee_id INTEGER, transfer_date TEXT, created_at TEXT
+        id INTEGER PRIMARY KEY, 
+        urun_id INTEGER, 
+        from_location_id INTEGER, 
+        to_location_id INTEGER,
+        quantity REAL, 
+        from_pallet_barcode TEXT, -- Transferin KAYNAK paletini izlemek için eklendi
+        pallet_barcode TEXT, -- Transferin HEDEF paletini izler
+        employee_id INTEGER, 
+        transfer_date TEXT, 
+        created_at TEXT
       )
     ''');
 
@@ -143,7 +151,7 @@ class DatabaseHelper {
 
         final fullRefreshTables = ['employees', 'urunler', 'locations', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'inventory_stock', 'inventory_transfers', 'goods_receipts', 'goods_receipt_items'];
         if(fullRefreshTables.contains(table)) {
-          txn.delete(table);
+          await txn.delete(table);
         }
 
         for (final record in records) {

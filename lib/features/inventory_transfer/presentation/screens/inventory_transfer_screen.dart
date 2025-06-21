@@ -71,7 +71,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   void dispose() {
-    FocusScope.of(context).unfocus();
+    // HATA DÜZELTMESİ: Bu satır, widget ağaçtan kaldırıldığında çökme hatasına neden oluyordu.
+    // FocusNode'ların dispose edilmesi yeterlidir.
+    // FocusScope.of(context).unfocus();
+
     _sourceLocationFocusNode.removeListener(_onFocusChange);
     _containerFocusNode.removeListener(_onFocusChange);
     _targetLocationFocusNode.removeListener(_onFocusChange);
@@ -274,7 +277,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (qty != product.currentQuantity) {
           isFullPalletTransfer = false;
         }
-        // HATA DÜZELTMESİ: TransferItemDetail kurucusu güncellendi.
         itemsToTransfer.add(TransferItemDetail(
           productId: product.id,
           productName: product.name,
@@ -282,6 +284,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           quantity: qty,
           palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
           sourcePalletBarcode: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
+          targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
+          targetLocationName: _selectedTargetLocationName!,
         ));
       }
     }
@@ -311,7 +315,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     setState(() => _isSaving = true);
     try {
-      // HATA DÜZELTMESİ: TransferOperationHeader kurucusu güncellendi.
       final header = TransferOperationHeader(
         employeeId: employeeId,
         operationType: finalOperationMode,

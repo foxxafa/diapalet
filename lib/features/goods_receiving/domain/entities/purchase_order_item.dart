@@ -9,8 +9,12 @@ class PurchaseOrderItem {
   final double receivedQuantity;
   final double transferredQuantity;
   final String? unit;
-  // DÜZELTME: Alanın türü, ilgili modülün kendi sınıfı olan 'ProductInfo' olarak güncellendi.
   final ProductInfo? product;
+
+  // HATA DÜZELTMESİ: Palet bilgisini tutmak için bu alan eklendi.
+  // Bu alan, repository katmanında sorgu ile doldurulur ve siparişin
+  // orijinal bir parçası değildir, bu yüzden isteğe bağlı (nullable) yapılır.
+  final String? palletBarcode;
 
   PurchaseOrderItem({
     required this.id,
@@ -21,9 +25,15 @@ class PurchaseOrderItem {
     required this.transferredQuantity,
     this.unit,
     required this.product,
+    // HATA DÜZELTMESİ: Constructor'a eklendi.
+    this.palletBarcode,
   });
 
   /// Veritabanından gelen Map verisini parse eder.
+  /// Not: Bu factory metodu, 'palletBarcode' alanını DAHİL ETMEZ,
+  /// çünkü bu alan genellikle bir join işlemi ile sonradan eklenir.
+  /// Repository katmanı bu temel nesneyi oluşturduktan sonra yeni bir
+  /// nesne yaratarak bu alanı doldurur.
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
     return PurchaseOrderItem(
       id: map['id'] as int,
@@ -33,7 +43,6 @@ class PurchaseOrderItem {
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: map['birim'] as String?,
-      // DÜZELTME: Artık 'ProductInfo' nesnesi oluşturuluyor.
       product: ProductInfo(
         id: map['urun_id'] as int,
         name: map['UrunAdi'] as String? ?? 'Bilinmeyen Ürün',
@@ -41,6 +50,7 @@ class PurchaseOrderItem {
         barcode1: map['Barcode1'] as String?,
         isActive: (map['aktif'] as int? ?? 1) == 1,
       ),
+      // palletBarcode burada null'dır, repository'de doldurulacak.
     );
   }
 
@@ -53,8 +63,9 @@ class PurchaseOrderItem {
       receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
       transferredQuantity: (json['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: json['unit'],
-      // DÜZELTME: Artık 'ProductInfo.fromJson' çağrılıyor.
       product: json['product'] != null ? ProductInfo.fromJson(json['product']) : null,
+      // HATA DÜZELTMESİ: JSON'dan okunuyor.
+      palletBarcode: json['palletBarcode'] as String?,
     );
   }
 
@@ -68,6 +79,8 @@ class PurchaseOrderItem {
       'transferredQuantity': transferredQuantity,
       'unit': unit,
       'product': product?.toJson(),
+      // HATA DÜZELTMESİ: JSON'a ekleniyor.
+      'palletBarcode': palletBarcode,
     };
   }
 }
