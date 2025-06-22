@@ -7,6 +7,7 @@ use yii\web\Controller;
 use yii\web\Response;
 use yii\db\Transaction;
 use yii\db\Query;
+use yii\helpers\ArrayHelper;
 
 class TerminalController extends Controller
 {
@@ -19,8 +20,6 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
-        // Login action'ı hariç diğer tüm action'lar için API anahtarını kontrol et.
-        // Health-check gibi public endpoint'ler de buraya eklenebilir.
         if ($action->id !== 'login' && $action->id !== 'health-check') {
             $this->checkApiKey();
         }
@@ -52,13 +51,32 @@ class TerminalController extends Controller
         }
     }
 
+    /**
+     * GÜNCELLEME: Bu yardımcı fonksiyon, veritabanından gelen ve potansiyel olarak
+     * string olan sayısal değerleri doğru tiplere (int, float) dönüştürür.
+     * Bu, Flutter tarafındaki 'type 'String' is not a subtype of type 'int'' hatasını önler.
+     */
+    private function castNumericValues(array &$data, array $intKeys, array $floatKeys = [])
+    {
+        foreach ($data as &$row) {
+            foreach ($intKeys as $key) {
+                if (isset($row[$key])) {
+                    $row[$key] = (int)$row[$key];
+                }
+            }
+            foreach ($floatKeys as $key) {
+                if (isset($row[$key])) {
+                    $row[$key] = (float)$row[$key];
+                }
+            }
+        }
+    }
+
+
     // -----------------------------------------------------------------------------
     // ENDPOINT'LER
     // -----------------------------------------------------------------------------
 
-    /**
-     * Kullanıcı girişi için.
-     */
     public function actionLogin()
     {
         $params = Yii::$app->request->getBodyParams();
@@ -100,15 +118,12 @@ class TerminalController extends Controller
         }
     }
 
-    /**
-     * Cihazdan sunucuya bekleyen işlemleri yüklemek için.
-     */
     public function actionSyncUpload()
     {
         $payload = $this->getJsonBody();
         $operations = $payload['operations'] ?? [];
         $results = [];
-        Yii::$app->response->statusCode = 200; // Varsayılan yanıt kodu
+        Yii::$app->response->statusCode = 200;
 
         foreach ($operations as $op) {
             $opType = $op['type'] ?? null;
@@ -120,7 +135,7 @@ class TerminalController extends Controller
                     $result = $this->_createInventoryTransfer($opData);
                 } else {
                     $result = ['error' => "Bilinmeyen operasyon tipi: {$opType}"];
-                    Yii::$app->response->statusCode = 400; // Hatalı istek
+                    Yii::$app->response->statusCode = 400;
                 }
                 $results[] = ['operation' => $op, 'result' => $result];
             } catch (\Exception $e) {
@@ -132,9 +147,9 @@ class TerminalController extends Controller
         return ['success' => true, 'results' => $results];
     }
 
-
     /**
      * Sunucudan cihaza veri indirmek için.
+     * GÜNCELLEME: Veri tiplerinin doğru gönderilmesi sağlandı.
      */
     public function actionSyncDownload()
     {
@@ -146,23 +161,40 @@ class TerminalController extends Controller
             return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
         }
 
+        $warehouseId = (int)$warehouseId;
+
         try {
             $data = [];
-            $data['urunler'] = (new Query())->from('urunler')->all();
+
+            // Düzeltme: urunler tablosu 'id' ile başlıyor, 'UrunId' değil.
+            // Ayrıca Dart tarafının beklediği 'id' anahtarına çeviriyoruz.
+            $urunlerData = (new Query())->select(['id' => 'UrunId', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
+            $this->castNumericValues($urunlerData, ['id', 'aktif']);
+            $data['urunler'] = $urunlerData;
+
             $data['locations'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
+            $this->castNumericValues($data['locations'], ['id', 'warehouse_id', 'is_active']);
+
             $data['employees'] = (new Query())->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
+            $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
             $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
+            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status', 'delivery', 'gun']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
+                $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id', 'status'], ['miktar']);
+
                 $receipts = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+                $this->castNumericValues($receipts, ['id', 'siparis_id', 'employee_id']);
                 $data['goods_receipts'] = $receipts;
 
                 $receiptIds = array_column($receipts, 'id');
                 $data['goods_receipt_items'] = !empty($receiptIds) ? (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all() : [];
+                $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+
             } else {
                 $data['satin_alma_siparis_fis_satir'] = [];
                 $data['goods_receipts'] = [];
@@ -172,7 +204,10 @@ class TerminalController extends Controller
             $locationIds = array_column($data['locations'], 'id');
             if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
+                $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
+
                 $data['inventory_transfers'] = (new Query())->from('inventory_transfers')->where(['or', ['in', 'from_location_id', $locationIds], ['in', 'to_location_id', $locationIds]])->all();
+                $this->castNumericValues($data['inventory_transfers'], ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
             } else {
                 $data['inventory_stock'] = [];
                 $data['inventory_transfers'] = [];
@@ -190,21 +225,16 @@ class TerminalController extends Controller
         }
     }
 
-    /**
-     * Sunucu sağlık durumunu kontrol etmek için public endpoint.
-     */
     public function actionHealthCheck()
     {
         return ['status' => 'ok', 'message' => 'API Sunucusu çalışıyor.', 'timestamp' => date('c')];
     }
 
+
     // -----------------------------------------------------------------------------
     // İŞLEM YARDIMCI FONKSİYONLARI (HELPERS)
     // -----------------------------------------------------------------------------
 
-    /**
-     * GÜNCELLEME: Envanter transfer işlemini veritabanına kaydeder.
-     */
     private function _createInventoryTransfer($data) {
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
@@ -223,28 +253,22 @@ class TerminalController extends Controller
             foreach ($items as $item) {
                 $productId = $item['product_id'];
                 $quantity = (float)$item['quantity'];
-
-                // Flutter uygulamasından gelen 'pallet_id' kaynak paleti temsil eder.
                 $sourcePallet = $item['pallet_id'] ?? null;
                 $targetPallet = null;
 
                 if ($operationType === 'pallet_transfer') {
-                    $targetPallet = $sourcePallet; // Tam palet transferinde kaynak ve hedef palet aynıdır.
+                    $targetPallet = $sourcePallet;
                 }
 
-                // 1. Kaynak lokasyondaki stoğu azalt
                 $this->upsertStock($db, $productId, $header['source_location_id'], -$quantity, $sourcePallet);
-
-                // 2. Hedef lokasyondaki stoğu artır
                 $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet);
 
-                // 3. Transfer işlemini logla
                 $db->createCommand()->insert('inventory_transfers', [
                     'urun_id' => $productId,
                     'from_location_id' => $header['source_location_id'],
                     'to_location_id' => $header['target_location_id'],
                     'quantity' => $quantity,
-                    'from_pallet_barcode' => $sourcePallet, // GÜNCELLEME: Kaynak palet kaydediliyor
+                    'from_pallet_barcode' => $sourcePallet,
                     'pallet_barcode' => $targetPallet,
                     'employee_id' => $header['employee_id'],
                     'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
@@ -300,7 +324,7 @@ class TerminalController extends Controller
             }
 
             $transaction->commit();
-            Yii::$app->response->statusCode = 201; // Created
+            Yii::$app->response->statusCode = 201;
             return ['receipt_id' => $receiptId, 'status' => 'success'];
 
         } catch (\Exception $e) {
@@ -352,7 +376,7 @@ class TerminalController extends Controller
             ->from(['gri' => 'goods_receipt_items'])
             ->innerJoin(['gr' => 'goods_receipts'], 'gr.id = gri.receipt_id')
             ->where(['gr.siparis_id' => $siparisId])->groupBy('gri.urun_id')->all($db);
-        $receivedTotals = \yii\helpers\ArrayHelper::map($receivedTotalsList, 'urun_id', 'total_received');
+        $receivedTotals = ArrayHelper::map($receivedTotalsList, 'urun_id', 'total_received');
 
         $allCompleted = true;
         $hasAnyReceipts = !empty($receivedTotals);
@@ -365,9 +389,9 @@ class TerminalController extends Controller
         }
 
         if ($allCompleted) {
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute(); // 3: Tamamlandı
+            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
         } elseif ($hasAnyReceipts) {
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute(); // 2: Kısmi Kabul
+            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
         }
     }
 }
