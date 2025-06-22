@@ -3,11 +3,11 @@ import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_transfer_screen.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-/// Kullanıcının transfer yapacağı satınalma siparişini seçtiği ekran.
 class OrderSelectionScreen extends StatefulWidget {
   const OrderSelectionScreen({super.key});
 
@@ -16,7 +16,8 @@ class OrderSelectionScreen extends StatefulWidget {
 }
 
 class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
-  late Future<List<PurchaseOrder>> _ordersFuture;
+  late InventoryTransferRepository _repo;
+  Future<List<PurchaseOrder>>? _ordersFuture;
   List<PurchaseOrder> _allOrders = [];
   List<PurchaseOrder> _filteredOrders = [];
   final _searchController = TextEditingController();
@@ -24,10 +25,24 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
   @override
   void initState() {
     super.initState();
-    final repo = context.read<InventoryTransferRepository>();
-    // Sadece transfer edilmeye uygun siparişleri repository'den çeker.
-    _ordersFuture = repo.getOpenPurchaseOrdersForTransfer();
-    _ordersFuture.then((orders) {
+    _repo = context.read<InventoryTransferRepository>();
+    _loadOrders();
+    _searchController.addListener(_filterOrders);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_filterOrders);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() {
+      _ordersFuture = _fetchAndFilterOrders();
+    });
+    // To update the UI with the initial list
+    _ordersFuture?.then((orders) {
       if (mounted) {
         setState(() {
           _allOrders = orders;
@@ -35,13 +50,27 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
         });
       }
     });
-    _searchController.addListener(_filterOrders);
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  Future<List<PurchaseOrder>> _fetchAndFilterOrders() async {
+    try {
+      final orders = await _repo.getOpenPurchaseOrdersForTransfer();
+      List<PurchaseOrder> transferableOrders = [];
+      for (final order in orders) {
+        final containers = await _repo.getTransferableContainers(order.id);
+        if (containers.isNotEmpty) {
+          transferableOrders.add(order);
+        }
+      }
+      return transferableOrders;
+    } catch(e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('order_selection.error_loading'.tr(namedArgs: {'error': e.toString()}))),
+        );
+      }
+      return []; // Return empty list on error
+    }
   }
 
   void _filterOrders() {
@@ -58,7 +87,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: SharedAppBar(
-        title: "Select Order",
+        title: "order_selection.title".tr(),
         showBackButton: true,
       ),
       body: Column(
@@ -68,7 +97,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                labelText: "Search PO Number or Supplier",
+                labelText: "order_selection.search_hint".tr(),
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -84,37 +113,39 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text("Error: ${snapshot.error}"));
+                  return Center(child: Text("order_selection.error_loading".tr(namedArgs: {'error': snapshot.error.toString()})));
                 }
-                if (snapshot.data == null || snapshot.data!.isEmpty) {
-                  return const Center(child: Text("No transferable orders found."));
+                if (!snapshot.hasData || _filteredOrders.isEmpty) {
+                  return Center(child: Text("order_selection.no_results".tr()));
                 }
 
-                return ListView.builder(
-                  itemCount: _filteredOrders.length,
-                  itemBuilder: (context, index) {
-                    final order = _filteredOrders[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      child: ListTile(
-                        title: Text(order.poId ?? 'Unknown Order'),
-                        subtitle: Text(
-                          "${order.supplierName ?? 'Supplier not specified'}\n"
-                          // DÜZELTME: Nullable DateTime için kontrol eklendi.
-                              "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'No Date'}",
+                return RefreshIndicator(
+                  onRefresh: _loadOrders,
+                  child: ListView.builder(
+                    itemCount: _filteredOrders.length,
+                    itemBuilder: (context, index) {
+                      final order = _filteredOrders[index];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: ListTile(
+                          title: Text(order.poId ?? 'Unknown Order'),
+                          subtitle: Text(
+                            "${order.supplierName ?? 'orders.no_supplier'.tr()}\n"
+                                "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
+                          ),
+                          isThreeLine: true,
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => OrderTransferScreen(order: order),
+                              ),
+                            );
+                          },
                         ),
-                        isThreeLine: true,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => OrderTransferScreen(order: order),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 );
               },
             ),

@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // Şema değiştiği için versiyon 11'e yükseltildi.
-  static const _databaseVersion = 11;
+  // GÜNCELLEME: Şema değişikliği nedeniyle versiyon artırıldı.
+  static const _databaseVersion = 12;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -41,19 +41,10 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Veritabanı $oldVersion sürümünden $newVersion sürümüne yükseltiliyor...");
-    // Veri kaybını önlemek için, sadece 11. versiyona geçerken sütun ekle.
-    if (oldVersion < 11) {
-      try {
-        await db.execute("ALTER TABLE pending_operation ADD COLUMN synced_at TEXT;");
-        debugPrint("'pending_operation' tablosuna 'synced_at' sütunu eklendi.");
-      } catch (e) {
-        debugPrint("Sütun eklenirken hata (zaten var olabilir): $e");
-      }
-    } else {
-      // Beklenmedik bir durum veya daha büyük bir değişiklik için tüm tabloları yeniden oluştur.
-      await _dropAllTables(db);
-      await _createAllTables(db);
-    }
+    // Şema tamamen yeniden oluşturulacağı için eski tabloları sil ve yenilerini oluştur.
+    // Bu, 'locations' tablosunun 'warehouses_shelfs' olarak yeniden adlandırılmasını sağlar.
+    await _dropAllTables(db);
+    await _createAllTables(db);
     debugPrint("Veritabanı yükseltmesi tamamlandı.");
   }
 
@@ -61,7 +52,7 @@ class DatabaseHelper {
     debugPrint("Veritabanı tabloları (Sürüm $_databaseVersion) oluşturuluyor...");
     final batch = db.batch();
 
-    // 1. pending_operation tablosu (güncellenmiş hali)
+    // 1. pending_operation tablosu
     batch.execute('''
       CREATE TABLE IF NOT EXISTS pending_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,8 +71,9 @@ class DatabaseHelper {
 
     // --- UYGULAMANIN DİĞER TÜM TABLOLARI ---
 
+    // GÜNCELLEME: 'locations' tablosu, sunucuyla uyumlu olması için 'warehouses_shelfs' olarak yeniden adlandırıldı.
     batch.execute('''
-      CREATE TABLE IF NOT EXISTS locations (
+      CREATE TABLE IF NOT EXISTS warehouses_shelfs (
         id INTEGER PRIMARY KEY, name TEXT, code TEXT, is_active INTEGER DEFAULT 1,
         warehouse_id INTEGER, created_at TEXT, updated_at TEXT
       )
@@ -160,8 +152,9 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     // Silinecek tüm tabloların listesi
+    // GÜNCELLEME: 'locations' yerine 'warehouses_shelfs' eklendi.
     final tables = [
-      'pending_operation', 'sync_log', 'locations', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'warehouses_shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers'
     ];
@@ -182,7 +175,8 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
-        final fullRefreshTables = ['employees', 'urunler', 'locations', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'inventory_stock'];
+        // GÜNCELLEME: 'locations' yerine 'warehouses_shelfs' eklendi.
+        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'inventory_stock'];
         if(fullRefreshTables.contains(table)) {
           await txn.delete(table);
         }

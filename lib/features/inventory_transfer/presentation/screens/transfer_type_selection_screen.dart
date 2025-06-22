@@ -2,9 +2,9 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_selection_screen.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
-/// Kullanıcının "Siparişe Göre" ve "Serbest" transfer arasında seçim yaptığı ilk ekran.
 class TransferTypeSelectionScreen extends StatelessWidget {
   const TransferTypeSelectionScreen({super.key});
 
@@ -12,7 +12,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: SharedAppBar(
-        title: "Select Transfer Type", // Çeviri anahtarı eklenebilir.
+        title: "transfer_type.title".tr(),
         showBackButton: true,
       ),
       body: Padding(
@@ -24,7 +24,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
             _buildSelectionButton(
               context: context,
               icon: Icons.article_outlined,
-              label: "Transfer by Order", // Çeviri anahtarı eklenebilir.
+              label: "transfer_type.by_order".tr(),
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
@@ -35,9 +35,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
             _buildSelectionButton(
               context: context,
               icon: Icons.move_up_rounded,
-              label: "Free Transfer", // Çeviri anahtarı eklenebilir.
+              label: "transfer_type.free_transfer".tr(),
               onPressed: () {
-                // Mevcut serbest transfer ekranına yönlendirir.
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InventoryTransferScreen()),
                 );
@@ -49,7 +48,6 @@ class TransferTypeSelectionScreen extends StatelessWidget {
     );
   }
 
-  // GÜNCELLEME: Buton stili, uygulamanın diğer seçenek ekranlarıyla tutarlı hale getirildi.
   Widget _buildSelectionButton({
     required BuildContext context,
     required IconData icon,

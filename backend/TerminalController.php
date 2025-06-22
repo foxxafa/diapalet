@@ -11,10 +11,6 @@ use yii\helpers\ArrayHelper;
 
 class TerminalController extends Controller
 {
-    /**
-     * Gelen isteklerin JSON formatında olacağını, CSRF kontrolünü devre dışı bırakacağımızı
-     * ve API anahtarı kontrolünü yapacağımızı belirtiyoruz.
-     */
     public function beforeAction($action)
     {
         Yii::$app->response->format = Response::FORMAT_JSON;
@@ -27,9 +23,6 @@ class TerminalController extends Controller
         return parent::beforeAction($action);
     }
 
-    /**
-     * İstek gövdesini JSON olarak okumak için yardımcı fonksiyon.
-     */
     private function getJsonBody()
     {
         $rawBody = Yii::$app->request->getRawBody();
@@ -37,25 +30,17 @@ class TerminalController extends Controller
         return is_array($decoded) ? $decoded : [];
     }
 
-    /**
-     * Gelen istekte geçerli bir 'Authorization: Bearer <token>' başlığı olup olmadığını kontrol eder.
-     */
     private function checkApiKey()
     {
         $authHeader = Yii::$app->request->headers->get('Authorization');
 
         if ($authHeader === null || !preg_match('/^Bearer\s+(.+)$/', $authHeader, $matches)) {
-            Yii::$app->response->statusCode = 401; // Unauthorized
+            Yii::$app->response->statusCode = 401;
             echo json_encode(['success' => false, 'error' => 'Yetkisiz erişim: API anahtarı eksik veya geçersiz.']);
             Yii::$app->end();
         }
     }
 
-    /**
-     * GÜNCELLEME: Bu yardımcı fonksiyon, veritabanından gelen ve potansiyel olarak
-     * string olan sayısal değerleri doğru tiplere (int, float) dönüştürür.
-     * Bu, Flutter tarafındaki 'type 'String' is not a subtype of type 'int'' hatasını önler.
-     */
     private function castNumericValues(array &$data, array $intKeys, array $floatKeys = [])
     {
         foreach ($data as &$row) {
@@ -71,11 +56,6 @@ class TerminalController extends Controller
             }
         }
     }
-
-
-    // -----------------------------------------------------------------------------
-    // ENDPOINT'LER
-    // -----------------------------------------------------------------------------
 
     public function actionLogin()
     {
@@ -147,10 +127,6 @@ class TerminalController extends Controller
         return ['success' => true, 'results' => $results];
     }
 
-    /**
-     * Sunucudan cihaza veri indirmek için.
-     * GÜNCELLEME: Veri tiplerinin doğru gönderilmesi sağlandı.
-     */
     public function actionSyncDownload()
     {
         $payload = $this->getJsonBody();
@@ -166,14 +142,13 @@ class TerminalController extends Controller
         try {
             $data = [];
 
-            // Düzeltme: urunler tablosu 'id' ile başlıyor, 'UrunId' değil.
-            // Ayrıca Dart tarafının beklediği 'id' anahtarına çeviriyoruz.
             $urunlerData = (new Query())->select(['id' => 'UrunId', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
-            $data['locations'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
-            $this->castNumericValues($data['locations'], ['id', 'warehouse_id', 'is_active']);
+            // GÜNCELLEME: JSON anahtarı, lokal veritabanı ile tutarlı olması için 'warehouses_shelfs' yapıldı.
+            $data['warehouses_shelfs'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
+            $this->castNumericValues($data['warehouses_shelfs'], ['id', 'warehouse_id', 'is_active']);
 
             $data['employees'] = (new Query())->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
@@ -186,31 +161,8 @@ class TerminalController extends Controller
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id', 'status'], ['miktar']);
-
-                $receipts = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
-                $this->castNumericValues($receipts, ['id', 'siparis_id', 'employee_id']);
-                $data['goods_receipts'] = $receipts;
-
-                $receiptIds = array_column($receipts, 'id');
-                $data['goods_receipt_items'] = !empty($receiptIds) ? (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all() : [];
-                $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
-
             } else {
                 $data['satin_alma_siparis_fis_satir'] = [];
-                $data['goods_receipts'] = [];
-                $data['goods_receipt_items'] = [];
-            }
-
-            $locationIds = array_column($data['locations'], 'id');
-            if (!empty($locationIds)) {
-                $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
-                $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
-
-                $data['inventory_transfers'] = (new Query())->from('inventory_transfers')->where(['or', ['in', 'from_location_id', $locationIds], ['in', 'to_location_id', $locationIds]])->all();
-                $this->castNumericValues($data['inventory_transfers'], ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
-            } else {
-                $data['inventory_stock'] = [];
-                $data['inventory_transfers'] = [];
             }
 
             return [
@@ -229,11 +181,6 @@ class TerminalController extends Controller
     {
         return ['status' => 'ok', 'message' => 'API Sunucusu çalışıyor.', 'timestamp' => date('c')];
     }
-
-
-    // -----------------------------------------------------------------------------
-    // İŞLEM YARDIMCI FONKSİYONLARI (HELPERS)
-    // -----------------------------------------------------------------------------
 
     private function _createInventoryTransfer($data) {
         $header = $data['header'] ?? [];

@@ -22,7 +22,15 @@
     "test_data_populated": "Test verisi yüklendi",
     "goods_receiving": "Mal Kabul",
     "pallet_transfer": "Palet/Kutu Transfer",
-    "pending_operations": "Bekleyen İşlemler"
+    "pending_operations": "Bekleyen İşlemler",
+    "welcome": "Hoş Geldiniz",
+    "logout": {
+      "title": "Çıkış Yap",
+      "confirmation": "Çıkış yapmak istediğinizden emin misiniz?",
+      "pending_title": "Bekleyen İşlem Bulundu",
+      "pending_message": "Sunucuya gönderilmemiş işlemleriniz var. Lütfen çıkış yapmadan önce senkronize edin.",
+      "button": "Çıkış Yap"
+    }
   },
   "receive_mode": {
     "palet": "Palet",
@@ -116,7 +124,8 @@
     "dialog_button_confirm_and_save": "Onayla ve Kaydet",
     "dialog_search_hint": "Ara...",
     "dialog_search_no_results": "Sonuç bulunamadı.",
-    "label_order_status": "Sipariş Durumu"
+    "label_order_status": "Sipariş Durumu",
+    "order_info_title": "Sipariş Bilgisi"
   },
   "pallet_assignment": {
     "title": "Transfer İşlemi",
@@ -163,10 +172,8 @@
     "contents_title": "İçerik",
     "quantity_to_transfer": "Transfer Miktarı",
     "save_button": "Transferi Onayla",
-    "load_error": "Veri yüklenemedi: {error}",
     "save_success": "Transfer başarıyla kaydedildi!",
     "save_error": "Transfer kaydedilemedi: {error}",
-    "form_invalid": "Lütfen tüm zorunlu alanları doldurun.",
     "scan_success": {
       "source": "Kaynak konum ayarlandı: {location}",
       "target": "Hedef konum ayarlandı: {location}",
@@ -225,7 +232,9 @@
   },
   "dialog": {
     "cancel": "İptal",
-    "confirm": "Onayla"
+    "confirm": "Onayla",
+    "ok": "Tamam",
+    "logout": "Çıkış Yap"
   },
   "inventory_transfer": {
     "title": "Stok Transferi",
@@ -292,5 +301,35 @@
     "error": {
       "required_field": "Bu alan zorunludur."
     }
+  },
+  "transfer_type": {
+    "title": "Transfer Tipini Seçin",
+    "by_order": "Siparişe Göre Transfer",
+    "free_transfer": "Serbest Transfer"
+  },
+  "order_selection": {
+    "title": "Transfer İçin Sipariş Seç",
+    "search_hint": "Sipariş Numarası veya Tedarikçi Ara...",
+    "no_results": "Transfer edilebilir sipariş bulunamadı.",
+    "error_loading": "Siparişler yüklenemedi: {error}",
+    "no_date": "Tarih Yok"
+  },
+  "order_transfer": {
+    "title": "Sipariş Transferi",
+    "order_title": "SİPARİŞ",
+    "no_items_found": "Bu siparişe ait taşınacak ürün bulunamadı.",
+    "item_added_to_cart": "{containerName} -> {targetLocation} hedefine eklendi.",
+    "add_to_cart_button": "Tümünü Taşı",
+    "no_cart_items": "Lütfen önce transfer edilecek ürün ekleyin.",
+    "save_cart_button": "{count} Kalemlik Transferi Kaydet",
+    "save_success": "Tüm transferler başarıyla kaydedildi! Senkronizasyon başlatılıyor...",
+    "save_error": "Hata: {error}",
+    "select_target_location_title": "Hedef Raf Seçin",
+    "select_target_location_hint": "Hedef Raf Seçin",
+    "validator_target_required": "Hedef seçmek zorunludur.",
+    "confirm_dialog_title": "Transferi Onayla",
+    "confirm_dialog_body": "{sourceLocation} lokasyonundan aşağıdaki transferler yapılacak. Onaylıyor musunuz?",
+    "confirm_button": "Onayla ve Kaydet",
+    "scan_target_shelf": "Hedef Raf QR Tara"
   }
 }

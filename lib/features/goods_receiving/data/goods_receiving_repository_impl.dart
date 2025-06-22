@@ -1,4 +1,3 @@
-// lib/features/goods_receiving/data/goods_receiving_repository_impl.dart
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
@@ -26,31 +25,24 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     required this.networkInfo,
   });
 
-  // =================== ANA DEĞİŞİKLİK BURADA ===================
-  // Bu fonksiyon artık yeni ve temiz veri modelimiz olan GoodsReceiptPayload'u kullanıyor.
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
-    // Gelen payload'ı direkt olarak lokal kaydetme fonksiyonuna iletiyoruz.
     await _saveGoodsReceiptLocally(payload);
   }
 
-  /// Gelen mal kabul verisini önce lokal veritabanına, sonra da
-  /// senkronize edilmek üzere 'pending_operation' tablosuna kaydeder.
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
     final db = await dbHelper.database;
     try {
       await db.transaction((txn) async {
-        // 1. Mal kabul başlık bilgisi (employee_id dahil) veritabanına ekleniyor.
         final receiptHeaderData = {
           'siparis_id': payload.header.siparisId,
           'invoice_number': payload.header.invoiceNumber,
-          'employee_id': payload.header.employeeId, // <-- ARTIK DOĞRU DEĞER GELİYOR
+          'employee_id': payload.header.employeeId,
           'receipt_date': payload.header.receiptDate.toIso8601String(),
           'created_at': DateTime.now().toIso8601String(),
         };
         final receiptId = await txn.insert('goods_receipts', receiptHeaderData);
 
-        // 2. Mal kabul kalemleri (ürünler) veritabanına ekleniyor ve stok güncelleniyor.
         for (final item in payload.items) {
           await txn.insert('goods_receipt_items', {
             'receipt_id': receiptId, 'urun_id': item.urunId,
@@ -59,11 +51,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode);
         }
 
-        // 3. Tüm bu işlem (başlık ve kalemler), sunucuya gönderilmek üzere
-        // "bekleyen işlem" olarak sıraya alınıyor.
         final pendingOp = PendingOperation(
           type: PendingOperationType.goodsReceipt,
-          data: jsonEncode(payload.toApiJson()), // payload'un tamamı JSON'a çevrilip saklanıyor
+          data: jsonEncode(payload.toApiJson()),
           createdAt: DateTime.now(),
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
@@ -74,7 +64,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
     }
   }
-  // =============================================================
 
   Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode) async {
     final existingStock = await txn.query('inventory_stock',
@@ -101,7 +90,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status IN (?, ?)',
-      whereArgs: [1, 2], // 1: Onaylandı, 2: Kısmi Kabul
+      whereArgs: [1, 2],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -133,7 +122,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('locations', where: 'is_active = 1');
+    // GÜNCELLEME: Çökmeyi önlemek için tablo adı 'warehouses_shelfs' olarak düzeltildi.
+    final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
     return maps.map((map) => LocationInfo.fromMap(map)).toList();
   }
 }

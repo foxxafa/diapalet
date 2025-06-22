@@ -104,7 +104,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar('Error: Could not load initial data. $e');
+        _showErrorSnackBar('goods_receiving_screen.error_loading_initial'.tr(namedArgs: {'error': e.toString()}));
         setState(() => _isLoading = false);
       }
     }
@@ -127,7 +127,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (!mounted) return;
       setState(() => _orderItems = items);
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Error: Could not load order details. $e');
+      if (mounted) _showErrorSnackBar('goods_receiving_screen.error_loading_details'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) {
         setState(() => _isOrderDetailsLoading = false);
@@ -164,7 +164,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     } else {
       _productController.clear();
       _selectedProduct = null;
-      _showErrorSnackBar('Product not found: $scannedData');
+      _showErrorSnackBar('goods_receiving_screen.error_product_not_found'.tr(namedArgs: {'scannedData': scannedData}));
     }
   }
 
@@ -183,18 +183,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final currentProduct = _selectedProduct;
 
     if (currentProduct == null || quantity == null || quantity <= 0) {
-      _showErrorSnackBar('Please select a product and enter quantity.');
+      _showErrorSnackBar('goods_receiving_screen.error_select_product_and_quantity'.tr());
       return;
     }
 
     if (isOrderBased) {
       if (_isOrderDetailsLoading) {
-        _showErrorSnackBar('Order details are still loading, please wait.');
+        _showErrorSnackBar('goods_receiving_screen.error_loading_order_details'.tr());
         return;
       }
       final orderItem = _orderItems.firstWhereOrNull((item) => item.product?.id == currentProduct.id);
       if (orderItem == null) {
-        _showErrorSnackBar('This product is not in the order.');
+        _showErrorSnackBar('goods_receiving_screen.error_product_not_in_order'.tr());
         return;
       }
       final alreadyAddedInUI = _addedItems
@@ -205,13 +205,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
       if (quantity > remainingQuantity + 0.001) {
-        _showErrorSnackBar('Quantity exceeds order. Remaining: ${remainingQuantity.toStringAsFixed(2)} ${orderItem.unit ?? ''}');
+        _showErrorSnackBar('goods_receiving_screen.error_quantity_exceeds_order'.tr(namedArgs: {
+          'remainingQuantity': remainingQuantity.toStringAsFixed(2),
+          'unit': orderItem.unit ?? ''
+        }));
         return;
       }
     }
     final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
     if (isKutuModeLocked) {
-      _showErrorSnackBar('You can only add one type of product in Box mode.');
+      _showErrorSnackBar('goods_receiving_screen.error_box_mode_single_product'.tr());
       return;
     }
     setState(() {
@@ -224,7 +227,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     });
 
     FocusScope.of(context).unfocus();
-    _showSuccessSnackBar('Product added: ${currentProduct.name}');
+    _showSuccessSnackBar('goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': currentProduct.name}));
     _productFocusNode.requestFocus();
   }
 
@@ -232,12 +235,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (!mounted) return;
     final removedItemName = _addedItems[index].product.name;
     setState(() => _addedItems.removeAt(index));
-    _showSuccessSnackBar('Product removed: $removedItemName', isError: true);
+    _showSuccessSnackBar('goods_receiving_screen.success_item_removed'.tr(namedArgs: {'removedItemName': removedItemName}), isError: true);
   }
 
   Future<void> _saveAndConfirm() async {
     if (_addedItems.isEmpty) {
-      _showErrorSnackBar('You must add at least one item to save.');
+      _showErrorSnackBar('goods_receiving_screen.error_at_least_one_item'.tr());
       return;
     }
     final bool? confirmed = await _showConfirmationListDialog();
@@ -269,15 +272,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       await _repository.saveGoodsReceipt(payload);
 
       if (mounted) {
-        _showSuccessSnackBar('Operation saved. Syncing with server...');
-
-        // Eşitlemeyi arayüzü bloklamadan arka planda tetikle.
+        _showSuccessSnackBar('goods_receiving_screen.success_receipt_saved'.tr());
         context.read<SyncService>().performFullSync(force: true);
-
         _handleSuccessfulSave(_selectedOrder?.id);
       }
     } catch (e) {
-      if (mounted) _showErrorSnackBar('Save error: $e');
+      if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -305,16 +305,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  void _resetScreenForNewFreeReceipt() {
-    setState(() {
-      _addedItems.clear();
-      _selectedOrder = null;
-      _orderItems.clear();
-      _clearEntryFields(clearPallet: true);
-      _palletIdFocusNode.requestFocus();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -327,7 +317,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     return Scaffold(
       appBar: SharedAppBar(
-        title: 'Goods Receiving',
+        title: 'goods_receiving_screen.title'.tr(),
         showBackButton: true,
       ),
       resizeToAvoidBottomInset: true,
@@ -371,17 +361,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildOrderInfoCard() {
     final theme = Theme.of(context);
     if (_selectedOrder == null) return const SizedBox.shrink();
+    // GÜNCELLEME: Kartın arka plan rengi temanın birincil renginin bir tonu yapıldı.
+    // Bu, istenmeyen "pembe" rengi kaldırır ve daha tutarlı bir görünüm sağlar.
     return Card(
-      color: theme.colorScheme.tertiaryContainer,
+      color: theme.colorScheme.primaryContainer.withOpacity(0.4),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.primaryContainer),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Order Information',
+              'goods_receiving_screen.order_info_title'.tr(),
               style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onTertiaryContainer
+                  color: theme.colorScheme.onPrimaryContainer
               ),
             ),
             const SizedBox(height: 4),
@@ -389,7 +386,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               _selectedOrder!.poId ?? 'N/A',
               style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onTertiaryContainer
+                  color: theme.colorScheme.onPrimaryContainer
               ),
             ),
             if(_selectedOrder!.supplierName != null) ...[
@@ -397,7 +394,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               Text(
                 _selectedOrder!.supplierName!,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onTertiaryContainer
+                    color: theme.colorScheme.onPrimaryContainer
                 ),
               ),
             ]
@@ -410,15 +407,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<ReceivingMode>(
-        segments: const [
+        segments: [
           ButtonSegment(
               value: ReceivingMode.palet,
-              label: Text('With Pallet'),
-              icon: Icon(Icons.pallet)),
+              label: Text('goods_receiving_screen.mode_pallet'.tr()),
+              icon: const Icon(Icons.pallet)),
           ButtonSegment(
               value: ReceivingMode.kutu,
-              label: Text('Box/Unit'),
-              icon: Icon(Icons.inventory_2_outlined)),
+              label: Text('goods_receiving_screen.mode_box'.tr()),
+              icon: const Icon(Icons.inventory_2_outlined)),
         ],
         selected: {_receivingMode},
         onSelectionChanged: (newSelection) {
@@ -452,14 +449,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             controller: _palletIdController,
             focusNode: _palletIdFocusNode,
             enabled: isEnabled,
-            decoration: _inputDecoration('Pallet Barcode', enabled: isEnabled),
+            decoration: _inputDecoration('goods_receiving_screen.label_pallet_barcode'.tr(), enabled: isEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _productFocusNode.requestFocus();
             },
             validator: (value) {
               if (!isEnabled) return null;
               if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
-                return 'Pallet barcode is required.';
+                return 'goods_receiving_screen.validator_pallet_barcode'.tr();
               }
               return null;
             },
@@ -493,8 +490,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             readOnly: true,
             decoration: _inputDecoration(
               isOrderBased
-                  ? 'Select Product from Order'
-                  : 'Select Free Product',
+                  ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                  : 'goods_receiving_screen.label_select_product'.tr(),
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: fieldEnabled,
             ),
@@ -503,7 +500,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
                   : _availableProducts;
               final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
-                title: 'Select Product',
+                title: 'goods_receiving_screen.label_select_product'.tr(),
                 items: productList,
                 itemToString: (product) => "${product.name} (${product.stockCode})",
                 filterCondition: (product, query) {
@@ -519,7 +516,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              return (value == null || value.isEmpty) ? 'Please select a product.' : null;
+              return (value == null || value.isEmpty) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
             },
           ),
         ),
@@ -569,15 +566,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             enabled: fieldEnabled,
-            decoration: _inputDecoration('Quantity', enabled: fieldEnabled),
+            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: fieldEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _addItemToList();
             },
             validator: (value) {
               if (!fieldEnabled) return null;
-              if (value == null || value.isEmpty) return 'Enter';
+              if (value == null || value.isEmpty) return 'goods_receiving_screen.validator_enter_quantity'.tr();
               final number = double.tryParse(value);
-              if (number == null || number <= 0) return 'Enter valid number';
+              if (number == null || number <= 0) return 'goods_receiving_screen.validator_enter_valid_quantity'.tr();
               return null;
             },
           ),
@@ -586,7 +583,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Expanded(
           flex: 1,
           child: InputDecorator(
-            decoration: _inputDecoration('Order Status', enabled: false),
+            decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
             child: Center(
               child: (!isOrderBased || _selectedProduct == null)
                   ? Text("- / -", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor))
@@ -625,7 +622,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           Padding(
             padding: const EdgeInsets.all(_smallGap),
             child: Text(
-              'Added Items (${_addedItems.length})',
+              'goods_receiving_screen.header_added_items'.tr(namedArgs: {'count': _addedItems.length.toString()}),
               style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
@@ -635,7 +632,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Center(
                 child: Text(
-                  'No items added yet.',
+                  'goods_receiving.no_items'.tr(),
                   style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
                 ),
               ),
@@ -646,13 +643,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               title: Text(lastItem.product.name, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
               subtitle: Text(
                 lastItem.palletBarcode != null
-                    ? 'Pallet: ${lastItem.palletBarcode!}'
-                    : 'Receipt without Pallet',
+                    ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': lastItem.palletBarcode!})
+                    : 'goods_receiving_screen.mode_box'.tr(),
                 style: textTheme.bodySmall,
               ),
 
               trailing: Text(
-                '${lastItem.quantity}',
+                'goods_receiving_screen.label_quantity_display'.tr(namedArgs: {'quantity': lastItem.quantity.toStringAsFixed(0)}),
                 style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary),
               ),
             ),
@@ -670,8 +667,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         icon: _isSaving
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : const Icon(Icons.check_circle_outline),
-        label: const FittedBox(
-          child: Text('Save and Confirm'),
+        label: FittedBox(
+          child: Text('goods_receiving_screen.button_save_and_confirm'.tr()),
         ),
         style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -848,7 +845,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             TextField(
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Search...',
+                hintText: 'goods_receiving_screen.dialog_search_hint'.tr(),
                 prefixIcon: const Icon(Icons.search, size: 20),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -859,7 +856,7 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
             const SizedBox(height: 16),
             Expanded(
               child: _filteredItems.isEmpty
-                  ? const Center(child: Text('No results found.'))
+                  ? Center(child: Text('goods_receiving_screen.dialog_search_no_results'.tr()))
                   : ListView.separated(
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemCount: _filteredItems.length,
@@ -884,7 +881,6 @@ class _FullscreenConfirmationPage extends StatefulWidget {
   final ValueChanged<ReceiptItemDraft> onItemRemoved;
 
   const _FullscreenConfirmationPage({
-    super.key,
     required this.items,
     required this.onItemRemoved,
   });
@@ -915,7 +911,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
     final appBarTheme = theme.appBarTheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Confirm and Save'),
+        title: Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
         backgroundColor: appBarTheme.backgroundColor,
         foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
@@ -924,7 +920,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
         ),
       ),
       body: _currentItems.isEmpty
-          ? const Center(child: Text('No items to confirm.'))
+          ? Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()))
           : ListView.builder(
         padding: const EdgeInsets.all(8),
         itemCount: _currentItems.length,
@@ -935,10 +931,10 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
             child: ListTile(
               title: Text(item.product.name, overflow: TextOverflow.ellipsis),
               subtitle: Text(item.palletBarcode != null
-                  ? 'Pallet: ${item.palletBarcode!}'
-                  : 'Without Pallet'),
+                  ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                  : 'goods_receiving.not_specified'.tr()),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('${item.quantity}',
+                Text(item.quantity.toStringAsFixed(0),
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: Icon(
@@ -960,7 +956,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
           ),
           onPressed: _currentItems.isEmpty ? null : () =>
               Navigator.of(context).pop(true),
-          child: const Text('Confirm and Save'),
+          child: Text('goods_receiving_screen.dialog_button_confirm_and_save'.tr()),
         ),
       ),
     );

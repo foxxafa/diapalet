@@ -38,22 +38,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // GÜNCELLEME: Çıkış yapma girişimini yöneten ana metot.
   Future<void> _handleLogoutAttempt() async {
-    // Önce bekleyen işlem olup olmadığını kontrol et.
     final syncService = context.read<SyncService>();
     final pendingOperations = await syncService.getPendingOperations();
 
     if (pendingOperations.isNotEmpty && mounted) {
-      // Bekleyen işlem VARSA, kullanıcıyı uyar.
       _showPendingItemsWarningDialog();
     } else {
-      // Bekleyen işlem YOKSA, normal çıkış onayı göster.
       _showLogoutConfirmationDialog();
     }
   }
 
-  // Çıkış işlemini gerçekleştiren metot
   Future<void> _performLogout() async {
     final authRepository = context.read<AuthRepository>();
     await authRepository.logout();
@@ -65,7 +60,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // GÜNCELLEME: Bekleyen işlem olduğunda gösterilecek UYARI dialogu.
   void _showPendingItemsWarningDialog() {
     showDialog(
       context: context,
@@ -82,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Bekleyen işlem yoksa gösterilecek ONAY dialogu.
   void _showLogoutConfirmationDialog() {
     showDialog(
       context: context,
@@ -103,8 +96,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Text('dialog.logout'.tr()),
               onPressed: () {
-                Navigator.of(context).pop(); // Dialog'u kapat
-                _performLogout(); // Çıkış işlemini başlat
+                Navigator.of(context).pop();
+                _performLogout();
               },
             ),
           ],
@@ -123,7 +116,6 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'home.logout.title'.tr(),
-            // GÜNCELLEME: Artık direkt onay değil, kontrol mekanizması çağrılıyor.
             onPressed: _handleLogoutAttempt,
           ),
         ],
@@ -201,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
               radius: 24,
               backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
               child: Icon(
-                Icons.person,
+                Icons.person_outline,
                 size: 28,
                 color: theme.colorScheme.primary,
               ),
@@ -247,27 +239,22 @@ class _HomeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SizedBox(
-      height: 100,
-      child: ElevatedButton.icon(
-        icon: Icon(icon, size: 32),
-        label: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
+    return ElevatedButton.icon(
+      icon: Icon(icon, size: 32),
+      label: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w600,
         ),
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: theme.colorScheme.surface,
-          foregroundColor: theme.colorScheme.onSurface,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: theme.dividerColor),
-          ),
-          elevation: 1,
-        ),
+      ),
+      onPressed: onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: theme.colorScheme.primaryContainer,
+        foregroundColor: theme.colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 3,
       ),
     );
   }

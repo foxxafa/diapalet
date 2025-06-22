@@ -1,4 +1,3 @@
-// lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
@@ -34,10 +33,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      // GÜNCELLEME: Sadece 'Kısmi Kabul' (2) ve 'Tamamlandı' (3) değil,
-      // aynı zamanda 'Onaylandı' (1) durumundaki siparişler de mal kabule uygun olabilir.
-      // Sizin mantığınıza göre 'status IN (2, 3)' doğruysa bu satırı değiştirmeyin.
-      // Genellikle mal kabulü yapılmış siparişler için transfer yapılır, bu yüzden 2 ve 3 mantıklıdır.
       where: 'status IN (?, ?)',
       whereArgs: [2, 3],
       orderBy: 'tarih DESC',
@@ -45,43 +40,25 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
-  // GÜNCELLEME BAŞLANGIÇ: getTransferableContainers metodu tamamen yenilendi.
   @override
   Future<List<TransferableContainer>> getTransferableContainers(int orderId) async {
     final db = await dbHelper.database;
-
-    // 1. Bu sipariş için mal kabulü yapılmış tüm kalemleri (urun_id, pallet_barcode) bul.
-    // Bu, hangi stok kalemlerinin bu siparişe ait olduğunu belirlemek için anahtarımızdır.
     final receiptItemsForOrder = await db.rawQuery('''
-      SELECT DISTINCT
-        gri.urun_id,
-        gri.pallet_barcode
+      SELECT DISTINCT gri.urun_id, gri.pallet_barcode
       FROM goods_receipt_items gri
       JOIN goods_receipts gr ON gr.id = gri.receipt_id
       WHERE gr.siparis_id = ?
     ''', [orderId]);
 
-    if (receiptItemsForOrder.isEmpty) {
-      return []; // Bu siparişe ait mal kabul kaydı yoksa, boş liste dön.
-    }
+    if (receiptItemsForOrder.isEmpty) return [];
 
-    // 2. Mal kabul alanında (location_id = 1) bulunan TÜM stokları ve ürün detaylarını çek.
     final stockInReceiptArea = await db.rawQuery('''
-      SELECT
-        s.urun_id,
-        s.quantity,
-        s.pallet_barcode,
-        u.id, 
-        u.UrunAdi,
-        u.StokKodu,
-        u.Barcode1,
-        u.aktif
+      SELECT s.urun_id, s.quantity, s.pallet_barcode, u.id, u.UrunAdi, u.StokKodu, u.Barcode1, u.aktif
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
       WHERE s.location_id = ?
     ''', [malKabulLocationId]);
 
-    // 3. Mal kabul alanındaki stokları, sadece bu siparişe ait olanlarla eşleştirerek filtrele.
     final relevantStock = stockInReceiptArea.where((stock) {
       return receiptItemsForOrder.any((receiptItem) {
         bool isSameProduct = stock['urun_id'] == receiptItem['urun_id'];
@@ -90,34 +67,27 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       });
     }).toList();
 
-    if (relevantStock.isEmpty) {
-      return []; // Siparişe ait ürünler mal kabul alanından taşınmış.
-    }
+    if (relevantStock.isEmpty) return [];
 
-    // 4. Filtrelenmiş ve doğrulanmış stokları, UI'da gösterilecek container'lara grupla.
     final containers = <String, List<Map<String, dynamic>>>{};
     for (var stockItem in relevantStock) {
       final pallet = stockItem['pallet_barcode'] as String?;
-      final productId = stockItem['urun_id'] as int;
-      final key = pallet ?? 'PALETSIZ_$productId'; // Gruplama anahtarı
+      final key = pallet ?? 'PALETSIZ_${stockItem['urun_id']}';
       containers.putIfAbsent(key, () => []).add(stockItem);
     }
 
     final result = <TransferableContainer>[];
     for (var entry in containers.entries) {
-      final containerId = entry.key;
-      final itemsInContainer = entry.value;
-      final firstItem = itemsInContainer.first;
-
+      final firstItem = entry.value.first;
       final displayName = (firstItem['pallet_barcode'] as String?) != null
           ? "Palet: ${firstItem['pallet_barcode']}"
           : "Paletsiz: ${firstItem['UrunAdi']}";
 
       result.add(
         TransferableContainer(
-          id: containerId,
+          id: entry.key,
           displayName: displayName,
-          items: itemsInContainer.map((item) {
+          items: entry.value.map((item) {
             return TransferableItem(
               product: ProductInfo.fromDbMap(item),
               quantity: (item['quantity'] as num).toDouble(),
@@ -129,7 +99,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
     return result;
   }
-  // GÜNCELLEME SONU
 
   @override
   Future<void> recordTransferOperation(
@@ -139,7 +108,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int targetLocationId,
       ) async {
     final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
-    await _saveForSync(apiPayload, header, items, sourceLocationId, targetLocationId);
+    await _saveForSync(apiPayload, items, sourceLocationId, targetLocationId, header.employeeId);
   }
 
   Map<String, dynamic> _buildApiPayload(
@@ -156,21 +125,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   Future<void> _saveForSync(
       Map<String, dynamic> apiPayload,
-      TransferOperationHeader header,
       List<TransferItemDetail> items,
       int sourceLocationId,
-      int targetLocationId) async {
+      int targetLocationId,
+      int employeeId
+      ) async {
     final db = await dbHelper.database;
     try {
       await db.transaction((txn) async {
         for (final item in items) {
-          // 'item.palletId' serbest transferden, 'sourcePalletBarcode' sipariş transferinden gelir.
-          // İkisini de kontrol ederek kaynak paleti bulalım.
           final sourcePallet = item.palletId ?? item.sourcePalletBarcode;
-
-          // Stok güncelleme ve transfer kaydı
           await _updateStock(txn, item.productId, sourceLocationId, -item.quantity, sourcePallet);
-          await _updateStock(txn, item.productId, targetLocationId, item.quantity, null); // Hedef her zaman paletsiz
+          await _updateStock(txn, item.productId, targetLocationId, item.quantity, null);
 
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
@@ -178,9 +144,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
             'from_pallet_barcode': sourcePallet,
-            'pallet_barcode': null, // Hedef palet şimdilik null, bu mantık ileride geliştirilebilir
-            'employee_id': header.employeeId,
-            'transfer_date': header.transferDate.toIso8601String(),
+            'pallet_barcode': null,
+            'employee_id': employeeId,
+            'transfer_date': DateTime.now().toIso8601String(),
             'created_at': DateTime.now().toIso8601String(),
           });
         }
@@ -233,7 +199,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<Map<String, int>> getSourceLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('locations', where: 'is_active = 1');
+    final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
     return {for (var map in maps) map['name'] as String: map['id'] as int};
   }
 

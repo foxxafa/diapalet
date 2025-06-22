@@ -22,7 +22,15 @@
     "test_data_populated": "Test data populated",
     "goods_receiving": "Goods Receiving",
     "pallet_transfer": "Pallet/Box Transfer",
-    "pending_operations": "Pending Operations"
+    "pending_operations": "Pending Operations",
+    "welcome": "Welcome",
+    "logout": {
+      "title": "Logout",
+      "confirmation": "Are you sure you want to log out?",
+      "pending_title": "Pending Operations Found",
+      "pending_message": "There are unsynced operations. Please sync them before logging out.",
+      "button": "Logout"
+    }
   },
   "receive_mode": {
     "palet": "Pallet",
@@ -116,7 +124,8 @@
     "dialog_button_confirm_and_save": "Confirm and Save",
     "dialog_search_hint": "Search...",
     "dialog_search_no_results": "No results found.",
-    "label_order_status": "Order Status"
+    "label_order_status": "Order Status",
+    "order_info_title": "Order Information"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",
@@ -163,7 +172,6 @@
     "contents_title": "Contents",
     "quantity_to_transfer": "Quantity to Transfer",
     "save_button": "Confirm Transfer",
-    "load_error": "Failed to load data: {error}",
     "save_success": "Transfer recorded successfully!",
     "save_error": "Failed to save transfer: {error}",
     "form_invalid": "Please fill out all required fields.",
@@ -225,7 +233,9 @@
   },
   "dialog": {
     "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "ok": "OK",
+    "logout": "Logout"
   },
   "inventory_transfer": {
     "title": "Stock Transfer",
@@ -292,5 +302,35 @@
     "error": {
       "required_field": "This field is required."
     }
+  },
+  "transfer_type": {
+    "title": "Select Transfer Type",
+    "by_order": "Transfer by Order",
+    "free_transfer": "Free Transfer"
+  },
+  "order_selection": {
+    "title": "Select Order for Transfer",
+    "search_hint": "Search PO Number or Supplier...",
+    "no_results": "No transferable orders found.",
+    "error_loading": "Failed to load orders: {error}",
+    "no_date": "No Date"
+  },
+  "order_transfer": {
+    "title": "Order Transfer",
+    "order_title": "ORDER",
+    "no_items_found": "No transferable items found for this order.",
+    "item_added_to_cart": "{containerName} added to cart for target: {targetLocation}.",
+    "add_to_cart_button": "Transfer All",
+    "no_cart_items": "Please add items to transfer first.",
+    "save_cart_button": "Save {count} Item Transfer(s)",
+    "save_success": "All transfers saved successfully! Sync will start.",
+    "save_error": "Error: {error}",
+    "select_target_location_title": "Select Target Location",
+    "select_target_location_hint": "Select Target",
+    "validator_target_required": "Target location is required.",
+    "confirm_dialog_title": "Confirm Transfer",
+    "confirm_dialog_body": "The following transfers from {sourceLocation} will be processed. Do you confirm?",
+    "confirm_button": "Confirm and Save",
+    "scan_target_shelf": "Scan Target Shelf QR"
   }
 }
