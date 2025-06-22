@@ -27,6 +27,29 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
+  /// GÜNCELLEME: Kullanıcı oturumunu sonlandıran ve yerel depolamayı temizleyen fonksiyon.
+  @override
+  Future<void> logout() async {
+    debugPrint("Çıkış yapılıyor ve oturum verileri temizleniyor...");
+
+    // Dio istemcisindeki Authorization başlığını kaldır.
+    dio.options.headers.remove('Authorization');
+
+    // SharedPreferences'teki tüm kullanıcı verilerini temizle.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_id');
+    await prefs.remove('warehouse_id');
+    await prefs.remove('apikey');
+    await prefs.remove('first_name');
+    await prefs.remove('last_name');
+
+    // Son senkronizasyon zamanını da temizleyerek bir sonraki girişte
+    // tam senkronizasyon yapılmasını sağla.
+    await prefs.remove('last_sync_timestamp');
+
+    debugPrint("Oturum başarıyla sonlandırıldı.");
+  }
+
   Future<bool> _loginOnline(String username, String password) async {
     try {
       debugPrint("Online login denemesi yapılıyor: $username");

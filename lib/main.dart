@@ -11,14 +11,15 @@ import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart'
 import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // Loglama için kDebugMode
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Dio istemcisini oluşturan ve loglama interceptor'ı ekleyen fonksiyon.
 Dio createDioClient() {
   final dio = Dio(
     BaseOptions(
@@ -27,25 +28,13 @@ Dio createDioClient() {
       headers: { 'Accept': 'application/json', },
     ),
   );
-
-  // Sadece debug modunda çalışacak olan LogInterceptor'ı ekliyoruz.
   if (kDebugMode) {
-    dio.interceptors.add(
-      LogInterceptor(
-        request: true,
-        requestHeader: true,
-        requestBody: true,
-        responseHeader: true,
-        responseBody: true,
-        error: true,
-        logPrint: (object) {
-          // Logları debugPrint ile konsola daha okunaklı yazdır.
-          debugPrint(object.toString());
-        },
-      ),
-    );
+    dio.interceptors.add(LogInterceptor(
+      requestBody: true,
+      responseBody: true,
+      logPrint: (object) => debugPrint(object.toString()),
+    ));
   }
-
   return dio;
 }
 
@@ -57,27 +46,37 @@ void main() async {
   final dbHelper = DatabaseHelper.instance;
   await dbHelper.database;
 
-  // Dio istemcisi artık loglama yapabilen fonksiyonumuzdan oluşturuluyor.
   final dio = createDioClient();
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
 
+  // GÜNCELLEME: Oturum kontrolü
+  final prefs = await SharedPreferences.getInstance();
+  final apiKey = prefs.getString('apikey');
+  Widget initialScreen = const LoginScreen();
+
+  if (apiKey != null && apiKey.isNotEmpty) {
+    debugPrint("Aktif bir oturum bulundu. Ana sayfaya yönlendiriliyor.");
+    // Mevcut API anahtarını uygulama başlarken Dio'ya ekle
+    dio.options.headers['Authorization'] = 'Bearer $apiKey';
+    initialScreen = const HomeScreen();
+  } else {
+    debugPrint("Aktif oturum bulunamadı. Login ekranı gösteriliyor.");
+  }
+  // GÜNCELLEME SONU
+
   runApp(
     EasyLocalization(
-      // GÜNCELLEME: Dil ayarları İngilizce'ye sabitlendi.
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      startLocale: const Locale('en'), // Uygulama İngilizce başlasın.
-      fallbackLocale: const Locale('en'), // Hata durumunda İngilizce'ye dönsün.
+      startLocale: const Locale('en'),
+      fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [
           Provider<DatabaseHelper>.value(value: dbHelper),
-          Provider<Dio>.value(value: dio), // Loglama yeteneği olan Dio nesnesi sağlanıyor.
+          Provider<Dio>.value(value: dio),
           Provider<NetworkInfo>.value(value: networkInfo),
-          // GÜNCELLEME: ThemeProvider artık state yönetimi için gerekli değil ama provider ağacında kalabilir.
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
-
-          // Repository'ler
           ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, AuthRepository>(
             update: (_, db, network, dio, __) => AuthRepositoryImpl(
               dbHelper: db, networkInfo: network, dio: dio,
@@ -93,8 +92,6 @@ void main() async {
               dbHelper: db, networkInfo: network, dio: dio,
             ),
           ),
-
-          // SyncService
           ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
@@ -107,28 +104,30 @@ void main() async {
             },
           ),
         ],
-        // GÜNCELLEME: Consumer<ThemeProvider> kaldırıldı, MyApp doğrudan çağrılıyor.
-        child: const MyApp(),
+        // GÜNCELLEME: MyApp artık başlangıç ekranını dinamik olarak alıyor.
+        child: MyApp(initialScreen: initialScreen),
       ),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  // GÜNCELLEME: Başlangıç ekranını parametre olarak alır.
+  final Widget initialScreen;
+  const MyApp({super.key, required this.initialScreen});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
-      locale: context.locale, // EasyLocalization'dan gelen dili kullanır.
+      locale: context.locale,
       title: 'DiaPalet',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      // GÜNCELLEME: Tema modu açık temaya sabitlendi.
       themeMode: ThemeMode.light,
-      home: const LoginScreen(),
+      // GÜNCELLEME: `home` artık dinamik olarak belirleniyor.
+      home: initialScreen,
       debugShowCheckedModeBanner: false,
     );
   }

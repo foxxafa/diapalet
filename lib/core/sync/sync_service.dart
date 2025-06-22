@@ -24,9 +24,13 @@ class SyncService with ChangeNotifier {
   NetworkInfo networkInfo;
 
   bool _isSyncing = false;
-  final StreamController<SyncStatus> _statusController = StreamController<SyncStatus>.broadcast();
+  final StreamController<SyncStatus> _statusController =
+  StreamController<SyncStatus>.broadcast();
   late final StreamSubscription _connectivitySubscription;
   Timer? _periodicSyncTimer;
+
+  // YENİ: Anlık durumu tutmak için eklendi.
+  SyncStatus _currentStatus = SyncStatus.offline;
 
   static const _lastSyncTimestampKey = 'last_sync_timestamp';
 
@@ -36,6 +40,18 @@ class SyncService with ChangeNotifier {
     required this.networkInfo,
   }) {
     _initialize();
+  }
+
+  // YENİ: Arayüzün başlangıç durumunu alabilmesi için getter eklendi.
+  SyncStatus get currentStatus => _currentStatus;
+
+  // YENİ: Stream'i ve durumu merkezi olarak güncelleyen yardımcı fonksiyon.
+  void _updateStatus(SyncStatus status) {
+    if (_currentStatus == status && status != SyncStatus.syncing) return;
+    _currentStatus = status;
+    if (!_statusController.isClosed) {
+      _statusController.add(status);
+    }
   }
 
   void updateDependencies({
@@ -49,25 +65,36 @@ class SyncService with ChangeNotifier {
     debugPrint("SyncService: Bağımlılıklar güncellendi.");
   }
 
-
   void _initialize() {
-    _connectivitySubscription = networkInfo.onConnectivityChanged.listen((isConnected) {
-      if(isConnected) {
-        _statusController.add(SyncStatus.online);
-        debugPrint("Bağlantı geldi, senkronizasyon tetikleniyor.");
+    // Başlangıçta mevcut bağlantıyı hemen kontrol et
+    networkInfo.isConnected.then((connected) {
+      if (connected) {
+        _updateStatus(SyncStatus.online);
+        debugPrint("Başlangıçta bağlantı var, senkronizasyon tetikleniyor.");
         performFullSync();
       } else {
-        debugPrint("Bağlantı kesildi.");
-        _statusController.add(SyncStatus.offline);
+        _updateStatus(SyncStatus.offline);
       }
     });
-    performFullSync();
+
+    _connectivitySubscription =
+        networkInfo.onConnectivityChanged.listen((isConnected) {
+          if (isConnected) {
+            _updateStatus(SyncStatus.online);
+            debugPrint("Bağlantı geldi, senkronizasyon tetikleniyor.");
+            performFullSync();
+          } else {
+            debugPrint("Bağlantı kesildi.");
+            _updateStatus(SyncStatus.offline);
+          }
+        });
     _setupPeriodicSync();
   }
 
   void _setupPeriodicSync() {
     _periodicSyncTimer?.cancel();
-    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+    // GÜNCELLEME: Periyodik senkronizasyon sıklığı 1 dakikaya düşürüldü.
+    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       debugPrint("Periyodik senkronizasyon tetiklendi...");
       performFullSync();
     });
@@ -83,31 +110,35 @@ class SyncService with ChangeNotifier {
     }
     if (!await networkInfo.isConnected) {
       debugPrint("İnternet bağlantısı yok. Senkronizasyon atlanıyor.");
-      _statusController.add(SyncStatus.offline);
+      _updateStatus(SyncStatus.offline);
       return;
     }
 
     _isSyncing = true;
-    _statusController.add(SyncStatus.syncing);
+    _updateStatus(SyncStatus.syncing);
     notifyListeners();
 
     try {
-      // ÖNCE YÜKLE, SONRA İNDİR
       await _uploadPendingOperations();
       await _downloadDataFromServer();
 
+      // YENİ: Senkronizasyon sonrası eski kayıtları temizle.
+      await dbHelper.cleanupOldSyncedOperations();
+
       final remainingOps = await dbHelper.getPendingOperations();
       if (remainingOps.isEmpty) {
-        _statusController.add(SyncStatus.upToDate);
-        await dbHelper.addSyncLog('sync_status', 'success', 'Senkronizasyon başarılı ve bekleyen işlem yok.');
+        _updateStatus(SyncStatus.upToDate);
+        await dbHelper.addSyncLog('sync_status', 'success',
+            'Senkronizasyon başarılı ve bekleyen işlem yok.');
       } else {
-        _statusController.add(SyncStatus.error);
-        await dbHelper.addSyncLog('sync_status', 'error', 'Senkronizasyon sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
+        _updateStatus(SyncStatus.error);
+        await dbHelper.addSyncLog('sync_status', 'error',
+            'Senkronizasyon sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
       }
     } catch (e, s) {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
-      _statusController.add(SyncStatus.error);
+      _updateStatus(SyncStatus.error);
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -122,11 +153,10 @@ class SyncService with ChangeNotifier {
       final warehouseId = prefs.getInt('warehouse_id');
 
       if (warehouseId == null) {
-        debugPrint("Veri indirmek için 'warehouse_id' gerekli. Giriş yapılmamış olabilir. Atlanıyor.");
+        debugPrint(
+            "Veri indirmek için 'warehouse_id' gerekli. Giriş yapılmamış olabilir. Atlanıyor.");
         return;
       }
-
-      debugPrint("Senkronizasyon isteği şu depo için gönderiliyor: warehouse_id=$warehouseId");
 
       final response = await dio.post(
         ApiConfig.syncDownload,
@@ -138,91 +168,73 @@ class SyncService with ChangeNotifier {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final data = response.data['data'] as Map<String, dynamic>;
-        // Sunucu 'timestamp' anahtarını gönderiyorsa kullan, göndermiyorsa UTC now kullan
-        final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
-
+        final newTimestamp = response.data['timestamp'] as String? ??
+            DateTime.now().toUtc().toIso8601String();
         await dbHelper.applyDownloadedData(data);
         await prefs.setString(_lastSyncTimestampKey, newTimestamp);
-
-        debugPrint("Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
-        await dbHelper.addSyncLog('download', 'success', 'Veriler sunucudan başarıyla indirildi.');
-
+        debugPrint(
+            "Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
       } else {
-        throw Exception("Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
+        throw Exception(
+            "Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
       }
-    } on DioException catch (e) {
-      final errorMessage = "Veri indirme hatası (Dio): ${e.response?.statusCode} - ${e.message}";
-      debugPrint("$errorMessage \nResponse Data: ${e.response?.data}");
-      await dbHelper.addSyncLog('download', 'error', errorMessage);
-      rethrow;
     } catch (e) {
-      final errorMessage = "Veri indirme sırasında beklenmedik hata: $e";
-      debugPrint(errorMessage);
-      await dbHelper.addSyncLog('download', 'error', errorMessage);
+      debugPrint("Veri indirme sırasında hata: $e");
       rethrow;
     }
   }
 
   Future<void> _uploadPendingOperations() async {
-    debugPrint("Bekleyen işlemleri sunucuya yükleme başlıyor...");
     final pendingOps = await dbHelper.getPendingOperations();
+    if (pendingOps.isEmpty) return;
 
-    if (pendingOps.isEmpty) {
-      debugPrint("Yüklenecek bekleyen işlem bulunamadı.");
-      return;
-    }
-
-    debugPrint("${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
+    debugPrint(
+        "${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
 
     for (final op in pendingOps) {
       try {
-        final payload = {
-          'type': op.type.name,
-          'data': jsonDecode(op.data), // data'yı string'den Map'e çevir
-        };
+        final payload = {'type': op.type.name, 'data': jsonDecode(op.data)};
+        final response =
+        await dio.post(ApiConfig.syncUpload, data: {'operations': [payload]});
 
-        // TerminalController.php'deki actionSyncUpload, 'operations' listesi bekliyor.
-        final response = await dio.post(
-          ApiConfig.syncUpload,
-          data: {
-            'operations': [payload]
-          },
-        );
-
-        // PHP tarafı 201 (Created) veya 200 (OK) dönebilir.
         if (response.statusCode == 201 || response.statusCode == 200) {
           final results = response.data['results'] as List<dynamic>?;
-          final firstResult = results?.isNotEmpty == true ? results!.first['result'] : null;
+          final firstResult =
+          results?.isNotEmpty == true ? results!.first['result'] : null;
 
-          if(firstResult != null && firstResult['status'] == 'success') {
-            debugPrint("İşlem #${op.id} (${op.type.name}) başarıyla sunucuya yüklendi.");
-            await dbHelper.deletePendingOperation(op.id!);
-            await dbHelper.addSyncLog('upload', 'success', 'İşlem #${op.id} sunucuya gönderildi.');
+          if (firstResult != null && firstResult['status'] == 'success') {
+            // GÜNCELLEME: İşlemi silmek yerine 'synced' olarak işaretle.
+            await dbHelper.markOperationAsSynced(op.id!);
+            await dbHelper.addSyncLog('upload', 'success',
+                'İşlem #${op.id} (${op.displayTitle}) sunucuya gönderildi.');
           } else {
-            final errorMessage = firstResult?['error'] ?? 'Bilinmeyen sunucu hatası.';
-            throw Exception(errorMessage);
+            throw Exception(
+                firstResult?['error'] ?? 'Bilinmeyen sunucu hatası.');
           }
         } else {
-          throw Exception("Sunucu işlemi işlemeyi reddetti. Status: ${response.statusCode}, Body: ${response.data}");
+          throw Exception(
+              "Sunucu işlemi reddetti. Status: ${response.statusCode}");
         }
-      } on DioException catch (e) {
-        final errorMessage = "İşlem #${op.id} yüklenirken ağ hatası: ${e.response?.statusCode} - ${e.message}";
-        debugPrint(errorMessage);
-        await dbHelper.addSyncLog('upload', 'error', errorMessage);
-        // Hata durumunda döngüden çıkıp bir sonraki senkronizasyonu beklemek daha güvenli olabilir.
-        break;
       } catch (e) {
-        final errorMessage = "İşlem #${op.id} yüklenirken beklenmedik hata: $e";
+        final errorMessage = "İşlem #${op.id} yüklenirken hata oluştu: $e";
         debugPrint(errorMessage);
         await dbHelper.addSyncLog('upload', 'error', errorMessage);
-        // Hata durumunda döngüden çık
+        // Hata durumunda döngüyü kırarak bir sonraki senkronizasyon döngüsünü bekle.
         break;
       }
     }
   }
 
-  Future<List<PendingOperation>> getPendingOperations() => dbHelper.getPendingOperations();
-  Future<List<SyncLog>> getSyncHistory() => dbHelper.getSyncLogs();
+  // Bekleyen işlemleri getirir.
+  Future<List<PendingOperation>> getPendingOperations() =>
+      dbHelper.getPendingOperations();
+
+  // YENİ/GÜNCELLENMİŞ: Kullanıcı arayüzünün senkronize olmuş geçmişi çekmesi için.
+  Future<List<PendingOperation>> getSyncedOperationHistory() =>
+      dbHelper.getSyncedOperations();
+
+  // Teknik logları getirir.
+  Future<List<SyncLog>> getSyncLogs() => dbHelper.getSyncLogs();
 
   @override
   void dispose() {

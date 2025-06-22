@@ -1,11 +1,9 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'package:diapalet/core/sync/pending_operation.dart';
-import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
@@ -22,7 +20,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   late final TabController _tabController;
 
   List<PendingOperation> _pendingOperations = [];
-  List<SyncLog> _syncLogs = [];
+  List<PendingOperation> _syncedOperations = [];
   bool _isLoading = true;
 
   @override
@@ -30,6 +28,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     super.initState();
     _syncService = context.read<SyncService>();
     _tabController = TabController(length: 2, vsync: this);
+    // Add listener, but the initial state will be handled by StreamBuilder's initialData
     _syncService.addListener(_onSyncServiceUpdate);
     _loadData();
   }
@@ -42,7 +41,6 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   }
 
   void _onSyncServiceUpdate() {
-    // SyncService'te bir değişiklik olduğunda verileri yeniden yükle.
     if (mounted) _loadData();
   }
 
@@ -51,11 +49,11 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     setState(() => _isLoading = true);
     try {
       final newPending = await _syncService.getPendingOperations();
-      final newHistory = await _syncService.getSyncHistory();
+      final newHistory = await _syncService.getSyncedOperationHistory();
       if (mounted) {
         setState(() {
           _pendingOperations = newPending;
-          _syncLogs = newHistory;
+          _syncedOperations = newHistory;
         });
       }
     } catch (e) {
@@ -66,8 +64,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   }
 
   Future<void> _handleRefresh() async {
-    // Hem force sync yap hem de verileri yeniden yükle.
     await _syncService.performFullSync(force: true);
+    // _loadData will be called automatically by the listener, but we can call it here for faster UI feedback
     await _loadData();
   }
 
@@ -87,9 +85,11 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       body: Column(
         children: [
           StreamBuilder<SyncStatus>(
+            // DÜZELTME: Stream'e başlangıç değeri olarak servisteki anlık durum veriliyor.
+            initialData: _syncService.currentStatus,
             stream: _syncService.syncStatusStream,
             builder: (context, statusSnapshot) {
-              final status = statusSnapshot.data ?? SyncStatus.offline;
+              final status = statusSnapshot.data ?? _syncService.currentStatus;
               return _buildSyncStatusBanner(status);
             },
           ),
@@ -97,15 +97,21 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
             child: TabBarView(
               controller: _tabController,
               children: [
-                _PendingList(
+                _OperationList(
                   operations: _pendingOperations,
                   isLoading: _isLoading,
                   onRefresh: _handleRefresh,
+                  isHistory: false,
+                  emptyIcon: Icons.cloud_done_outlined,
+                  emptyMessage: 'pending_operations.no_pending'.tr(),
                 ),
-                _HistoryList(
-                  logs: _syncLogs,
+                _OperationList(
+                  operations: _syncedOperations,
                   isLoading: _isLoading,
                   onRefresh: _handleRefresh,
+                  isHistory: true,
+                  emptyIcon: Icons.history_rounded,
+                  emptyMessage: 'pending_operations.no_history'.tr(),
                 ),
               ],
             ),
@@ -113,6 +119,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         ],
       ),
       floatingActionButton: StreamBuilder<SyncStatus>(
+        // DÜZELTME: Bu StreamBuilder'a da başlangıç değeri ekleniyor.
+        initialData: _syncService.currentStatus,
         stream: _syncService.syncStatusStream,
         builder: (context, statusSnapshot) {
           final isSyncing = statusSnapshot.data == SyncStatus.syncing;
@@ -183,7 +191,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
             SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: color))
+                child:
+                CircularProgressIndicator(strokeWidth: 2.5, color: color))
           else
             Icon(icon, color: color),
           const SizedBox(width: 12),
@@ -197,7 +206,87 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   }
 }
 
-// GÜNCELLEME: Liste boşken gösterilecek widget
+class _OperationList extends StatelessWidget {
+  final List<PendingOperation> operations;
+  final bool isLoading;
+  final Future<void> Function() onRefresh;
+  final bool isHistory;
+  final IconData emptyIcon;
+  final String emptyMessage;
+
+  const _OperationList({
+    required this.operations,
+    required this.isLoading,
+    required this.onRefresh,
+    required this.isHistory,
+    required this.emptyIcon,
+    required this.emptyMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading && operations.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (operations.isEmpty) {
+      return _EmptyState(icon: emptyIcon, message: emptyMessage);
+    }
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
+        itemCount: operations.length,
+        itemBuilder: (context, index) {
+          return _OperationCard(
+            operation: operations[index],
+            isSynced: isHistory,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OperationCard extends StatelessWidget {
+  final PendingOperation operation;
+  final bool isSynced;
+
+  const _OperationCard({required this.operation, this.isSynced = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    IconData leadingIcon;
+    switch (operation.type) {
+      case PendingOperationType.goodsReceipt:
+        leadingIcon = Icons.move_to_inbox_outlined;
+        break;
+      case PendingOperationType.inventoryTransfer:
+        leadingIcon = Icons.swap_horiz_rounded;
+        break;
+    }
+
+    final Widget trailingWidget = isSynced
+        ? Icon(Icons.check_circle_outline_rounded,
+        color: theme.colorScheme.primary)
+        : Icon(Icons.hourglass_top_rounded, color: Colors.grey.shade500);
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: ListTile(
+        leading: Icon(leadingIcon, color: theme.colorScheme.secondary),
+        title: Text(operation.displayTitle,
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.bold)),
+        subtitle: Text(operation.displaySubtitle,
+            style: theme.textTheme.bodySmall),
+        trailing: trailingWidget,
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
@@ -207,153 +296,19 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 60, color: theme.hintColor.withOpacity(0.5)),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: theme.textTheme.titleMedium?.copyWith(color: theme.hintColor),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// GÜNCELLEME: Bekleyen işlemler listesi
-class _PendingList extends StatelessWidget {
-  final List<PendingOperation> operations;
-  final bool isLoading;
-  final Future<void> Function() onRefresh;
-
-  const _PendingList({
-    required this.operations,
-    required this.isLoading,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading && operations.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (operations.isEmpty) {
-      return _EmptyState(
-        icon: Icons.cloud_done_outlined,
-        message: 'pending_operations.no_pending'.tr(),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
-        itemCount: operations.length,
-        itemBuilder: (context, index) {
-          return _PendingOperationCard(operation: operations[index]);
-        },
-      ),
-    );
-  }
-}
-
-// GÜNCELLEME: Bekleyen işlem kartı
-class _PendingOperationCard extends StatelessWidget {
-  final PendingOperation operation;
-  const _PendingOperationCard({required this.operation});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    IconData iconData;
-    switch (operation.type) {
-      case PendingOperationType.goodsReceipt:
-        iconData = Icons.move_to_inbox_outlined;
-        break;
-      case PendingOperationType.inventoryTransfer:
-        iconData = Icons.swap_horiz_rounded;
-        break;
-    }
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: ListTile(
-        leading: Icon(iconData, color: theme.colorScheme.primary),
-        title: Text(operation.displayTitle, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-        subtitle: Text(operation.displaySubtitle, style: theme.textTheme.bodySmall),
-        trailing: Icon(Icons.hourglass_top_rounded, color: Colors.grey.shade500),
-      ),
-    );
-  }
-}
-
-
-// GÜNCELLEME: Geçmiş loglar listesi
-class _HistoryList extends StatelessWidget {
-  final List<SyncLog> logs;
-  final bool isLoading;
-  final Future<void> Function() onRefresh;
-
-  const _HistoryList({
-    required this.logs,
-    required this.isLoading,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading && logs.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (logs.isEmpty) {
-      return _EmptyState(
-        icon: Icons.history_toggle_off_outlined,
-        message: 'pending_operations.no_history'.tr(),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
-        itemCount: logs.length,
-        itemBuilder: (context, index) {
-          return _HistoryLogCard(log: logs[index]);
-        },
-      ),
-    );
-  }
-}
-
-
-// GÜNCELLEME: Geçmiş log kartı
-class _HistoryLogCard extends StatelessWidget {
-  final SyncLog log;
-  const _HistoryLogCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isSuccess = log.status.toLowerCase() == 'success';
-    final iconData = isSuccess ? Icons.check_circle_outline_rounded : Icons.error_outline_rounded;
-    final iconColor = isSuccess ? theme.colorScheme.primary : theme.colorScheme.error;
-
-    final formattedDate = DateFormat('dd.MM.yyyy HH:mm:ss').format(log.timestamp);
-
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Colors.grey.shade300, width: 0.5)
-      ),
-      child: ListTile(
-        leading: Icon(iconData, color: iconColor),
-        title: Text(log.message, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          '${log.type.toUpperCase()} - $formattedDate',
-          style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 60, color: theme.hintColor.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: theme.textTheme.titleMedium?.copyWith(color: theme.hintColor),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );

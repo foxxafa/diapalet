@@ -17,6 +17,8 @@ class PendingOperation {
   final String status;
   final int attempts;
   final String? errorMessage;
+  // YENİ: İşlemin ne zaman senkronize olduğunu takip etmek için eklendi.
+  final DateTime? syncedAt;
 
   const PendingOperation({
     this.id,
@@ -26,20 +28,8 @@ class PendingOperation {
     this.status = 'pending',
     this.attempts = 0,
     this.errorMessage,
+    this.syncedAt, // Constructor'a eklendi.
   });
-
-  // HATA DÜZELTMESİ: createTableQuery statik getter'ı eklendi.
-  static const String createTableQuery = '''
-    CREATE TABLE pending_operation (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL,
-      data TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      status TEXT NOT NULL,
-      attempts INTEGER NOT NULL,
-      error_message TEXT
-    )
-  ''';
 
   String get displayTitle {
     try {
@@ -64,7 +54,9 @@ class PendingOperation {
 
   String get displaySubtitle {
     try {
-      final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
+      // Duruma göre oluşturulma veya senkronize olma tarihini göster.
+      final dateToShow = status == 'synced' && syncedAt != null ? syncedAt! : createdAt;
+      final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(dateToShow);
       final jsonData = jsonDecode(data) as Map<String, dynamic>;
       final items = jsonData['items'] as List<dynamic>?;
       final itemCount = items?.length ?? 0;
@@ -85,6 +77,8 @@ class PendingOperation {
       status: map['status'],
       attempts: map['attempts'],
       errorMessage: map['error_message'],
+      // Veritabanından synced_at değerini oku.
+      syncedAt: map['synced_at'] != null ? DateTime.parse(map['synced_at']) : null,
     );
   }
 
@@ -97,6 +91,8 @@ class PendingOperation {
       'status': status,
       'attempts': attempts,
       'error_message': errorMessage,
+      // synced_at değerini veritabanına yaz.
+      'synced_at': syncedAt?.toIso8601String(),
     };
   }
 }
