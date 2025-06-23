@@ -1,14 +1,17 @@
 -- VTYS Mobil Depo Yönetim Sistemi için Veritabanı Şeması
--- NİHAİ İŞ AKIŞI İLE TAM UYUMLU VERSİYON
+-- v2.0 - İŞ AKIŞINA UYGUN GÜNCELLENMİŞ VE ZENGİNLEŞTİRİLMİŞ ÖRNEK VERİLER
 
 SET NAMES utf8mb4 COLLATE utf8mb4_turkish_ci;
 
 -- Veritabanı adını kendi yapınıza göre değiştirin, örn: USE diapalet_test;
 -- USE your_database_name;
 
+-- Tabloları yeniden oluşturmadan önce mevcut olanları güvenli bir şekilde kaldıralım.
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `satin_alma_siparis_fis_satir`, `satin_alma_siparis_fis`, `urunler`, `employees`, `warehouses_shelfs`, `warehouses`;
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Tablo Yapıları
 
 CREATE TABLE IF NOT EXISTS `warehouses` (
   `id` INT NOT NULL AUTO_INCREMENT,
@@ -68,13 +71,13 @@ CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis` (
   `invoice` varchar(45) DEFAULT NULL,
   `delivery` int DEFAULT NULL,
   `po_id` varchar(20) DEFAULT NULL,
-  `status` int DEFAULT '0' COMMENT '0:Beklemede, 1:Onaylandı (Mal Kabul Bekliyor), 2:Kısmi Kabul (İşlemde), 3:Tamamlandı (Mal Kabul Bitti)',
+  `status` int DEFAULT '0' COMMENT '0:Beklemede, 1:Onaylandi (Mal Kabul Bekliyor), 2:Kismi Kabul (Islemde), 3:Tamamlandi (Mal Kabul Bitti)',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `fk_satin_alma_lokasyon_idx` (`lokasyon_id`),
   CONSTRAINT `fk_satin_alma_warehouse` FOREIGN KEY (`lokasyon_id`) REFERENCES `warehouses` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB;
+) ENGINE=InnoDB AUTO_INCREMENT=202;
 
 CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis_satir` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -145,32 +148,41 @@ CREATE TABLE IF NOT EXISTS `inventory_transfers` (
   FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`)
 ) ENGINE=InnoDB;
 
+-- Örnek Veriler
+
 INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `is_active`) VALUES
 (1, 'Bursa Merkez Depo', 'BURSA-MERKEZ', 1),
-(2, 'İstanbul Anadolu Deposu', 'IST-ANADOLU', 1);
+(2, 'Istanbul Anadolu Deposu', 'IST-ANADOLU', 1);
 
 INSERT INTO `warehouses_shelfs` (`id`, `warehouse_id`, `name`, `code`, `is_active`) VALUES
-(1, 1, 'Bursa Mal Kabul Alanı', 'BUR-MK-01', 1),
-(2, 1, 'Bursa Stok Rafı A-01', 'BUR-A-01', 1),
-(3, 2, 'İstanbul Mal Kabul Alanı', 'IST-MK-01', 1),
-(4, 2, 'İstanbul Stok Rafı A-01', 'IST-A-01', 1);
+(1, 1, 'Bursa Mal Kabul Alani', '000', 1),
+(2, 1, 'Bursa Stok Rafi 10A21', '10A21', 1),
+(3, 1, 'Bursa Stok Rafi 10A22', '10A22', 1),
+(4, 1, 'Bursa Stok Rafi 5C3', '5C3', 1),
+(5, 2, 'Istanbul Mal Kabul Alani', '000', 1),
+(6, 2, 'Istanbul Stok Rafi 20C01', '20C01', 1),
+(7, 2, 'Istanbul Stok Rafi 21D05', '21D05', 1);
 
 INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `is_active`) VALUES
 (1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 1),
 (2, 'Mehmet', 'Kaya', 'mehmet', '123', 1, 1),
-(3, 'Zeynep', 'Çelik', 'zeynep.celik', '123', 2, 1);
+(3, 'Zeynep', 'Celik', 'zeynep.celik', '123', 2, 1);
 
 INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VALUES
 (1, 'KOL-001', 'Kola 2.5 LT', '8690001123456', 1),
-(2, 'SUT-001', 'Süt 1 LT', '8690002123457', 1),
-(3, 'SU-001', 'Su 5 LT', '8690003123458', 1);
+(2, 'SUT-001', 'Sut 1 LT', '8690002123457', 1),
+(3, 'SU-001', 'Su 5 LT', '8690003123458', 1),
+(4, 'CKL-007', 'Cikolata 100g', '8690004123459', 1),
+(5, 'MKN-001', 'Makarna 500g', '8690005123450', 1);
 
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `user`, `lokasyon_id`, `po_id`, `status`) VALUES
 (101, '2025-06-22', 'sistem', 1, 'PO-25B001', 1),
-(102, '2025-06-23', 'sistem', 1, 'PO-25B002', 0),
-(201, '2025-06-22', 'sistem', 2, 'PO-25I001', 1);
+(102, '2025-06-23', 'sistem', 1, 'PO-25B002', 1),
+(201, '2025-06-22', 'sistem', 2, 'PO-25I001', 0);
 
 INSERT INTO `satin_alma_siparis_fis_satir` (`siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
-(101, 1, 50.00, 'KUTU'), (101, 2, 100.00, 'KUTU'),
-(102, 2, 200.00, 'KUTU'),
-(201, 3, 300.00, 'ADET');
+(101, 1, 50.00, 'KUTU'),
+(101, 2, 100.00, 'KUTU'),
+(102, 5, 250.00, 'KUTU'),
+(201, 3, 300.00, 'ADET'),
+(201, 4, 150.00, 'KUTU');

@@ -52,7 +52,7 @@ class BarcodeIntentService {
       .where((code) => code != null)
       .cast<String>();
 
-  /// Uygulama ilk açılırken gelen Intent’i getirir.
+  /// Uygulama ilk açılırken gelen Intent'i getirir.
   Future<String?> getInitialBarcode() async {
     final intent = await ReceiveIntent.getInitialIntent();
     if (intent == null || !_supportedActions.contains(intent.action)) {
@@ -96,6 +96,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   final List<TransferableContainer> _containers = [];
   final Map<String, MapEntry<String, int>> _targets = {};
   int _focusedIndex = 0;
+  List<MapEntry<String, int>> _availableLocations = [];
 
   final List<String> _debug = [];
   bool _showDebug = false;
@@ -147,12 +148,28 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   Future<void> _loadContainers() async {
     setState(() => _isLoading = true);
     try {
-      final list = await _repo.getTransferableContainers(widget.order.id);
+      final repo = context.read<InventoryTransferRepository>();
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseId = prefs.getInt('warehouse_id');
+      if (warehouseId == null) {
+        throw Exception('Depo bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+      }
+
+      final results = await Future.wait([
+        repo.getTransferableContainers(widget.order.id),
+        repo.getAllLocations(warehouseId),
+      ]);
+
       if (!mounted) return;
+
+      final containerList = results[0] as List<TransferableContainer>;
+      final locationList = results[1] as List<MapEntry<String, int>>;
+
       setState(() {
         _containers
           ..clear()
-          ..addAll(list);
+          ..addAll(containerList);
+        _availableLocations = locationList;
         _targets.clear();
         _focusedIndex = 0;
       });
@@ -341,6 +358,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
             OrderInfoCard(order: widget.order), // GÜNCELLENDİ
@@ -360,6 +378,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                       container: c,
                       focused: i == _focusedIndex,
                       target: _targets[c.id],
+                      availableLocations: _availableLocations,
                       onTarget: (loc) => _assignTarget(c, loc),
                       onClear: () {
                         setState(() => _targets.remove(c.id));
@@ -412,6 +431,7 @@ class _ContainerCard extends StatefulWidget {
   final TransferableContainer container;
   final bool focused;
   final MapEntry<String, int>? target;
+  final List<MapEntry<String, int>> availableLocations;
   final ValueChanged<MapEntry<String, int>> onTarget;
   final VoidCallback onClear;
   final VoidCallback onTap;
@@ -422,6 +442,7 @@ class _ContainerCard extends StatefulWidget {
     required this.container,
     required this.focused,
     required this.target,
+    required this.availableLocations,
     required this.onTarget,
     required this.onClear,
     required this.onTap,
@@ -461,7 +482,17 @@ class _ContainerCardState extends State<_ContainerCard> {
     final t = text.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
     if (t.isNotEmpty) {
       widget.onScan(t);
-      _ctrl.clear();
+    }
+  }
+
+  Future<void> _showLocationSearchDialog() async {
+    final searchResult = await showDialog<MapEntry<String, int>>(
+      context: context,
+      builder: (context) => _LocationSearchDialog(locations: widget.availableLocations),
+    );
+
+    if (searchResult != null) {
+      widget.onTarget(searchResult);
     }
   }
 
@@ -473,6 +504,7 @@ class _ContainerCardState extends State<_ContainerCard> {
     return GestureDetector(
       onTap: widget.onTap,
       child: Card(
+        clipBehavior: Clip.antiAlias,
         elevation: widget.focused ? 4 : 2,
         margin: const EdgeInsets.symmetric(vertical: 6),
         shape: RoundedRectangleBorder(
@@ -501,19 +533,56 @@ class _ContainerCardState extends State<_ContainerCard> {
               trailing: assigned
                   ? Icon(Icons.check_circle, color: Colors.green.shade700)
                   : const Icon(Icons.pending_outlined),
-              children: widget.container.items
-                  .map((i) => ListTile(
-                dense: true,
-                title: Text(i.product.name),
-                subtitle: Text(i.product.stockCode),
-                trailing:
-                Text('Miktar: ${i.quantity.toStringAsFixed(0)}'),
-              ))
-                  .toList(),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              children: widget.container.items.map((i) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurface),
+                            children: [
+                              TextSpan(
+                                text: i.product.name,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              TextSpan(
+                                text: '  ·  ${i.product.stockCode}',
+                                style: TextStyle(color: theme.hintColor, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                                text: 'Miktar ',
+                                style: theme.textTheme.labelLarge?.copyWith(color: theme.hintColor)
+                            ),
+                            TextSpan(
+                              text: i.quantity.toStringAsFixed(0),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ]
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: assigned ? _rowAssigned(theme) : _rowInput(theme),
             ),
           ],
@@ -545,12 +614,18 @@ class _ContainerCardState extends State<_ContainerCard> {
           focusNode: _focus,
           decoration: InputDecoration(
             labelText: 'Hedef Raf',
-            hintText: 'Okutun veya yazın',
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8)),
+            hintText: 'Okutun, yazın veya seçin',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            suffixIcon: IconButton(
+              tooltip: 'Listeden Seç',
+              icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+              onPressed: _showLocationSearchDialog,
+            ),
           ),
-          onChanged: (v) {
-            if (v.contains('\n')) _submit(v);
+          onChanged: (value) {
+            if (value.contains('\n')) {
+              _submit(value);
+            }
           },
           onFieldSubmitted: _submit,
         ),
@@ -573,4 +648,92 @@ class _ContainerCardState extends State<_ContainerCard> {
       ),
     ],
   );
+}
+
+class _LocationSearchDialog extends StatefulWidget {
+  final List<MapEntry<String, int>> locations;
+
+  const _LocationSearchDialog({required this.locations});
+
+  @override
+  State<_LocationSearchDialog> createState() => _LocationSearchDialogState();
+}
+
+class _LocationSearchDialogState extends State<_LocationSearchDialog> {
+  late List<MapEntry<String, int>> _filteredLocations;
+  final _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredLocations = widget.locations;
+    _searchController.addListener(_filterLocations);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_filterLocations);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterLocations() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredLocations = widget.locations.where((loc) {
+        return loc.key.toLowerCase().contains(query);
+      }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Hedef Raf Seçin', style: Theme.of(context).textTheme.titleLarge),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Ara veya okut...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _filteredLocations.isEmpty
+                  ? const Center(child: Text('Sonuç bulunamadı'))
+                  : ListView.builder(
+                shrinkWrap: true,
+                itemCount: _filteredLocations.length,
+                itemBuilder: (context, index) {
+                  final location = _filteredLocations[index];
+                  return ListTile(
+                    title: Text(location.key),
+                    onTap: () => Navigator.of(context).pop(location),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Kapat'),
+        ),
+      ],
+    );
+  }
 }

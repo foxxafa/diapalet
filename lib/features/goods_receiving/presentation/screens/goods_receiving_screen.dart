@@ -8,7 +8,6 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/features/goods_receiving/presentation/screens/purchase_order_list_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';

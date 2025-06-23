@@ -265,4 +265,26 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''', [palletId]);
     return maps.map((map) => ProductItem.fromMap(map)).toList();
   }
+
+  @override
+  Future<List<MapEntry<String, int>>> getAllLocations(int warehouseId) async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'warehouses_shelfs',
+      columns: ['id', 'name'],
+      where: 'is_active = 1 AND id != ? AND warehouse_id = ?',
+      whereArgs: [malKabulLocationId, warehouseId],
+      orderBy: 'name ASC',
+    );
+
+    if (maps.isEmpty) {
+      return [];
+    }
+
+    return List.generate(maps.length, (i) {
+      final id = maps[i]['id'] as int;
+      final name = maps[i]['name'] as String;
+      return MapEntry(name, id);
+    });
+  }
 }
