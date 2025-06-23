@@ -2,6 +2,14 @@
 
 Bu proje, Flutter ile geliştirilmiş, Android ve iOS platformlarını destekleyen bir mobil depo yönetim sistemi uygulamasıdır. Uygulama, depo operasyonlarını kolaylaştırmak ve verimliliği artırmak için tasarlanmıştır.
 
+## 🖼️ Ekran Görüntüleri
+
+*(Buraya uygulamanızın ekran görüntülerini ekleyebilirsiniz. Örneğin: Giriş ekranı, ana sayfa, mal kabul vb.)*
+
+| Giriş Ekranı | Ana Menü | Mal Kabul |
+| :---: |:---:|:---:|
+| <img src="" width="250"> | <img src="" width="250"> | <img src="" width="250"> |
+
 ## ✨ Özellikler
 
 - **Kullanıcı Kimlik Doğrulama:** Güvenli e-posta ve şifre ile giriş.
@@ -18,14 +26,21 @@ Bu proje, Flutter ile geliştirilmiş, Android ve iOS platformlarını destekley
 - **Çoklu Dil Desteği:** Türkçe ve İngilizce dil seçenekleri.
 - **Dinamik Tema:** Cihazın sistem temasına (Açık/Koyu Mod) uyum sağlayan arayüz.
 
-## 🚀 Teknoloji Yığını
+## 🚀 Teknoloji Yığını ve Temel Paketler
 
 - **Frontend:** [Flutter](https://flutter.dev/)
 - **Backend:** [PHP](https://www.php.net/)
 - **Veritabanı (Mobil):** [SQLite](https://www.sqlite.org/index.html)
 - **Mimari:** Feature-based (Özellik bazlı) mimari
-- **State Management:** Provider
-- **Dil Desteği:** `easy_localization`
+
+### Temel Paketler:
+- **State Management:** [provider](https://pub.dev/packages/provider)
+- **Dil Desteği:** [easy_localization](https://pub.dev/packages/easy_localization)
+- **Veritabanı:** [sqflite](https://pub.dev/packages/sqflite)
+- **QR Kod Okuyucu:** [mobile_scanner](https://pub.dev/packages/mobile_scanner)
+- **HTTP İstekleri:** [dio](https://pub.dev/packages/dio), [http](https://pub.dev/packages/http)
+- **Form Yönetimi:** [flutter_form_builder](https://pub.dev/packages/flutter_form_builder)
+- **Asenkron Programlama:** [rxdart](https://pub.dev/packages/rxdart)
 
 ## 📂 Proje Yapısı
 
@@ -62,7 +77,7 @@ Projeyi yerel makinenizde çalıştırmak için aşağıdaki adımları izleyin.
 
 1.  **Projeyi klonlayın:**
     ```sh
-    git clone https://github.com/KULLANICI_ADI/diapalet.git
+    git clone https://github.com/YOUR_USERNAME/diapalet.git
     cd diapalet
     ```
 
@@ -84,6 +99,18 @@ Projeyi yerel makinenizde çalıştırmak için aşağıdaki adımları izleyin.
     flutter run
     ```
 
+## 📦 Uygulamayı Derleme (Build)
+
+### Android (.apk)
+```sh
+flutter build apk --release
+```
+
+### iOS (.ipa)
+```sh
+flutter build ipa --release
+```
+
 ## ⚙️ Yapılandırma
 
 - **API Uç Noktası:** Uygulamanın iletişim kurduğu ana sunucu adresi `lib/core/network/api_config.dart` dosyasından yönetilir.
@@ -92,3 +119,7 @@ Projeyi yerel makinenizde çalıştırmak için aşağıdaki adımları izleyin.
 ## 🤝 Katkıda Bulunma
 
 Projeye katkıda bulunmak isterseniz, lütfen issue açın veya pull request gönderin. Katkılarınız projeyi daha iyi bir hale getirecektir!
+
+## 📜 Lisans
+
+Bu proje [MIT Lisansı](https://opensource.org/licenses/MIT) ile lisanslanmıştır. Detaylar için `LICENSE` dosyasına bakınız.
