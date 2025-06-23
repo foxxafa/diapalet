@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
@@ -330,7 +331,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (isOrderBased) ...[
-                    _buildOrderInfoCard(),
+                    OrderInfoCard(order: _selectedOrder!),
                     const SizedBox(height: _gap),
                   ],
                   _buildModeSelector(),
@@ -348,50 +349,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOrderInfoCard() {
-    final theme = Theme.of(context);
-    if (_selectedOrder == null) return const SizedBox.shrink();
-    return Card(
-      color: theme.colorScheme.primaryContainer.withOpacity(0.4),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.primaryContainer),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'goods_receiving_screen.order_info_title'.tr(),
-              style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _selectedOrder!.poId ?? 'N/A',
-              style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer
-              ),
-            ),
-            if(_selectedOrder!.supplierName != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                _selectedOrder!.supplierName!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer
-                ),
-              ),
-            ]
-          ],
         ),
       ),
     );

@@ -1,8 +1,9 @@
-// lib/features/inventory_transfer/presentation/screens/order_transfer_screen.dart
-
+// ----- lib/features/inventory_transfer/presentation/screens/order_transfer_screen.dart (GÜNCELLENDİ) -----
 import 'dart:async';
+import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -12,12 +13,70 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_op
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' hide Intent;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
-import 'package:receive_intent/receive_intent.dart' as receive_intent;
+import 'package:receive_intent/receive_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// *************************
+/// Barkod Intent Servisi
+/// *************************
+class BarcodeIntentService {
+  static const _supportedActions = {
+    'unitech.scanservice.data', // Unitech
+    'com.symbol.datawedge.data.ACTION', // Zebra
+    'com.honeywell.decode.intent.action.DECODE_EVENT', // Honeywell
+    'com.datalogic.decodewedge.decode_action', // Datalogic
+    'nlscan.action.SCANNER_RESULT', // Newland
+    'android.intent.action.SEND', // Paylaşılan metin
+  };
+
+  static const _payloadKeys = [
+    'text', // Unitech
+    'com.symbol.datawedge.data_string',
+    'com.honeywell.decode.intent.extra.DATA_STRING',
+    'nlscan_code',
+    'scannerdata',
+    'barcode_data',
+    'barcode',
+    'data',
+    'android.intent.extra.TEXT',
+  ];
+
+  /// Sürekli dinleyen yayın.
+  Stream<String> get stream => ReceiveIntent.receivedIntentStream
+      .where((intent) =>
+  intent != null && _supportedActions.contains(intent.action))
+      .map(_extractBarcode)
+      .where((code) => code != null)
+      .cast<String>();
+
+  /// Uygulama ilk açılırken gelen Intent’i getirir.
+  Future<String?> getInitialBarcode() async {
+    final intent = await ReceiveIntent.getInitialIntent();
+    if (intent == null || !_supportedActions.contains(intent.action)) {
+      return null;
+    }
+    return _extractBarcode(intent);
+  }
+
+  /// Ortak veri çıkarıcı
+  String? _extractBarcode(Intent? intent) {
+    if (intent == null) return null;
+    for (final key in _payloadKeys) {
+      final value = intent.extra?[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
+      }
+    }
+    return null;
+  }
+}
+
+/// *************************
+/// Ekran State
+/// *************************
 class OrderTransferScreen extends StatefulWidget {
   final PurchaseOrder order;
   const OrderTransferScreen({super.key, required this.order});
@@ -27,260 +86,289 @@ class OrderTransferScreen extends StatefulWidget {
 }
 
 class _OrderTransferScreenState extends State<OrderTransferScreen> {
-  late InventoryTransferRepository _repo;
+  late final InventoryTransferRepository _repo;
+  late final BarcodeIntentService _barcodeService;
   final _scrollController = ScrollController();
 
-  bool _isLoading = true;
-  bool _isSaving = false;
+  StreamSubscription<String>? _intentSub;
 
-  List<TransferableContainer> _transferableContainers = [];
-  final Map<String, MapEntry<String, int>> _assignedTargets = {};
+  bool _isLoading = true, _isSaving = false;
+  final List<TransferableContainer> _containers = [];
+  final Map<String, MapEntry<String, int>> _targets = {};
   int _focusedIndex = 0;
 
-  StreamSubscription? _intentSubscription;
+  final List<String> _debug = [];
+  bool _showDebug = false;
 
-  static const _unitechAction = "android.intent.ACTION_DECODE_DATA";
-  static const _unitechDataKey = "barcode_string";
-
-  static const _honeywellAction = "com.honeywell.decode.intent.action.DECODE_EVENT";
-  static const _honeywellDataKey = "data";
-
-  static const _zebraAction = "com.diapalet.SCAN";
-  static const _zebraDataKey = "com.symbol.datawedge.data_string";
-
-  static const String sourceLocationName = "Mal Kabul Alanı";
-  static const int sourceLocationId = 1;
+  // sabitler
+  static const sourceLocationName = 'Mal Kabul Alanı';
+  static const sourceLocationId = 1;
 
   @override
   void initState() {
     super.initState();
-    _repo = context.read<InventoryTransferRepository>();
-    _loadContainers();
-    _initIntentReceiver();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _repo = context.read<InventoryTransferRepository>();
+      _loadContainers();
+      _initBarcode();
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    _intentSubscription?.cancel();
+    _intentSub?.cancel();
     super.dispose();
   }
 
-  void _initIntentReceiver() {
-    _intentSubscription = receive_intent.ReceiveIntent.receivedIntentStream.listen(
-          (receive_intent.Intent? intent) {
-        if (intent == null || intent.action == null || intent.extra == null) return;
+  /* ------------------  Barkod ------------------ */
+  Future<void> _initBarcode() async {
+    if (kIsWeb || !Platform.isAndroid) return;
 
-        String? barcode;
+    _barcodeService = BarcodeIntentService();
+    _addDbg('Barkod servisi başladı');
 
-        // HATA DÜZELTMESİ: getStringExtra metodu yerine 'extra' Map'i kullanılıyor.
-        switch (intent.action) {
-          case _unitechAction:
-            barcode = intent.extra?[_unitechDataKey];
-            break;
-          case _honeywellAction:
-            barcode = intent.extra?[_honeywellDataKey];
-            break;
-          case _zebraAction:
-            barcode = intent.extra?[_zebraDataKey];
-            break;
-        }
+    final first = await _barcodeService.getInitialBarcode();
+    if (first != null) _handleBarcode(first);
 
-        if (barcode != null && barcode.isNotEmpty && mounted) {
-          if (_transferableContainers.isNotEmpty && _focusedIndex < _transferableContainers.length) {
-            final focusedContainer = _transferableContainers[_focusedIndex];
-            _processScannedLocation(focusedContainer, barcode);
-          }
-        }
-      },
-      onError: (err) {
-        debugPrint("Intent alırken hata oluştu: $err");
-      },
-    );
+    _intentSub = _barcodeService.stream.listen(_handleBarcode,
+        onError: (e) => _addDbg('Barkod stream hatası: $e'));
   }
 
-  // --- BU KISIMDAN SONRASINDA HİÇBİR DEĞİŞİKLİK YOKTUR ---
-  // Fonksiyonların tam ve eksiksiz olması için tekrar eklenmiştir.
-
-  void _processScannedLocation(TransferableContainer container, String scannedBarcode) async {
-    try {
-      var targetLocations = await _repo.getTargetLocations();
-      targetLocations.removeWhere((key, value) => value == 1);
-
-      final entry = targetLocations.entries.firstWhereOrNull(
-              (entry) => entry.key.toLowerCase() == scannedBarcode.toLowerCase()
-      );
-
-      if (entry != null) {
-        _assignTargetLocation(container, entry);
-      } else {
-        _showSnackBar('inventory_transfer.error_invalid_target_location'.tr(namedArgs: {'data': scannedBarcode}), isError: true);
-      }
-    } catch (e) {
-      _showSnackBar('Hedef lokasyonlar yüklenemedi: $e', isError: true);
+  void _handleBarcode(String code) {
+    if (_containers.isEmpty) {
+      _addDbg('Barkod geldi ama konteyner listesi boş');
+      return;
     }
+    _processScannedLocation(_containers[_focusedIndex], code);
   }
 
+  /* ------------------  Veri ------------------ */
   Future<void> _loadContainers() async {
-    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final containers = await _repo.getTransferableContainers(widget.order.id);
-      if (mounted) {
-        setState(() {
-          _transferableContainers = containers;
-          _assignedTargets.clear();
-          _focusedIndex = 0;
-        });
-      }
+      final list = await _repo.getTransferableContainers(widget.order.id);
+      if (!mounted) return;
+      setState(() {
+        _containers
+          ..clear()
+          ..addAll(list);
+        _targets.clear();
+        _focusedIndex = 0;
+      });
+      _scrollLater();
     } catch (e) {
-      if (mounted) {
-        _showSnackBar("order_selection.error_loading".tr(namedArgs: {'error': e.toString()}), isError: true);
-      }
+      _snack('Veri yüklenemedi: $e', err: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _focusNextItem() {
-    final nextIndex = _transferableContainers.indexWhere(
-            (c) => !_assignedTargets.containsKey(c.id), _focusedIndex + 1);
+  /* ------------------  Lokasyon işleme (GÜNCELLENDİ) ------------------ */
+  void _processScannedLocation(
+      TransferableContainer container, String code) async {
+    final clean = code.trim();
+    if (clean.isEmpty) return;
 
-    if (nextIndex != -1) {
-      setState(() => _focusedIndex = nextIndex);
-    } else {
-      final firstUnassigned = _transferableContainers.indexWhere((c) => !_assignedTargets.containsKey(c.id));
-      setState(() => _focusedIndex = (firstUnassigned == -1) ? 0 : firstUnassigned);
+    _addDbg("İşlenen barkod: '$clean'");
+    try {
+      // YENİ MANTIK: Artık doğrudan koda göre arama yapılıyor.
+      final match = await _repo.findLocationByCode(clean);
+
+      // Eşleşme bulundu mu ve kaynak lokasyonla aynı mı kontrolü
+      if (match != null && match.value != sourceLocationId) {
+        // Eşleşme bulundu, hedefi ata.
+        _assignTarget(container, match);
+      } else {
+        // Eşleşme bulunamadı veya kaynak lokasyonla aynı.
+        final reason = match == null ? 'Geçersiz lokasyon' : 'Kaynak ile aynı lokasyon';
+        _snack('$reason: $clean', err: true);
+      }
+    } catch (e) {
+      _snack('Lokasyon arama hatası: $e', err: true);
     }
-    _scrollToFocused();
   }
 
-  void _scrollToFocused() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _focusedIndex * 160.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
+
+  void _assignTarget(TransferableContainer c, MapEntry<String, int> loc) {
+    setState(() => _targets[c.id] = loc);
+    _snack('${c.displayName} → ${loc.key}');
+    _focusNext();
   }
 
-  void _assignTargetLocation(TransferableContainer container, MapEntry<String, int> location) {
+  /* ------------------  UI yardımcıları ------------------ */
+  void _focusNext() {
+    final next = _containers.indexWhere(
+            (c) => !_targets.containsKey(c.id), _focusedIndex + 1);
     setState(() {
-      _assignedTargets[container.id] = location;
+      _focusedIndex =
+      next != -1 ? next : _containers.indexWhere((c) => !_targets.containsKey(c.id));
     });
-    _showSnackBar(
-      'order_transfer.item_added_to_cart'.tr(namedArgs: {
-        'containerName': container.displayName,
-        'targetLocation': location.key
-      }),
-    );
-    _focusNextItem();
+    _scrollLater();
   }
 
-  void _clearTarget(TransferableContainer container) {
+  void _scrollLater() => Future.delayed(
+      const Duration(milliseconds: 50), () => _scrollTo(_focusedIndex));
+
+  void _scrollTo(int index) {
+    if (!_scrollController.hasClients || _scrollController.position.maxScrollExtent == null) return;
+    final offset = (index * 240.0).clamp(
+        0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.animateTo(offset,
+        duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+  }
+
+  void _addDbg(String m) {
+    final t = DateTime.now();
+    final s =
+        '[${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}] $m';
     setState(() {
-      _assignedTargets.remove(container.id);
-      _focusedIndex = _transferableContainers.indexOf(container);
+      _debug.insert(0, s);
+      if (_debug.length > 50) _debug.removeLast();
     });
+    debugPrint('DBG $m');
   }
 
-  Future<void> _onSave() async {
-    if (_assignedTargets.isEmpty) {
-      _showSnackBar("order_transfer.no_cart_items".tr(), isError: true);
+  void _snack(String msg, {bool err = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        backgroundColor:
+        err ? Theme.of(context).colorScheme.error : Colors.green,
+      ));
+  }
+
+  /* ------------------  KAYDET ------------------ */
+  Future<void> _save() async {
+    if (_targets.isEmpty) {
+      _snack('Sepet boş', err: true);
       return;
     }
     setState(() => _isSaving = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final employeeId = prefs.getInt('user_id');
-      if (employeeId == null) throw Exception("Kullanıcı bilgisi bulunamadı.");
+      final uid = (await SharedPreferences.getInstance()).getInt('user_id');
+      if (uid == null) throw 'Kullanıcı bulunamadı';
 
-      final List<TransferItemDetail> allItemsToTransfer = [];
-      _assignedTargets.forEach((containerId, targetLocation) {
-        final container = _transferableContainers.firstWhere((c) => c.id == containerId);
-        for (final item in container.items) {
-          allItemsToTransfer.add(TransferItemDetail(
+      final details = <TransferItemDetail>[];
+      _targets.forEach((cid, loc) {
+        final cont = _containers.firstWhere((c) => c.id == cid);
+        for (final item in cont.items) {
+          details.add(TransferItemDetail(
             productId: item.product.id,
             productName: item.product.name,
             productCode: item.product.stockCode,
             quantity: item.quantity,
             sourcePalletBarcode: item.sourcePalletBarcode,
-            targetLocationId: targetLocation.value,
-            targetLocationName: targetLocation.key,
+            targetLocationId: loc.value,
+            targetLocationName: loc.key,
           ));
         }
       });
+
       final header = TransferOperationHeader(
-        employeeId: employeeId,
+        employeeId: uid,
         transferDate: DateTime.now(),
-        operationType: allItemsToTransfer.first.sourcePalletBarcode != null
+        operationType: details.first.sourcePalletBarcode != null
             ? AssignmentMode.pallet
             : AssignmentMode.box,
         sourceLocationName: sourceLocationName,
-        targetLocationName: "Muhtelif",
+        targetLocationName: 'Muhtelif',
       );
-      await _repo.recordTransferOperation(header, allItemsToTransfer, sourceLocationId, 0);
-      if(mounted) {
-        _showSnackBar("order_transfer.save_success".tr());
-        context.read<SyncService>().performFullSync(force: true);
-        await _loadContainers();
-      }
+
+      // targetLocationId'yi geçici olarak 0 yapıyoruz, çünkü her item kendi hedefini içeriyor.
+      // Sunucu tarafında bu durumun nasıl ele alınacağı önemli.
+      // Eğer tek bir header targetId bekleniyorsa, mantığın değişmesi gerekir.
+      // Mevcut yapıda her item'ın kendi hedefi olduğundan, header'daki anlamsız kalıyor.
+      await _repo.recordTransferOperation(
+          header, details, sourceLocationId, 0);
+
+      _snack('Kaydedildi');
+      context.read<SyncService>().performFullSync(force: true);
+      await _loadContainers();
     } catch (e) {
-      if(mounted) {
-        _showSnackBar("order_transfer.save_error".tr(namedArgs: {'error': e.toString()}), isError: true);
-      }
+      _snack('Kaydetme hatası: $e', err: true);
     } finally {
-      if(mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
+  /* ==================  BUILD  ================== */
   @override
   Widget build(BuildContext context) {
-    final bool canSave = _assignedTargets.isNotEmpty && !_isSaving;
+    final canSave = _targets.isNotEmpty && !_isSaving;
+
     return Scaffold(
-      appBar: SharedAppBar(title: "order_transfer.title".tr(), showBackButton: true),
+      appBar: SharedAppBar(
+        title: 'order_transfer.title'.tr(),
+        showBackButton: true,
+        actions: [
+          IconButton(
+              tooltip: 'Debug',
+              onPressed: () => setState(() => _showDebug = !_showDebug),
+              icon: Icon(_showDebug
+                  ? Icons.bug_report
+                  : Icons.bug_report_outlined)),
+        ],
+      ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: ElevatedButton.icon(
-          onPressed: canSave ? _onSave : null,
+          onPressed: canSave ? _save : null,
           icon: _isSaving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.save),
-          label: Text("order_transfer.save_cart_button".tr(namedArgs: {'count': _assignedTargets.length.toString()})),
-          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+          label: Text('Kaydet (${_targets.length})'),
+          style:
+          ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      body: _body(),
+    );
+  }
+
+  Widget _body() {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_containers.isEmpty) return Center(child: Text('Bu siparişe ait, mal kabul alanında transfer edilecek ürün bulunmuyor.'));
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            _buildOrderHeader(),
+            OrderInfoCard(order: widget.order), // GÜNCELLENDİ
+            if (_showDebug) _debugPanel(),
             const SizedBox(height: 12),
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _transferableContainers.isEmpty
-                  ? Center(child: Text("order_transfer.no_items_found".tr(), textAlign: TextAlign.center))
-                  : RefreshIndicator(
+              child: RefreshIndicator(
                 onRefresh: _loadContainers,
                 child: ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.only(bottom: 80.0, top: 8.0),
-                  itemCount: _transferableContainers.length,
-                  itemBuilder: (context, index) {
-                    final container = _transferableContainers[index];
-                    return _ContainerTransferCard(
-                      key: ValueKey(container.id),
-                      container: container,
-                      repo: _repo,
-                      isFocused: index == _focusedIndex,
-                      assignedTarget: _assignedTargets[container.id],
-                      onTargetSelected: (location) => _assignTargetLocation(container, location),
-                      onClearTarget: () => _clearTarget(container),
-                      onTap: () => setState(() => _focusedIndex = index),
+                  padding: const EdgeInsets.only(bottom: 80, top: 8),
+                  itemCount: _containers.length,
+                  itemBuilder: (_, i) {
+                    final c = _containers[i];
+                    return _ContainerCard(
+                      key: ValueKey(c.id),
+                      container: c,
+                      focused: i == _focusedIndex,
+                      target: _targets[c.id],
+                      onTarget: (loc) => _assignTarget(c, loc),
+                      onClear: () {
+                        setState(() => _targets.remove(c.id));
+                      },
+                      onTap: () {
+                        setState(() => _focusedIndex = i);
+                        _scrollTo(i);
+                      },
+                      onScan: (text) => _processScannedLocation(c, text),
                     );
                   },
                 ),
@@ -292,204 +380,141 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  Widget _buildOrderHeader() {
-    final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.primaryContainer.withOpacity(0.4),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.primaryContainer),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('goods_receiving_screen.order_info_title'.tr(),
-                style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
-            const SizedBox(height: 4),
-            Text(widget.order.poId ?? 'N/A',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer)),
-            if (widget.order.supplierName != null) ...[
-              const SizedBox(height: 2),
-              Text(widget.order.supplierName!,
-                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
-            ]
-          ],
+  Widget _debugPanel() => Card(
+    margin: const EdgeInsets.only(top: 12),
+    child: ExpansionTile(
+      initiallyExpanded: true,
+      title: const Text('Debug'),
+      children: [
+        Container(
+          height: 150,
+          color: Colors.black87,
+          padding: const EdgeInsets.all(8),
+          child: ListView.builder(
+            reverse: true,
+            itemCount: _debug.length,
+            itemBuilder: (_, i) => Text(_debug[i],
+                style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    color: Colors.white)),
+          ),
         ),
-      ),
-    );
-  }
-
-  void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Theme.of(context).colorScheme.error : Colors.green,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.all(16),
-    ));
-  }
+      ],
+    ),
+  );
 }
 
-class _ContainerTransferCard extends StatefulWidget {
+/// *************************
+/// Tek konteyner kartı
+/// *************************
+class _ContainerCard extends StatefulWidget {
   final TransferableContainer container;
-  final InventoryTransferRepository repo;
-  final bool isFocused;
-  final MapEntry<String, int>? assignedTarget;
-  final ValueChanged<MapEntry<String, int>> onTargetSelected;
-  final VoidCallback onClearTarget;
+  final bool focused;
+  final MapEntry<String, int>? target;
+  final ValueChanged<MapEntry<String, int>> onTarget;
+  final VoidCallback onClear;
   final VoidCallback onTap;
+  final void Function(String) onScan;
 
-  const _ContainerTransferCard({
+  const _ContainerCard({
     super.key,
     required this.container,
-    required this.repo,
-    required this.isFocused,
-    this.assignedTarget,
-    required this.onTargetSelected,
-    required this.onClearTarget,
+    required this.focused,
+    required this.target,
+    required this.onTarget,
+    required this.onClear,
     required this.onTap,
+    required this.onScan,
   });
 
   @override
-  State<_ContainerTransferCard> createState() => _ContainerTransferCardState();
+  State<_ContainerCard> createState() => _ContainerCardState();
 }
 
-class _ContainerTransferCardState extends State<_ContainerTransferCard> {
-  final _locationController = TextEditingController();
-  final _locationFocusNode = FocusNode();
-  Map<String, int> _targetLocations = {};
-  bool _isLoadingLocations = true;
+class _ContainerCardState extends State<_ContainerCard> {
+  final _ctrl = TextEditingController();
+  final _focus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _loadLocations();
-    _locationFocusNode.addListener(_onFocus);
-    if(widget.assignedTarget != null) {
-      _locationController.text = widget.assignedTarget!.key;
-    }
+    if (widget.target != null) _ctrl.text = widget.target!.key;
+    if (widget.focused) _focus.requestFocus();
   }
 
   @override
-  void didUpdateWidget(covariant _ContainerTransferCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.assignedTarget != oldWidget.assignedTarget) {
-      _locationController.text = widget.assignedTarget?.key ?? '';
-    }
+  void didUpdateWidget(covariant _ContainerCard old) {
+    super.didUpdateWidget(old);
+    if (widget.target?.key != old.target?.key) _ctrl.text = widget.target?.key ?? '';
+    if (widget.focused && !old.focused) _focus.requestFocus();
   }
 
   @override
   void dispose() {
-    _locationController.dispose();
-    _locationFocusNode.removeListener(_onFocus);
-    _locationFocusNode.dispose();
+    _ctrl.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
-  void _onFocus() {
-    if (_locationFocusNode.hasFocus && _locationController.text.isNotEmpty) {
-      _locationController.selection = TextSelection(baseOffset: 0, extentOffset: _locationController.text.length);
-    }
-  }
-
-  Future<void> _loadLocations() async {
-    try {
-      final locations = await widget.repo.getTargetLocations();
-      locations.removeWhere((key, value) => value == 1);
-      if(mounted) {
-        setState(() {
-          _targetLocations = locations;
-          _isLoadingLocations = false;
-        });
-      }
-    } catch(e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingLocations = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _scanLocation() async {
-    final result = await Navigator.push<String>(
-        context,
-        MaterialPageRoute(builder: (_) => const QrScannerScreen(title: 'Hedef Rafı Okutun'))
-    );
-    if(result != null && result.isNotEmpty && mounted) {
-      _processLocationInput(result);
-    }
-  }
-
-  void _processLocationInput(String input) {
-    final entry = _targetLocations.entries.firstWhereOrNull(
-            (entry) => entry.key.toLowerCase() == input.toLowerCase()
-    );
-
-    if (entry != null) {
-      _locationController.text = entry.key;
-      widget.onTargetSelected(entry);
-      FocusScope.of(context).unfocus();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('inventory_transfer.error_invalid_target_location'.tr(namedArgs: {'data': input})),
-        backgroundColor: Colors.red,
-      ));
+  void _submit(String text) {
+    final t = text.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
+    if (t.isNotEmpty) {
+      widget.onScan(t);
+      _ctrl.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bool isAssigned = widget.assignedTarget != null;
+    final assigned = widget.target != null;
 
     return GestureDetector(
       onTap: widget.onTap,
       child: Card(
-        elevation: widget.isFocused ? 4 : 2,
+        elevation: widget.focused ? 4 : 2,
         margin: const EdgeInsets.symmetric(vertical: 6),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: widget.isFocused ? theme.colorScheme.primary : (isAssigned ? Colors.green : Colors.transparent),
-            width: widget.isFocused ? 2.5 : 1.5,
-          ),
+              color: widget.focused
+                  ? theme.colorScheme.primary
+                  : assigned
+                  ? Colors.green
+                  : Colors.transparent,
+              width: widget.focused ? 2.5 : 1.5),
         ),
         child: Column(
           children: [
             ExpansionTile(
               key: PageStorageKey(widget.container.id),
-              initiallyExpanded: widget.isFocused,
-              onExpansionChanged: (isExpanded) {
-                if (isExpanded) widget.onTap();
+              initiallyExpanded: widget.focused,
+              onExpansionChanged: (ex) {
+                if (ex) {
+                  widget.onTap();
+                  _focus.requestFocus();
+                }
               },
-              title: Text(widget.container.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: isAssigned
+              title: Text(widget.container.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: assigned
                   ? Icon(Icons.check_circle, color: Colors.green.shade700)
                   : const Icon(Icons.pending_outlined),
-              children: widget.container.items.map((item) {
-                return ListTile(
-                  dense: true,
-                  title: Text(item.product.name),
-                  subtitle: Text(item.product.stockCode),
-                  trailing: Text(
-                    "Miktar: ${item.quantity.toStringAsFixed(0)}",
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                );
-              }).toList(),
+              children: widget.container.items
+                  .map((i) => ListTile(
+                dense: true,
+                title: Text(i.product.name),
+                subtitle: Text(i.product.stockCode),
+                trailing:
+                Text('Miktar: ${i.quantity.toStringAsFixed(0)}'),
+              ))
+                  .toList(),
             ),
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: isAssigned
-                  ? _buildAssignedTargetRow(theme)
-                  : _buildTargetAssignmentRow(),
+              padding: const EdgeInsets.all(12),
+              child: assigned ? _rowAssigned(theme) : _rowInput(theme),
             ),
           ],
         ),
@@ -497,79 +522,55 @@ class _ContainerTransferCardState extends State<_ContainerTransferCard> {
     );
   }
 
-  Widget _buildAssignedTargetRow(ThemeData theme) {
-    return Row(
-      children: [
-        Icon(Icons.location_on, color: Colors.green.shade700),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            widget.assignedTarget!.key,
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-        ),
-        IconButton(
+  Widget _rowAssigned(ThemeData theme) => Row(
+    children: [
+      Icon(Icons.location_on, color: Colors.green.shade700),
+      const SizedBox(width: 8),
+      Expanded(
+          child: Text(widget.target!.key,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold))),
+      IconButton(
           icon: Icon(Icons.close, color: theme.colorScheme.error),
-          onPressed: widget.onClearTarget,
-          tooltip: 'Hedefi Temizle',
-        )
-      ],
-    );
-  }
+          onPressed: widget.onClear),
+    ],
+  );
 
-  Widget _buildTargetAssignmentRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Autocomplete<MapEntry<String, int>>(
-            optionsBuilder: (textEditingValue) {
-              if (textEditingValue.text.isEmpty) {
-                return const Iterable.empty();
-              }
-              if (_isLoadingLocations) return const [];
-              return _targetLocations.entries.where((entry) {
-                return entry.key.toLowerCase().contains(textEditingValue.text.toLowerCase());
-              });
-            },
-            displayStringForOption: (option) => option.key,
-            fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-              return TextFormField(
-                controller: _locationController,
-                focusNode: _locationFocusNode,
-                decoration: InputDecoration(
-                  labelText: 'Hedef Raf Ata',
-                  isDense: true,
-                  hintText: 'Yazın, seçin veya okutun...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  suffixIcon: _isLoadingLocations ? const Padding(padding: EdgeInsets.all(10.0), child: CircularProgressIndicator(strokeWidth: 2)) : null,
-                ),
-                onChanged: (value) {
-                  textEditingController.text = value;
-                },
-                onFieldSubmitted: (value) {
-                  _processLocationInput(value);
-                  onFieldSubmitted();
-                },
-              );
-            },
-            onSelected: (selection) {
-              _processLocationInput(selection.key);
-            },
+  Widget _rowInput(ThemeData theme) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(
+        child: TextFormField(
+          controller: _ctrl,
+          focusNode: _focus,
+          decoration: InputDecoration(
+            labelText: 'Hedef Raf',
+            hintText: 'Okutun veya yazın',
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8)),
           ),
+          onChanged: (v) {
+            if (v.contains('\n')) _submit(v);
+          },
+          onFieldSubmitted: _submit,
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 48,
-          child: ElevatedButton(
-            onPressed: _scanLocation,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-            child: const Icon(Icons.qr_code_scanner),
-          ),
+      ),
+      const SizedBox(width: 8),
+      SizedBox(
+        height: 48,
+        child: ElevatedButton(
+          onPressed: () async {
+            final res = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const QrScannerScreen()));
+            if (res != null && res.isNotEmpty) _submit(res);
+          },
+          style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12)),
+          child: const Icon(Icons.qr_code_scanner),
         ),
-      ],
-    );
-  }
+      ),
+    ],
+  );
 }

@@ -1,3 +1,4 @@
+// ----- lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart (GÜNCELLENDİ) -----
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
@@ -13,6 +14,7 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transferabl
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
@@ -27,6 +29,23 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required this.dio,
     required this.networkInfo,
   });
+
+  @override
+  Future<MapEntry<String, int>?> findLocationByCode(String code) async {
+    final db = await dbHelper.database;
+    final maps = await db.query(
+      'warehouses_shelfs',
+      columns: ['id', 'name'],
+      where: 'LOWER(code) = ? AND is_active = 1',
+      whereArgs: [code.toLowerCase().trim()],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      final map = maps.first;
+      return MapEntry(map['name'] as String, map['id'] as int);
+    }
+    return null;
+  }
 
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
@@ -108,11 +127,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int targetLocationId,
       ) async {
     final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
-
-    // --- GÜNCELLEME BAŞLANGICI ---
-    // _saveForSync metoduna 'header' nesnesini iletiyoruz, çünkü içinde operasyon tipi var.
     await _saveForSync(apiPayload, header, items, sourceLocationId, targetLocationId);
-    // --- GÜNCELLEME SONA ERDİ ---
   }
 
   Map<String, dynamic> _buildApiPayload(
@@ -127,8 +142,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     };
   }
 
-  // --- GÜNCELLEME BAŞLANGICI (METOD İMZASI) ---
-  // Metot artık 'employeeId' yerine 'header' nesnesinin tamamını alıyor.
   Future<void> _saveForSync(
       Map<String, dynamic> apiPayload,
       TransferOperationHeader header,
@@ -136,45 +149,34 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int sourceLocationId,
       int targetLocationId,
       ) async {
-    // --- GÜNCELLEME SONA ERDİ (METOD İMZASI) ---
     final db = await dbHelper.database;
     try {
       await db.transaction((txn) async {
         for (final item in items) {
           final sourcePallet = item.palletId ?? item.sourcePalletBarcode;
-
-          // --- GÜNCELLEME BAŞLANGICI (İŞ MANTIĞI) ---
-          // Hedef palet barkodunu operasyonun tipine göre belirle.
           final String? targetPallet;
 
-          // Eğer operasyon tam bir palet transferi ise, palet barkodunu koru.
           if (header.operationType == AssignmentMode.pallet) {
             targetPallet = sourcePallet;
           }
-          // Değilse (kutu transferi veya paletten kutu alma), hedef paletsizdir (null).
           else {
             targetPallet = null;
           }
 
-          // 1. Kaynak stoktan düş.
           await _updateStock(txn, item.productId, sourceLocationId, -item.quantity, sourcePallet);
-
-          // 2. Hedef stoka ekle (DOĞRU palet bilgisiyle).
           await _updateStock(txn, item.productId, targetLocationId, item.quantity, targetPallet);
 
-          // 3. inventory_transfers tablosuna işlemi kaydet (DOĞRU palet bilgisiyle).
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
             'from_location_id': sourceLocationId,
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
             'from_pallet_barcode': sourcePallet,
-            'pallet_barcode': targetPallet, // Hata düzeltildi.
-            'employee_id': header.employeeId, // header'dan alındı.
+            'pallet_barcode': targetPallet,
+            'employee_id': header.employeeId,
             'transfer_date': DateTime.now().toIso8601String(),
             'created_at': DateTime.now().toIso8601String(),
           });
-          // --- GÜNCELLEME SONA ERDİ (İŞ MANTIĞI) ---
         }
 
         final pendingOp = PendingOperation(

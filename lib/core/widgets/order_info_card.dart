@@ -13,68 +13,45 @@ class OrderInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Bu tasarım doğrudan goods_receiving_screen.dart'tan alınmıştır.
     return Card(
-      margin: EdgeInsets.zero,
-      color: theme.colorScheme.surfaceVariant.withOpacity(0.7),
+      color: theme.colorScheme.primaryContainer.withOpacity(0.4),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.dividerColor),
+        side: BorderSide(color: theme.colorScheme.primaryContainer),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInfoRow(
-              context,
-              icon: Icons.receipt_long_outlined,
-              label: "Sipariş No",
-              text: order.poId ?? 'N/A',
-              isTitle: true,
+            Text(
+              'goods_receiving_screen.order_info_title'.tr(), // Çeviri anahtarı goods_receiving'den geliyor.
+              style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onPrimaryContainer
+              ),
             ),
-            const Divider(height: 16),
-            _buildInfoRow(
-              context,
-              icon: Icons.business_outlined,
-              label: "Tedarikçi",
-              text: order.supplierName ?? 'orders.no_supplier'.tr(),
+            const SizedBox(height: 4),
+            Text(
+              order.poId ?? 'N/A',
+              style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer
+              ),
             ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              context,
-              icon: Icons.calendar_today_outlined,
-              label: "Tarih",
-              text: order.date != null
-                  ? DateFormat('dd MMMM yyyy, EEEE', context.locale.toString()).format(order.date!)
-                  : 'order_selection.no_date'.tr(),
-            ),
+            if(order.supplierName != null && order.supplierName!.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                order.supplierName!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer
+                ),
+              ),
+            ]
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(BuildContext context, {required IconData icon, required String label, required String text, bool isTitle = false}) {
-    final theme = Theme.of(context);
-    final labelStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final textStyle = isTitle
-        ? theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary)
-        : theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8)),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if(!isTitle) Text(label, style: labelStyle),
-            Text(text, style: textStyle),
-          ],
-        ),
-      ],
     );
   }
 }
