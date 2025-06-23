@@ -146,7 +146,6 @@ class TerminalController extends Controller
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
-            // GÜNCELLEME: JSON anahtarı, lokal veritabanı ile tutarlı olması için 'warehouses_shelfs' yapıldı.
             $data['warehouses_shelfs'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['warehouses_shelfs'], ['id', 'warehouse_id', 'is_active']);
 
@@ -201,8 +200,9 @@ class TerminalController extends Controller
                 $productId = $item['product_id'];
                 $quantity = (float)$item['quantity'];
                 $sourcePallet = $item['pallet_id'] ?? null;
-                $targetPallet = null;
 
+                // GÜNCELLEME: Palet transferi sırasında hedef palet barkodu korunuyor.
+                $targetPallet = null;
                 if ($operationType === 'pallet_transfer') {
                     $targetPallet = $sourcePallet;
                 }
@@ -315,30 +315,20 @@ class TerminalController extends Controller
     private function checkAndUpdatePoStatus($db, $siparisId) {
         if (!$siparisId) return;
 
-        $orderedItems = (new Query())->select(['urun_id', 'miktar'])->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId])->all($db);
-        if (empty($orderedItems)) return;
+        Yii::info("Sipariş durumu kontrolü başlatıldı: siparis_id: $siparisId", __METHOD__);
 
-        $receivedTotalsList = (new Query())
-            ->select(['gri.urun_id', 'total_received' => new \yii\db\Expression('SUM(gri.quantity_received)')])
-            ->from(['gri' => 'goods_receipt_items'])
-            ->innerJoin(['gr' => 'goods_receipts'], 'gr.id = gri.receipt_id')
-            ->where(['gr.siparis_id' => $siparisId])->groupBy('gri.urun_id')->all($db);
-        $receivedTotals = ArrayHelper::map($receivedTotalsList, 'urun_id', 'total_received');
+        $currentStatus = (new Query())
+            ->select('status')
+            ->from('satin_alma_siparis_fis')
+            ->where(['id' => $siparisId])
+            ->scalar($db);
 
-        $allCompleted = true;
-        $hasAnyReceipts = !empty($receivedTotals);
-
-        foreach ($orderedItems as $item) {
-            if ((float)($receivedTotals[$item['urun_id']] ?? 0) < (float)$item['miktar']) {
-                $allCompleted = false;
-                break;
-            }
+        if ($currentStatus != 1) {
+            Yii::info("Sipariş durumu zaten $currentStatus. Güncelleme atlanıyor: siparis_id: $siparisId", __METHOD__);
+            return;
         }
 
-        if ($allCompleted) {
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
-        } elseif ($hasAnyReceipts) {
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
-        }
+        Yii::info("Durum 2 (Kısmi Kabul) olarak güncelleniyor: siparis_id: $siparisId", __METHOD__);
+        $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
     }
 }
