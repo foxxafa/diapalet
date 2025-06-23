@@ -51,6 +51,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode);
         }
 
+        // GÜNCELLEME: Mal kabul yapıldığında siparişin durumunu lokalde anında güncelle.
+        // Bu, senkronizasyonu beklemeden arayüzün doğru durumu göstermesini sağlar.
+        if (payload.header.siparisId != null) {
+          await txn.update(
+            'satin_alma_siparis_fis',
+            {'status': 2}, // Durumu 2 (Kısmi Kabul) yap.
+            where: 'id = ?',
+            whereArgs: [payload.header.siparisId],
+          );
+        }
+
         final pendingOp = PendingOperation(
           type: PendingOperationType.goodsReceipt,
           data: jsonEncode(payload.toApiJson()),
@@ -58,7 +69,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
       });
-      debugPrint("Mal kabul işlemi başarıyla lokale kaydedildi.");
+      debugPrint("Mal kabul işlemi ve sipariş durumu başarıyla lokale kaydedildi.");
     } catch (e, s) {
       debugPrint("Lokal mal kabul kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
@@ -87,10 +98,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
+    // GÜNCELLEME: Sorgu, artık YALNIZCA durumu 1 (Onaylandı, Mal Kabul Bekliyor)
+    // olan siparişleri getirecek şekilde düzeltildi.
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (?, ?)',
-      whereArgs: [1, 2],
+      where: 'status = ?',
+      whereArgs: [1],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -122,7 +135,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
-    // GÜNCELLEME: Çökmeyi önlemek için tablo adı 'warehouses_shelfs' olarak düzeltildi.
     final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
     return maps.map((map) => LocationInfo.fromMap(map)).toList();
   }

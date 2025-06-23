@@ -1,5 +1,5 @@
 // lib/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart
-import 'package:diapalet/core/sync/sync_service.dart'; // GÜNCELLEME: SyncService import edildi.
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
@@ -271,7 +271,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
-        if (qty != product.currentQuantity) {
+        if (qty.toStringAsFixed(2) != product.currentQuantity.toStringAsFixed(2)) {
           isFullPalletTransfer = false;
         }
         itemsToTransfer.add(TransferItemDetail(
@@ -292,6 +292,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       return;
     }
 
+    // GÜNCELLEME: Palet açma mantığına göre doğru operasyon tipini belirle
     final finalOperationMode = _selectedMode == AssignmentMode.pallet
         ? (isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.box_from_pallet)
         : AssignmentMode.box;
@@ -323,10 +324,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
       if (mounted) {
         _showSuccessSnackBar('inventory_transfer.success_transfer_saved'.tr());
-
-        // GÜNCELLEME: Anında senkronizasyon burada tetikleniyor.
         context.read<SyncService>().performFullSync(force: true);
-
         _resetForm(resetAll: true);
       }
     } catch (e) {

@@ -7,6 +7,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/goods_receiving/presentation/screens/purchase_order_list_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -212,16 +213,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         return;
       }
     }
-    final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
-    if (isKutuModeLocked) {
-      _showErrorSnackBar('goods_receiving_screen.error_box_mode_single_product'.tr());
-      return;
-    }
+
     setState(() {
       _addedItems.insert(0, ReceiptItemDraft(
         product: currentProduct,
         quantity: quantity,
-        palletBarcode: _receivingMode == ReceivingMode.palet ? _palletIdController.text : null,
+        palletBarcode: _receivingMode == ReceivingMode.palet && _palletIdController.text.isNotEmpty ? _palletIdController.text : null,
       ));
       _clearEntryFields(clearPallet: false);
     });
@@ -274,7 +271,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (mounted) {
         _showSuccessSnackBar('goods_receiving_screen.success_receipt_saved'.tr());
         context.read<SyncService>().performFullSync(force: true);
-        _handleSuccessfulSave(_selectedOrder?.id);
+        _handleSuccessfulSave();
       }
     } catch (e) {
       if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
@@ -283,17 +280,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-  void _handleSuccessfulSave(int? savedOrderId) {
-    setState(() {
-      _addedItems.clear();
-      _clearEntryFields(clearPallet: _receivingMode == ReceivingMode.palet);
-      if(isOrderBased && savedOrderId != null){
-        _isOrderDetailsLoading = true;
-        _loadOrderDetails(savedOrderId);
-      } else {
-        _palletIdFocusNode.requestFocus();
-      }
-    });
+  void _handleSuccessfulSave() {
+    if (isOrderBased) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _addedItems.clear();
+        _clearEntryFields(clearPallet: true);
+        _productFocusNode.requestFocus();
+      });
+    }
   }
 
   void _clearEntryFields({required bool clearPallet}) {
@@ -313,7 +309,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     final areFieldsEnabled = !_isOrderDetailsLoading && !_isSaving;
-    final isKutuModeLocked = _receivingMode == ReceivingMode.kutu && _addedItems.isNotEmpty;
 
     return Scaffold(
       appBar: SharedAppBar(
@@ -344,9 +339,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     _buildPalletIdInput(isEnabled: areFieldsEnabled),
                     const SizedBox(height: _gap),
                   ],
-                  _buildSearchableProductInputRow(isLocked: isKutuModeLocked, isEnabled: areFieldsEnabled),
+                  _buildSearchableProductInputRow(isEnabled: areFieldsEnabled),
                   const SizedBox(height: _gap),
-                  _buildQuantityAndStatusRow(isLocked: isKutuModeLocked, isEnabled: areFieldsEnabled),
+                  _buildQuantityAndStatusRow(isEnabled: areFieldsEnabled),
                   const SizedBox(height: _gap),
                   _buildLastAddedItemSummary(textTheme, colorScheme),
                 ],
@@ -361,8 +356,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildOrderInfoCard() {
     final theme = Theme.of(context);
     if (_selectedOrder == null) return const SizedBox.shrink();
-    // GÜNCELLEME: Kartın arka plan rengi temanın birincil renginin bir tonu yapıldı.
-    // Bu, istenmeyen "pembe" rengi kaldırır ve daha tutarlı bir görünüm sağlar.
     return Card(
       color: theme.colorScheme.primaryContainer.withOpacity(0.4),
       elevation: 0,
@@ -421,13 +414,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         onSelectionChanged: (newSelection) {
           if (_isSaving) return;
           setState(() {
-            _addedItems.clear();
             _clearEntryFields(clearPallet: true);
             _receivingMode = newSelection.first;
-            if (isOrderBased) {
-              _setInitialFocusAfterOrderLoad();
-            } else {
+
+            if (_receivingMode == ReceivingMode.palet) {
               _palletIdFocusNode.requestFocus();
+            } else {
+              _productFocusNode.requestFocus();
             }
           });
         },
@@ -477,14 +470,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildSearchableProductInputRow({required bool isLocked, required bool isEnabled}) {
-    final bool fieldEnabled = isEnabled && !isLocked;
+  Widget _buildSearchableProductInputRow({required bool isEnabled}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: TextFormField(
-            enabled: fieldEnabled,
+            enabled: isEnabled,
             controller: _productController,
             focusNode: _productFocusNode,
             readOnly: true,
@@ -493,9 +485,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   ? 'goods_receiving_screen.label_select_product_in_order'.tr()
                   : 'goods_receiving_screen.label_select_product'.tr(),
               suffixIcon: const Icon(Icons.arrow_drop_down),
-              enabled: fieldEnabled,
+              enabled: isEnabled,
             ),
-            onTap: !fieldEnabled ? null : () async {
+            onTap: !isEnabled ? null : () async {
               final productList = isOrderBased
                   ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
                   : _availableProducts;
@@ -515,7 +507,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               }
             },
             validator: (value) {
-              if (!fieldEnabled) return null;
+              if (!isEnabled) return null;
               return (value == null || value.isEmpty) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
             },
           ),
@@ -528,16 +520,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               _processScannedProduct(result);
             }
           },
-          isEnabled: fieldEnabled,
+          isEnabled: isEnabled,
         ),
       ],
     );
   }
 
-  Widget _buildQuantityAndStatusRow({required bool isLocked, required bool isEnabled}) {
+  Widget _buildQuantityAndStatusRow({required bool isEnabled}) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-    final bool fieldEnabled = isEnabled && !isLocked;
     final orderItem = _selectedProduct == null || !isOrderBased
         ? null
         : _orderItems.firstWhereOrNull((item) => item.product?.id == _selectedProduct!.id);
@@ -565,13 +556,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             focusNode: _quantityFocusNode,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
-            enabled: fieldEnabled,
-            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: fieldEnabled),
+            enabled: isEnabled,
+            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: isEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) _addItemToList();
             },
             validator: (value) {
-              if (!fieldEnabled) return null;
+              if (!isEnabled) return null;
               if (value == null || value.isEmpty) return 'goods_receiving_screen.validator_enter_quantity'.tr();
               final number = double.tryParse(value);
               if (number == null || number <= 0) return 'goods_receiving_screen.validator_enter_valid_quantity'.tr();

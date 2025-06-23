@@ -37,6 +37,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
   }
 
   Future<void> _loadOrders() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final orders = await _repository.getOpenPurchaseOrders();
@@ -68,13 +69,21 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
     });
   }
 
-  void _onOrderSelected(PurchaseOrder order) {
-    Navigator.pushReplacement(
+  Future<void> _onOrderSelected(PurchaseOrder order) async {
+    // GÜNCELLEME: pushReplacement yerine push kullanıldı ve geri dönüldüğünde
+    // listenin yenilenmesi için `await` eklendi.
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => GoodsReceivingScreen(selectedOrder: order),
       ),
     );
+
+    // GÜNCELLEME: Mal kabul ekranından `true` değeriyle dönülürse (kayıt başarılıysa),
+    // liste otomatik olarak yenilenir.
+    if (result == true && mounted) {
+      _loadOrders();
+    }
   }
 
   @override
