@@ -41,8 +41,7 @@ class AppTheme {
       seedColor: lightPrimaryColor,
       primary: lightPrimaryColor,
       secondary: lightSecondaryColor,
-      background: lightBackgroundColor,
-      surface: lightSurfaceColor,
+      surface: lightBackgroundColor,
       error: errorColor,
       brightness: Brightness.light,
     ),
@@ -58,11 +57,11 @@ class AppTheme {
       ),
     ),
     // [DÜZELTME] TabBar renkleri, AppBar üzerinde okunabilir olacak şekilde güncellendi.
-    tabBarTheme: TabBarThemeData(
+    tabBarTheme: const TabBarThemeData(
       labelColor: Colors.white, // Seçili sekme metni AppBar başlığı gibi beyaz yapıldı.
-      unselectedLabelColor: Colors.white.withOpacity(0.75), // Seçili olmayan sekme rengi ayarlandı.
+      unselectedLabelColor: Colors.white70, // Seçili olmayan sekme rengi ayarlandı.
       indicatorColor: Colors.white, // Alt çizgi rengi beyaz yapıldı.
-      indicator: const UnderlineTabIndicator(
+      indicator: UnderlineTabIndicator(
         borderSide: BorderSide(color: Colors.white, width: 2.5),
       ),
     ),
@@ -129,8 +128,7 @@ class AppTheme {
       seedColor: darkPrimaryColor,
       primary: darkPrimaryColor,
       secondary: darkSecondaryColor,
-      background: darkBackgroundColor,
-      surface: darkSurfaceColor,
+      surface: darkBackgroundColor,
       error: errorColor,
       brightness: Brightness.dark,
     ),

@@ -5,7 +5,6 @@ import 'package:diapalet/features/inventory_transfer/domain/repositories/invento
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_transfer_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class OrderSelectionScreen extends StatefulWidget {

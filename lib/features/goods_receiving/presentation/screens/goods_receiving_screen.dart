@@ -12,7 +12,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
-import 'package:collection/collection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class GoodsReceivingScreen extends StatefulWidget {
@@ -47,7 +46,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   List<PurchaseOrderItem> _orderItems = [];
   List<ProductInfo> _availableProducts = [];
   ProductInfo? _selectedProduct;
-  List<ReceiptItemDraft> _addedItems = [];
+  final List<ReceiptItemDraft> _addedItems = [];
 
   final _palletIdController = TextEditingController();
   final _productController = TextEditingController();
@@ -152,10 +151,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (scannedData.isEmpty) return;
 
     final productSource = isOrderBased
-        ? _orderItems.map((item) => item.product).whereNotNull().toList()
+        ? _orderItems.map((item) => item.product).nonNulls.toList()
         : _availableProducts;
 
-    final foundProduct = productSource.firstWhereOrNull((p) =>
+    final foundProduct = productSource.firstWhere((p) =>
     p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
         (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
     );
@@ -193,11 +192,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _showErrorSnackBar('goods_receiving_screen.error_loading_order_details'.tr());
         return;
       }
-      final orderItem = _orderItems.firstWhereOrNull((item) => item.product?.id == currentProduct.id);
-      if (orderItem == null) {
-        _showErrorSnackBar('goods_receiving_screen.error_product_not_in_order'.tr());
-        return;
-      }
+      final orderItem = _orderItems.firstWhere((item) => item.product?.id == currentProduct.id);
       final alreadyAddedInUI = _addedItems
           .where((item) => item.product.id == currentProduct.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
           .map((item) => item.quantity)
@@ -445,7 +440,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             ),
             onTap: !isEnabled ? null : () async {
               final productList = isOrderBased
-                  ? _orderItems.map((orderItem) => orderItem.product).whereNotNull().toList()
+                  ? _orderItems.map((orderItem) => orderItem.product).nonNulls.toList()
                   : _availableProducts;
               final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
                 title: 'goods_receiving_screen.label_select_product'.tr(),
@@ -487,7 +482,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final textTheme = theme.textTheme;
     final orderItem = _selectedProduct == null || !isOrderBased
         ? null
-        : _orderItems.firstWhereOrNull((item) => item.product?.id == _selectedProduct!.id);
+        : _orderItems.firstWhere((item) => item.product?.id == _selectedProduct!.id);
 
     double totalReceived = 0;
     double expectedQty = 0;
@@ -630,9 +625,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface.withOpacity(0.04),
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface,
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       isDense: true,
       enabled: enabled,

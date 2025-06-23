@@ -130,7 +130,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   Widget _buildControlButton(VoidCallback onPressed, IconData icon) {
     return CircleAvatar(
       radius: 30,
-      backgroundColor: Colors.black.withOpacity(0.5),
+      backgroundColor: Colors.black54,
       child: IconButton(
         color: Colors.white,
         icon: Icon(icon, size: 30),
@@ -165,7 +165,7 @@ class ScannerOverlayPainter extends CustomPainter {
       cutoutPath,
     );
 
-    final paint = Paint()..color = Colors.black.withOpacity(0.6);
+    final paint = Paint()..color = Colors.black54;
     canvas.drawPath(overlayPath, paint);
 
     final borderPaint = Paint()

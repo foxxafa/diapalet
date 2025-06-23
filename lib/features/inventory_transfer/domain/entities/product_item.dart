@@ -9,7 +9,7 @@ class ProductItem {
   final String productCode;
   final double currentQuantity;
 
-  ProductItem({
+  const ProductItem({
     required this.id,
     required this.name,
     required this.productCode,

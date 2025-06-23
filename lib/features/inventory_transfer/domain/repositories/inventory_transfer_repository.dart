@@ -5,7 +5,6 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/product_ite
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
-import 'package:flutter/material.dart';
 
 abstract class InventoryTransferRepository {
     Future<Map<String, int>> getSourceLocations();

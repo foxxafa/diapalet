@@ -294,7 +294,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     // GÜNCELLEME: Palet açma mantığına göre doğru operasyon tipini belirle
     final finalOperationMode = _selectedMode == AssignmentMode.pallet
-        ? (isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.box_from_pallet)
+        ? (isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.boxFromPallet)
         : AssignmentMode.box;
 
     final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
@@ -536,7 +536,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Widget _buildProductsList() {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
+        border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: _borderRadius,
       ),
       child: Column(
@@ -643,9 +643,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface.withOpacity(0.04),
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface,
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       isDense: true,
       enabled: enabled,
@@ -717,9 +717,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
-  final bool isEnabled;
 
-  const _QrButton({required this.onTap, this.isEnabled = true});
+  const _QrButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -727,7 +726,7 @@ class _QrButton extends StatelessWidget {
       height: 48,
       width: 56,
       child: ElevatedButton(
-        onPressed: isEnabled ? onTap : null,
+        onPressed: onTap,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
@@ -750,7 +749,6 @@ class _InventorySearchPage<T> extends StatefulWidget {
   final bool Function(T, String) filterCondition;
 
   const _InventorySearchPage({
-    super.key,
     required this.title,
     required this.items,
     required this.itemToString,
@@ -836,7 +834,6 @@ class _InventoryConfirmationPage extends StatelessWidget {
   final String targetLocationName;
 
   const _InventoryConfirmationPage({
-    super.key,
     required this.items,
     required this.mode,
     required this.sourceLocationName,

@@ -15,7 +15,7 @@ class OrderInfoCard extends StatelessWidget {
     final theme = Theme.of(context);
     // Bu tasarım doğrudan goods_receiving_screen.dart'tan alınmıştır.
     return Card(
-      color: theme.colorScheme.primaryContainer.withOpacity(0.4),
+      color: theme.colorScheme.primaryContainer,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),

@@ -181,9 +181,9 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color),
       ),
       child: Row(
         children: [
@@ -301,7 +301,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 60, color: theme.hintColor.withOpacity(0.5)),
+            Icon(icon, size: 60, color: theme.hintColor),
             const SizedBox(height: 16),
             Text(
               message,

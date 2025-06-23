@@ -1,7 +1,6 @@
 // ----- lib/features/inventory_transfer/presentation/screens/order_transfer_screen.dart (GÜNCELLENDİ) -----
 import 'dart:async';
 import 'dart:io';
-import 'package:collection/collection.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -228,7 +227,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       const Duration(milliseconds: 50), () => _scrollTo(_focusedIndex));
 
   void _scrollTo(int index) {
-    if (!_scrollController.hasClients || _scrollController.position.maxScrollExtent == null) return;
+    if (!_scrollController.hasClients) return;
     final offset = (index * 240.0).clamp(
         0.0, _scrollController.position.maxScrollExtent);
     _scrollController.animateTo(offset,
@@ -284,6 +283,14 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         }
       });
 
+      // Eğer tüm item'lar aynı hedefe gidiyorsa o ID'yi, yoksa 0 kullan (muhtelif).
+      final uniqueTargetIds = details.map((d) => d.targetLocationId).toSet();
+      final headerTargetLocationId = (uniqueTargetIds.length == 1 ? uniqueTargetIds.first : 0) ?? 0;
+      final headerTargetLocationName = uniqueTargetIds.length == 1
+          ? details.first.targetLocationName
+          : 'Muhtelif';
+
+
       final header = TransferOperationHeader(
         employeeId: uid,
         transferDate: DateTime.now(),
@@ -291,15 +298,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             ? AssignmentMode.pallet
             : AssignmentMode.box,
         sourceLocationName: sourceLocationName,
-        targetLocationName: 'Muhtelif',
+        targetLocationName: headerTargetLocationName,
       );
 
-      // targetLocationId'yi geçici olarak 0 yapıyoruz, çünkü her item kendi hedefini içeriyor.
-      // Sunucu tarafında bu durumun nasıl ele alınacağı önemli.
-      // Eğer tek bir header targetId bekleniyorsa, mantığın değişmesi gerekir.
-      // Mevcut yapıda her item'ın kendi hedefi olduğundan, header'daki anlamsız kalıyor.
       await _repo.recordTransferOperation(
-          header, details, sourceLocationId, 0);
+          header, details, sourceLocationId, headerTargetLocationId);
 
       _snack('Kaydedildi');
       context.read<SyncService>().performFullSync(force: true);
@@ -351,7 +354,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   Widget _body() {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_containers.isEmpty) return Center(child: Text('Bu siparişe ait, mal kabul alanında transfer edilecek ürün bulunmuyor.'));
+    if (_containers.isEmpty) return const Center(child: Text('Bu siparişe ait, mal kabul alanında transfer edilecek ürün bulunmuyor.'));
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),

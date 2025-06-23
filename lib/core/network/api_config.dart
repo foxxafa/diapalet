@@ -40,5 +40,7 @@ class ApiConfig {
   static String containerContents(String palletBarcode) => '$baseUrl/container-contents?pallet_barcode=$palletBarcode';
 
   // Sunucu Sağlık Kontrolü
-  static final String healthCheck = '$baseUrl/health-check';
+  static const String healthCheck = '$baseUrl/health-check';
 }
+
+const String apiBaseUrl = 'https://api.example.com';

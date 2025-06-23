@@ -9,7 +9,7 @@ enum AssignmentMode {
   box,
 
   /// Bir paletin içinden kısmi ürünlerin alınıp kutu olarak taşınması.
-  box_from_pallet,
+  boxFromPallet,
 }
 
 extension AssignmentModeExtension on AssignmentMode {
@@ -20,8 +20,8 @@ extension AssignmentModeExtension on AssignmentMode {
         return 'pallet_transfer';
       case AssignmentMode.box:
         return 'box_transfer';
-      case AssignmentMode.box_from_pallet:
-        return 'box_from_pallet';
+      case AssignmentMode.boxFromPallet:
+        return 'boxFromPallet';
     }
   }
 }
