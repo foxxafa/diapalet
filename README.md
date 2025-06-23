@@ -47,10 +47,10 @@ Proje, sürdürülebilir ve ölçeklenebilir bir kod tabanı sağlamak amacıyla
 ```
 lib/
 ├── core/         # Paylaşılan widget'lar, servisler, veritabanı, tema vb.
-│   ├── db/
-│   ├── local/    # Yerel veritabanı işlemleri
+│   ├── local/    # Yerel veritabanı işlemleri (SQLite)
 │   ├── network/  # API çağrıları ve ağ yapılandırması
 │   ├── sync/     # Çevrimdışı veri senkronizasyon mantığı
+│   ├── theme/    # Uygulama tema (açık/koyu mod) yönetimi
 │   └── widgets/  # Uygulama genelinde kullanılan ortak widget'lar
 ├── features/     # Uygulamanın ana özellikleri
 │   ├── auth/                 # Kullanıcı kimlik doğrulama işlemleri (giriş, çıkış vb.)
