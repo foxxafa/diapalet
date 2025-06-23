@@ -53,11 +53,11 @@ lib/
 │   ├── sync/     # Çevrimdışı veri senkronizasyon mantığı
 │   └── widgets/  # Uygulama genelinde kullanılan ortak widget'lar
 ├── features/     # Uygulamanın ana özellikleri
-│   ├── auth/
-│   ├── goods_receiving/
-│   ├── home/
-│   ├── inventory_transfer/
-│   └── pending_operations/
+│   ├── auth/                 # Kullanıcı kimlik doğrulama işlemleri (giriş, çıkış vb.)
+│   ├── goods_receiving/      # Mal kabul modülü (sipariş listeleme, ürün kabul)
+│   ├── home/                 # Ana ekran ve menü navigasyonu
+│   ├── inventory_transfer/   # Envanter transfer modülü (siparişli/serbest transfer)
+│   └── pending_operations/   # Çevrimdışı yapılan ve senkronize edilmeyi bekleyen işlemler
 └── main.dart     # Uygulamanın başlangıç noktası
 ```
 
