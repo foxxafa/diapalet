@@ -4,8 +4,6 @@ Bu proje, Flutter ile geliştirilmiş, Android ve iOS platformlarını destekley
 
 ## 🖼️ Ekran Görüntüleri
 
-*(Buraya uygulamanızın ekran görüntülerini ekleyebilirsiniz. Örneğin: Giriş ekranı, ana sayfa, mal kabul vb.)*
-
 |                 Giriş Ekranı                  |                   Ana Menü                   |                        Mal Kabul                        |
 |:---------------------------------------------:|:--------------------------------------------:|:-------------------------------------------------------:|
 | <img src="screenshots/login.png" width="250"> | <img src="screenshots/home.png" width="250"> | <img src="screenshots/goods_receiving.png" width="250"> |
