@@ -19,7 +19,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:diapalet/features/auth/presentation/splash_screen.dart';
 
 Dio createDioClient() {
   final dio = Dio(
@@ -94,15 +93,14 @@ void main() async {
             create: (_) => ThemeProvider(),
           ),
         ],
-        child: const MyApp(initialScreen: SplashScreen()),
+        child: const MyApp(),
       ),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  final Widget initialScreen;
-  const MyApp({super.key, required this.initialScreen});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +112,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
-      home: initialScreen,
+      home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
