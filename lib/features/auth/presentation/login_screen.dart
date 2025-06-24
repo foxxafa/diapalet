@@ -31,16 +31,17 @@ class _LoginScreenState extends State<LoginScreen> {
       final authRepository = context.read<AuthRepository>();
 
       try {
-        final success = await authRepository.login(
+        final authData = await authRepository.login(
           _usernameController.text,
           _passwordController.text,
         );
 
-        if (success && mounted) {
+        if (authData != null && mounted) {
           // GÜNCELLEME: Giriş başarılı olduktan hemen sonra senkronizasyonu tetikle.
           // Bu, çalışan listesinin anında indirilmesini ve offline login için
           // lokal veritabanının hazır olmasını sağlar.
-          await context.read<SyncService>().performFullSync();
+          final warehouseId = authData['warehouse_id'] as int?;
+          await context.read<SyncService>().performFullSync(warehouseId: warehouseId);
 
           if (!mounted) return;
           Navigator.of(context).pushReplacement(

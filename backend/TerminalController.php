@@ -160,8 +160,31 @@ class TerminalController extends Controller
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id', 'status'], ['miktar']);
+                
+                // GÜNCELLEME: Mal kabul verilerini de gönder
+                $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+                $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
+                
+                $receiptIds = array_column($data['goods_receipts'], 'id');
+                if (!empty($receiptIds)) {
+                    $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
+                    $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+                } else {
+                    $data['goods_receipt_items'] = [];
+                }
             } else {
                 $data['satin_alma_siparis_fis_satir'] = [];
+                $data['goods_receipts'] = [];
+                $data['goods_receipt_items'] = [];
+            }
+
+            // GÜNCELLEME: Depoya ait stok bilgisini de gönder
+            $locationIds = array_column($data['warehouses_shelfs'], 'id');
+             if (!empty($locationIds)) {
+                $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
+                $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
+            } else {
+                $data['inventory_stock'] = [];
             }
 
             return [

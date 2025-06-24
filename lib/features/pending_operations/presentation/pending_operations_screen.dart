@@ -271,9 +271,46 @@ class _OperationCard extends StatelessWidget {
 
   const _OperationCard({required this.operation, this.isSynced = false});
 
+  void _showErrorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('pending_operations.error_details'.tr()),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              operation.displayTitle,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              operation.errorMessage ?? 'common_labels.unknown_error'.tr(),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+             const SizedBox(height: 16),
+            Text(
+              'pending_operations.attempts'.tr(namedArgs: {'count': operation.attempts.toString()}),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('common_labels.close'.tr()),
+          )
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasError = operation.errorMessage != null && operation.errorMessage!.isNotEmpty;
+
     IconData leadingIcon;
     switch (operation.type) {
       case PendingOperationType.goodsReceipt:
@@ -284,20 +321,36 @@ class _OperationCard extends StatelessWidget {
         break;
     }
 
-    final Widget trailingWidget = isSynced
-        ? Icon(Icons.check_circle_outline_rounded,
-            color: theme.colorScheme.primary)
-        : Icon(Icons.hourglass_top_rounded, color: AppTheme.warningColor);
+    final Widget trailingWidget;
+    if (hasError) {
+      trailingWidget = Icon(Icons.error_outline_rounded, color: theme.colorScheme.error);
+    } else if (isSynced) {
+      trailingWidget = Icon(Icons.check_circle_outline_rounded, color: theme.colorScheme.primary);
+    } else {
+      trailingWidget = Icon(Icons.hourglass_top_rounded, color: AppTheme.warningColor);
+    }
 
     return Card(
+      elevation: hasError ? 2 : 1,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: hasError ? theme.colorScheme.error.withOpacity(0.5) : Colors.transparent,
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: ListTile(
         leading: Icon(leadingIcon, color: theme.colorScheme.secondary),
-        title: Text(operation.displayTitle,
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        subtitle: Text(operation.displaySubtitle,
-            style: theme.textTheme.bodySmall),
+        title: Text(
+          operation.displayTitle,
+          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          operation.displaySubtitle,
+          style: theme.textTheme.bodySmall,
+        ),
         trailing: trailingWidget,
+        onTap: hasError ? () => _showErrorDialog(context) : null,
       ),
     );
   }

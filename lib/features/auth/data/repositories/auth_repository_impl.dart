@@ -19,7 +19,7 @@ class AuthRepositoryImpl implements AuthRepository {
   });
 
   @override
-  Future<bool> login(String username, String password) async {
+  Future<Map<String, dynamic>?> login(String username, String password) async {
     if (await networkInfo.isConnected) {
       return _loginOnline(username, password);
     } else {
@@ -50,7 +50,7 @@ class AuthRepositoryImpl implements AuthRepository {
     debugPrint("Oturum başarıyla sonlandırıldı.");
   }
 
-  Future<bool> _loginOnline(String username, String password) async {
+  Future<Map<String, dynamic>?> _loginOnline(String username, String password) async {
     try {
       debugPrint("Online login denemesi yapılıyor: $username");
 
@@ -86,7 +86,7 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.remove('last_sync_timestamp');
           debugPrint("Kullanıcı bilgileri (user_id: ${user['id']}) SharedPreferences'a kaydedildi.");
 
-          return true;
+          return {'warehouse_id': user['warehouse_id'] as int};
         } else {
           final errorMessage = responseData['message'] ?? 'Kullanıcı adı veya şifre hatalı.';
           throw Exception(errorMessage);
@@ -102,7 +102,7 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
-  Future<bool> _loginOffline(String username, String password) async {
+  Future<Map<String, dynamic>?> _loginOffline(String username, String password) async {
     try {
       final db = await dbHelper.database;
       final List<Map<String, dynamic>> result = await db.query(
@@ -114,12 +114,13 @@ class AuthRepositoryImpl implements AuthRepository {
 
       if (result.isNotEmpty) {
         debugPrint("Offline login başarılı: $username");
+        final user = result.first;
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', result.first['id'] as int);
-        await prefs.setInt('warehouse_id', result.first['warehouse_id'] as int);
-        await prefs.setString('first_name', result.first['first_name'] as String);
-        await prefs.setString('last_name', result.first['last_name'] as String);
-        return true;
+        await prefs.setInt('user_id', user['id'] as int);
+        await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+        await prefs.setString('first_name', user['first_name'] as String);
+        await prefs.setString('last_name', user['last_name'] as String);
+        return {'warehouse_id': user['warehouse_id'] as int};
       } else {
         throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");
       }

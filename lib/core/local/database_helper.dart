@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
   // GÜNCELLEME: Şema değişikliği nedeniyle versiyon artırıldı.
-  static const _databaseVersion = 12;
+  static const _databaseVersion = 13;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -176,7 +176,9 @@ class DatabaseHelper {
         if (records.isEmpty) continue;
 
         // GÜNCELLEME: 'locations' yerine 'warehouses_shelfs' eklendi.
-        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'inventory_stock'];
+        // GÜNCELLEME 2: 'inventory_stock' TEKRAR EKLENDİ. Sunucu artık bu veriyi gönderdiği
+        // için, istemcinin de bu tabloyu tam yenilemesi gerekiyor.
+        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'inventory_stock'];
         if(fullRefreshTables.contains(table)) {
           await txn.delete(table);
         }
@@ -227,6 +229,15 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<void> updateOperationWithError(int id, String errorMessage) async {
+    final db = await database;
+    await db.rawUpdate('''
+      UPDATE pending_operation 
+      SET error_message = ?, attempts = attempts + 1 
+      WHERE id = ?
+    ''', [errorMessage, id]);
   }
 
   Future<void> cleanupOldSyncedOperations({int days = 7}) async {

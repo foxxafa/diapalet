@@ -103,7 +103,7 @@ class SyncService with ChangeNotifier {
   Stream<SyncStatus> get syncStatusStream => _statusController.stream;
   bool get isSyncing => _isSyncing;
 
-  Future<void> performFullSync({bool force = false}) async {
+  Future<void> performFullSync({bool force = false, int? warehouseId}) async {
     if (_isSyncing && !force) {
       debugPrint("Senkronizasyon zaten devam ediyor. Atlanıyor.");
       return;
@@ -120,7 +120,7 @@ class SyncService with ChangeNotifier {
 
     try {
       await _uploadPendingOperations();
-      await _downloadDataFromServer();
+      await _downloadDataFromServer(warehouseId: warehouseId);
 
       // YENİ: Senkronizasyon sonrası eski kayıtları temizle.
       await dbHelper.cleanupOldSyncedOperations();
@@ -145,14 +145,15 @@ class SyncService with ChangeNotifier {
     }
   }
 
-  Future<void> _downloadDataFromServer() async {
+  Future<void> _downloadDataFromServer({int? warehouseId}) async {
     debugPrint("Sunucudan veri indirme başlıyor...");
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastSync = prefs.getString(_lastSyncTimestampKey);
-      final warehouseId = prefs.getInt('warehouse_id');
+      // GÜNCELLEME: warehouseId parametre olarak gelmezse SharedPreferences'dan al.
+      final finalWarehouseId = warehouseId ?? prefs.getInt('warehouse_id');
 
-      if (warehouseId == null) {
+      if (finalWarehouseId == null) {
         debugPrint(
             "Veri indirmek için 'warehouse_id' gerekli. Giriş yapılmamış olabilir. Atlanıyor.");
         return;
@@ -162,7 +163,7 @@ class SyncService with ChangeNotifier {
         ApiConfig.syncDownload,
         data: {
           'last_sync_timestamp': lastSync,
-          'warehouse_id': warehouseId,
+          'warehouse_id': finalWarehouseId,
         },
       );
 
@@ -219,8 +220,11 @@ class SyncService with ChangeNotifier {
         final errorMessage = "İşlem #${op.id} yüklenirken hata oluştu: $e";
         debugPrint(errorMessage);
         await dbHelper.addSyncLog('upload', 'error', errorMessage);
+        if (op.id != null) {
+          await dbHelper.updateOperationWithError(op.id!, e.toString());
+        }
         // Hata durumunda döngüyü kırarak bir sonraki senkronizasyon döngüsünü bekle.
-        break;
+        continue;
       }
     }
   }

@@ -19,12 +19,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:diapalet/features/auth/presentation/splash_screen.dart';
 
 Dio createDioClient() {
   final dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(milliseconds: 15000),
+      receiveTimeout: const Duration(milliseconds: 15000),
       headers: { 'Accept': 'application/json', },
     ),
   );
@@ -50,69 +51,56 @@ void main() async {
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
 
-  // GÜNCELLEME: Oturum kontrolü
-  final prefs = await SharedPreferences.getInstance();
-  final apiKey = prefs.getString('apikey');
-  Widget initialScreen = const LoginScreen();
-
-  if (apiKey != null && apiKey.isNotEmpty) {
-    debugPrint("common_labels.active_session_found".tr());
-    // Mevcut API anahtarını uygulama başlarken Dio'ya ekle
-    dio.options.headers['Authorization'] = 'Bearer $apiKey';
-    initialScreen = const HomeScreen();
-  } else {
-    debugPrint("common_labels.no_active_session".tr());
-  }
-  // GÜNCELLEME SONU
-
   runApp(
     EasyLocalization(
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      startLocale: const Locale('en'),
+      startLocale: const Locale('tr'),
       fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [
-          Provider<DatabaseHelper>.value(value: dbHelper),
-          Provider<Dio>.value(value: dio),
           Provider<NetworkInfo>.value(value: networkInfo),
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, AuthRepository>(
-            update: (_, db, network, dio, __) => AuthRepositoryImpl(
-              dbHelper: db, networkInfo: network, dio: dio,
+          Provider<Dio>.value(value: dio),
+          Provider<DatabaseHelper>.value(value: dbHelper),
+          Provider<AuthRepository>(
+            create: (context) => AuthRepositoryImpl(
+              dbHelper: context.read<DatabaseHelper>(),
+              networkInfo: context.read<NetworkInfo>(),
+              dio: context.read<Dio>(),
             ),
           ),
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, GoodsReceivingRepository>(
-            update: (_, db, network, dio, __) => GoodsReceivingRepositoryImpl(
-              dbHelper: db, networkInfo: network, dio: dio,
+          Provider<GoodsReceivingRepository>(
+            create: (context) => GoodsReceivingRepositoryImpl(
+              dbHelper: context.read<DatabaseHelper>(),
+              networkInfo: context.read<NetworkInfo>(),
+              dio: context.read<Dio>(),
             ),
           ),
-          ProxyProvider3<DatabaseHelper, NetworkInfo, Dio, InventoryTransferRepository>(
-            update: (_, db, network, dio, __) => InventoryTransferRepositoryImpl(
-              dbHelper: db, networkInfo: network, dio: dio,
+          Provider<InventoryTransferRepository>(
+            create: (context) => InventoryTransferRepositoryImpl(
+              dbHelper: context.read<DatabaseHelper>(),
+              networkInfo: context.read<NetworkInfo>(),
+              dio: context.read<Dio>(),
             ),
           ),
-          ChangeNotifierProxyProvider3<DatabaseHelper, NetworkInfo, Dio, SyncService>(
+          ChangeNotifierProvider<SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
               dio: context.read<Dio>(),
               networkInfo: context.read<NetworkInfo>(),
             ),
-            update: (_, db, network, dio, previous) {
-              previous!.updateDependencies(dbHelper: db, dio: dio, networkInfo: network);
-              return previous;
-            },
+          ),
+          ChangeNotifierProvider<ThemeProvider>(
+            create: (_) => ThemeProvider(),
           ),
         ],
-        // GÜNCELLEME: MyApp artık başlangıç ekranını dinamik olarak alıyor.
-        child: MyApp(initialScreen: initialScreen),
+        child: const MyApp(initialScreen: SplashScreen()),
       ),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  // GÜNCELLEME: Başlangıç ekranını parametre olarak alır.
   final Widget initialScreen;
   const MyApp({super.key, required this.initialScreen});
 
@@ -126,7 +114,6 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
-      // GÜNCELLEME: `home` artık dinamik olarak belirleniyor.
       home: initialScreen,
       debugShowCheckedModeBanner: false,
     );

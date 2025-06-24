@@ -16,6 +16,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
@@ -50,10 +51,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
+    
+    // Get the current user's warehouse_id from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final warehouseId = prefs.getInt('warehouse_id');
+    
+    if (warehouseId == null) {
+      debugPrint("Warning: No warehouse_id found in preferences. Returning empty list.");
+      return [];
+    }
+    
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (?, ?)',
-      whereArgs: [2, 3],
+      where: 'status IN (?, ?) AND lokasyon_id = ?',
+      whereArgs: [2, 3, warehouseId],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();

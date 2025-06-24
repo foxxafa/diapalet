@@ -2,7 +2,7 @@
 
 /// Kullanıcı kimlik doğrulama işlemlerini yöneten soyut sınıf.
 abstract class AuthRepository {
-  Future<bool> login(String username, String password);
+  Future<Map<String, dynamic>?> login(String username, String password);
 
   // GÜNCELLEME: Çıkış fonksiyonu ekleniyor.
   Future<void> logout();
