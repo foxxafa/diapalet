@@ -58,7 +58,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         });
       }
     } catch (e) {
-      debugPrint("Veri yüklenirken hata oluştu: $e");
+      debugPrint("common_labels.data_load_error".tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -153,7 +153,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       case SyncStatus.offline:
         bannerStyle = (
           icon: Icons.wifi_off_rounded,
-          background: AppTheme.warningColor.withOpacity(0.9),
+          background: AppTheme.warningColor.withAlpha(230),
           content: Colors.white,
           message: 'pending_operations.status.offline'.tr()
         );

@@ -16,7 +16,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart' hide Intent;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
-import 'package:receive_intent/receive_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// *************************
@@ -38,16 +37,16 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   StreamSubscription<String>? _intentSub;
 
   bool _isLoading = true, _isSaving = false;
-  final List<TransferableContainer> _containers = [];
-  final Map<String, MapEntry<String, int>> _targets = {};
-  int _focusedIndex = 0;
+  List<TransferableContainer> _containers = [];
   List<MapEntry<String, int>> _availableLocations = [];
+  int _focusedIndex = 0;
+  final Map<String, MapEntry<String, int>> _targets = {};
 
   final List<String> _debug = [];
   bool _showDebug = false;
 
   // sabitler
-  static const sourceLocationName = 'Mal Kabul Alanı';
+  static String get sourceLocationName => 'common_labels.goods_receiving_area'.tr();
   static const sourceLocationId = 1;
 
   @override
@@ -72,70 +71,65 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (kIsWeb || !Platform.isAndroid) return;
 
     _barcodeService = BarcodeIntentService();
-    _addDbg('Barkod servisi başladı');
+    _addDbg('order_transfer.barcode_service_started'.tr());
 
     final first = await _barcodeService.getInitialBarcode();
     if (first != null) _handleBarcode(first);
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
-        onError: (e) => _addDbg('Barkod stream hatası: $e'));
+        onError: (e) => _addDbg('order_transfer.barcode_stream_error'.tr(namedArgs: {'error': e.toString()})));
   }
 
   void _handleBarcode(String code) {
     if (_containers.isEmpty) {
-      _addDbg('Barkod geldi ama konteyner listesi boş');
+      _addDbg('order_transfer.barcode_received_but_container_list_empty'.tr());
       return;
     }
+    if (!mounted) return;
     _processScannedLocation(_containers[_focusedIndex], code);
   }
 
   /* ------------------  Veri ------------------ */
   Future<void> _loadContainers() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
+
     try {
-      final repo = context.read<InventoryTransferRepository>();
       final prefs = await SharedPreferences.getInstance();
       final warehouseId = prefs.getInt('warehouse_id');
       if (warehouseId == null) {
-        throw Exception('Depo bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
+        throw Exception('order_transfer.warehouse_info_not_found'.tr());
       }
 
-      final results = await Future.wait([
-        repo.getTransferableContainers(widget.order.id),
-        repo.getAllLocations(warehouseId),
-      ]);
+      final containers = await _repo.getTransferableContainers(widget.order.id);
+      final locationsMap = await _repo.getTargetLocations();
+      final locations = locationsMap.entries.toList();
 
-      if (!mounted) return;
+      if (mounted) {
+        setState(() {
+          _containers = containers;
+          _availableLocations = locations;
+          _isLoading = false;
+        });
 
-      final containerList = results[0] as List<TransferableContainer>;
-      final locationList = results[1] as List<MapEntry<String, int>>;
-
-      setState(() {
-        _containers
-          ..clear()
-          ..addAll(containerList);
-        _availableLocations = locationList;
-        _targets.clear();
-        _focusedIndex = 0;
-      });
-
-      // EĞER TRANSFER EDILECEK ÜRÜN KALMADIYSA, SAYFAYI KAPAT
-      if (_containers.isEmpty && mounted) {
-        // Kullanıcıya bilgi ver
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('order_transfer.all_items_transferred'.tr()),
-          backgroundColor: Colors.green,
-        ));
-        // Bir önceki sayfaya 'true' sonucuyla dönerek yenileme tetikle
-        Navigator.of(context).pop(true);
-        return; // Fonksiyonun devamını çalıştırma
+        // EĞER TRANSFER EDILECEK ÜRÜN KALMADIYSA, SAYFAYI KAPAT
+        if (_containers.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('order_transfer.all_items_transferred'.tr())),
+            );
+            // Bir önceki sayfaya 'true' sonucuyla dönerek yenileme tetikle
+            Navigator.of(context).pop(true);
+          }
+          return;
+        }
+        _scrollLater();
       }
-
-      _scrollLater();
     } catch (e) {
-      _snack('Veri yüklenemedi: $e', err: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _snack('order_transfer.data_load_error'.tr(namedArgs: {'error': e.toString()}), err: true);
+      }
     }
   }
 
@@ -147,20 +141,19 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
     _addDbg("İşlenen barkod: '$clean'");
     try {
-      // YENİ MANTIK: Artık doğrudan koda göre arama yapılıyor.
       final match = await _repo.findLocationByCode(clean);
 
-      // Eşleşme bulundu mu ve kaynak lokasyonla aynı mı kontrolü
+      if (!mounted) return;
+
       if (match != null && match.value != sourceLocationId) {
-        // Eşleşme bulundu, hedefi ata.
         _assignTarget(container, match);
       } else {
-        // Eşleşme bulunamadı veya kaynak lokasyonla aynı.
-        final reason = match == null ? 'Geçersiz lokasyon' : 'Kaynak ile aynı lokasyon';
-        _snack('$reason: $clean', err: true);
+        final reason = match == null ? 'order_transfer.invalid_location'.tr() : 'order_transfer.same_as_source_location'.tr();
+        _snack(reason, err: true);
       }
     } catch (e) {
-      _snack('Lokasyon arama hatası: $e', err: true);
+      if (!mounted) return;
+      _snack('order_transfer.location_search_error'.tr(namedArgs: {'error': e.toString()}), err: true);
     }
   }
 
@@ -186,48 +179,50 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       const Duration(milliseconds: 50), () => _scrollTo(_focusedIndex));
 
   void _scrollTo(int index) {
-    if (!_scrollController.hasClients) return;
-    final offset = (index * 240.0).clamp(
-        0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(offset,
-        duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+    if (index >= 0 && index < _containers.length) {
+      _scrollController.animateTo(
+        index * 120.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   void _addDbg(String m) {
-    final t = DateTime.now();
-    final s =
-        '[${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}] $m';
+    if (!_showDebug) return;
     setState(() {
-      _debug.insert(0, s);
+      _debug.insert(0, '${DateTime.now().toString().substring(11, 19)} $m');
       if (_debug.length > 50) _debug.removeLast();
     });
     debugPrint('DBG $m');
   }
 
-  void _snack(String msg, {bool err = false}) {
+  void _snack(String m, {bool err = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor:
-        err ? Theme.of(context).colorScheme.error : Colors.green,
-      ));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(m),
+      backgroundColor: err ? Colors.red : Colors.green,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   /* ------------------  KAYDET ------------------ */
   Future<void> _save() async {
     if (_targets.isEmpty) {
-      _snack('Sepet boş', err: true);
+      _snack('order_transfer.cart_empty'.tr(), err: true);
       return;
     }
+
     setState(() => _isSaving = true);
+
     try {
       final uid = (await SharedPreferences.getInstance()).getInt('user_id');
-      if (uid == null) throw 'Kullanıcı bulunamadı';
+      if (uid == null) throw 'order_transfer.user_not_found'.tr();
 
       final allDetails = <TransferItemDetail>[];
-      _targets.forEach((cid, loc) {
+      for (final entry in _targets.entries) {
+        final cid = entry.key;
+        final loc = entry.value;
         final cont = _containers.firstWhere((c) => c.id == cid);
         for (final item in cont.items) {
           allDetails.add(TransferItemDetail(
@@ -240,7 +235,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             targetLocationName: loc.key,
           ));
         }
-      });
+      }
 
       // Öğeleri hedef lokasyona göre grupla
       final groupedByLocation = <int, List<TransferItemDetail>>{};
@@ -272,11 +267,14 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         );
       }
 
-      _snack('Kaydedildi');
+      if (!mounted) return;
+
+      _snack('order_transfer.saved'.tr());
       context.read<SyncService>().performFullSync(force: true);
       await _loadContainers();
     } catch (e) {
-      _snack('Kaydetme hatası: $e', err: true);
+      if (!mounted) return;
+      _snack('order_transfer.save_error'.tr(namedArgs: {'error': e.toString()}), err: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -293,11 +291,10 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         showBackButton: true,
         actions: [
           IconButton(
-              tooltip: 'Debug',
-              onPressed: () => setState(() => _showDebug = !_showDebug),
-              icon: Icon(_showDebug
-                  ? Icons.bug_report
-                  : Icons.bug_report_outlined)),
+            icon: Icon(_showDebug ? Icons.bug_report : Icons.bug_report_outlined),
+            onPressed: () => setState(() => _showDebug = !_showDebug),
+            tooltip: 'order_transfer.debug_tooltip'.tr(),
+          ),
         ],
       ),
       bottomNavigationBar: Padding(
@@ -311,7 +308,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               child: CircularProgressIndicator(
                   strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.save),
-          label: Text('Kaydet (${_targets.length})'),
+          label: Text('order_transfer.save_button'.tr(namedArgs: {'count': _targets.length.toString()})),
           style:
           ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
         ),
@@ -385,7 +382,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     margin: const EdgeInsets.only(top: 12),
     child: ExpansionTile(
       initiallyExpanded: true,
-      title: const Text('Debug'),
+      title: Text('order_transfer.debug'.tr()),
       children: [
         Container(
           height: 150,
@@ -557,7 +554,7 @@ class _ContainerCardState extends State<_ContainerCard> {
                         text: TextSpan(
                           children: [
                             TextSpan(
-                                text: 'Miktar ',
+                                text: 'common_labels.quantity'.tr(),
                                 style: theme.textTheme.labelLarge?.copyWith(color: theme.hintColor)
                             ),
                             TextSpan(

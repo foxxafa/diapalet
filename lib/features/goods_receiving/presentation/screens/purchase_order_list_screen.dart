@@ -119,7 +119,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
                   return Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     child: ListTile(
-                      title: Text("PO: ${order.poId ?? 'N/A'}", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      title: Text("${'common_labels.po_prefix'.tr()}${order.poId ?? 'common_labels.not_available'.tr()}", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       subtitle: Text(order.supplierName ?? 'orders.no_supplier'.tr()),
                       trailing: const Icon(Icons.arrow_forward_ios),
                       onTap: () => _onOrderSelected(order),

@@ -42,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
           // lokal veritabanının hazır olmasını sağlar.
           await context.read<SyncService>().performFullSync();
 
+          if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );

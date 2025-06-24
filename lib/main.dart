@@ -56,12 +56,12 @@ void main() async {
   Widget initialScreen = const LoginScreen();
 
   if (apiKey != null && apiKey.isNotEmpty) {
-    debugPrint("Aktif bir oturum bulundu. Ana sayfaya yönlendiriliyor.");
+    debugPrint("common_labels.active_session_found".tr());
     // Mevcut API anahtarını uygulama başlarken Dio'ya ekle
     dio.options.headers['Authorization'] = 'Bearer $apiKey';
     initialScreen = const HomeScreen();
   } else {
-    debugPrint("Aktif oturum bulunamadı. Login ekranı gösteriliyor.");
+    debugPrint("common_labels.no_active_session".tr());
   }
   // GÜNCELLEME SONU
 
@@ -122,7 +122,7 @@ class MyApp extends StatelessWidget {
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
       locale: context.locale,
-      title: 'DiaPalet',
+      title: 'app.title'.tr(),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,

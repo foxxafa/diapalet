@@ -741,7 +741,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (first != null) _handleBarcode(first);
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
-        onError: (e) => _showErrorSnackBar('Barkod okuma hatası: $e'));
+        onError: (e) => _showErrorSnackBar('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()})));
   }
 
   void _handleBarcode(String code) {

@@ -278,7 +278,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final employeeId = prefs.getInt('user_id');
 
       if (employeeId == null) {
-        throw Exception('User ID not found. Please log in again.');
+        throw Exception('common_labels.user_id_not_found'.tr());
       }
 
       final payload = GoodsReceiptPayload(
@@ -576,7 +576,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
             child: Center(
               child: (!isOrderBased || _selectedProduct == null)
-                  ? Text("- / -", style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor))
+                  ? Text('common_labels.not_available'.tr(), style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).hintColor))
                   : RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
@@ -584,9 +584,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   children: [
                     TextSpan(
                       text: '${totalReceived.toStringAsFixed(0)} ',
-                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900),
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
                     ),
-                    TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color)),
+                    TextSpan(text: 'common_labels.status_separator'.tr(), style: TextStyle(color: textTheme.bodyLarge?.color)),
                     TextSpan(text: expectedQty.toStringAsFixed(0), style: TextStyle(color: textTheme.bodyLarge?.color)),
                   ],
                 ),
@@ -673,7 +673,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withOpacity(0.05),
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -757,7 +757,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (first != null) _handleBarcode(first);
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
-        onError: (e) => _showErrorSnackBar('Barkod okuma hatası: $e'));
+        onError: (e) => _showErrorSnackBar('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()})));
   }
 
   void _handleBarcode(String code) {

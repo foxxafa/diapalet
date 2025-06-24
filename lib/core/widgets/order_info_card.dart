@@ -34,7 +34,7 @@ class OrderInfoCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              order.poId ?? 'N/A',
+              order.poId ?? 'common_labels.not_available'.tr(),
               style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onPrimaryContainer

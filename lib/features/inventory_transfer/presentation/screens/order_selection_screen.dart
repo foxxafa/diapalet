@@ -127,7 +127,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                         child: ListTile(
-                          title: Text(order.poId ?? 'Unknown Order'),
+                          title: Text(order.poId ?? 'common_labels.unknown_order'.tr()),
                           subtitle: Text(
                             "${order.supplierName ?? 'orders.no_supplier'.tr()}\n"
                                 "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
