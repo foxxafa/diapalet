@@ -38,6 +38,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   bool _isLoading = true, _isSaving = false;
   List<TransferableContainer> _containers = [];
+  List<GlobalKey> _cardKeys = [];
   List<MapEntry<String, int>> _availableLocations = [];
   int _focusedIndex = 0;
   final Map<String, MapEntry<String, int>> _targets = {};
@@ -108,6 +109,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       if (mounted) {
         setState(() {
           _containers = containers;
+          _cardKeys = List.generate(containers.length, (_) => GlobalKey());
           _availableLocations = locations;
           _isLoading = false;
         });
@@ -176,14 +178,20 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   void _scrollLater() => Future.delayed(
-      const Duration(milliseconds: 50), () => _scrollTo(_focusedIndex));
+      const Duration(milliseconds: 100), () => _scrollTo(_focusedIndex));
 
   void _scrollTo(int index) {
-    if (index >= 0 && index < _containers.length) {
-      _scrollController.animateTo(
-        index * 120.0,
+    if (index < 0 || index >= _cardKeys.length) return;
+
+    final key = _cardKeys[index];
+    final context = key.currentContext;
+
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
+        alignment: 0.05,
       );
     }
   }
@@ -343,7 +351,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                   itemBuilder: (_, i) {
                     final c = _containers[i];
                     return _ContainerCard(
-                      key: ValueKey(c.id),
+                      key: _cardKeys[i],
                       container: c,
                       focused: i == _focusedIndex,
                       target: _targets[c.id],
@@ -353,8 +361,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         setState(() => _targets.remove(c.id));
                       },
                       onTap: () {
-                        setState(() => _focusedIndex = i);
-                        _scrollTo(i);
+                        final alreadyFocused = _focusedIndex == i;
+                        setState(() {
+                          _focusedIndex = i;
+                        });
+                        if (!alreadyFocused) {
+                          _scrollTo(i);
+                        }
                       },
                       onScan: (text) => _processScannedLocation(c, text),
                     );
@@ -430,15 +443,6 @@ class _ContainerCardState extends State<_ContainerCard> {
   void initState() {
     super.initState();
     if (widget.target != null) _ctrl.text = widget.target!.key;
-    if (widget.focused) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _focus.requestFocus();
-        if (_ctrl.text.isNotEmpty) {
-          _ctrl.selection =
-              TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
-        }
-      });
-    }
   }
 
   @override
@@ -448,12 +452,15 @@ class _ContainerCardState extends State<_ContainerCard> {
       _ctrl.text = widget.target?.key ?? '';
     }
     if (widget.focused && !old.focused) {
-      _focus.requestFocus();
-      // Select all text when focus is gained
-      if (_ctrl.text.isNotEmpty) {
-        _ctrl.selection =
-            TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
-      }
+      // Kart odaklandığında metin alanına odaklan ve metni seç
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _focus.requestFocus();
+        if (_ctrl.text.isNotEmpty) {
+          _ctrl.selection =
+              TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+        }
+      });
     }
   }
 
@@ -507,70 +514,70 @@ class _ContainerCardState extends State<_ContainerCard> {
         ),
         child: Column(
           children: [
-            ExpansionTile(
-              key: PageStorageKey(widget.container.id),
-              initiallyExpanded: widget.focused,
-              onExpansionChanged: (ex) {
-                if (ex) {
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: widget.focused,
+                onExpansionChanged: (expanding) {
+                  // Kullanıcı başlığa dokunduğunda, durumu yönetmesi için
+                  // her zaman üst widget'ın onTap'ını çağırırız.
                   widget.onTap();
-                  _focus.requestFocus();
-                }
-              },
-              title: Text(widget.container.displayName,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: assigned
-                  ? Icon(Icons.check_circle, color: Colors.green.shade700)
-                  : const Icon(Icons.pending_outlined),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              children: widget.container.items.map((i) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurface),
-                            children: [
-                              TextSpan(
-                                text: i.product.name,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              TextSpan(
-                                text: '  ·  ${i.product.stockCode}',
-                                style: TextStyle(color: theme.hintColor, fontSize: 13),
-                              ),
-                            ],
+                },
+                title: Text(widget.container.displayName,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                trailing: assigned
+                    ? Icon(Icons.check_circle, color: Colors.green.shade700)
+                    : const Icon(Icons.pending_outlined),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                children: widget.container.items.map((i) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurface),
+                              children: [
+                                TextSpan(
+                                  text: i.product.name,
+                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                ),
+                                TextSpan(
+                                  text: '  ·  ${i.product.stockCode}',
+                                  style: TextStyle(color: theme.hintColor, fontSize: 13),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                                text: 'common_labels.quantity'.tr(),
-                                style: theme.textTheme.labelLarge?.copyWith(color: theme.hintColor)
-                            ),
-                            TextSpan(
-                              text: i.quantity.toStringAsFixed(0),
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.primary,
+                        const SizedBox(width: 16),
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                  text: 'common_labels.quantity'.tr(),
+                                  style: theme.textTheme.labelLarge?.copyWith(color: theme.hintColor)
                               ),
-                            ),
-                          ]
+                              TextSpan(
+                                text: i.quantity.toStringAsFixed(0),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ]
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-            const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               child: assigned ? _rowAssigned(theme) : _rowInput(theme),
             ),
           ],
@@ -594,49 +601,51 @@ class _ContainerCardState extends State<_ContainerCard> {
   );
 
   Widget _rowInput(ThemeData theme) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: TextFormField(
-            controller: _ctrl,
-            focusNode: _focus,
-            decoration: InputDecoration(
-              labelText: 'order_transfer.label_target_shelf'.tr(),
-              hintText: 'order_transfer.hint_scan_or_select'.tr(),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              isDense: true,
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.arrow_drop_down_circle_outlined),
-                onPressed: _showLocationSearch,
+    return SizedBox(
+      height: 56,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _ctrl,
+              focusNode: _focus,
+              decoration: InputDecoration(
+                labelText: 'order_transfer.label_target_shelf'.tr(),
+                hintText: 'order_transfer.hint_scan_or_select'.tr(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                isDense: true,
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                  onPressed: _showLocationSearch,
+                ),
               ),
+              onFieldSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  widget.onScan(value);
+                }
+              },
+              onTap: () {
+                // Odaklandığında tüm metni seç
+                _focus.requestFocus();
+                _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+              },
             ),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) {
-                widget.onScan(value);
+          ),
+          const SizedBox(width: 8),
+          _QrButton(
+            onTap: () async {
+              final res = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+              );
+              if (res != null && res.isNotEmpty) {
+                widget.onScan(res);
               }
             },
-            onTap: () {
-              // Klavyenin açılmasını engellemek için değil,
-              // sadece seçim dialoğunu açmak için dokunulduğunda metni seç
-              _focus.requestFocus();
-              _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
-            },
           ),
-        ),
-        const SizedBox(width: 8),
-        _QrButton(
-          onTap: () async {
-            final res = await Navigator.push<String>(
-              context,
-              MaterialPageRoute(builder: (_) => const QrScannerScreen()),
-            );
-            if (res != null && res.isNotEmpty) {
-              widget.onScan(res);
-            }
-          },
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
