@@ -134,12 +134,16 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                           ),
                           isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right),
-                          onTap: () {
-                            Navigator.of(context).push(
+                          onTap: () async {
+                            final result = await Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => OrderTransferScreen(order: order),
                               ),
                             );
+
+                            if (result == true && mounted) {
+                              _loadOrders();
+                            }
                           },
                         ),
                       );

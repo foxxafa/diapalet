@@ -1,6 +1,7 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -131,10 +132,10 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
                 : 'pending_operations.sync_now'.tr()),
             icon: isSyncing
                 ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white))
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.sync),
           );
         },
@@ -143,37 +144,51 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   }
 
   Widget _buildSyncStatusBanner(SyncStatus status) {
-    IconData icon;
-    Color color;
-    String message;
     final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
+
+    // Banner için renkleri ve ikonu belirleyen yardımcı yapı.
+    final ({IconData icon, Color background, Color content, String message}) bannerStyle;
 
     switch (status) {
       case SyncStatus.offline:
-        icon = Icons.wifi_off_rounded;
-        color = Colors.grey.shade600;
-        message = 'pending_operations.status.offline'.tr();
+        bannerStyle = (
+          icon: Icons.wifi_off_rounded,
+          background: AppTheme.warningColor.withOpacity(0.9),
+          content: Colors.white,
+          message: 'pending_operations.status.offline'.tr()
+        );
         break;
       case SyncStatus.online:
-        icon = Icons.wifi_rounded;
-        color = theme.colorScheme.secondary;
-        message = 'pending_operations.status.online'.tr();
+        bannerStyle = (
+          icon: Icons.wifi_rounded,
+          background: theme.colorScheme.secondary,
+          content: theme.colorScheme.onSecondary,
+          message: 'pending_operations.status.online'.tr()
+        );
         break;
       case SyncStatus.syncing:
-        icon = Icons.sync_rounded;
-        color = theme.colorScheme.secondary;
-        message = 'pending_operations.status.syncing'.tr();
+        bannerStyle = (
+          icon: Icons.sync_rounded,
+          background: theme.colorScheme.secondary,
+          content: theme.colorScheme.onSecondary,
+          message: 'pending_operations.status.syncing'.tr()
+        );
         break;
       case SyncStatus.upToDate:
-        icon = Icons.check_circle_rounded;
-        color = theme.colorScheme.primary;
-        message = 'pending_operations.status.up_to_date'.tr();
+        bannerStyle = (
+          icon: Icons.check_circle_rounded,
+          background: theme.colorScheme.primary,
+          content: theme.colorScheme.onPrimary,
+          message: 'pending_operations.status.up_to_date'.tr()
+        );
         break;
       case SyncStatus.error:
-        icon = Icons.error_rounded;
-        color = theme.colorScheme.error;
-        message = 'pending_operations.status.error'.tr();
+        bannerStyle = (
+          icon: Icons.error_rounded,
+          background: theme.colorScheme.error,
+          content: theme.colorScheme.onError,
+          message: 'pending_operations.status.error'.tr()
+        );
         break;
     }
 
@@ -181,25 +196,28 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color,
+        color: bannerStyle.background,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color),
       ),
       child: Row(
         children: [
           if (status == SyncStatus.syncing)
             SizedBox(
-                width: 20,
-                height: 20,
-                child:
-                CircularProgressIndicator(strokeWidth: 2.5, color: color))
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.5, color: bannerStyle.content),
+            )
           else
-            Icon(icon, color: color),
+            Icon(bannerStyle.icon, color: bannerStyle.content),
           const SizedBox(width: 12),
           Expanded(
-              child: Text(message,
-                  style: textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.bold, color: color))),
+            child: Text(
+              bannerStyle.message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold, color: bannerStyle.content),
+            ),
+          ),
         ],
       ),
     );
@@ -268,12 +286,10 @@ class _OperationCard extends StatelessWidget {
 
     final Widget trailingWidget = isSynced
         ? Icon(Icons.check_circle_outline_rounded,
-        color: theme.colorScheme.primary)
-        : Icon(Icons.hourglass_top_rounded, color: Colors.grey.shade500);
+            color: theme.colorScheme.primary)
+        : Icon(Icons.hourglass_top_rounded, color: AppTheme.warningColor);
 
     return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: ListTile(
         leading: Icon(leadingIcon, color: theme.colorScheme.secondary),
         title: Text(operation.displayTitle,

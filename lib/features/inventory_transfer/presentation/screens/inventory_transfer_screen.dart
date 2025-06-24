@@ -139,38 +139,46 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   Future<void> _processScannedData(String field, String data) async {
+    final cleanData = data.trim();
+    if (cleanData.isEmpty) return;
+
     switch (field) {
       case 'source':
-        final locationName = _availableSourceLocations.keys.firstWhere((k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
-        if (locationName.isNotEmpty) {
-          _handleSourceSelection(locationName);
+      case 'target':
+        final location = await _repo.findLocationByCode(cleanData);
+        if (location != null) {
+          // Gelen lokasyon adının mevcut listelerde olup olmadığını kontrol et.
+          // Bu, bir konumun kaynak olarak seçilip hedef olarak seçilememesi gibi durumları yönetir.
+          final bool isValidSource = field == 'source' && _availableSourceLocations.containsKey(location.key);
+          final bool isValidTarget = field == 'target' && _availableTargetLocations.containsKey(location.key);
+
+          if (isValidSource) {
+            _handleSourceSelection(location.key);
+          } else if (isValidTarget) {
+            _handleTargetSelection(location.key);
+          } else {
+             _showErrorSnackBar('inventory_transfer.error_invalid_location_for_operation'.tr(namedArgs: {'location': location.key, 'field': field}));
+          }
         } else {
-          _sourceLocationController.clear();
-          _showErrorSnackBar('inventory_transfer.error_invalid_source_location'.tr(namedArgs: {'data': data}));
+          if (field == 'source') _sourceLocationController.clear();
+          if (field == 'target') _targetLocationController.clear();
+          _showErrorSnackBar('inventory_transfer.error_invalid_location_code'.tr(namedArgs: {'code': cleanData}));
         }
         break;
+
       case 'container':
         dynamic foundItem;
         if (_selectedMode == AssignmentMode.pallet) {
-          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == data.toLowerCase(), orElse: () => null);
+          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
         } else {
-          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode.toLowerCase() == data.toLowerCase() || box?.barcode1?.toLowerCase() == data.toLowerCase(), orElse: () => null);
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode.toLowerCase() == cleanData.toLowerCase() || box?.barcode1?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
         }
 
         if (foundItem != null) {
           _handleContainerSelection(foundItem);
         } else {
           _scannedContainerIdController.clear();
-          _showErrorSnackBar('inventory_transfer.error_item_not_found'.tr(namedArgs: {'data': data}));
-        }
-        break;
-      case 'target':
-        final locationName = _availableTargetLocations.keys.firstWhere((k) => k.toLowerCase() == data.toLowerCase(), orElse: () => '');
-        if (locationName.isNotEmpty) {
-          _handleTargetSelection(locationName);
-        } else {
-          _targetLocationController.clear();
-          _showErrorSnackBar('inventory_transfer.error_invalid_target_location'.tr(namedArgs: {'data': data}));
+          _showErrorSnackBar('inventory_transfer.error_item_not_found'.tr(namedArgs: {'data': cleanData}));
         }
         break;
     }

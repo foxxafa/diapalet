@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
         showBackButton: false,
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
             tooltip: 'home.logout.title'.tr(),
             onPressed: _handleLogoutAttempt,
           ),

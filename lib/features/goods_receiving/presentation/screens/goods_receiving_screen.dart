@@ -70,7 +70,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     _selectedOrder = widget.selectedOrder;
     _isFreeReceiveMode = widget.selectedOrder == null;
 
-    _productFocusNode.addListener(_onProductFocusChange);
+    _palletIdFocusNode.addListener(_onFocusChange);
+    _productFocusNode.addListener(_onFocusChange);
+
     _loadInitialData();
     _initBarcode();
   }
@@ -78,7 +80,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   @override
   void dispose() {
     _intentSub?.cancel();
-    _productFocusNode.removeListener(_onProductFocusChange);
+    _palletIdFocusNode.removeListener(_onFocusChange);
+    _productFocusNode.removeListener(_onFocusChange);
     _palletIdController.dispose();
     _productController.dispose();
     _quantityController.dispose();
@@ -88,7 +91,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     super.dispose();
   }
 
-  void _onProductFocusChange() {
+  void _onFocusChange() {
+    if (_palletIdFocusNode.hasFocus && _palletIdController.text.isNotEmpty) {
+      _palletIdController.selection = TextSelection(baseOffset: 0, extentOffset: _palletIdController.text.length);
+    }
     if (_productFocusNode.hasFocus && _productController.text.isNotEmpty) {
       _productController.selection = TextSelection(
           baseOffset: 0, extentOffset: _productController.text.length);
@@ -108,7 +114,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         if (isOrderBased) {
           _onOrderSelected(_selectedOrder!);
         } else {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _palletIdFocusNode.requestFocus());
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_receivingMode == ReceivingMode.palet) {
+              _palletIdFocusNode.requestFocus();
+            } else {
+              _productFocusNode.requestFocus();
+            }
+          });
         }
       }
     } catch (e) {
@@ -156,29 +168,37 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     });
   }
 
-  void _processScannedProduct(String scannedData) {
-    if (scannedData.isEmpty) return;
+  Future<void> _processScannedData(String field, String data) async {
+    if (data.isEmpty) return;
 
-    final productSource = isOrderBased
-        ? _orderItems.map((item) => item.product).nonNulls.toList()
-        : _availableProducts;
+    switch (field) {
+      case 'pallet':
+        _palletIdController.text = data;
+        _productFocusNode.requestFocus();
+        break;
+      case 'product':
+        final productSource = isOrderBased
+            ? _orderItems.map((item) => item.product).nonNulls.toList()
+            : _availableProducts;
 
-    ProductInfo? foundProduct;
-    try {
-      foundProduct = productSource.firstWhere((p) =>
-      p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
-          (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
-      );
-    } catch(e) {
-      foundProduct = null;
-    }
+        ProductInfo? foundProduct;
+        try {
+          foundProduct = productSource.firstWhere((p) =>
+          p.stockCode.toLowerCase() == data.toLowerCase() ||
+              (p.barcode1?.toLowerCase() == data.toLowerCase()),
+          );
+        } catch(e) {
+          foundProduct = null;
+        }
 
-    if (foundProduct != null) {
-      _selectProduct(foundProduct);
-    } else {
-      _productController.clear();
-      _selectedProduct = null;
-      _showErrorSnackBar('goods_receiving_screen.error_product_not_found'.tr(namedArgs: {'scannedData': scannedData}));
+        if (foundProduct != null) {
+          _selectProduct(foundProduct);
+        } else {
+          _productController.clear();
+          _selectedProduct = null;
+          _showErrorSnackBar('goods_receiving_screen.error_product_not_found'.tr(namedArgs: {'scannedData': data}));
+        }
+        break;
     }
   }
 
@@ -345,10 +365,59 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
                   if (_receivingMode == ReceivingMode.palet) ...[
-                    _buildPalletIdInput(isEnabled: areFieldsEnabled),
+                    _buildHybridDropdownWithQr<String>(
+                      controller: _palletIdController,
+                      focusNode: _palletIdFocusNode,
+                      label: 'goods_receiving_screen.label_pallet_barcode'.tr(),
+                      fieldIdentifier: 'pallet',
+                      isEnabled: areFieldsEnabled,
+                      items: [], // Pallet ID'ler için bir liste yok, sadece QR/barkod okuma
+                      itemToString: (item) => item,
+                      onItemSelected: (item) {
+                        if(item != null) {
+                          _palletIdController.text = item;
+                          _productFocusNode.requestFocus();
+                        }
+                      },
+                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                      validator: (value) {
+                        if (!areFieldsEnabled) return null;
+                        if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+                          return 'goods_receiving_screen.validator_pallet_barcode'.tr();
+                        }
+                        return null;
+                      },
+                    ),
                     const SizedBox(height: _gap),
                   ],
-                  _buildSearchableProductInputRow(isEnabled: areFieldsEnabled),
+                  _buildHybridDropdownWithQr<ProductInfo>(
+                    controller: _productController,
+                    focusNode: _productFocusNode,
+                    label: isOrderBased
+                        ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                        : 'goods_receiving_screen.label_select_product'.tr(),
+                    fieldIdentifier: 'product',
+                    isEnabled: areFieldsEnabled,
+                    items: isOrderBased
+                        ? _orderItems.map((orderItem) => orderItem.product).nonNulls.toList()
+                        : _availableProducts,
+                    itemToString: (product) => "${product.name} (${product.stockCode})",
+                    onItemSelected: (product) {
+                      if (product != null) {
+                        _selectProduct(product);
+                      }
+                    },
+                    filterCondition: (product, query) {
+                      final lowerQuery = query.toLowerCase();
+                      return product.name.toLowerCase().contains(lowerQuery) ||
+                          product.stockCode.toLowerCase().contains(lowerQuery) ||
+                          (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                    },
+                    validator: (value) {
+                      if (!areFieldsEnabled) return null;
+                      return (value == null || value.isEmpty) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
+                    },
+                  ),
                   const SizedBox(height: _gap),
                   _buildQuantityAndStatusRow(isEnabled: areFieldsEnabled),
                   const SizedBox(height: _gap),
@@ -398,91 +467,56 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildPalletIdInput({required bool isEnabled}) {
+  Widget _buildHybridDropdownWithQr<T>({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    required String fieldIdentifier,
+    required List<T> items,
+    required String Function(T item) itemToString,
+    required void Function(T? item) onItemSelected,
+    required bool Function(T item, String query) filterCondition,
+    required FormFieldValidator<String>? validator,
+    bool isEnabled = true,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: TextFormField(
-            controller: _palletIdController,
-            focusNode: _palletIdFocusNode,
+            controller: controller,
+            focusNode: focusNode,
             enabled: isEnabled,
-            decoration: _inputDecoration('goods_receiving_screen.label_pallet_barcode'.tr(), enabled: isEnabled),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) _productFocusNode.requestFocus();
-            },
-            validator: (value) {
-              if (!isEnabled) return null;
-              if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
-                return 'goods_receiving_screen.validator_pallet_barcode'.tr();
-              }
-              return null;
-            },
-          ),
-        ),
-        const SizedBox(width: _smallGap),
-        _QrButton(
-          onTap: () async {
-            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-            if (result != null && result.isNotEmpty && mounted) {
-              _palletIdController.text = result;
-              _productFocusNode.requestFocus();
-            }
-          },
-          isEnabled: isEnabled,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchableProductInputRow({required bool isEnabled}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: TextFormField(
-            enabled: isEnabled,
-            controller: _productController,
-            focusNode: _productFocusNode,
-            readOnly: true,
             decoration: _inputDecoration(
-              isOrderBased
-                  ? 'goods_receiving_screen.label_select_product_in_order'.tr()
-                  : 'goods_receiving_screen.label_select_product'.tr(),
+              label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: isEnabled,
             ),
-            onTap: !isEnabled ? null : () async {
-              final productList = isOrderBased
-                  ? _orderItems.map((orderItem) => orderItem.product).nonNulls.toList()
-                  : _availableProducts;
-              final ProductInfo? selected = await _showSearchableDropdownDialog<ProductInfo>(
-                title: 'goods_receiving_screen.label_select_product'.tr(),
-                items: productList,
-                itemToString: (product) => "${product.name} (${product.stockCode})",
-                filterCondition: (product, query) {
-                  final lowerQuery = query.toLowerCase();
-                  return product.name.toLowerCase().contains(lowerQuery) ||
-                      product.stockCode.toLowerCase().contains(lowerQuery) ||
-                      (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                },
-              );
-              if (selected != null) {
-                _selectProduct(selected);
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedData(fieldIdentifier, value);
               }
             },
-            validator: (value) {
-              if (!isEnabled) return null;
-              return (value == null || value.isEmpty) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
+            onTap: items.isEmpty ? null : () async {
+              final T? selectedItem = await _showSearchableDropdownDialog<T>(
+                title: label,
+                items: items,
+                itemToString: itemToString,
+                filterCondition: filterCondition,
+              );
+              if (selectedItem != null) {
+                onItemSelected(selectedItem);
+              }
             },
+            validator: validator,
           ),
         ),
         const SizedBox(width: _smallGap),
         _QrButton(
           onTap: () async {
             final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-            if (result != null && result.isNotEmpty && mounted) {
-              _processScannedProduct(result);
+            if (result != null && result.isNotEmpty) {
+              _processScannedData(fieldIdentifier, result);
             }
           },
           isEnabled: isEnabled,
@@ -728,17 +762,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _handleBarcode(String code) {
     if (_palletIdFocusNode.hasFocus) {
-      setState(() => _palletIdController.text = code);
-      _productFocusNode.requestFocus();
+      _processScannedData('pallet', code);
     } else if (_productFocusNode.hasFocus) {
-      _processScannedProduct(code);
+      _processScannedData('product', code);
     } else {
-      // Eğer palet modu aktifse ve palet ID boşsa, barkodu palete ata.
+      // Aktif bir odak yoksa, mantıksal bir sıra izle
       if (_receivingMode == ReceivingMode.palet && _palletIdController.text.isEmpty) {
-        setState(() => _palletIdController.text = code);
-        _productFocusNode.requestFocus();
-      } else { // Değilse ürüne ata
-        _processScannedProduct(code);
+        _processScannedData('pallet', code);
+      } else if (_selectedProduct == null) {
+        _processScannedData('product', code);
       }
     }
   }

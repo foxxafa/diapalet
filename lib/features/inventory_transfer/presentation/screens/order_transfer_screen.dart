@@ -118,6 +118,19 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         _targets.clear();
         _focusedIndex = 0;
       });
+
+      // EĞER TRANSFER EDILECEK ÜRÜN KALMADIYSA, SAYFAYI KAPAT
+      if (_containers.isEmpty && mounted) {
+        // Kullanıcıya bilgi ver
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('order_transfer.all_items_transferred'.tr()),
+          backgroundColor: Colors.green,
+        ));
+        // Bir önceki sayfaya 'true' sonucuyla dönerek yenileme tetikle
+        Navigator.of(context).pop(true);
+        return; // Fonksiyonun devamını çalıştırma
+      }
+
       _scrollLater();
     } catch (e) {
       _snack('Veri yüklenemedi: $e', err: true);
@@ -309,7 +322,18 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   Widget _body() {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_containers.isEmpty) return const Center(child: Text('Bu siparişe ait, mal kabul alanında transfer edilecek ürün bulunmuyor.'));
+    if (_containers.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(
+            'order_transfer.no_items_to_transfer'.tr(),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -419,14 +443,25 @@ class _ContainerCardState extends State<_ContainerCard> {
   void initState() {
     super.initState();
     if (widget.target != null) _ctrl.text = widget.target!.key;
-    if (widget.focused) _focus.requestFocus();
+    if (widget.focused) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focus.requestFocus();
+        _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant _ContainerCard old) {
     super.didUpdateWidget(old);
-    if (widget.target?.key != old.target?.key) _ctrl.text = widget.target?.key ?? '';
-    if (widget.focused && !old.focused) _focus.requestFocus();
+    if (widget.target?.key != old.target?.key) {
+      _ctrl.text = widget.target?.key ?? '';
+    }
+    if (widget.focused && !old.focused) {
+      _focus.requestFocus();
+      // Select all text when focus is gained
+      _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    }
   }
 
   @override
@@ -436,17 +471,19 @@ class _ContainerCardState extends State<_ContainerCard> {
     super.dispose();
   }
 
-  void _submit(String text) {
-    final t = text.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
-    if (t.isNotEmpty) {
-      widget.onScan(t);
-    }
-  }
-
-  Future<void> _showLocationSearchDialog() async {
-    final searchResult = await showDialog<MapEntry<String, int>>(
-      context: context,
-      builder: (context) => _LocationSearchDialog(locations: widget.availableLocations),
+  Future<void> _showLocationSearch() async {
+    final searchResult = await Navigator.push<MapEntry<String, int>>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _LocationSearchPage(
+          title: 'order_transfer.dialog_select_target'.tr(),
+          items: widget.availableLocations,
+          itemToString: (item) => item.key,
+          filterCondition: (item, query) =>
+              item.key.toLowerCase().contains(query.toLowerCase()),
+        ),
+      ),
     );
 
     if (searchResult != null) {
@@ -563,135 +600,166 @@ class _ContainerCardState extends State<_ContainerCard> {
     ],
   );
 
-  Widget _rowInput(ThemeData theme) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Expanded(
-        child: TextFormField(
-          controller: _ctrl,
-          focusNode: _focus,
-          decoration: InputDecoration(
-            labelText: 'Hedef Raf',
-            hintText: 'Okutun, yazın veya seçin',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            suffixIcon: IconButton(
-              tooltip: 'Listeden Seç',
-              icon: const Icon(Icons.arrow_drop_down_circle_outlined),
-              onPressed: _showLocationSearchDialog,
+  Widget _rowInput(ThemeData theme) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _ctrl,
+            focusNode: _focus,
+            decoration: InputDecoration(
+              labelText: 'order_transfer.label_target_shelf'.tr(),
+              hintText: 'order_transfer.hint_scan_or_select'.tr(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              isDense: true,
+              suffixIcon: const Icon(Icons.arrow_drop_down_circle_outlined),
             ),
+            onTap: _showLocationSearch,
+            readOnly: true,
           ),
-          onChanged: (value) {
-            if (value.contains('\n')) {
-              _submit(value);
+        ),
+        const SizedBox(width: 8),
+        _QrButton(
+          onTap: () async {
+            final res = await Navigator.push<String>(
+              context,
+              MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+            );
+            if (res != null && res.isNotEmpty) {
+              widget.onScan(res);
             }
           },
-          onFieldSubmitted: _submit,
         ),
-      ),
-      const SizedBox(width: 8),
-      SizedBox(
-        height: 48,
-        child: ElevatedButton(
-          onPressed: () async {
-            final res = await Navigator.push<String>(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const QrScannerScreen()));
-            if (res != null && res.isNotEmpty) _submit(res);
-          },
-          style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12)),
-          child: const Icon(Icons.qr_code_scanner),
-        ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
-class _LocationSearchDialog extends StatefulWidget {
-  final List<MapEntry<String, int>> locations;
+class _QrButton extends StatelessWidget {
+  final VoidCallback onTap;
 
-  const _LocationSearchDialog({required this.locations});
+  const _QrButton({required this.onTap});
 
   @override
-  State<_LocationSearchDialog> createState() => _LocationSearchDialogState();
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      width: 56,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          padding: EdgeInsets.zero,
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final iconSize = constraints.maxHeight * 0.6;
+            return Icon(Icons.qr_code_scanner, size: iconSize);
+          },
+        ),
+      ),
+    );
+  }
 }
 
-class _LocationSearchDialogState extends State<_LocationSearchDialog> {
-  late List<MapEntry<String, int>> _filteredLocations;
-  final _searchController = TextEditingController();
+class _LocationSearchPage<T> extends StatefulWidget {
+  final String title;
+  final List<T> items;
+  final String Function(T) itemToString;
+  final bool Function(T, String) filterCondition;
+
+  const _LocationSearchPage({
+    required this.title,
+    required this.items,
+    required this.itemToString,
+    required this.filterCondition,
+  });
+
+  @override
+  State<_LocationSearchPage<T>> createState() => _LocationSearchPageState<T>();
+}
+
+class _LocationSearchPageState<T> extends State<_LocationSearchPage<T>> {
+  String _searchQuery = '';
+  late List<T> _filteredItems;
+  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _filteredLocations = widget.locations;
-    _searchController.addListener(_filterLocations);
+    _filteredItems = widget.items;
+    _searchCtrl.addListener(() {
+      _filterItems(_searchCtrl.text);
+    });
   }
 
   @override
-  void dispose() {
-    _searchController.removeListener(_filterLocations);
-    _searchController.dispose();
+  void dispose(){
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  void _filterLocations() {
-    final query = _searchController.text.toLowerCase();
+  void _filterItems(String query) {
     setState(() {
-      _filteredLocations = widget.locations.where((loc) {
-        return loc.key.toLowerCase().contains(query);
-      }).toList();
+      _searchQuery = query;
+      _filteredItems = widget.items
+          .where((item) => widget.filterCondition(item, _searchQuery))
+          .toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Hedef Raf Seçin', style: Theme.of(context).textTheme.titleLarge),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-      content: SizedBox(
-        width: double.maxFinite,
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title, style: theme.appBarTheme.titleTextStyle),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Ara veya okut...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  isDense: true,
-                ),
+          children: <Widget>[
+            TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'inventory_transfer.dialog_search_hint'.tr(),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => _searchCtrl.clear(),
+                      )
+                    : null,
               ),
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _filteredLocations.isEmpty
-                  ? const Center(child: Text('Sonuç bulunamadı'))
-                  : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _filteredLocations.length,
-                itemBuilder: (context, index) {
-                  final location = _filteredLocations[index];
-                  return ListTile(
-                    title: Text(location.key),
-                    onTap: () => Navigator.of(context).pop(location),
-                  );
-                },
-              ),
+              child: _filteredItems.isEmpty
+                  ? Center(child: Text('inventory_transfer.dialog_search_no_results'.tr()))
+                  : ListView.separated(
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemCount: _filteredItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _filteredItems[index];
+                        return ListTile(
+                          title: Text(widget.itemToString(item)),
+                          onTap: () => Navigator.of(context).pop(item),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Kapat'),
-        ),
-      ],
     );
   }
 }
