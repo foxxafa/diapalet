@@ -1,6 +1,7 @@
 // ----- lib/features/inventory_transfer/presentation/screens/order_transfer_screen.dart (GÜNCELLENDİ) -----
 import 'dart:async';
 import 'dart:io';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -17,61 +18,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:receive_intent/receive_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-/// *************************
-/// Barkod Intent Servisi
-/// *************************
-class BarcodeIntentService {
-  static const _supportedActions = {
-    'unitech.scanservice.data', // Unitech
-    'com.symbol.datawedge.data.ACTION', // Zebra
-    'com.honeywell.decode.intent.action.DECODE_EVENT', // Honeywell
-    'com.datalogic.decodewedge.decode_action', // Datalogic
-    'nlscan.action.SCANNER_RESULT', // Newland
-    'android.intent.action.SEND', // Paylaşılan metin
-  };
-
-  static const _payloadKeys = [
-    'text', // Unitech
-    'com.symbol.datawedge.data_string',
-    'com.honeywell.decode.intent.extra.DATA_STRING',
-    'nlscan_code',
-    'scannerdata',
-    'barcode_data',
-    'barcode',
-    'data',
-    'android.intent.extra.TEXT',
-  ];
-
-  /// Sürekli dinleyen yayın.
-  Stream<String> get stream => ReceiveIntent.receivedIntentStream
-      .where((intent) =>
-  intent != null && _supportedActions.contains(intent.action))
-      .map(_extractBarcode)
-      .where((code) => code != null)
-      .cast<String>();
-
-  /// Uygulama ilk açılırken gelen Intent'i getirir.
-  Future<String?> getInitialBarcode() async {
-    final intent = await ReceiveIntent.getInitialIntent();
-    if (intent == null || !_supportedActions.contains(intent.action)) {
-      return null;
-    }
-    return _extractBarcode(intent);
-  }
-
-  /// Ortak veri çıkarıcı
-  String? _extractBarcode(Intent? intent) {
-    if (intent == null) return null;
-    for (final key in _payloadKeys) {
-      final value = intent.extra?[key];
-      if (value is String && value.trim().isNotEmpty) {
-        return value.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
-      }
-    }
-    return null;
-  }
-}
 
 /// *************************
 /// Ekran State

@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
@@ -57,6 +60,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
 
+  // Barcode service
+  late final BarcodeIntentService _barcodeService;
+  StreamSubscription<String>? _intentSub;
+
   @override
   void initState() {
     super.initState();
@@ -67,11 +74,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
       _loadInitialData();
+      _initBarcode();
     });
   }
 
   @override
   void dispose() {
+    _intentSub?.cancel();
     _sourceLocationFocusNode.removeListener(_onFocusChange);
     _containerFocusNode.removeListener(_onFocusChange);
     _targetLocationFocusNode.removeListener(_onFocusChange);
@@ -712,6 +721,38 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       margin: const EdgeInsets.all(20),
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
+  }
+
+  // --- Barcode Handling ---
+  Future<void> _initBarcode() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+
+    _barcodeService = BarcodeIntentService();
+
+    final first = await _barcodeService.getInitialBarcode();
+    if (first != null) _handleBarcode(first);
+
+    _intentSub = _barcodeService.stream.listen(_handleBarcode,
+        onError: (e) => _showErrorSnackBar('Barkod okuma hatası: $e'));
+  }
+
+  void _handleBarcode(String code) {
+    if (_sourceLocationFocusNode.hasFocus) {
+      _processScannedData('source', code);
+    } else if (_containerFocusNode.hasFocus) {
+      _processScannedData('container', code);
+    } else if (_targetLocationFocusNode.hasFocus) {
+      _processScannedData('target', code);
+    } else {
+      // Aktif bir odak yoksa, mantıksal bir sıra izle
+      if (_selectedSourceLocationName == null) {
+        _processScannedData('source', code);
+      } else if (_selectedContainer == null) {
+        _processScannedData('container', code);
+      } else {
+        _processScannedData('target', code);
+      }
+    }
   }
 }
 

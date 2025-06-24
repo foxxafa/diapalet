@@ -1,4 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
+import 'dart:io';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -10,6 +12,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -56,6 +59,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   final _productFocusNode = FocusNode();
   final _quantityFocusNode = FocusNode();
 
+  // Barcode service
+  late final BarcodeIntentService _barcodeService;
+  StreamSubscription<String>? _intentSub;
+
   @override
   void initState() {
     super.initState();
@@ -65,10 +72,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     _productFocusNode.addListener(_onProductFocusChange);
     _loadInitialData();
+    _initBarcode();
   }
 
   @override
   void dispose() {
+    _intentSub?.cancel();
     _productFocusNode.removeListener(_onProductFocusChange);
     _palletIdController.dispose();
     _productController.dispose();
@@ -154,10 +163,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ? _orderItems.map((item) => item.product).nonNulls.toList()
         : _availableProducts;
 
-    final foundProduct = productSource.firstWhere((p) =>
-    p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
-        (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
-    );
+    ProductInfo? foundProduct;
+    try {
+      foundProduct = productSource.firstWhere((p) =>
+      p.stockCode.toLowerCase() == scannedData.toLowerCase() ||
+          (p.barcode1?.toLowerCase() == scannedData.toLowerCase()),
+      );
+    } catch(e) {
+      foundProduct = null;
+    }
 
     if (foundProduct != null) {
       _selectProduct(foundProduct);
@@ -625,7 +639,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.colorScheme.onSurface,
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withOpacity(0.05),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -697,6 +711,36 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       margin: const EdgeInsets.all(20),
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
+  }
+
+  // --- Barcode Handling ---
+  Future<void> _initBarcode() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+
+    _barcodeService = BarcodeIntentService();
+
+    final first = await _barcodeService.getInitialBarcode();
+    if (first != null) _handleBarcode(first);
+
+    _intentSub = _barcodeService.stream.listen(_handleBarcode,
+        onError: (e) => _showErrorSnackBar('Barkod okuma hatası: $e'));
+  }
+
+  void _handleBarcode(String code) {
+    if (_palletIdFocusNode.hasFocus) {
+      setState(() => _palletIdController.text = code);
+      _productFocusNode.requestFocus();
+    } else if (_productFocusNode.hasFocus) {
+      _processScannedProduct(code);
+    } else {
+      // Eğer palet modu aktifse ve palet ID boşsa, barkodu palete ata.
+      if (_receivingMode == ReceivingMode.palet && _palletIdController.text.isEmpty) {
+        setState(() => _palletIdController.text = code);
+        _productFocusNode.requestFocus();
+      } else { // Değilse ürüne ata
+        _processScannedProduct(code);
+      }
+    }
   }
 }
 
@@ -877,7 +921,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
                   : 'goods_receiving.not_specified'.tr()),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(item.quantity.toStringAsFixed(0),
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: Icon(
                       Icons.delete_outline, color: theme.colorScheme.error),
