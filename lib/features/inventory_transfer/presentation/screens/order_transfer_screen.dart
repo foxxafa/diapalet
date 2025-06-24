@@ -213,11 +213,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       final uid = (await SharedPreferences.getInstance()).getInt('user_id');
       if (uid == null) throw 'Kullanıcı bulunamadı';
 
-      final details = <TransferItemDetail>[];
+      final allDetails = <TransferItemDetail>[];
       _targets.forEach((cid, loc) {
         final cont = _containers.firstWhere((c) => c.id == cid);
         for (final item in cont.items) {
-          details.add(TransferItemDetail(
+          allDetails.add(TransferItemDetail(
             productId: item.product.id,
             productName: item.product.name,
             productCode: item.product.stockCode,
@@ -229,26 +229,35 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         }
       });
 
-      // Eğer tüm item'lar aynı hedefe gidiyorsa o ID'yi, yoksa 0 kullan (muhtelif).
-      final uniqueTargetIds = details.map((d) => d.targetLocationId).toSet();
-      final headerTargetLocationId = (uniqueTargetIds.length == 1 ? uniqueTargetIds.first : 0) ?? 0;
-      final headerTargetLocationName = uniqueTargetIds.length == 1
-          ? details.first.targetLocationName
-          : 'Muhtelif';
+      // Öğeleri hedef lokasyona göre grupla
+      final groupedByLocation = <int, List<TransferItemDetail>>{};
+      for (final detail in allDetails) {
+        (groupedByLocation[detail.targetLocationId!] ??= []).add(detail);
+      }
 
+      // Her lokasyon grubu için ayrı bir transfer operasyonu kaydet
+      for (final entry in groupedByLocation.entries) {
+        final targetLocationId = entry.key;
+        final detailsForLocation = entry.value;
+        final targetLocationName = detailsForLocation.first.targetLocationName;
 
-      final header = TransferOperationHeader(
-        employeeId: uid,
-        transferDate: DateTime.now(),
-        operationType: details.first.sourcePalletBarcode != null
-            ? AssignmentMode.pallet
-            : AssignmentMode.box,
-        sourceLocationName: sourceLocationName,
-        targetLocationName: headerTargetLocationName,
-      );
+        final header = TransferOperationHeader(
+          employeeId: uid,
+          transferDate: DateTime.now(),
+          operationType: detailsForLocation.first.sourcePalletBarcode != null
+              ? AssignmentMode.pallet
+              : AssignmentMode.box,
+          sourceLocationName: sourceLocationName,
+          targetLocationName: targetLocationName,
+        );
 
-      await _repo.recordTransferOperation(
-          header, details, sourceLocationId, headerTargetLocationId);
+        await _repo.recordTransferOperation(
+          header,
+          detailsForLocation,
+          sourceLocationId,
+          targetLocationId,
+        );
+      }
 
       _snack('Kaydedildi');
       context.read<SyncService>().performFullSync(force: true);
