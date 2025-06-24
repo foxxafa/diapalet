@@ -56,11 +56,10 @@ class AppTheme {
         color: Colors.white,
       ),
     ),
-    // [DÜZELTME] TabBar renkleri, AppBar üzerinde okunabilir olacak şekilde güncellendi.
     tabBarTheme: const TabBarThemeData(
-      labelColor: Colors.white, // Seçili sekme metni AppBar başlığı gibi beyaz yapıldı.
-      unselectedLabelColor: Colors.white70, // Seçili olmayan sekme rengi ayarlandı.
-      indicatorColor: Colors.white, // Alt çizgi rengi beyaz yapıldı.
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white70,
+      indicatorColor: Colors.white,
       indicator: UnderlineTabIndicator(
         borderSide: BorderSide(color: Colors.white, width: 2.5),
       ),
@@ -133,7 +132,7 @@ class AppTheme {
       brightness: Brightness.dark,
     ),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent, // Karanlık temada AppBar'ı transparan yapar.
+      backgroundColor: Colors.transparent, 
       foregroundColor: Colors.white,
       elevation: 0,
       centerTitle: true,
@@ -143,10 +142,9 @@ class AppTheme {
         color: Colors.white,
       ),
     ),
-    // [DÜZELTME] Karanlık temada okunurluk için seçili olmayan sekme rengi güncellendi.
     tabBarTheme: const TabBarThemeData(
       labelColor: darkPrimaryColor,
-      unselectedLabelColor: Colors.white70, // Colors.grey'den değiştirildi.
+      unselectedLabelColor: Colors.white70,
       indicator: UnderlineTabIndicator(
         borderSide: BorderSide(color: darkPrimaryColor, width: 2.5),
       ),

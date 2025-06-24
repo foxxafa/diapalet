@@ -334,6 +334,12 @@
     "validator_target_required": "Target location is required.",
     "confirm_dialog_title": "Confirm Transfer",
     "confirm_dialog_body": "The following transfers from {sourceLocation} will be processed. Do you confirm?",
+    "confirm_dialog_item_plural": "• {count} containers to {targetLocation}",
+    "confirm_dialog_item_singular": "• {containerName} to {targetLocation}",
+    "confirm_dialog_item_container": "• Container {containerName} to {targetLocation}",
+    "confirm_dialog_item_container_plural": "• {count} containers to {targetLocation}",
+    "confirm_dialog_item_product": "• {productName} (x{quantity}) to {targetLocation}",
+    "confirm_dialog_item_product_plural": "• {count} products to {targetLocation}",
     "confirm_button": "Confirm and Save",
     "scan_target_shelf": "Scan Target Shelf QR",
     "all_items_transferred": "All items have been transferred.",
@@ -368,5 +374,8 @@
     "unknown_order": "Unknown Order",
     "active_session_found": "Active session found. Redirecting to main page.",
     "no_active_session": "No active session found. Showing login screen."
+  },
+  "splash": {
+    "loading": "Checking session, please wait..."
   }
 }

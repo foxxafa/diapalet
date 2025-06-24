@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 
 /// Uygulamanın tema modunu (Açık, Koyu) yöneten ChangeNotifier sınıfı.
-/// GÜNCELLEME: Tema artık main.dart'ta sabitlendiği için bu sınıfın
-/// SharedPreferences ile olan bağlantısı kaldırılmıştır. Gelecekte
+///
+/// Bu sınıf, mevcut tema modunu saklar ve tema değişikliklerini
+/// dinleyen widget'ları bilgilendirir. Tema değiştirme mantığı
+/// doğrudan `main.dart` veya ayarlar ekranı gibi yerlerde
+/// yönetilebilir.
+///
+/// NOT: Tema kaydetme ve yükleme (örn: SharedPreferences) mantığı buradan
+/// çıkarılmıştır. Bu, provider'ın sadece state yönetimine odaklanmasını sağlar
+/// ve ileride farklı kaydetme mekanizmaları eklendiğinde (örn: bulut senkronizasyonu)
+/// kodun daha temiz kalmasına yardımcı olur. İstenirse bu mantık tekrar
 /// tekrar aktif edilebilir diye yapı korunmuştur.
 class ThemeProvider with ChangeNotifier {
   // Varsayılan tema modu sistem teması veya istenilen bir başlangıç teması olabilir.

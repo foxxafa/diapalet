@@ -43,9 +43,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   int _focusedIndex = 0;
   final Map<String, MapEntry<String, int>> _targets = {};
 
-  final List<String> _debug = [];
-  bool _showDebug = false;
-
   // sabitler
   static String get sourceLocationName => 'common_labels.goods_receiving_area'.tr();
   static const sourceLocationId = 1;
@@ -53,9 +50,9 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _repo = context.read<InventoryTransferRepository>();
-      _loadContainers();
+      await _loadContainers();
       _initBarcode();
     });
   }
@@ -72,18 +69,20 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (kIsWeb || !Platform.isAndroid) return;
 
     _barcodeService = BarcodeIntentService();
-    _addDbg('order_transfer.barcode_service_started'.tr());
 
     final first = await _barcodeService.getInitialBarcode();
-    if (first != null) _handleBarcode(first);
+    if (first != null) {
+      // Handle initial barcode with a slight delay to avoid race conditions on startup
+      Future.delayed(const Duration(milliseconds: 200), () => _handleBarcode(first));
+    }
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
-        onError: (e) => _addDbg('order_transfer.barcode_stream_error'.tr(namedArgs: {'error': e.toString()})));
+        onError: (e) => _snack('order_transfer.barcode_stream_error'.tr(namedArgs: {'error': e.toString()}), err: true));
   }
 
   void _handleBarcode(String code) {
     if (_containers.isEmpty) {
-      _addDbg('order_transfer.barcode_received_but_container_list_empty'.tr());
+      _snack('order_transfer.barcode_received_but_container_list_empty'.tr(), err: true);
       return;
     }
     if (!mounted) return;
@@ -141,7 +140,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     final clean = code.trim();
     if (clean.isEmpty) return;
 
-    _addDbg("İşlenen barkod: '$clean'");
     try {
       final match = await _repo.findLocationByCode(clean);
 
@@ -196,15 +194,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
   }
 
-  void _addDbg(String m) {
-    if (!_showDebug) return;
-    setState(() {
-      _debug.insert(0, '${DateTime.now().toString().substring(11, 19)} $m');
-      if (_debug.length > 50) _debug.removeLast();
-    });
-    debugPrint('DBG $m');
-  }
-
   void _snack(String m, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -214,7 +203,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     ));
   }
 
-  /* ------------------  KAYDET ------------------ */
+  /* ------------------  KAYDET (GÜNCELLENDİ) ------------------ */
   Future<void> _save() async {
     if (_targets.isEmpty) {
       _snack('order_transfer.cart_empty'.tr(), err: true);
@@ -287,13 +276,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       appBar: SharedAppBar(
         title: 'order_transfer.title'.tr(),
         showBackButton: true,
-        actions: [
-          IconButton(
-            icon: Icon(_showDebug ? Icons.bug_report : Icons.bug_report_outlined),
-            onPressed: () => setState(() => _showDebug = !_showDebug),
-            tooltip: 'order_transfer.debug_tooltip'.tr(),
-          ),
-        ],
       ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16),
@@ -339,7 +321,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           children: [
             const SizedBox(height: 12),
             OrderInfoCard(order: widget.order), // GÜNCELLENDİ
-            if (_showDebug) _debugPanel(),
             const SizedBox(height: 12),
             Expanded(
               child: RefreshIndicator(
@@ -380,30 +361,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       ),
     );
   }
-
-  Widget _debugPanel() => Card(
-    margin: const EdgeInsets.only(top: 12),
-    child: ExpansionTile(
-      initiallyExpanded: true,
-      title: Text('order_transfer.debug'.tr()),
-      children: [
-        Container(
-          height: 150,
-          color: Colors.black87,
-          padding: const EdgeInsets.all(8),
-          child: ListView.builder(
-            reverse: true,
-            itemCount: _debug.length,
-            itemBuilder: (_, i) => Text(_debug[i],
-                style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    color: Colors.white)),
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 /// *************************
@@ -443,6 +400,12 @@ class _ContainerCardState extends State<_ContainerCard> {
   void initState() {
     super.initState();
     if (widget.target != null) _ctrl.text = widget.target!.key;
+    if (widget.focused) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _focus.requestFocus();
+      });
+    }
   }
 
   @override

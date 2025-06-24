@@ -189,6 +189,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() {
       _selectedSourceLocationName = locationName;
       _sourceLocationController.text = locationName;
+      _resetContainerAndProducts();
+      _selectedTargetLocationName = null;
+      _targetLocationController.clear();
     });
     _loadContainersForLocation();
     _containerFocusNode.requestFocus();
@@ -476,10 +479,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         onSelectionChanged: (newSelection) {
           setState(() {
             _selectedMode = newSelection.first;
-            _resetContainerAndProducts();
-            if (_selectedSourceLocationName != null) {
-              _loadContainersForLocation();
-            }
+            _resetForm();
           });
         },
         style: SegmentedButton.styleFrom(
@@ -506,18 +506,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       children: [
         Expanded(
           child: TextFormField(
+            readOnly: true,
             controller: controller,
             focusNode: focusNode,
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) {
-                _processScannedData(fieldIdentifier, value);
-              }
-            },
             onTap: () async {
+              FocusScope.of(context).unfocus();
+
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
                 title: label,
                 items: items,
