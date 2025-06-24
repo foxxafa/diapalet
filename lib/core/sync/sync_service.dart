@@ -185,6 +185,22 @@ class SyncService with ChangeNotifier {
     }
   }
 
+  /// YALNIZCA bekleyen operasyonları sunucuya yüklemeyi dener.
+  /// Kullanıcı tarafından başlatılan anlık işlemler için kullanılır.
+  Future<bool> uploadPendingOperations() async {
+    if (!await networkInfo.isConnected) {
+      debugPrint("İnternet bağlantısı yok. Yükleme atlanıyor.");
+      return false;
+    }
+    try {
+      await _uploadPendingOperations();
+      return true;
+    } catch (e) {
+      debugPrint("uploadPendingOperations sırasında hata: $e");
+      return false;
+    }
+  }
+
   Future<void> _uploadPendingOperations() async {
     final pendingOps = await dbHelper.getPendingOperations();
     if (pendingOps.isEmpty) return;

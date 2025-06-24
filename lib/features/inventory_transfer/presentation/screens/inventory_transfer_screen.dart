@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:diapalet/core/network/network_info.dart';
 
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
@@ -342,12 +343,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         transferDate: DateTime.now(),
       );
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
+
+      // Eğer online ise, işlemi hemen sunucuya göndermeyi dene
+      if (await context.read<NetworkInfo>().isConnected) {
+        await context.read<SyncService>().uploadPendingOperations();
+      }
+
+      // Başarılı işlem sonrası arayüzü güncelle
       if (mounted) {
-        _showSuccessSnackBar('inventory_transfer.success_transfer_saved'.tr());
-        context.read<SyncService>().performFullSync(force: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('inventory_transfer.success_transfer_saved'.tr()),
+            backgroundColor: Colors.green,
+          ),
+        );
         _resetForm(resetAll: true);
       }
-    } catch (e) {
+    } catch (e, s) {
+      debugPrint('Lokal transfer kaydı hatası: $e\n$s');
       if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -480,6 +493,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           setState(() {
             _selectedMode = newSelection.first;
             _resetForm();
+            if (_selectedSourceLocationName != null) {
+              _loadContainersForLocation();
+            }
           });
         },
         style: SegmentedButton.styleFrom(

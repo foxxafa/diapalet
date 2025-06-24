@@ -31,4 +31,6 @@ abstract class InventoryTransferRepository {
     Future<MapEntry<String, int>?> findLocationByCode(String code);
 
     Future<List<MapEntry<String, int>>> getAllLocations(int warehouseId);
+
+    Future<void> updatePurchaseOrderStatus(int orderId, int status);
 }

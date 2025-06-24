@@ -126,6 +126,30 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<List<PurchaseOrder>> getReceivablePurchaseOrders() async {
+    final db = await dbHelper.database;
+    final maps = await db.query(
+      'satin_alma_siparis_fis',
+      where: 'status = ?',
+      whereArgs: [2], // Durumu 2 (Mal Kabulde/Kısmi Kabul) olanlar
+      orderBy: 'tarih DESC',
+    );
+    return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
+  }
+
+  @override
+  Future<void> updatePurchaseOrderStatus(int orderId, int status) async {
+    final db = await dbHelper.database;
+    await db.update(
+      'satin_alma_siparis_fis',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [orderId],
+    );
+    // TODO: Bu durum değişikliğini sunucuya göndermek için bir pending_operation eklenebilir.
+  }
+
+  @override
   Future<List<ProductInfo>> searchProducts(String query) async {
     final db = await dbHelper.database;
     final maps = await db.query('urunler', where: 'aktif = 1 AND (UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?)', whereArgs: ['%$query%', '%$query%', '%$query%']);

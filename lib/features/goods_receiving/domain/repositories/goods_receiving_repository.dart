@@ -12,8 +12,14 @@ abstract class GoodsReceivingRepository {
   /// Yerel veritabanından açık (tamamlanmamış) satınalma siparişlerini getirir.
   Future<List<PurchaseOrder>> getOpenPurchaseOrders();
 
+  /// Sadece mal kabul transferi yapılacak (durumu=2) siparişleri getirir.
+  Future<List<PurchaseOrder>> getReceivablePurchaseOrders();
+
   /// Belirli bir satınalma siparişinin kalemlerini yerel veritabanından getirir.
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId);
+
+  /// Bir satınalma siparişinin durumunu günceller.
+  Future<void> updatePurchaseOrderStatus(int orderId, int status);
 
   /// Verilen bir sorgu metnine göre ürünleri arar.
   Future<List<ProductInfo>> searchProducts(String query);

@@ -18,10 +18,13 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../goods_receiving/domain/repositories/goods_receiving_repository.dart';
+
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
+  final GoodsReceivingRepository goodsReceivingRepo;
 
   static const int malKabulLocationId = 1;
 
@@ -29,7 +32,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required this.dbHelper,
     required this.dio,
     required this.networkInfo,
+    required this.goodsReceivingRepo,
   });
+
+  @override
+  Future<void> updatePurchaseOrderStatus(int orderId, int status) async {
+    await goodsReceivingRepo.updatePurchaseOrderStatus(orderId, status);
+  }
 
   @override
   Future<MapEntry<String, int>?> findLocationByCode(String code) async {
@@ -63,8 +72,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (?, ?) AND lokasyon_id = ?',
-      whereArgs: [2, 3, warehouseId],
+      where: 'status = ? AND lokasyon_id = ?',
+      whereArgs: [2, warehouseId],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -164,19 +173,35 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     try {
       await db.transaction((txn) async {
         for (final item in items) {
-          final sourcePallet = item.palletId ?? item.sourcePalletBarcode;
-          final String? targetPallet;
+          String? sourcePallet;
+          String? targetPallet;
 
-          if (header.operationType == AssignmentMode.pallet) {
-            targetPallet = sourcePallet;
-          }
-          else {
-            targetPallet = null;
+          switch (header.operationType) {
+            case AssignmentMode.pallet:
+              // Tam palet transferi: Kaynak ve hedef palet aynıdır.
+              sourcePallet = item.sourcePalletBarcode;
+              targetPallet = item.sourcePalletBarcode;
+              break;
+            case AssignmentMode.boxFromPallet:
+              // Palet bozma: Kaynaktan paletli stok düş, hedefe paletsiz ekle.
+              sourcePallet = item.sourcePalletBarcode;
+              targetPallet = null;
+              break;
+            case AssignmentMode.box:
+              // Koli/kutu transferi: Kaynak ve hedefte palet yoktur.
+              sourcePallet = null;
+              targetPallet = null;
+              break;
+            default:
+              throw Exception('Bilinmeyen veya desteklenmeyen transfer tipi: ${header.operationType}');
           }
 
+          // Kaynak lokasyondan stok düşümü
           await _updateStock(txn, item.productId, sourceLocationId, -item.quantity, sourcePallet);
+          // Hedef lokasyona stok eklemesi
           await _updateStock(txn, item.productId, targetLocationId, item.quantity, targetPallet);
 
+          // Transfer hareketini kaydet
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
             'from_location_id': sourceLocationId,
@@ -185,7 +210,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             'from_pallet_barcode': sourcePallet,
             'pallet_barcode': targetPallet,
             'employee_id': header.employeeId,
-            'transfer_date': DateTime.now().toIso8601String(),
+            'transfer_date': header.transferDate.toIso8601String(),
             'created_at': DateTime.now().toIso8601String(),
           });
         }
@@ -205,10 +230,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode) async {
-    final condition = palletBarcode == null ? 'urun_id = ? AND location_id = ? AND pallet_barcode IS NULL' : 'urun_id = ? AND location_id = ? AND pallet_barcode = ?';
-    final args = palletBarcode == null ? [urunId, locationId] : [urunId, locationId, palletBarcode];
-
-    final existingStock = await txn.query('inventory_stock', where: condition, whereArgs: args);
+    final existingStock = await txn.query('inventory_stock',
+        where: 'urun_id = ? AND location_id = ? AND pallet_barcode ${palletBarcode == null ? 'IS NULL' : '= ?'}',
+        whereArgs: palletBarcode == null ? [urunId, locationId] : [urunId, locationId, palletBarcode]
+    );
 
     if (existingStock.isNotEmpty) {
       final currentStock = existingStock.first;
@@ -248,7 +273,23 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<String>> getPalletIdsAtLocation(int locationId) async {
     final db = await dbHelper.database;
-    final maps = await db.rawQuery('SELECT DISTINCT pallet_barcode FROM inventory_stock WHERE location_id = ? AND pallet_barcode IS NOT NULL', [locationId]);
+    final maps = await db.rawQuery('''
+      SELECT DISTINCT s.pallet_barcode
+      FROM inventory_stock s
+      WHERE s.location_id = ? 
+        AND s.pallet_barcode IS NOT NULL
+        AND (
+          -- Mal kabul lokasyonundaysa, sipariş durumu 3 olmalı
+          s.location_id = 1 AND EXISTS (
+            SELECT 1 FROM goods_receipt_items gri
+            JOIN goods_receipts gr ON gr.id = gri.receipt_id
+            JOIN satin_alma_siparis_fis sasf ON sasf.id = gr.siparis_id
+            WHERE gri.urun_id = s.urun_id AND gri.pallet_barcode = s.pallet_barcode AND sasf.status = 3
+          )
+          -- Diğer lokasyonlardaysa, kısıtlama yok (şimdilik)
+          OR s.location_id != 1
+        )
+    ''', [locationId]);
     return maps.map((map) => map['pallet_barcode'] as String).toList();
   }
 
@@ -256,10 +297,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
     final db = await dbHelper.database;
     final maps = await db.rawQuery('''
-      SELECT u.id as productId, u.UrunAdi as productName, u.StokKodu as productCode, u.Barcode1 as barcode1, SUM(s.quantity) as quantity 
-      FROM inventory_stock s 
-      JOIN urunler u ON u.id = s.urun_id 
-      WHERE s.location_id = ? AND s.pallet_barcode IS NULL 
+      SELECT u.id as productId, u.UrunAdi as productName, u.StokKodu as productCode, u.Barcode1 as barcode1, SUM(s.quantity) as quantity
+      FROM inventory_stock s
+      JOIN urunler u ON u.id = s.urun_id
+      WHERE s.location_id = ? 
+        AND s.pallet_barcode IS NULL
+        AND (
+          s.location_id = 1 AND EXISTS (
+            SELECT 1 FROM goods_receipt_items gri
+            JOIN goods_receipts gr ON gr.id = gri.receipt_id
+            JOIN satin_alma_siparis_fis sasf ON sasf.id = gr.siparis_id
+            WHERE gri.urun_id = s.urun_id AND sasf.status = 3
+          )
+          OR s.location_id != 1
+        )
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''', [locationId]);
     return maps.map((map) => BoxItem.fromDbMap(map)).toList();

@@ -80,6 +80,7 @@ void main() async {
               dbHelper: context.read<DatabaseHelper>(),
               networkInfo: context.read<NetworkInfo>(),
               dio: context.read<Dio>(),
+              goodsReceivingRepo: context.read<GoodsReceivingRepository>(),
             ),
           ),
           ChangeNotifierProvider<SyncService>(

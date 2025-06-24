@@ -17,6 +17,7 @@ import 'package:flutter/material.dart' hide Intent;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:diapalet/core/network/network_info.dart';
 
 /// *************************
 /// Ekran State
@@ -42,6 +43,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   List<MapEntry<String, int>> _availableLocations = [];
   int _focusedIndex = 0;
   final Map<String, MapEntry<String, int>> _targets = {};
+  final Map<String, Map<int, TextEditingController>> _quantityControllers = {};
 
   // sabitler
   static String get sourceLocationName => 'common_labels.goods_receiving_area'.tr();
@@ -61,6 +63,9 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   void dispose() {
     _scrollController.dispose();
     _intentSub?.cancel();
+    _quantityControllers.forEach((_, controllers) {
+      controllers.forEach((_, ctrl) => ctrl.dispose());
+    });
     super.dispose();
   }
 
@@ -111,11 +116,26 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           _cardKeys = List.generate(containers.length, (_) => GlobalKey());
           _availableLocations = locations;
           _isLoading = false;
+          _targets.clear();
+          _quantityControllers.clear();
+
+          // Miktar kontrolcülerini oluştur
+          for (var container in containers) {
+            final controllers = <int, TextEditingController>{};
+            for (var item in container.items) {
+               final qty = item.quantity;
+               final initialQtyText = qty == qty.truncate() ? qty.toInt().toString() : qty.toString();
+               controllers[item.product.id] = TextEditingController(text: initialQtyText);
+            }
+            _quantityControllers[container.id] = controllers;
+          }
         });
 
         // EĞER TRANSFER EDILECEK ÜRÜN KALMADIYSA, SAYFAYI KAPAT
         if (_containers.isEmpty) {
           if (mounted) {
+            // Sipariş durumunu 3 (Tamamlandı) olarak güncelle
+            await _repo.updatePurchaseOrderStatus(widget.order.id, 3);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('order_transfer.all_items_transferred'.tr())),
             );
@@ -229,36 +249,63 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         final targetLocationName = _targets.values.firstWhere((loc) => loc.value == targetLocationId).key;
         final containersForLocation = entry.value;
 
-        final header = TransferOperationHeader(
+        // Her bir konteyner için ayrı başlık ve işlem oluştur
+        for (final container in containersForLocation) {
+          bool isFullPalletTransfer = true;
+          final List<TransferItemDetail> detailsForOperation = [];
+
+          final itemControllers = _quantityControllers[container.id]!;
+
+          for (var item in container.items) {
+            final qtyText = itemControllers[item.product.id]?.text ?? '0';
+            final qty = double.tryParse(qtyText) ?? 0.0;
+
+            if (qty > 0) {
+              // Eğer miktar asıl miktardan farklıysa, bu bir palet bozma işlemidir.
+              if (qty.toStringAsFixed(2) != item.quantity.toStringAsFixed(2)) {
+                isFullPalletTransfer = false;
+              }
+              detailsForOperation.add(TransferItemDetail(
+                productId: item.product.id,
+                productName: item.product.name,
+                productCode: item.product.stockCode,
+                quantity: qty,
+                sourcePalletBarcode: item.sourcePalletBarcode,
+                targetLocationId: targetLocationId,
+                targetLocationName: targetLocationName,
+              ));
+            }
+          }
+
+          if (detailsForOperation.isEmpty) continue;
+
+          final operationType = isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.boxFromPallet;
+
+          final header = TransferOperationHeader(
             employeeId: uid,
             transferDate: DateTime.now(),
-            operationType: AssignmentMode.pallet, // TODO: Palet/Kutu ayrımı?
+            operationType: operationType,
             sourceLocationName: sourceLocationName,
-            targetLocationName: targetLocationName
-        );
+            targetLocationName: targetLocationName,
+            containerId: container.id,
+          );
 
-        final List<TransferItemDetail> detailsForOperation = [];
-        for (var container in containersForLocation) {
-          for (var item in container.items) {
-            detailsForOperation.add(TransferItemDetail(
-              productId: item.product.id,
-              productName: item.product.name,
-              productCode: item.product.stockCode,
-              quantity: item.quantity,
-              sourcePalletBarcode: item.sourcePalletBarcode,
-              targetLocationId: targetLocationId,
-              targetLocationName: targetLocationName,
-            ));
-          }
+          await _repo.recordTransferOperation(header, detailsForOperation, sourceLocationId, targetLocationId);
         }
-        await _repo.recordTransferOperation(header, detailsForOperation, sourceLocationId, targetLocationId);
       }
 
       if (!mounted) return;
 
+      // Eğer online ise, işlemi hemen sunucuya göndermeyi dene
+      if (await context.read<NetworkInfo>().isConnected) {
+        await context.read<SyncService>().uploadPendingOperations();
+      }
+
       _snack('order_transfer.saved'.tr());
-      context.read<SyncService>().performFullSync(force: true);
-      await _loadContainers();
+      
+      // Bir önceki sayfaya 'true' sonucuyla dönerek yenileme tetikle
+      Navigator.of(context).pop(true);
+
     } catch (e) {
       if (!mounted) return;
       _snack('order_transfer.save_error'.tr(namedArgs: {'error': e.toString()}), err: true);
@@ -351,6 +398,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         }
                       },
                       onScan: (text) => _processScannedLocation(c, text),
+                      quantityControllers: _quantityControllers[c.id] ?? {},
                     );
                   },
                 ),
@@ -375,6 +423,7 @@ class _ContainerCard extends StatefulWidget {
   final VoidCallback onClear;
   final VoidCallback onTap;
   final void Function(String) onScan;
+  final Map<int, TextEditingController> quantityControllers;
 
   const _ContainerCard({
     super.key,
@@ -386,6 +435,7 @@ class _ContainerCard extends StatefulWidget {
     required this.onClear,
     required this.onTap,
     required this.onScan,
+    required this.quantityControllers,
   });
 
   @override
@@ -484,7 +534,9 @@ class _ContainerCardState extends State<_ContainerCard> {
                 onExpansionChanged: (expanding) {
                   // Kullanıcı başlığa dokunduğunda, durumu yönetmesi için
                   // her zaman üst widget'ın onTap'ını çağırırız.
-                  widget.onTap();
+                  if (expanding) {
+                    widget.onTap();
+                  }
                 },
                 title: Text(widget.container.displayName,
                     style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -493,12 +545,14 @@ class _ContainerCardState extends State<_ContainerCard> {
                     : const Icon(Icons.pending_outlined),
                 childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: widget.container.items.map((i) {
+                  final qtyController = widget.quantityControllers[i.product.id]!;
                   return Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
+                          flex: 3,
                           child: RichText(
                             text: TextSpan(
                               style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurface),
@@ -516,23 +570,27 @@ class _ContainerCardState extends State<_ContainerCard> {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                  text: 'common_labels.quantity'.tr(),
-                                  style: theme.textTheme.labelLarge?.copyWith(color: theme.hintColor)
-                              ),
-                              TextSpan(
-                                text: i.quantity.toStringAsFixed(0),
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            ]
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            controller: qtyController,
+                            textAlign: TextAlign.center,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'common_labels.quantity'.tr(),
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                            validator: (v) {
+                               if (v == null || v.isEmpty) return 'validators.required'.tr();
+                               final qty = double.tryParse(v);
+                               if (qty == null) return 'validators.invalid'.tr();
+                               if (qty > i.quantity) return 'validators.max_qty'.tr();
+                               if (qty < 0) return 'validators.negative'.tr();
+                               return null;
+                            },
                           ),
-                        ),
+                        )
                       ],
                     ),
                   );
