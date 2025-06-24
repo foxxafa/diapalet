@@ -219,52 +219,42 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       final uid = (await SharedPreferences.getInstance()).getInt('user_id');
       if (uid == null) throw 'order_transfer.user_not_found'.tr();
 
-      final allDetails = <TransferItemDetail>[];
-      for (final entry in _targets.entries) {
-        final cid = entry.key;
-        final loc = entry.value;
-        final cont = _containers.firstWhere((c) => c.id == cid);
-        for (final item in cont.items) {
-          allDetails.add(TransferItemDetail(
-            productId: item.product.id,
-            productName: item.product.name,
-            productCode: item.product.stockCode,
-            quantity: item.quantity,
-            sourcePalletBarcode: item.sourcePalletBarcode,
-            targetLocationId: loc.value,
-            targetLocationName: loc.key,
-          ));
-        }
+      // HEDEF LOKASYONLARINA GÖRE GRUPLANMIŞ TRANSFER DETAYLARI OLUŞTUR
+      // Her bir hedef lokasyon için ayrı bir transfer işlemi kaydedilecek.
+      final groupedTargets = <int, List<TransferableContainer>>{};
+      for (final containerId in _targets.keys) {
+        final targetLocation = _targets[containerId]!;
+        (groupedTargets[targetLocation.value] ??= []).add(_containers.firstWhere((c) => c.id == containerId));
       }
 
-      // Öğeleri hedef lokasyona göre grupla
-      final groupedByLocation = <int, List<TransferItemDetail>>{};
-      for (final detail in allDetails) {
-        (groupedByLocation[detail.targetLocationId!] ??= []).add(detail);
-      }
-
-      // Her lokasyon grubu için ayrı bir transfer operasyonu kaydet
-      for (final entry in groupedByLocation.entries) {
+      for (final entry in groupedTargets.entries) {
         final targetLocationId = entry.key;
-        final detailsForLocation = entry.value;
-        final targetLocationName = detailsForLocation.first.targetLocationName;
+        final targetLocationName = _targets.values.firstWhere((loc) => loc.value == targetLocationId).key;
+        final containersForLocation = entry.value;
 
         final header = TransferOperationHeader(
-          employeeId: uid,
-          transferDate: DateTime.now(),
-          operationType: detailsForLocation.first.sourcePalletBarcode != null
-              ? AssignmentMode.pallet
-              : AssignmentMode.box,
-          sourceLocationName: sourceLocationName,
-          targetLocationName: targetLocationName,
+            employeeId: uid,
+            transferDate: DateTime.now(),
+            operationType: AssignmentMode.pallet, // TODO: Palet/Kutu ayrımı?
+            sourceLocationName: sourceLocationName,
+            targetLocationName: targetLocationName
         );
 
-        await _repo.recordTransferOperation(
-          header,
-          detailsForLocation,
-          sourceLocationId,
-          targetLocationId,
-        );
+        final List<TransferItemDetail> detailsForOperation = [];
+        for (var container in containersForLocation) {
+          for (var item in container.items) {
+            detailsForOperation.add(TransferItemDetail(
+              productId: item.product.id,
+              productName: item.product.name,
+              productCode: item.product.stockCode,
+              quantity: item.quantity,
+              sourcePalletBarcode: item.sourcePalletBarcode,
+              targetLocationId: targetLocationId,
+              targetLocationName: targetLocationName,
+            ));
+          }
+        }
+        await _repo.recordTransferOperation(header, detailsForOperation, sourceLocationId, targetLocationId);
       }
 
       if (!mounted) return;
@@ -443,7 +433,10 @@ class _ContainerCardState extends State<_ContainerCard> {
     if (widget.focused) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _focus.requestFocus();
-        _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+        if (_ctrl.text.isNotEmpty) {
+          _ctrl.selection =
+              TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+        }
       });
     }
   }
@@ -457,7 +450,10 @@ class _ContainerCardState extends State<_ContainerCard> {
     if (widget.focused && !old.focused) {
       _focus.requestFocus();
       // Select all text when focus is gained
-      _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      if (_ctrl.text.isNotEmpty) {
+        _ctrl.selection =
+            TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      }
     }
   }
 
@@ -610,10 +606,22 @@ class _ContainerCardState extends State<_ContainerCard> {
               hintText: 'order_transfer.hint_scan_or_select'.tr(),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               isDense: true,
-              suffixIcon: const Icon(Icons.arrow_drop_down_circle_outlined),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                onPressed: _showLocationSearch,
+              ),
             ),
-            onTap: _showLocationSearch,
-            readOnly: true,
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                widget.onScan(value);
+              }
+            },
+            onTap: () {
+              // Klavyenin açılmasını engellemek için değil,
+              // sadece seçim dialoğunu açmak için dokunulduğunda metni seç
+              _focus.requestFocus();
+              _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+            },
           ),
         ),
         const SizedBox(width: 8),

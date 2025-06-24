@@ -20,17 +20,26 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    // AppBar'ın geri butonunu `showBackButton` değerine göre yönetir.
+    final canGoBack = Navigator.of(context).canPop();
+
     return AppBar(
       title: Text(title),
+      leading: showBackButton && canGoBack
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                Navigator.of(context).pop();
+              },
+            )
+          : null,
       actions: actions,
       bottom: bottom,
-      // YENİ: `AppBar`'ın kendi geri butonunu kontrol eden parametre.
-      automaticallyImplyLeading: showBackButton,
     );
   }
 
   @override
   // AppBar'ın toplam yüksekliği, bottom widget'ının yüksekliğini de içerecek şekilde hesaplanır.
-  Size get preferredSize => Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0.0));
+  Size get preferredSize =>
+      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0.0));
 }

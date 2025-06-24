@@ -365,29 +365,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
                   if (_receivingMode == ReceivingMode.palet) ...[
-                    _buildHybridDropdownWithQr<String>(
-                      controller: _palletIdController,
-                      focusNode: _palletIdFocusNode,
-                      label: 'goods_receiving_screen.label_pallet_barcode'.tr(),
-                      fieldIdentifier: 'pallet',
-                      isEnabled: areFieldsEnabled,
-                      items: [], // Pallet ID'ler için bir liste yok, sadece QR/barkod okuma
-                      itemToString: (item) => item,
-                      onItemSelected: (item) {
-                        if(item != null) {
-                          _palletIdController.text = item;
-                          _productFocusNode.requestFocus();
-                        }
-                      },
-                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                      validator: (value) {
-                        if (!areFieldsEnabled) return null;
-                        if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
-                          return 'goods_receiving_screen.validator_pallet_barcode'.tr();
-                        }
-                        return null;
-                      },
-                    ),
+                    _buildPalletIdField(areFieldsEnabled: areFieldsEnabled),
                     const SizedBox(height: _gap),
                   ],
                   _buildHybridDropdownWithQr<ProductInfo>(
@@ -447,10 +425,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         selected: {_receivingMode},
         onSelectionChanged: (newSelection) {
           if (_isSaving) return;
+          FocusScope.of(context).unfocus();
           setState(() {
             _clearEntryFields(clearPallet: true);
             _receivingMode = newSelection.first;
-
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
             if (_receivingMode == ReceivingMode.palet) {
               _palletIdFocusNode.requestFocus();
             } else {
@@ -464,6 +445,47 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
         ),
       ),
+    );
+  }
+
+  Widget _buildPalletIdField({required bool areFieldsEnabled}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _palletIdController,
+            focusNode: _palletIdFocusNode,
+            enabled: areFieldsEnabled,
+            decoration: _inputDecoration(
+              'goods_receiving_screen.label_pallet_barcode'.tr(),
+              enabled: areFieldsEnabled,
+            ),
+            onFieldSubmitted: (value) {
+              if (value.isNotEmpty) {
+                _processScannedData('pallet', value);
+              }
+            },
+            validator: (value) {
+              if (!areFieldsEnabled) return null;
+              if (_receivingMode == ReceivingMode.palet && (value == null || value.isEmpty)) {
+                return 'goods_receiving_screen.validator_pallet_barcode'.tr();
+              }
+              return null;
+            },
+          ),
+        ),
+        const SizedBox(width: _smallGap),
+        _QrButton(
+          onTap: () async {
+            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+            if (result != null && result.isNotEmpty) {
+              _processScannedData('pallet', result);
+            }
+          },
+          isEnabled: areFieldsEnabled,
+        ),
+      ],
     );
   }
 
