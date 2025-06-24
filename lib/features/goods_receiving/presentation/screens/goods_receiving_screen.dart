@@ -644,7 +644,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               padding: const EdgeInsets.all(24.0),
               child: Center(
                 child: Text(
-                  'goods_receiving.no_items'.tr(),
+                  'goods_receiving_screen.no_items'.tr(),
                   style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
                 ),
               ),
@@ -972,7 +972,7 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
               title: Text(item.product.name, overflow: TextOverflow.ellipsis),
               subtitle: Text(item.palletBarcode != null
                   ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                  : 'goods_receiving.not_specified'.tr()),
+                  : 'goods_receiving_screen.mode_box'.tr()),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(item.quantity.toStringAsFixed(0),
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),

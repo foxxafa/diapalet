@@ -113,7 +113,7 @@
     "validator_enter_quantity": "Please enter quantity.",
     "validator_enter_valid_quantity": "Please enter a valid quantity.",
     "header_added_items": "Added Products ({count})",
-    "last_added_item_placeholder": "The last added product will appear here.",
+    "no_items": "No items added yet.",
     "label_pallet_barcode_display": "Pallet: {barcode}",
     "label_pallet_barcode_none": "Pallet: N/A",
     "label_quantity_display": "x{quantity}",
