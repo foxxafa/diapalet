@@ -8,6 +8,7 @@ use yii\web\Response;
 use yii\db\Transaction;
 use yii\db\Query;
 use yii\helpers\ArrayHelper;
+use app\components\DepoComponent; // <-- YENİ EKLENEN SATIR
 
 class TerminalController extends Controller
 {
@@ -16,7 +17,8 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
-        if ($action->id !== 'login' && $action->id !== 'health-check') {
+        // 'sync-shelfs' action'ı için API Key kontrolünü atlıyoruz ki tarayıcıdan kolayca çalıştıralım.
+        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') { // <-- GÜNCELLENEN SATIR
             $this->checkApiKey();
         }
 
@@ -121,7 +123,7 @@ class TerminalController extends Controller
             } catch (\Exception $e) {
                 Yii::error("SyncUpload Hatası ({$opType}): {$e->getMessage()}", __METHOD__);
                 $results[] = ['operation' => $op, 'result' => ['error' => $e->getMessage()]];
-                 Yii::$app->response->statusCode = 500;
+                Yii::$app->response->statusCode = 500;
             }
         }
         return ['success' => true, 'results' => $results];
@@ -160,11 +162,10 @@ class TerminalController extends Controller
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id', 'status'], ['miktar']);
-                
-                // GÜNCELLEME: Mal kabul verilerini de gönder
+
                 $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
-                
+
                 $receiptIds = array_column($data['goods_receipts'], 'id');
                 if (!empty($receiptIds)) {
                     $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
@@ -178,9 +179,8 @@ class TerminalController extends Controller
                 $data['goods_receipt_items'] = [];
             }
 
-            // GÜNCELLEME: Depoya ait stok bilgisini de gönder
             $locationIds = array_column($data['warehouses_shelfs'], 'id');
-             if (!empty($locationIds)) {
+            if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
                 $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
             } else {
@@ -224,7 +224,6 @@ class TerminalController extends Controller
                 $quantity = (float)$item['quantity'];
                 $sourcePallet = $item['pallet_id'] ?? null;
 
-                // GÜNCELLEME: Palet transferi sırasında hedef palet barkodu korunuyor.
                 $targetPallet = null;
                 if ($operationType === 'pallet_transfer') {
                     $targetPallet = $sourcePallet;
@@ -353,5 +352,19 @@ class TerminalController extends Controller
 
         Yii::info("Durum 2 (Kısmi Kabul) olarak güncelleniyor: siparis_id: $siparisId", __METHOD__);
         $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
+    }
+
+    // =================================================================
+    // VVVVVV YENİ EKLENEN OTOMATİK SENKRONİZASYON FONKSİYONU VVVVVV
+    // =================================================================
+    public function actionSyncShelfs()
+    {
+        $result = DepoComponent::syncWarehousesAndShelfs();
+
+        if ($result['status'] === 'error') {
+            Yii::$app->response->statusCode = 500;
+        }
+
+        return $this->asJson($result);
     }
 }
