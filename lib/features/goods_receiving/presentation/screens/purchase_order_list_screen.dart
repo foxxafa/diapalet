@@ -44,8 +44,8 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
       final orders = await _repository.getOpenPurchaseOrders();
       if (mounted) {
         setState(() {
-          _allOrders = orders;
-          _filteredOrders = orders;
+          _allOrders = orders.where((o) => o.status == 1 || o.status == 2).toList();
+          _filterOrders();
           _isLoading = false;
         });
       }

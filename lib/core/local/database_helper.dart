@@ -205,7 +205,7 @@ class DatabaseHelper {
 
   Future<List<PendingOperation>> getPendingOperations() async {
     final db = await database;
-    final maps = await db.query('pending_operation', where: "status = ?", whereArgs: ['pending'], orderBy: 'created_at DESC');
+    final maps = await db.query('pending_operation', where: "status = ?", whereArgs: ['pending'], orderBy: 'created_at ASC');
     return maps.map((map) => PendingOperation.fromMap(map)).toList();
   }
 

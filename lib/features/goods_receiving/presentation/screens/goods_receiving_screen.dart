@@ -278,17 +278,34 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       return;
     }
 
+    // Gözden geçirme ve onaylama ekranını göster
     final result = await _showConfirmationListDialog();
 
+    if (result == null) return; // Kullanıcı dialogu kapattı
+
     if (result == ConfirmationAction.save) {
-      await _executeSave();
+      final success = await _executeSave();
+      if (success) {
+        // Sadece 'Save' seçildiğinde ekranı kapat ve geri dön.
+        _handleSuccessfulSave();
+      }
     } else if (result == ConfirmationAction.complete && _selectedOrder != null) {
-      await _executeMarkAsComplete(_selectedOrder!);
+      bool canProceed = true;
+      // Eğer listede kaydedilecek yeni ürün varsa, önce onları kaydet.
+      if (_addedItems.isNotEmpty) {
+        canProceed = await _executeSave();
+      }
+      
+      // Kaydetme başarılıysa veya kaydedilecek yeni ürün yoksa, tamamlama işlemine geç.
+      if (canProceed) {
+        await _executeMarkAsComplete(_selectedOrder!);
+      }
     }
   }
 
-  Future<void> _executeSave() async {
+  Future<bool> _executeSave() async {
     setState(() => _isSaving = true);
+    bool isSuccess = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final employeeId = prefs.getInt('user_id');
@@ -314,25 +331,27 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (mounted) {
         _showSuccessSnackBar('goods_receiving_screen.success_receipt_saved'.tr());
         context.read<SyncService>().performFullSync(force: true);
-        _handleSuccessfulSave();
+        // EKRANI KAPATMA İŞLEMİ BURADAN KALDIRILDI.
       }
+      isSuccess = true;
     } catch (e) {
       if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+    return isSuccess;
   }
 
   Future<void> _executeMarkAsComplete(PurchaseOrder order) async {
     setState(() => _isSaving = true);
     try {
-      if(_addedItems.isNotEmpty) await _executeSave();
-
+      // Not: Kaydetme işlemi artık _saveAndConfirm içinde yönetiliyor.
       await _repository.markOrderAsComplete(order.id);
 
       if (!mounted) return;
       _showSuccessSnackBar('orders.dialog.success_message'.tr(namedArgs: {'poId': order.poId ?? ''}));
-      Navigator.of(context).pop(true);
+      // Tamamlama işlemi bittikten sonra ekranı kapat.
+      Navigator.of(context).pop(true); 
     } catch (e) {
       if (!mounted) return;
       _showErrorSnackBar('orders.dialog.error_message'.tr(namedArgs: {'error': e.toString()}));
@@ -1027,11 +1046,31 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final appBarTheme = theme.appBarTheme;
-    final groupedItems = <int, List<ReceiptItemDraft>>{};
-    for (final item in _currentItems) {
-      groupedItems.putIfAbsent(item.product.id, () => []).add(item);
+
+    // --- BUTON GÖRÜNÜRLÜK MANTIĞI ---
+    bool areAllItemsFullyReceived = false;
+    if (isOrderBased) {
+      // Harita: urun_id -> bu ekranda eklenen toplam miktar
+      final currentAdditionMap = <int, double>{};
+      for (var item in _currentItems) {
+        currentAdditionMap.update(item.product.id, (value) => value + item.quantity, ifAbsent: () => item.quantity);
+      }
+
+      // Her bir sipariş kaleminin tamamlanıp tamamlanmadığını kontrol et
+      areAllItemsFullyReceived = widget.orderItems.every((orderItem) {
+        final expected = orderItem.expectedQuantity;
+        final previouslyReceived = orderItem.receivedQuantity;
+        final currentlyAdding = currentAdditionMap[orderItem.product!.id] ?? 0;
+        // Küçük bir tolerans payı ile karşılaştır
+        return previouslyReceived + currentlyAdding >= expected - 0.001;
+      });
     }
-    final productIds = groupedItems.keys.toList();
+
+    // "Fişi Kaydet" butonu, sadece tüm ürünler tamamlanMAMIŞSA gösterilir.
+    final bool showSaveReceiptButton = !areAllItemsFullyReceived;
+    // "Tamamla" butonu, sipariş bazlı modda her zaman bir seçenek olmalı.
+    final bool showCompleteButton = isOrderBased;
+    // --- BİTTİ: BUTON GÖRÜNÜRLÜK MANTIĞI ---
 
     return Scaffold(
       appBar: AppBar(
@@ -1052,23 +1091,40 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            // "Fişi Kaydet" butonu, sadece hala kabul edilecek ürün varsa mantıklıdır.
+            if (showSaveReceiptButton)
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: _currentItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.save),
+                child: Text('goods_receiving_screen.dialog_button_save_receipt'.tr()),
               ),
-              onPressed: _currentItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.save),
-              child: Text('goods_receiving_screen.dialog_button_save_receipt'.tr()),
-            ),
-            if (isOrderBased && widget.order?.status == 2) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
+            
+            // Eğer her şey tamsa, "Kaydet ve Tamamla" birincil aksiyon olmalı.
+            // Değilse, ikincil aksiyon olarak görünmeli.
+            if (showCompleteButton) ...[
+              if (showSaveReceiptButton) const SizedBox(height: 8), // Eğer üstteki buton varsa boşluk bırak
+              
+              areAllItemsFullyReceived
+                  ? ElevatedButton( // Birincil Buton stili
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                ),
+                onPressed: _currentItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.complete),
+                child: Text('orders.menu.mark_as_complete'.tr()),
+              )
+                  : OutlinedButton( // İkincil Buton stili
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   side: BorderSide(color: theme.colorScheme.primary),
                 ),
-                onPressed: () => Navigator.of(context).pop(ConfirmationAction.complete),
+                onPressed: _currentItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.complete),
                 child: Text('orders.menu.mark_as_complete'.tr()),
               ),
             ],
