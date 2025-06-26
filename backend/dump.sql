@@ -151,4 +151,3 @@ CREATE TABLE IF NOT EXISTS `inventory_transfers` (
   FOREIGN KEY (`to_location_id`) REFERENCES `warehouses_shelfs`(`id`),
   FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`)
 ) ENGINE=InnoDB;
-

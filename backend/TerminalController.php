@@ -196,10 +196,10 @@ class TerminalController extends Controller
                 $productId = $item['product_id'];
                 $quantity = (float)$item['quantity'];
                 $sourcePallet = $item['pallet_id'] ?? null;
-                
+
                 // 1. Hedefteki palet durumunu operasyon tipine göre belirle
                 $targetPallet = null; // Varsayılan: serbest stok (paletsiz)
-                
+
                 // ############ ANA HATA DÜZELTMESİ ############
                 // Gelen 'operation_type' değeri 'pallet_transfer' olmalı.
                 if ($operationType === 'pallet_transfer') {
