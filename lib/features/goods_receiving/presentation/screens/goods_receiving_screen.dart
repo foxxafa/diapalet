@@ -769,7 +769,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-            textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
+            textStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
       ),
     );
   }
@@ -1292,10 +1292,22 @@ class _OrderProductConfirmationCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(product.name, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(product.stockCode, style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
+                    product.name,
+                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  "(${product.stockCode})",
+                  style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)
+                ),
+              ],
             ),
             const Divider(height: 16),
             _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem.expectedQuantity, unit),

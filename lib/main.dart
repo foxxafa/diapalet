@@ -107,7 +107,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
-      locale: context.locale,
+      locale: const Locale('en'),
       title: 'app.title'.tr(),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
