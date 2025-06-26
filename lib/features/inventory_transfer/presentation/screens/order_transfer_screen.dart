@@ -40,6 +40,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   int _focusedIndex = 0;
   final Map<String, MapEntry<String, int>> _targets = {};
   final Map<String, Map<int, TextEditingController>> _quantityControllers = {};
+  final Map<String, bool> _isPalletOpeningMap = {};
 
   static String get sourceLocationName => 'common_labels.goods_receiving_area'.tr();
   static const int sourceLocationId = 1;
@@ -101,6 +102,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           _isLoading = false;
           _targets.clear();
           _quantityControllers.clear();
+          _isPalletOpeningMap.clear();
 
           for (var container in containers) {
             final controllers = <int, TextEditingController>{};
@@ -110,6 +112,9 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               controllers[item.product.id] = TextEditingController(text: initialQtyText);
             }
             _quantityControllers[container.id] = controllers;
+            if (!container.id.startsWith('PALETSIZ_')) {
+              _isPalletOpeningMap[container.id] = false;
+            }
           }
         });
         _scrollLater();
@@ -191,15 +196,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         final List<TransferItemDetail> detailsForOperation = [];
         final itemControllers = _quantityControllers[container.id]!;
 
-        bool isFullPalletTransfer = true;
+        // DOĞRU MANTIK: Operasyon tipini belirlemek için doğrudan switch'in durumu kontrol ediliyor.
+        final bool isPalletOpening = _isPalletOpeningMap[container.id] ?? false;
 
         for (var item in container.items) {
           final qtyText = itemControllers[item.product.id]?.text ?? '0';
           final qty = double.tryParse(qtyText) ?? 0.0;
           if (qty > 0) {
-            if (qty.toStringAsFixed(2) != item.quantity.toStringAsFixed(2)) {
-              isFullPalletTransfer = false;
-            }
             detailsForOperation.add(TransferItemDetail(
               productId: item.product.id,
               productName: item.product.name,
@@ -214,11 +217,12 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
         if (detailsForOperation.isEmpty) continue;
 
+        // DOĞRU MANTIK: Operasyon tipi artık miktar karşılaştırmasına göre değil,
+        // doğrudan kullanıcının "Paleti Aç" seçimine göre belirleniyor.
         final operationType = container.id.startsWith('PALETSIZ_')
-            ? AssignmentMode.boxFromPallet
-            : (isFullPalletTransfer ? AssignmentMode.pallet : AssignmentMode.boxFromPallet);
+            ? AssignmentMode.box
+            : (isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet);
 
-        // # GÜNCELLEME: 'siparisId' parametresi burada doğru şekilde eklendi.
         final header = TransferOperationHeader(
           employeeId: uid,
           transferDate: DateTime.now(),
@@ -315,6 +319,23 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                       },
                       onScan: (text) => _processScannedLocation(c, text),
                       quantityControllers: _quantityControllers[c.id] ?? {},
+                      isPalletOpening: _isPalletOpeningMap[c.id] ?? false,
+                      onPalletOpeningChanged: (value) {
+                        setState(() {
+                          _isPalletOpeningMap[c.id] = value;
+                          if (!value) {
+                            final container = _containers.firstWhere((cont) => cont.id == c.id);
+                            final itemControllers = _quantityControllers[container.id]!;
+                            for (var item in container.items) {
+                              final initialQty = item.quantity;
+                              final initialQtyText = initialQty == initialQty.truncate()
+                                  ? initialQty.toInt().toString()
+                                  : initialQty.toString();
+                              itemControllers[item.product.id]?.text = initialQtyText;
+                            }
+                          }
+                        });
+                      },
                     );
                   },
                 ),
@@ -337,6 +358,8 @@ class _ContainerCard extends StatefulWidget {
   final VoidCallback onTap;
   final void Function(String) onScan;
   final Map<int, TextEditingController> quantityControllers;
+  final bool isPalletOpening;
+  final ValueChanged<bool> onPalletOpeningChanged;
 
   const _ContainerCard({
     super.key,
@@ -349,6 +372,8 @@ class _ContainerCard extends StatefulWidget {
     required this.onTap,
     required this.onScan,
     required this.quantityControllers,
+    required this.isPalletOpening,
+    required this.onPalletOpeningChanged,
   });
 
   @override
@@ -433,37 +458,48 @@ class _ContainerCardState extends State<_ContainerCard> {
                 onExpansionChanged: (expanding) { if (expanding) widget.onTap(); },
                 title: Text(widget.container.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
                 trailing: assigned ? Icon(Icons.check_circle, color: Colors.green.shade700) : const Icon(Icons.pending_outlined),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                children: widget.container.items.map((i) {
-                  final qtyController = widget.quantityControllers[i.product.id]!;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(flex: 3, child: Text(i.product.name, style: const TextStyle(fontWeight: FontWeight.w500))),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 2,
-                          child: TextFormField(
-                            controller: qtyController,
-                            textAlign: TextAlign.center,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(labelText: 'common_labels.quantity'.tr(), isDense: true, border: const OutlineInputBorder()),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'validators.required'.tr();
-                              final qty = double.tryParse(v);
-                              if (qty == null) return 'validators.invalid'.tr();
-                              if (qty > i.quantity + 0.001) return 'validators.max_qty'.tr();
-                              if (qty < 0) return 'validators.negative'.tr();
-                              return null;
-                            },
-                          ),
-                        )
-                      ],
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  if (!widget.container.id.startsWith("PALETSIZ_"))
+                    SwitchListTile(
+                      title: Text('inventory_transfer.label_break_pallet'.tr()),
+                      value: widget.isPalletOpening,
+                      onChanged: widget.onPalletOpeningChanged,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
                     ),
-                  );
-                }).toList(),
+                  ...widget.container.items.map((i) {
+                    final qtyController = widget.quantityControllers[i.product.id]!;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(flex: 3, child: Text(i.product.name, style: const TextStyle(fontWeight: FontWeight.w500))),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 2,
+                            child: TextFormField(
+                              controller: qtyController,
+                              enabled: widget.container.id.startsWith("PALETSIZ_") || widget.isPalletOpening,
+                              textAlign: TextAlign.center,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(labelText: 'common_labels.quantity'.tr(), isDense: true, border: const OutlineInputBorder()),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) return 'validators.required'.tr();
+                                final qty = double.tryParse(v);
+                                if (qty == null) return 'validators.invalid'.tr();
+                                if (qty > i.quantity + 0.001) return 'validators.max_qty'.tr();
+                                if (qty < 0) return 'validators.negative'.tr();
+                                return null;
+                              },
+                            ),
+                          )
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
               ),
             ),
             Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), child: assigned ? _rowAssigned(theme) : _rowInput(theme)),

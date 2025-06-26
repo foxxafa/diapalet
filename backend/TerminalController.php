@@ -185,8 +185,8 @@ class TerminalController extends Controller
         $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
         $sourceLocationId = $header['source_location_id'];
-        $operationType = $header['operationType'] ?? 'box'; // Varsayılan: 'box'. Client 'pallet' veya 'boxFromPallet' gönderebilir.
-        $siparisId = $header['siparis_id'] ?? null;         // Yerleştirme mantığı için sipariş ID'si
+        $operationType = $header['operation_type'] ?? 'box_transfer'; // Varsayılan değer güncellendi.
+        $siparisId = $header['siparis_id'] ?? null;           // Yerleştirme mantığı için sipariş ID'si
 
         try {
             // Transfer, mal kabul alanından yapılıyorsa bu bir 'yerleştirme' işlemidir.
@@ -199,10 +199,14 @@ class TerminalController extends Controller
                 
                 // 1. Hedefteki palet durumunu operasyon tipine göre belirle
                 $targetPallet = null; // Varsayılan: serbest stok (paletsiz)
-                if ($operationType === 'pallet') {
+                
+                // ############ ANA HATA DÜZELTMESİ ############
+                // Gelen 'operation_type' değeri 'pallet_transfer' olmalı.
+                if ($operationType === 'pallet_transfer') {
                     $targetPallet = $sourcePallet; // Tam palet transferinde palet ID korunur
                 }
-                // 'boxFromPallet' ve 'box' modlarında $targetPallet null kalır, bu da ürünün serbest stok olmasını sağlar.
+                // 'boxFromPallet' ve 'box_transfer' modlarında $targetPallet null kalır, bu da ürünün serbest stok olmasını sağlar.
+                // ############ DÜZELTME SONU ############
 
                 // 2. Kaynak stoktan miktarı düş
                 $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available');
