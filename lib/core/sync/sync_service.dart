@@ -67,22 +67,42 @@ class SyncService with ChangeNotifier {
 
   void _initialize() {
     // Başlangıçta mevcut bağlantıyı hemen kontrol et
-    networkInfo.isConnected.then((connected) {
+    networkInfo.isConnected.then((connected) async {
       if (connected) {
         _updateStatus(SyncStatus.online);
-        debugPrint("Başlangıçta bağlantı var, senkronizasyon tetikleniyor.");
-        performFullSync();
+        debugPrint("Başlangıçta bağlantı var, senkronizasyon kontrol ediliyor.");
+        
+        // Warehouse ID kontrolü
+        final prefs = await SharedPreferences.getInstance();
+        final warehouseId = prefs.getInt('warehouse_id');
+        
+        if (warehouseId != null) {
+          debugPrint("Warehouse ID mevcut, senkronizasyon başlatılıyor.");
+          performFullSync();
+        } else {
+          debugPrint("Warehouse ID bulunamadı, kullanıcı giriş yapmamış. Senkronizasyon atlanıyor.");
+        }
       } else {
         _updateStatus(SyncStatus.offline);
       }
     });
 
     _connectivitySubscription =
-        networkInfo.onConnectivityChanged.listen((isConnected) {
+        networkInfo.onConnectivityChanged.listen((isConnected) async {
           if (isConnected) {
             _updateStatus(SyncStatus.online);
-            debugPrint("Bağlantı geldi, senkronizasyon tetikleniyor.");
-            performFullSync();
+            debugPrint("Bağlantı geldi, senkronizasyon kontrol ediliyor.");
+            
+            // Warehouse ID kontrolü
+            final prefs = await SharedPreferences.getInstance();
+            final warehouseId = prefs.getInt('warehouse_id');
+            
+            if (warehouseId != null) {
+              debugPrint("Warehouse ID mevcut, senkronizasyon başlatılıyor.");
+              performFullSync();
+            } else {
+              debugPrint("Warehouse ID bulunamadı, senkronizasyon atlanıyor.");
+            }
           } else {
             debugPrint("Bağlantı kesildi.");
             _updateStatus(SyncStatus.offline);
@@ -94,9 +114,19 @@ class SyncService with ChangeNotifier {
   void _setupPeriodicSync() {
     _periodicSyncTimer?.cancel();
     // GÜNCELLEME: Periyodik senkronizasyon sıklığı 1 dakikaya düşürüldü.
-    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      debugPrint("Periyodik senkronizasyon tetiklendi...");
-      performFullSync();
+    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 1), (timer) async {
+      debugPrint("Periyodik senkronizasyon kontrol ediliyor...");
+      
+      // Warehouse ID kontrolü
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseId = prefs.getInt('warehouse_id');
+      
+      if (warehouseId != null) {
+        debugPrint("Warehouse ID mevcut, periyodik senkronizasyon başlatılıyor.");
+        performFullSync();
+      } else {
+        debugPrint("Warehouse ID bulunamadı, periyodik senkronizasyon atlanıyor.");
+      }
     });
   }
 
@@ -119,8 +149,19 @@ class SyncService with ChangeNotifier {
     notifyListeners();
 
     try {
+      // İlk önce warehouse_id kontrolü yapalım
+      final prefs = await SharedPreferences.getInstance();
+      final finalWarehouseId = warehouseId ?? prefs.getInt('warehouse_id');
+      
+      if (finalWarehouseId == null) {
+        throw Exception("Warehouse ID bulunamadı. Lütfen tekrar giriş yapın.");
+      }
+
+      // Upload operations
       await _uploadPendingOperations();
-      await _downloadDataFromServer(warehouseId: warehouseId);
+      
+      // Download data with warehouse_id
+      await _downloadDataFromServer(warehouseId: finalWarehouseId);
 
       // YENİ: Senkronizasyon sonrası eski kayıtları temizle.
       await dbHelper.cleanupOldSyncedOperations();
@@ -154,9 +195,7 @@ class SyncService with ChangeNotifier {
       final finalWarehouseId = warehouseId ?? prefs.getInt('warehouse_id');
 
       if (finalWarehouseId == null) {
-        debugPrint(
-            "Veri indirmek için 'warehouse_id' gerekli. Giriş yapılmamış olabilir. Atlanıyor.");
-        return;
+        throw Exception("Warehouse ID bulunamadı. Bu metod doğrudan çağrılmamalı.");
       }
 
       final response = await dio.post(

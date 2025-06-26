@@ -257,7 +257,13 @@
       "reset_confirm_title": "Confirm Reset",
       "reset_confirm_body": "This will delete all local data and operations. This cannot be undone. Are you sure?",
       "reset_success": "Local database has been cleared."
-    }
+    },
+    "error_details": "Error Details",
+    "attempts": "Attempts: {count}",
+    "no_history": "No sync history available",
+    "no_pending": "All operations are synced",
+    "sync_now": "Sync Now",
+    "warehouse_id_missing": "Warehouse ID not found. Please login again."
   },
   "dialog": {
     "cancel": "Cancel",
