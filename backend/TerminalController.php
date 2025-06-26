@@ -184,35 +184,45 @@ class TerminalController extends Controller
         $db = Yii::$app->db;
         $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
-        $malKabulLocationId = 1;
         $sourceLocationId = $header['source_location_id'];
-        $isPutawayOperation = ($sourceLocationId == $malKabulLocationId);
-
-        // YENİ MANTIK: Sipariş ID'sini transfer verisinden almamız gerekiyor.
-        $siparisId = $header['siparis_id'] ?? null;
+        $operationType = $header['operationType'] ?? 'box'; // Varsayılan: 'box'. Client 'pallet' veya 'boxFromPallet' gönderebilir.
+        $siparisId = $header['siparis_id'] ?? null;         // Yerleştirme mantığı için sipariş ID'si
 
         try {
+            // Transfer, mal kabul alanından yapılıyorsa bu bir 'yerleştirme' işlemidir.
+            $isPutawayOperation = ($sourceLocationId == 1); // 1 = Mal Kabul Alanı ID'si (varsayım)
+
             foreach ($items as $item) {
                 $productId = $item['product_id'];
                 $quantity = (float)$item['quantity'];
                 $sourcePallet = $item['pallet_id'] ?? null;
+                
+                // 1. Hedefteki palet durumunu operasyon tipine göre belirle
+                $targetPallet = null; // Varsayılan: serbest stok (paletsiz)
+                if ($operationType === 'pallet') {
+                    $targetPallet = $sourcePallet; // Tam palet transferinde palet ID korunur
+                }
+                // 'boxFromPallet' ve 'box' modlarında $targetPallet null kalır, bu da ürünün serbest stok olmasını sağlar.
 
-                // Kaynak stoğu 'receiving'den düş, hedef stoğu 'available' olarak ekle
+                // 2. Kaynak stoktan miktarı düş
                 $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available');
-                $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $sourcePallet, 'available');
 
+                // 3. Hedef stoka miktarı ekle
+                $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available');
+
+                // 4. Transfer işlemini logla
                 $db->createCommand()->insert('inventory_transfers', [
                     'urun_id' => $productId,
                     'from_location_id' => $sourceLocationId,
                     'to_location_id' => $header['target_location_id'],
                     'quantity' => $quantity,
                     'from_pallet_barcode' => $sourcePallet,
-                    'pallet_barcode' => $sourcePallet, // Palet ID hedefte korunur
+                    'pallet_barcode' => $targetPallet, // Hedef palet durumunu doğru şekilde kaydet
                     'employee_id' => $header['employee_id'],
                     'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
                 ])->execute();
 
-                // YENİ MANTIK: Eğer bu bir yerleştirme işlemiyse ve siparişe bağlıysa, yerleştirilen miktarı güncelle.
+                // 5. Eğer bu bir yerleştirme işlemiyse, siparişteki yerleştirilen miktarı güncelle
                 if ($isPutawayOperation && $siparisId) {
                     $db->createCommand(
                         "UPDATE satin_alma_siparis_fis_satir SET putaway_quantity = putaway_quantity + :qty WHERE siparis_id = :sid AND urun_id = :pid",
@@ -221,7 +231,7 @@ class TerminalController extends Controller
                 }
             }
 
-            // YENİ MANTIK: Transferden sonra, eğer bir siparişle ilgiliyse, siparişin durumunu kontrol et.
+            // 6. Transferden sonra, eğer bir yerleştirme işlemiyse, siparişin durumunu kontrol et ve gerekirse tamamla
             if ($isPutawayOperation && $siparisId) {
                 $this->checkAndFinalizePoStatus($db, $siparisId);
             }

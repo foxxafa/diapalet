@@ -11,7 +11,7 @@ abstract class InventoryTransferRepository {
     Future<Map<String, int>> getTargetLocations();
     Future<List<String>> getPalletIdsAtLocation(int locationId);
     Future<List<BoxItem>> getBoxesAtLocation(int locationId);
-    Future<List<ProductItem>> getPalletContents(String palletId);
+    Future<List<ProductItem>> getPalletContents(String palletId, int locationId);
 
     Future<void> recordTransferOperation(
         TransferOperationHeader header,
@@ -33,4 +33,6 @@ abstract class InventoryTransferRepository {
     Future<List<MapEntry<String, int>>> getAllLocations(int warehouseId);
 
     Future<void> updatePurchaseOrderStatus(int orderId, int status);
+
+    Future<List<TransferOperationHeader>> getPendingTransfers();
 }

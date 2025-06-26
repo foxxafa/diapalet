@@ -205,7 +205,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               productName: item.product.name,
               productCode: item.product.stockCode,
               quantity: qty,
-              sourcePalletBarcode: item.sourcePalletBarcode,
+              palletId: item.sourcePalletBarcode,
               targetLocationId: targetLocation.value,
               targetLocationName: targetLocation.key,
             ));

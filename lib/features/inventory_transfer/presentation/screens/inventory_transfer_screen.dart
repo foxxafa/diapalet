@@ -245,6 +245,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final container = _selectedContainer;
     if (container == null) return;
 
+    // KONUM ID'SİNİ AL
+    final locationId = _availableSourceLocations[_selectedSourceLocationName!];
+    if (locationId == null) {
+      _showErrorSnackBar('inventory_transfer.error_source_location_not_found'.tr());
+      return;
+    }
+
     setState(() {
       _isLoadingContainerContents = true;
       _productsInContainer = [];
@@ -254,7 +261,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       List<ProductItem> contents = [];
       if (_selectedMode == AssignmentMode.pallet && container is String) {
-        contents = await _repo.getPalletContents(container);
+        // KONUM ID'SİNİ FONKSİYONA GÖNDER
+        contents = await _repo.getPalletContents(container, locationId);
       } else if (_selectedMode == AssignmentMode.box && container is BoxItem) {
         contents = [ProductItem.fromBoxItem(container)];
       }
@@ -301,7 +309,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           productCode: product.productCode,
           quantity: qty,
           palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
-          sourcePalletBarcode: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
           targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
           targetLocationName: _selectedTargetLocationName!,
         ));

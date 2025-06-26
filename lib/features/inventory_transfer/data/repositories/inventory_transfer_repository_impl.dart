@@ -5,6 +5,7 @@ import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -22,7 +23,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   static const int malKabulLocationId = 1;
 
-  // # GÜNCELLEME: Gereksiz 'goodsReceivingRepo' bağımlılığı kaldırıldı.
   InventoryTransferRepositoryImpl({
     required this.dbHelper,
     required this.dio,
@@ -31,7 +31,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<void> updatePurchaseOrderStatus(int orderId, int status) async {
-    // # GÜNCELLEME: Metodun implementasyonu doğrudan bu sınıfa taşındı.
     final db = await dbHelper.database;
     await db.update(
       'satin_alma_siparis_fis',
@@ -138,53 +137,41 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int targetLocationId,
       ) async {
     final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
-    await _saveForSync(apiPayload, header, items, sourceLocationId, targetLocationId);
-  }
-
-  Map<String, dynamic> _buildApiPayload(
-      TransferOperationHeader header,
-      List<TransferItemDetail> items,
-      int sourceLocationId,
-      int targetLocationId,
-      ) {
-    return {
-      "header": header.toApiJson(sourceLocationId, targetLocationId),
-      "items": items.map((item) => item.toApiJson()).toList(),
-    };
-  }
-
-  Future<void> _saveForSync(
-      Map<String, dynamic> apiPayload,
-      TransferOperationHeader header,
-      List<TransferItemDetail> items,
-      int sourceLocationId,
-      int targetLocationId,
-      ) async {
+    
     final db = await dbHelper.database;
     try {
       await db.transaction((txn) async {
         final isPutawayOperation = sourceLocationId == malKabulLocationId;
+        final isFullPalletTransfer = header.operationType == AssignmentMode.pallet;
 
         for (final item in items) {
+          // 1. Kaynak stoktan düşür.
           await _updateStock(
-              txn, item.productId, sourceLocationId, -item.quantity, item.sourcePalletBarcode,
+              txn, item.productId, sourceLocationId, -item.quantity, item.palletId,
               isPutawayOperation ? 'receiving' : 'available');
+
+          // 2. Hedefteki palet durumunu belirle.
+          final targetPalletId = isFullPalletTransfer ? item.palletId : null;
+          
+          // 3. Hedef stoka doğru palet durumuyla ekle.
           await _updateStock(
-              txn, item.productId, targetLocationId, item.quantity, item.sourcePalletBarcode,
+              txn, item.productId, targetLocationId, item.quantity, targetPalletId,
               'available');
 
+          // 4. Transfer işlemini logla.
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
             'from_location_id': sourceLocationId,
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
-            'from_pallet_barcode': item.sourcePalletBarcode,
-            'pallet_barcode': item.sourcePalletBarcode,
+            'from_pallet_barcode': item.palletId,
+            'pallet_barcode': targetPalletId,
             'employee_id': header.employeeId,
             'transfer_date': header.transferDate.toIso8601String(),
           });
         }
 
+        // 5. İşlemi senkronizasyon için kuyruğa ekle.
         final pendingOp = PendingOperation(
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode(apiPayload),
@@ -198,6 +185,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
   }
 
+  Map<String, dynamic> _buildApiPayload(
+      TransferOperationHeader header,
+      List<TransferItemDetail> items,
+      int sourceLocationId,
+      int targetLocationId,
+      ) {
+    return {
+      "header": header.toApiJson(sourceLocationId, targetLocationId),
+      "items": items.map((item) => item.toApiJson()).toList(),
+    };
+  }
+  
   Future<void> _updateStock(Transaction txn, int urunId, int locationId,
       double quantityChange, String? palletBarcode, String stockStatus) async {
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
@@ -235,7 +234,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
   }
 
-  // # GÜNCELLEME: Eksik olan 'getSourceLocations' metodu eklendi.
   @override
   Future<Map<String, int>> getSourceLocations() async {
     final db = await dbHelper.database;
@@ -274,18 +272,26 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<ProductItem>> getPalletContents(String palletId) async {
+  Future<List<ProductItem>> getPalletContents(String palletId, int locationId) async {
     final db = await dbHelper.database;
-    final maps = await db.rawQuery('''
-      SELECT u.id, u.UrunAdi as name, u.StokKodu as code, s.quantity as currentQuantity 
-      FROM inventory_stock s 
-      JOIN urunler u ON u.id = s.urun_id 
-      WHERE s.pallet_barcode = ?
-    ''', [palletId]);
-    return maps.map((map) => ProductItem.fromMap(map)).toList();
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        u.id,
+        u.StokKodu as code,
+        u.UrunAdi as name,
+        s.quantity as currentQuantity,
+        s.pallet_barcode as pallet_barcode,
+        u.Barcode1 as barcode1
+      FROM inventory_stock s
+      JOIN urunler u ON s.urun_id = u.id
+      WHERE s.pallet_barcode = ? AND s.location_id = ? AND s.stock_status = 'available'
+    ''', [palletId, locationId]);
+
+    return List.generate(maps.length, (i) {
+      return ProductItem.fromMap(maps[i]);
+    });
   }
 
-  // # GÜNCELLEME: Eksik olan 'getAllLocations' metodu eklendi.
   @override
   Future<List<MapEntry<String, int>>> getAllLocations(int warehouseId) async {
     final db = await dbHelper.database;
@@ -297,5 +303,42 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       orderBy: 'name ASC',
     );
     return maps.map((map) => MapEntry(map['name'] as String, map['id'] as int)).toList();
+  }
+
+  @override
+  Future<List<TransferOperationHeader>> getPendingTransfers() async {
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'pending_operation',
+      where: 'type = ?',
+      whereArgs: [PendingOperationType.inventoryTransfer.name],
+      orderBy: 'created_at DESC',
+    );
+
+    final List<TransferOperationHeader> headers = [];
+    for (var map in maps) {
+      final data = jsonDecode(map['data'] as String);
+      final headerMap = data['header'] as Map<String, dynamic>?;
+
+      if (headerMap != null) {
+        final operationTypeString = headerMap['operationType'] as String?;
+        final mode = AssignmentMode.values.firstWhere(
+              (e) => e.name == operationTypeString,
+          orElse: () => AssignmentMode.box,
+        );
+
+        headers.add(
+          TransferOperationHeader(
+            employeeId: headerMap['employee_id'] as int,
+            operationType: mode,
+            sourceLocationName: headerMap['source_location_name'] as String,
+            targetLocationName: headerMap['target_location_name'] as String,
+            containerId: headerMap['container_id'] as String?,
+            transferDate: DateTime.parse(headerMap['transfer_date'] as String),
+          ),
+        );
+      }
+    }
+    return headers;
   }
 }
