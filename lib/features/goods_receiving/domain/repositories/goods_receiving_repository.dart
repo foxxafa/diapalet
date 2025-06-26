@@ -30,4 +30,7 @@ abstract class GoodsReceivingRepository {
   /// Yeni bir mal kabul işlemini kaydeder.
   /// Bu metot, online/offline mantığını yönetmelidir.
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload);
+
+  /// Bir siparişi tamamlar.
+  Future<void> markOrderAsComplete(int orderId);
 }

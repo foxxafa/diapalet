@@ -5,9 +5,10 @@ class TransferOperationHeader {
   final int employeeId;
   final DateTime transferDate;
   final AssignmentMode operationType;
-  final String sourceLocationName; // HATA DÜZELTMESİ: UI'da kullanılmak üzere eklendi.
-  final String targetLocationName; // HATA DÜZELTMESİ: UI'da kullanılmak üzere eklendi.
+  final String sourceLocationName;
+  final String targetLocationName;
   final String? containerId;
+  final int? siparisId;
 
   const TransferOperationHeader({
     required this.employeeId,
@@ -16,15 +17,25 @@ class TransferOperationHeader {
     required this.sourceLocationName,
     required this.targetLocationName,
     this.containerId,
+    this.siparisId,
   });
 
   Map<String, dynamic> toApiJson(int sourceLocationId, int targetLocationId) {
-    return {
+    // # HATA DÜZELTMESİ: Map'in tipi açıkça 'Map<String, dynamic>' olarak belirtildi.
+    // Bu, 'invalid_assignment' hatasını çözer.
+    final Map<String, dynamic> jsonMap = {
       'employee_id': employeeId,
       'transfer_date': transferDate.toIso8601String(),
       'operation_type': operationType.apiName,
       'source_location_id': sourceLocationId,
       'target_location_id': targetLocationId,
     };
+
+    // Eğer siparisId null değilse, JSON'a ekle.
+    if (siparisId != null) {
+      jsonMap['siparis_id'] = siparisId;
+    }
+
+    return jsonMap;
   }
 }

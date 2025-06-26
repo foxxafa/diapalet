@@ -32,16 +32,6 @@
       "button": "Logout"
     }
   },
-  "receive_mode": {
-    "palet": "Pallet",
-    "kutu": "Box"
-  },
-  "assignment_mode": {
-    "palet": "Pallet",
-    "kutu": "Box",
-    "pallet": "Pallet",
-    "box": "Box"
-  },
   "goods_receiving": {
     "title": "Goods Receiving",
     "select_invoice": "Select Invoice",
@@ -85,6 +75,14 @@
   },
   "goods_receiving_screen": {
     "title": "Goods Receiving",
+    "add_to_list": "Add to List",
+    "button_review_items": "Review Items",
+    "order_summary_title": "Order Summary",
+    "order_info": {
+      "ordered": "Ordered",
+      "total_received": "Total Received",
+      "remaining": "Remaining"
+    },
     "error_loading_initial": "Failed to load initial data: {error}",
     "error_loading_details": "Failed to load order details: {error}",
     "error_product_not_found": "Product not found or does not belong to this order: {scannedData}",
@@ -112,20 +110,30 @@
     "label_quantity": "Quantity",
     "validator_enter_quantity": "Please enter quantity.",
     "validator_enter_valid_quantity": "Please enter a valid quantity.",
-    "header_added_items": "Added Products ({count})",
+    "header_last_added_item": "Last Added Item",
     "no_items": "No items added yet.",
     "label_pallet_barcode_display": "Pallet: {barcode}",
     "label_pallet_barcode_none": "Pallet: N/A",
     "label_quantity_display": "x{quantity}",
     "button_save_and_confirm": "Save and Confirm",
     "dialog_confirmation_title": "Confirmation List",
-    "dialog_list_empty": "The list is empty.",
+    "dialog_list_empty": "Your list is empty. Add items to see them here.",
     "dialog_button_cancel": "Cancel",
-    "dialog_button_confirm_and_save": "Confirm and Save",
+    "dialog_button_save_receipt": "Save Receipt",
     "dialog_search_hint": "Search...",
     "dialog_search_no_results": "No results found.",
     "label_order_status": "Order Status",
-    "order_info_title": "Order Information"
+    "order_info_title": "Order Information",
+    "dialog_total_quantity": "Total",
+    "label_pallet_barcode_display_short": "Pallet: {barcode}",
+    "dialog_list_empty": "Your list is empty. Add items to see them here.",
+    "dialog_button_confirm_and_save": "Confirm & Save",
+    "confirmation": {
+      "ordered": "Ordered",
+      "previously_received": "Prev. Received",
+      "currently_adding": "Currently Adding",
+      "remaining_after": "Remaining"
+    }
   },
   "pallet_assignment": {
     "title": "Transfer Operation",
@@ -180,7 +188,16 @@
       "target": "Target location set: {location}",
       "container": "Container scanned: {id}"
     },
-    "scan_error": "Scanned value {value} not found in available options."
+    "scan_error": "Scanned value {value} not found in available options.",
+    "error_loading": "Failed to load orders: {error}",
+    "no_supplier": "Unknown Supplier",
+    "menu": {
+      "mark_as_complete": "Save & Complete Order"
+    },
+    "dialog": {
+      "success_message": "Order {poId} marked as complete.",
+      "error_message": "Failed to mark order as complete: {error}"
+    }
   },
   "qr_scanner": {
     "title": "Scan QR Code",
@@ -191,17 +208,28 @@
     "close": "Close"
   },
   "pending_operations": {
-    "title": "Pending & Sync",
+    "title": "Sync Status",
     "tabs": {
       "pending": "Pending",
       "history": "History"
     },
-    "no_pending": "No Pending Operations",
+    "titles": {
+      "goods_receipt": "Goods Receipt",
+      "inventory_transfer": "Inventory Transfer",
+      "force_close_order": "Force Close Order"
+    },
+    "subtitles": {
+      "goods_receipt": "PO: #{poId} - {count} items",
+      "inventory_transfer": "Container: {containerId} to {targetId} - {count} items",
+      "force_close_order": "Closing Purchase Order #{poId}",
+      "parsing_error": "Could not read details."
+    },
+    "sync_now": "Sync Now",
+    "no_pending": "No pending operations.",
     "no_history": "No synchronization history found.",
     "empty": "No pending operations.",
     "all_synced": "All operations are synchronized",
     "operations_count": "{count} operations waiting for sync.",
-    "sync_now": "Sync Now",
     "syncing": "Syncing...",
     "refresh": "Refresh",
     "download_master_data": "Download Master Data",
@@ -291,10 +319,21 @@
     "search_hint": "Search Purchase Orders...",
     "no_results": "No matching orders found.",
     "error_loading": "Failed to load orders: {error}",
-    "no_supplier": "Unknown Supplier"
+    "no_supplier": "Unknown Supplier",
+    "menu": {
+      "mark_as_complete": "Save & Complete Order"
+    },
+    "dialog": {
+      "success_message": "Order {poId} marked as complete.",
+      "error_message": "Failed to mark order as complete: {error}"
+    },
+    "status": {
+      "partially_received": "Partially Received"
+    }
   },
   "login": {
-    "title": "Login",
+    "title": "DIAPALET Login",
+    "username_hint": "Username",
     "username": "Username",
     "password": "Password",
     "button": "Login",

@@ -9,8 +9,9 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // GÜNCELLEME: Şema değişikliği nedeniyle versiyon artırıldı.
-  static const _databaseVersion = 13;
+  // # GÜNCELLEME: Veritabanı şeması değiştiği için versiyon bir artırıldı.
+  // Bu, onUpgrade metodunun tetiklenmesini ve tabloların yeniden oluşturulmasını sağlar.
+  static const _databaseVersion = 14;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -42,7 +43,6 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Veritabanı $oldVersion sürümünden $newVersion sürümüne yükseltiliyor...");
     // Şema tamamen yeniden oluşturulacağı için eski tabloları sil ve yenilerini oluştur.
-    // Bu, 'locations' tablosunun 'warehouses_shelfs' olarak yeniden adlandırılmasını sağlar.
     await _dropAllTables(db);
     await _createAllTables(db);
     debugPrint("Veritabanı yükseltmesi tamamlandı.");
@@ -52,7 +52,6 @@ class DatabaseHelper {
     debugPrint("Veritabanı tabloları (Sürüm $_databaseVersion) oluşturuluyor...");
     final batch = db.batch();
 
-    // 1. pending_operation tablosu
     batch.execute('''
       CREATE TABLE IF NOT EXISTS pending_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,12 +65,8 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. sync_log tablosu
     batch.execute(SyncLog.createTableQuery);
 
-    // --- UYGULAMANIN DİĞER TÜM TABLOLARI ---
-
-    // GÜNCELLEME: 'locations' tablosu, sunucuyla uyumlu olması için 'warehouses_shelfs' olarak yeniden adlandırıldı.
     batch.execute('''
       CREATE TABLE IF NOT EXISTS warehouses_shelfs (
         id INTEGER PRIMARY KEY, name TEXT, code TEXT, is_active INTEGER DEFAULT 1,
@@ -103,10 +98,12 @@ class DatabaseHelper {
       )
     ''');
 
+    // # GÜNCELLEME: 'putaway_quantity' alanı eklendi.
     batch.execute('''
       CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
-        id INTEGER PRIMARY KEY, siparis_id INTEGER, urun_id INTEGER, miktar REAL, birim TEXT,
-        notes TEXT, status INTEGER DEFAULT 0
+        id INTEGER PRIMARY KEY, siparis_id INTEGER, urun_id INTEGER, miktar REAL,
+        putaway_quantity REAL DEFAULT 0,
+        birim TEXT, notes TEXT, status INTEGER DEFAULT 0
       )
     ''');
 
@@ -124,10 +121,13 @@ class DatabaseHelper {
       )
     ''');
 
+    // # GÜNCELLEME: 'stock_status' alanı eklendi.
     batch.execute('''
       CREATE TABLE IF NOT EXISTS inventory_stock (
         id INTEGER PRIMARY KEY, urun_id INTEGER NOT NULL, location_id INTEGER NOT NULL,
-        quantity REAL NOT NULL, pallet_barcode TEXT, updated_at TEXT
+        quantity REAL NOT NULL, pallet_barcode TEXT,
+        stock_status TEXT NOT NULL DEFAULT 'available',
+        updated_at TEXT
       )
     ''');
 
@@ -151,8 +151,6 @@ class DatabaseHelper {
   }
 
   Future<void> _dropAllTables(Database db) async {
-    // Silinecek tüm tabloların listesi
-    // GÜNCELLEME: 'locations' yerine 'warehouses_shelfs' eklendi.
     final tables = [
       'pending_operation', 'sync_log', 'warehouses_shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
@@ -175,9 +173,6 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
-        // GÜNCELLEME: 'locations' yerine 'warehouses_shelfs' eklendi.
-        // GÜNCELLEME 2: 'inventory_stock' TEKRAR EKLENDİ. Sunucu artık bu veriyi gönderdiği
-        // için, istemcinin de bu tabloyu tam yenilemesi gerekiyor.
         final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'inventory_stock'];
         if(fullRefreshTables.contains(table)) {
           await txn.delete(table);
@@ -201,6 +196,8 @@ class DatabaseHelper {
     return newRecord;
   }
 
+  // Diğer yardımcı fonksiyonlar (addPendingOperation, getPendingOperations vb.) burada yer alır...
+  // Bu fonksiyonlarda bir değişiklik yapmaya gerek yoktur.
   Future<void> addPendingOperation(PendingOperation operation) async {
     final db = await database;
     await db.insert('pending_operation', operation.toDbMap(), conflictAlgorithm: ConflictAlgorithm.replace);

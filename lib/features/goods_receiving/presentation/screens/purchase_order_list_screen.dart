@@ -19,6 +19,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
   List<PurchaseOrder> _allOrders = [];
   List<PurchaseOrder> _filteredOrders = [];
   bool _isLoading = true;
+  bool _isCompleting = false;
   final _searchController = TextEditingController();
 
   @override
@@ -116,11 +117,16 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
                 itemCount: _filteredOrders.length,
                 itemBuilder: (context, index) {
                   final order = _filteredOrders[index];
+                  final statusText = order.status == 2 
+                      ? ' (${'orders.status.partially_received'.tr()})' 
+                      : '';
+                  final subtitleText = "${order.supplierName ?? 'orders.no_supplier'.tr()}$statusText";
+
                   return Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     child: ListTile(
                       title: Text("${'common_labels.po_prefix'.tr()}${order.poId ?? 'common_labels.not_available'.tr()}", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      subtitle: Text(order.supplierName ?? 'orders.no_supplier'.tr()),
+                      subtitle: Text(subtitleText),
                       trailing: const Icon(Icons.arrow_forward_ios),
                       onTap: () => _onOrderSelected(order),
                     ),

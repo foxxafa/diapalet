@@ -98,12 +98,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
-    // GÜNCELLEME: Sorgu, artık YALNIZCA durumu 1 (Onaylandı, Mal Kabul Bekliyor)
-    // olan siparişleri getirecek şekilde düzeltildi.
+    // GÜNCELLEME: Sorgu, durumu 1 (Onaylandı) veya 2 (Kısmi Kabul) olan,
+    // yani henüz tamamlanmamış tüm siparişleri getirecek şekilde güncellendi.
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status = ?',
-      whereArgs: [1],
+      where: 'status IN (?, ?)',
+      whereArgs: [1, 2], // Durumu 1 ve 2 olanlar
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -147,6 +147,38 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       whereArgs: [orderId],
     );
     // TODO: Bu durum değişikliğini sunucuya göndermek için bir pending_operation eklenebilir.
+  }
+
+  @override
+  Future<void> markOrderAsComplete(int orderId) async {
+    final db = await dbHelper.database;
+    try {
+      await db.transaction((txn) async {
+        // GÜNCELLEME: Siparişin durumunu 4 (Closed) olarak güncelle.
+        final count = await txn.update(
+          'satin_alma_siparis_fis',
+          {'status': 4},
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+
+        if (count == 0) {
+          throw Exception("Order with ID $orderId not found locally.");
+        }
+
+        // GÜNCELLEME: Operasyon tipi 'forceCloseOrder' olarak düzeltildi.
+        final pendingOp = PendingOperation(
+          type: PendingOperationType.forceCloseOrder,
+          data: jsonEncode({'siparis_id': orderId}),
+          createdAt: DateTime.now(),
+        );
+        await txn.insert('pending_operation', pendingOp.toDbMap());
+      });
+      debugPrint("Order #$orderId marked as closed and queued for sync.");
+    } catch (e, s) {
+      debugPrint("Local 'mark as closed' error: $e\n$s");
+      throw Exception("Failed to mark order as closed locally: $e");
+    }
   }
 
   @override

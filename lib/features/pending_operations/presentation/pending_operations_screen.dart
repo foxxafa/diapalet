@@ -319,6 +319,9 @@ class _OperationCard extends StatelessWidget {
       case PendingOperationType.inventoryTransfer:
         leadingIcon = Icons.swap_horiz_rounded;
         break;
+      case PendingOperationType.forceCloseOrder:
+        leadingIcon = Icons.task_alt_rounded;
+        break;
     }
 
     final Widget trailingWidget;

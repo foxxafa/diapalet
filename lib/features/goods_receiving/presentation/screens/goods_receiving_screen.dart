@@ -17,6 +17,9 @@ import 'package:provider/provider.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Onay ekranından hangi aksiyonun seçildiğini belirtmek için.
+enum ConfirmationAction { save, complete }
+
 class GoodsReceivingScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
 
@@ -178,7 +181,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         break;
       case 'product':
         final productSource = isOrderBased
-            ? _orderItems.map((item) => item.product).nonNulls.toList()
+            ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
             : _availableProducts;
 
         ProductInfo? foundProduct;
@@ -207,7 +210,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _selectedProduct = product;
       _productController.text = "${product.name} (${product.stockCode})";
     });
-    _quantityFocusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _quantityFocusNode.requestFocus();
+    });
   }
 
   void _addItemToList() {
@@ -226,7 +231,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         _showErrorSnackBar('goods_receiving_screen.error_loading_order_details'.tr());
         return;
       }
-      final orderItem = _orderItems.firstWhere((item) => item.product?.id == currentProduct.id);
+      final orderItem = _orderItems.firstWhere((item) => item.product?.id == currentProduct.id, orElse: () => throw Exception("Item not found in order"));
       final alreadyAddedInUI = _addedItems
           .where((item) => item.product.id == currentProduct.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
           .map((item) => item.quantity)
@@ -234,7 +239,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
-      if (quantity > remainingQuantity + 0.001) {
+      if (quantity > remainingQuantity + 0.001) { // Adding a small tolerance for double comparisons
         _showErrorSnackBar('goods_receiving_screen.error_quantity_exceeds_order'.tr(namedArgs: {
           'remainingQuantity': remainingQuantity.toStringAsFixed(2),
           'unit': orderItem.unit ?? ''
@@ -254,7 +259,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     FocusScope.of(context).unfocus();
     _showSuccessSnackBar('goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': currentProduct.name}));
-    _productFocusNode.requestFocus();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _productFocusNode.requestFocus();
+    });
   }
 
   void _removeItemFromList(int index) {
@@ -269,17 +277,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       _showErrorSnackBar('goods_receiving_screen.error_at_least_one_item'.tr());
       return;
     }
-    final bool? confirmed = await _showConfirmationListDialog();
-    if (confirmed != true) return;
-    setState(() => _isSaving = true);
 
+    final result = await _showConfirmationListDialog();
+
+    if (result == ConfirmationAction.save) {
+      await _executeSave();
+    } else if (result == ConfirmationAction.complete && _selectedOrder != null) {
+      await _executeMarkAsComplete(_selectedOrder!);
+    }
+  }
+
+  Future<void> _executeSave() async {
+    setState(() => _isSaving = true);
     try {
       final prefs = await SharedPreferences.getInstance();
       final employeeId = prefs.getInt('user_id');
 
-      if (employeeId == null) {
-        throw Exception('common_labels.user_id_not_found'.tr());
-      }
+      if (employeeId == null) throw Exception('common_labels.user_id_not_found'.tr());
 
       final payload = GoodsReceiptPayload(
         header: GoodsReceiptHeader(
@@ -304,6 +318,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
     } catch (e) {
       if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _executeMarkAsComplete(PurchaseOrder order) async {
+    setState(() => _isSaving = true);
+    try {
+      if(_addedItems.isNotEmpty) await _executeSave();
+
+      await _repository.markOrderAsComplete(order.id);
+
+      if (!mounted) return;
+      _showSuccessSnackBar('orders.dialog.success_message'.tr(namedArgs: {'poId': order.poId ?? ''}));
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('orders.dialog.error_message'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -377,7 +409,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     fieldIdentifier: 'product',
                     isEnabled: areFieldsEnabled,
                     items: isOrderBased
-                        ? _orderItems.map((orderItem) => orderItem.product).nonNulls.toList()
+                        ? _orderItems.map((orderItem) => orderItem.product).whereType<ProductInfo>().toList()
                         : _availableProducts,
                     itemToString: (product) => "${product.name} (${product.stockCode})",
                     onItemSelected: (product) {
@@ -393,13 +425,15 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     },
                     validator: (value) {
                       if (!areFieldsEnabled) return null;
-                      return (value == null || value.isEmpty) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
+                      return (value == null || value.isEmpty || _selectedProduct == null) ? 'goods_receiving_screen.validator_select_product'.tr() : null;
                     },
                   ),
                   const SizedBox(height: _gap),
-                  _buildQuantityAndStatusRow(isEnabled: areFieldsEnabled),
-                  const SizedBox(height: _gap),
-                  _buildLastAddedItemSummary(textTheme, colorScheme),
+                  if (_selectedProduct != null) ...[
+                    _buildQuantityAndStatusRow(isEnabled: areFieldsEnabled),
+                    const SizedBox(height: _gap),
+                  ],
+                  _buildAddedItemsSection(textTheme, colorScheme),
                 ],
               ),
             ),
@@ -506,6 +540,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       children: [
         Expanded(
           child: TextFormField(
+            readOnly: true, // Make it readonly to force selection from dialog
             controller: controller,
             focusNode: focusNode,
             enabled: isEnabled,
@@ -514,12 +549,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               suffixIcon: const Icon(Icons.arrow_drop_down),
               enabled: isEnabled,
             ),
-            onFieldSubmitted: (value) {
-              if (value.isNotEmpty) {
-                _processScannedData(fieldIdentifier, value);
-              }
-            },
             onTap: items.isEmpty ? null : () async {
+              // Always show search dialog on tap
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
                 title: label,
                 items: items,
@@ -550,28 +581,33 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Widget _buildQuantityAndStatusRow({required bool isEnabled}) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-    final orderItem = _selectedProduct == null || !isOrderBased
-        ? null
-        : _orderItems.firstWhere((item) => item.product?.id == _selectedProduct!.id);
 
-    double totalReceived = 0;
-    double expectedQty = 0;
-
-    if (orderItem != null) {
-      final alreadyAddedInUI = _addedItems
-          .where((item) => item.product.id == orderItem.product!.id)
-          .map((item) => item.quantity)
-          .fold(0.0, (prev, qty) => prev + qty);
-      final receivedQty = orderItem.receivedQuantity;
-      expectedQty = orderItem.expectedQuantity;
-      totalReceived = receivedQty + alreadyAddedInUI;
+    PurchaseOrderItem? orderItem;
+    if (_selectedProduct != null && isOrderBased) {
+      try {
+        orderItem = _orderItems.firstWhere((item) => item.product?.id == _selectedProduct!.id);
+      } catch (e) {
+        orderItem = null;
+      }
     }
+
+    double alreadyAddedInUI = 0.0;
+    if (orderItem != null && orderItem.product != null) {
+      for (final item in _addedItems) {
+        if (item.product.id == orderItem.product!.id) {
+          alreadyAddedInUI += item.quantity;
+        }
+      }
+    }
+
+    final totalReceived = (orderItem?.receivedQuantity ?? 0.0) + alreadyAddedInUI;
+    final expectedQty = orderItem?.expectedQuantity ?? 0.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 1,
+          flex: 3,
           child: TextFormField(
             controller: _quantityController,
             focusNode: _quantityFocusNode,
@@ -591,14 +627,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             },
           ),
         ),
-        const SizedBox(width: _gap),
+        const SizedBox(width: _smallGap),
         Expanded(
-          flex: 1,
+          flex: 4,
           child: InputDecorator(
             decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
             child: Center(
               child: (!isOrderBased || _selectedProduct == null)
-                  ? Text('common_labels.not_available'.tr(), style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).hintColor))
+                  ? Text(
+                'common_labels.not_available'.tr(),
+                style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).hintColor),
+                textAlign: TextAlign.center,
+              )
                   : RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
@@ -606,9 +646,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   children: [
                     TextSpan(
                       text: '${totalReceived.toStringAsFixed(0)} ',
-                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
+                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
                     ),
-                    TextSpan(text: 'common_labels.status_separator'.tr(), style: TextStyle(color: textTheme.bodyLarge?.color)),
+                    TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color?.withOpacity(0.7))),
                     TextSpan(text: expectedQty.toStringAsFixed(0), style: TextStyle(color: textTheme.bodyLarge?.color)),
                   ],
                 ),
@@ -620,58 +660,83 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Widget _buildLastAddedItemSummary(TextTheme textTheme, ColorScheme colorScheme) {
-    final lastItem = _addedItems.isNotEmpty ? _addedItems.first : null;
-    return Container(
-      padding: const EdgeInsets.all(_smallGap),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainer,
-        borderRadius: _borderRadius,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(_smallGap),
-            child: Text(
-              'goods_receiving_screen.header_added_items'.tr(namedArgs: {'count': _addedItems.length.toString()}),
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+  Widget _buildAddedItemsSection(TextTheme textTheme, ColorScheme colorScheme) {
+    if (_addedItems.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32.0),
+          child: Text(
+            'goods_receiving_screen.no_items'.tr(),
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
+          ),
+        ),
+      );
+    }
+
+    final item = _addedItems.first; // This is the most recently added item.
+    String unitText = '';
+    if (isOrderBased) {
+      try {
+        final orderItem = _orderItems.firstWhere((oi) => oi.product?.id == item.product.id);
+        unitText = orderItem.unit ?? '';
+      } catch (e) {
+        // Safe fallback. Unit will be empty.
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: 8.0),
+          child: Text(
+            'goods_receiving_screen.header_last_added_item'.tr(),
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(height: _smallGap),
+        Card(
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+          child: ListTile(
+            dense: true,
+            title: Text(
+              item.product.name,
+              style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              item.palletBarcode != null
+                  ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                  : 'goods_receiving_screen.mode_box'.tr(),
+              style: textTheme.bodySmall,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${item.quantity.toStringAsFixed(0)} $unitText',
+                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.secondary),
+                ),
+                const SizedBox(width: _smallGap),
+                IconButton(
+                  icon: Icon(Icons.delete_outline, color: colorScheme.error),
+                  onPressed: () => _removeItemFromList(0), // Always removes the last added item
+                  tooltip: 'common_labels.delete'.tr(),
+                ),
+              ],
             ),
           ),
-          const Divider(height: 1),
-          if (lastItem == null)
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Center(
-                child: Text(
-                  'goods_receiving_screen.no_items'.tr(),
-                  style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Theme.of(context).hintColor),
-                ),
-              ),
-            )
-          else
-            ListTile(
-              dense: true,
-              title: Text(lastItem.product.name, style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                lastItem.palletBarcode != null
-                    ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': lastItem.palletBarcode!})
-                    : 'goods_receiving_screen.mode_box'.tr(),
-                style: textTheme.bodySmall,
-              ),
-
-              trailing: Text(
-                'goods_receiving_screen.label_quantity_display'.tr(namedArgs: {'quantity': lastItem.quantity.toStringAsFixed(0)}),
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildBottomBar() {
     if (_isLoading) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ElevatedButton.icon(
@@ -680,12 +745,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : const Icon(Icons.check_circle_outline),
         label: FittedBox(
-          child: Text('goods_receiving_screen.button_save_and_confirm'.tr()),
+          child: Text('goods_receiving_screen.button_review_items'.tr()),
         ),
         style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-            textStyle: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+            textStyle: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
       ),
     );
   }
@@ -697,8 +762,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       isDense: true,
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -707,12 +773,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Future<bool?> _showConfirmationListDialog() {
-    return Navigator.push<bool>(
+  Future<ConfirmationAction?> _showConfirmationListDialog() {
+    return Navigator.push<ConfirmationAction>(
       context,
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => _FullscreenConfirmationPage(
+          order: _selectedOrder,
+          orderItems: _orderItems,
           items: _addedItems,
           onItemRemoved: (item) {
             final index = _addedItems.indexOf(item);
@@ -775,23 +843,29 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     _barcodeService = BarcodeIntentService();
 
-    final first = await _barcodeService.getInitialBarcode();
-    if (first != null) _handleBarcode(first);
+    try {
+      final first = await _barcodeService.getInitialBarcode();
+      if (first != null && first.isNotEmpty) _handleBarcode(first);
+    } catch(e) {
+      // ignore
+    }
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
         onError: (e) => _showErrorSnackBar('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()})));
   }
 
   void _handleBarcode(String code) {
+    if (!mounted) return;
+
     if (_palletIdFocusNode.hasFocus) {
       _processScannedData('pallet', code);
     } else if (_productFocusNode.hasFocus) {
       _processScannedData('product', code);
     } else {
-      // Aktif bir odak yoksa, mantıksal bir sıra izle
       if (_receivingMode == ReceivingMode.palet && _palletIdController.text.isEmpty) {
         _processScannedData('pallet', code);
       } else if (_selectedProduct == null) {
+        _productFocusNode.requestFocus();
         _processScannedData('product', code);
       }
     }
@@ -807,7 +881,7 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 48,
+      height: 52,
       width: 56,
       child: ElevatedButton(
         onPressed: isEnabled ? onTap : null,
@@ -917,10 +991,15 @@ class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
 }
 
 class _FullscreenConfirmationPage extends StatefulWidget {
+  final PurchaseOrder? order;
+  final List<PurchaseOrderItem> orderItems;
   final List<ReceiptItemDraft> items;
   final ValueChanged<ReceiptItemDraft> onItemRemoved;
 
   const _FullscreenConfirmationPage({
+    super.key,
+    this.order,
+    required this.orderItems,
     required this.items,
     required this.onItemRemoved,
   });
@@ -931,6 +1010,7 @@ class _FullscreenConfirmationPage extends StatefulWidget {
 
 class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage> {
   late final List<ReceiptItemDraft> _currentItems;
+  bool get isOrderBased => widget.order != null;
 
   @override
   void initState() {
@@ -940,15 +1020,19 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
 
   void _handleRemoveItem(ReceiptItemDraft item) {
     widget.onItemRemoved(item);
-    setState(() {
-      _currentItems.remove(item);
-    });
+    setState(() => _currentItems.remove(item));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final appBarTheme = theme.appBarTheme;
+    final groupedItems = <int, List<ReceiptItemDraft>>{};
+    for (final item in _currentItems) {
+      groupedItems.putIfAbsent(item.product.id, () => []).add(item);
+    }
+    final productIds = groupedItems.keys.toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
@@ -956,49 +1040,325 @@ class _FullscreenConfirmationPageState extends State<_FullscreenConfirmationPage
         foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(
           icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(null),
         ),
       ),
-      body: _currentItems.isEmpty
-          ? Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()))
-          : ListView.builder(
-        padding: const EdgeInsets.all(8),
-        itemCount: _currentItems.length,
-        itemBuilder: (context, index) {
-          final item = _currentItems[index];
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: ListTile(
-              title: Text(item.product.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(item.palletBarcode != null
-                  ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                  : 'goods_receiving_screen.mode_box'.tr()),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(item.quantity.toStringAsFixed(0),
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: Icon(
-                      Icons.delete_outline, color: theme.colorScheme.error),
-                  onPressed: () => _handleRemoveItem(item),
-                ),
-              ]),
-            ),
-          );
-        },
-      ),
+      body: isOrderBased
+          ? _buildOrderBasedConfirmationList(theme)
+          : _buildFreeReceiveConfirmationList(theme),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-          onPressed: _currentItems.isEmpty ? null : () =>
-              Navigator.of(context).pop(true),
-          child: Text('goods_receiving_screen.dialog_button_confirm_and_save'.tr()),
+        padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _currentItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.save),
+              child: Text('goods_receiving_screen.dialog_button_save_receipt'.tr()),
+            ),
+            if (isOrderBased && widget.order?.status == 2) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(color: theme.colorScheme.primary),
+                ),
+                onPressed: () => Navigator.of(context).pop(ConfirmationAction.complete),
+                child: Text('orders.menu.mark_as_complete'.tr()),
+              ),
+            ],
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFreeReceiveConfirmationList(ThemeData theme) {
+    final groupedItems = <int, List<ReceiptItemDraft>>{};
+    for (final item in _currentItems) {
+      groupedItems.putIfAbsent(item.product.id, () => []).add(item);
+    }
+    final productIds = groupedItems.keys.toList();
+
+    if (_currentItems.isEmpty) {
+      return Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()));
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: productIds.length,
+      itemBuilder: (context, index) {
+        final productId = productIds[index];
+        final itemsForProduct = groupedItems[productId]!;
+        final product = itemsForProduct.first.product;
+        final totalQuantity = itemsForProduct.fold<double>(0.0, (sum, item) => sum + item.quantity);
+
+        return Card(
+            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          product.name,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        '${'goods_receiving_screen.dialog_total_quantity'.tr()}: ${totalQuantity.toStringAsFixed(0)}',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  ...itemsForProduct.map((item) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              item.palletBarcode != null
+                                  ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                                  : 'goods_receiving_screen.mode_box'.tr(),
+                              style: theme.textTheme.bodyMedium,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text(
+                                  item.quantity.toStringAsFixed(0),
+                                  style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline, color: theme.colorScheme.error, size: 22),
+                                  onPressed: () => _handleRemoveItem(item),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'common_labels.delete'.tr(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+            )
+        );
+      },
+    );
+  }
+
+  Widget _buildOrderBasedConfirmationList(ThemeData theme) {
+    if (widget.orderItems.isEmpty && _currentItems.isEmpty) {
+      return Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: widget.orderItems.length,
+      itemBuilder: (context, index) {
+        final orderItem = widget.orderItems[index];
+        final product = orderItem.product;
+        if (product == null) return const SizedBox.shrink();
+
+        final itemsBeingAdded = _currentItems.where((item) => item.product.id == product.id).toList();
+        final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
+
+        if (itemsBeingAdded.isEmpty && orderItem.expectedQuantity - orderItem.receivedQuantity <= 0) {
+           return const SizedBox.shrink();
+        }
+
+        return _OrderProductConfirmationCard(
+          orderItem: orderItem,
+          itemsBeingAdded: itemsBeingAdded,
+          quantityBeingAdded: quantityBeingAdded,
+          onRemoveItem: _handleRemoveItem,
+        );
+      },
+    );
+  }
+}
+
+class _OrderProductConfirmationCard extends StatelessWidget {
+  final PurchaseOrderItem orderItem;
+  final List<ReceiptItemDraft> itemsBeingAdded;
+  final double quantityBeingAdded;
+  final ValueChanged<ReceiptItemDraft> onRemoveItem;
+
+  const _OrderProductConfirmationCard({
+    required this.orderItem,
+    required this.itemsBeingAdded,
+    required this.quantityBeingAdded,
+    required this.onRemoveItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+    final product = orderItem.product!;
+    final unit = orderItem.unit ?? '';
+
+    final totalReceivedAfter = orderItem.receivedQuantity + quantityBeingAdded;
+    final remaining = (orderItem.expectedQuantity - totalReceivedAfter).clamp(0.0, double.infinity);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(product.name, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(product.stockCode, style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)),
+            ),
+            const Divider(height: 16),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem.expectedQuantity, unit),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), orderItem.receivedQuantity, unit),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), quantityBeingAdded, unit, highlight: true),
+            const Divider(thickness: 1, height: 24, color: Colors.black12),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), remaining, unit, bold: true),
+            if (itemsBeingAdded.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ...itemsBeingAdded.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item.palletBarcode != null
+                              ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                              : 'goods_receiving_screen.mode_box'.tr(),
+                          style: textTheme.bodyMedium,
+                        ),
+                      ),
+                      Text('${item.quantity.toStringAsFixed(0)} $unit', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline, color: colorScheme.error, size: 22),
+                        onPressed: () => onRemoveItem(item),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'common_labels.delete'.tr(),
+                      )
+                    ],
+                  ),
+                );
+              }),
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatRow(BuildContext context, String label, double value, String unit, {bool highlight = false, bool bold = false}) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    final valueStyle = textTheme.titleMedium?.copyWith(
+      fontWeight: bold ? FontWeight.w900 : FontWeight.bold,
+      color: highlight ? colorScheme.primary : (bold ? colorScheme.onSurface : textTheme.bodyLarge?.color),
+      fontSize: bold ? 18 : null,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: textTheme.bodyLarge),
+          Text('${value.toStringAsFixed(0)} $unit', style: valueStyle),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderSummaryCard extends StatelessWidget {
+  final PurchaseOrder order;
+  final List<PurchaseOrderItem> orderItems;
+  final List<ReceiptItemDraft> addedItems;
+
+  const _OrderSummaryCard({required this.order, required this.orderItems, required this.addedItems});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    double totalOrdered = orderItems.fold(0.0, (sum, item) => sum + item.expectedQuantity);
+    double totalPreviouslyReceived = orderItems.fold(0.0, (sum, item) => sum + item.receivedQuantity);
+    double totalCurrentlyAdding = addedItems.fold(0.0, (sum, item) => sum + item.quantity);
+
+    final totalAfterThisReceipt = totalPreviouslyReceived + totalCurrentlyAdding;
+    final remainingAfterThisReceipt = (totalOrdered - totalAfterThisReceipt).clamp(0, double.infinity).toDouble();
+
+    return Card(
+      margin: const EdgeInsets.all(16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Text('goods_receiving_screen.order_summary_title'.tr(), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            _buildStatusRow(context, 'goods_receiving_screen.order_info.ordered'.tr(), totalOrdered),
+            const Divider(height: 24),
+            _buildStatusRow(context, 'goods_receiving_screen.order_info.total_received'.tr(), totalAfterThisReceipt, highlight: true),
+            const Divider(height: 24),
+            _buildStatusRow(context, 'goods_receiving_screen.order_info.remaining'.tr(), remainingAfterThisReceipt),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(BuildContext context, String label, double value, {bool highlight = false}) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: textTheme.bodyLarge),
+        Text(
+          value.toStringAsFixed(0),
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: highlight ? colorScheme.primary : textTheme.bodyLarge?.color,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -40,26 +40,29 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
     setState(() {
       _ordersFuture = _fetchAndFilterOrders();
     });
-    // To update the UI with the initial list
-    _ordersFuture?.then((orders) {
-      if (mounted) {
-        setState(() {
-          _allOrders = orders;
-          _filteredOrders = orders;
-        });
-      }
-    });
   }
 
   Future<List<PurchaseOrder>> _fetchAndFilterOrders() async {
     try {
+      // # GÜNCELLEME: Bu metod artık sadece durumu 2 (Kısmi Kabul) olanları getirecek.
       final orders = await _repo.getOpenPurchaseOrdersForTransfer();
       List<PurchaseOrder> transferableOrders = [];
+
+      // # GÜNCELLEME: Her sipariş için mal kabulde bekleyen stoğu var mı diye kontrol et.
+      // Eğer hiç yerleştirilecek ürünü kalmadıysa listede gösterme.
       for (final order in orders) {
         final containers = await _repo.getTransferableContainers(order.id);
         if (containers.isNotEmpty) {
           transferableOrders.add(order);
         }
+      }
+
+      // UI'ı anında güncellemek için setState içinde ata
+      if (mounted) {
+        setState(() {
+          _allOrders = transferableOrders;
+          _filteredOrders = transferableOrders;
+        });
       }
       return transferableOrders;
     } catch(e) {
@@ -68,16 +71,21 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
           SnackBar(content: Text('order_selection.error_loading'.tr(namedArgs: {'error': e.toString()}))),
         );
       }
-      return []; // Return empty list on error
+      return []; // Hata durumunda boş liste dön
     }
   }
 
   void _filterOrders() {
     final query = _searchController.text.toLowerCase();
+    if (query.isEmpty) {
+      setState(() {
+        _filteredOrders = _allOrders;
+      });
+      return;
+    }
     setState(() {
       _filteredOrders = _allOrders.where((order) {
-        return (order.poId?.toLowerCase().contains(query) ?? false) ||
-            (order.supplierName?.toLowerCase().contains(query) ?? false);
+        return (order.poId?.toLowerCase().contains(query) ?? false);
       }).toList();
     });
   }
@@ -114,7 +122,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                 if (snapshot.hasError) {
                   return Center(child: Text("order_selection.error_loading".tr(namedArgs: {'error': snapshot.error.toString()})));
                 }
-                if (!snapshot.hasData || _filteredOrders.isEmpty) {
+                if (_filteredOrders.isEmpty) {
                   return Center(child: Text("order_selection.no_results".tr()));
                 }
 
@@ -129,7 +137,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                         child: ListTile(
                           title: Text(order.poId ?? 'common_labels.unknown_order'.tr()),
                           subtitle: Text(
-                            "${order.supplierName ?? 'orders.no_supplier'.tr()}\n"
+                            "${'orders.no_supplier'.tr()}\n" // Tedarikçi adı kaldırıldı, gerekirse eklenebilir.
                                 "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
                           ),
                           isThreeLine: true,
@@ -141,6 +149,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                               ),
                             );
 
+                            // Yerleştirme ekranından `true` dönerse (yani işlem yapıldıysa) listeyi yenile.
                             if (result == true && mounted) {
                               _loadOrders();
                             }

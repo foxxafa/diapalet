@@ -11,14 +11,12 @@ import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart'
 import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 Dio createDioClient() {
   final dio = Dio(
@@ -75,12 +73,13 @@ void main() async {
               dio: context.read<Dio>(),
             ),
           ),
+          // # DÜZELTME: Hata veren 'goodsReceivingRepo' parametresi buradan tamamen kaldırıldı.
+          // InventoryTransferRepositoryImpl artık bu bağımlılığa ihtiyaç duymuyor.
           Provider<InventoryTransferRepository>(
             create: (context) => InventoryTransferRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
               networkInfo: context.read<NetworkInfo>(),
               dio: context.read<Dio>(),
-              goodsReceivingRepo: context.read<GoodsReceivingRepository>(),
             ),
           ),
           ChangeNotifierProvider<SyncService>(
@@ -112,7 +111,7 @@ class MyApp extends StatelessWidget {
       title: 'app.title'.tr(),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.light,
+      themeMode: ThemeMode.light, // veya ThemeMode.system
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );

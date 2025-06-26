@@ -1,10 +1,12 @@
 -- VTYS Mobil Depo Yönetim Sistemi için Veritabanı Şeması
--- v4.0 - Sadece temiz tablo yapılarını içerir. Veriler ayrı dosyalardan yüklenecek.
+-- v5.0 - stock_status ve putaway_quantity alanları eklendi.
 
 SET NAMES utf8mb4 COLLATE utf8mb4_turkish_ci;
-
 SET FOREIGN_KEY_CHECKS = 0;
+
+-- Önce mevcut tabloları sil
 DROP TABLE IF EXISTS `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `satin_alma_siparis_fis_satir`, `satin_alma_siparis_fis`, `urunler`, `employees`, `warehouses_shelfs`, `warehouses`;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =================================================================
@@ -83,6 +85,7 @@ CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis_satir` (
   `siparis_id` int DEFAULT NULL,
   `urun_id` int DEFAULT NULL,
   `miktar` decimal(10,2) DEFAULT NULL,
+  `putaway_quantity` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Rafa yerleştirilen miktar',
   `birim` varchar(10) DEFAULT NULL,
   `notes` varchar(255) DEFAULT NULL,
   `status` int DEFAULT '0',
@@ -122,9 +125,11 @@ CREATE TABLE IF NOT EXISTS `inventory_stock` (
   `location_id` INT NOT NULL,
   `quantity` DECIMAL(10, 2) NOT NULL,
   `pallet_barcode` VARCHAR(50) NULL,
+  `stock_status` enum('receiving','available') NOT NULL DEFAULT 'available' COMMENT 'receiving: Mal kabulde, available: Kullanilabilir',
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_stock_item` (`urun_id`, `location_id`, `pallet_barcode`),
+  UNIQUE KEY `uk_stock_item` (`urun_id`, `location_id`, `pallet_barcode`, `stock_status`),
+  KEY `idx_stock_status` (`stock_status`),
   FOREIGN KEY (`urun_id`) REFERENCES `urunler`(`UrunId`) ON DELETE CASCADE,
   FOREIGN KEY (`location_id`) REFERENCES `warehouses_shelfs`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -146,3 +151,4 @@ CREATE TABLE IF NOT EXISTS `inventory_transfers` (
   FOREIGN KEY (`to_location_id`) REFERENCES `warehouses_shelfs`(`id`),
   FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`)
 ) ENGINE=InnoDB;
+

@@ -1,11 +1,38 @@
 // lib/core/sync/pending_operation.dart
 import 'dart:convert';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
 
 enum PendingOperationType {
   goodsReceipt,
   inventoryTransfer,
+  forceCloseOrder,
+}
+
+extension PendingOperationTypeExtension on PendingOperationType {
+  String get apiName {
+    switch (this) {
+      case PendingOperationType.goodsReceipt:
+        return 'goodsReceipt';
+      case PendingOperationType.inventoryTransfer:
+        return 'inventoryTransfer';
+      case PendingOperationType.forceCloseOrder:
+        return 'forceCloseOrder';
+    }
+  }
+
+  static PendingOperationType fromString(String type) {
+    switch (type) {
+      case 'goodsReceipt':
+        return PendingOperationType.goodsReceipt;
+      case 'inventoryTransfer':
+        return PendingOperationType.inventoryTransfer;
+      case 'forceCloseOrder':
+        return PendingOperationType.forceCloseOrder;
+      default:
+        throw ArgumentError('Unknown pending operation type: $type');
+    }
+  }
 }
 
 @immutable
@@ -32,39 +59,41 @@ class PendingOperation {
   });
 
   String get displayTitle {
-    try {
-      final jsonData = jsonDecode(data) as Map<String, dynamic>;
-      switch (type) {
-        case PendingOperationType.goodsReceipt:
-          final header = jsonData['header'] as Map<String, dynamic>?;
-          final poId = header?['invoice_number'] as String?;
-          return poId != null && poId.isNotEmpty ? 'Mal Kabul: $poId' : 'Siparişe Bağlı Olmayan Mal Kabul';
-        case PendingOperationType.inventoryTransfer:
-          final header = jsonData['header'] as Map<String, dynamic>?;
-          final operationType = header?['operation_type'] as String?;
-          if (operationType == 'pallet_transfer') {
-            return 'Palet Transferi';
-          }
-          return 'Envanter Transferi';
-      }
-    } catch (e) {
-      return 'Bilinmeyen İşlem';
+    switch (type) {
+      case PendingOperationType.goodsReceipt:
+        return 'pending_operations.titles.goods_receipt'.tr();
+      case PendingOperationType.inventoryTransfer:
+        return 'pending_operations.titles.inventory_transfer'.tr();
+      case PendingOperationType.forceCloseOrder:
+        return 'pending_operations.titles.force_close_order'.tr();
     }
   }
 
   String get displaySubtitle {
     try {
-      // Duruma göre oluşturulma veya senkronize olma tarihini göster.
-      final dateToShow = status == 'synced' && syncedAt != null ? syncedAt! : createdAt;
-      final formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(dateToShow);
-      final jsonData = jsonDecode(data) as Map<String, dynamic>;
-      final items = jsonData['items'] as List<dynamic>?;
-      final itemCount = items?.length ?? 0;
-
-      return '$itemCount kalem ürün | Tarih: $formattedDate';
+      final dataMap = jsonDecode(data);
+      switch (type) {
+        case PendingOperationType.goodsReceipt:
+          final invoice = dataMap['header']?['invoice_number'];
+          final poId = dataMap['header']?['siparis_id'];
+          final itemCount = (dataMap['items'] as List?)?.length ?? 0;
+          return 'pending_operations.subtitles.goods_receipt'
+              .tr(namedArgs: {'poId': poId?.toString() ?? 'N/A', 'count': itemCount.toString()});
+        case PendingOperationType.inventoryTransfer:
+          final containerId = dataMap['header']?['container_id']?.toString() ?? 'N/A';
+          final targetLocation = dataMap['header']?['target_location_id']?.toString() ?? 'N/A';
+          final itemCount = (dataMap['items'] as List?)?.length ?? 0;
+          return 'pending_operations.subtitles.inventory_transfer'.tr(namedArgs: {
+            'containerId': containerId,
+            'targetId': targetLocation,
+            'count': itemCount.toString()
+          });
+        case PendingOperationType.forceCloseOrder:
+          final poId = dataMap['siparis_id'];
+          return 'pending_operations.subtitles.force_close_order'.tr(namedArgs: {'poId': poId?.toString() ?? 'N/A'});
+      }
     } catch (e) {
-      debugPrint("displaySubtitle parse error: $e");
-      return 'Detaylar okunamadı';
+      return 'pending_operations.subtitles.parsing_error'.tr();
     }
   }
 

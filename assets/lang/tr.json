@@ -81,7 +81,10 @@
       "saved": "Ürünler başarıyla kaydedildi!"
     },
     "search_hint": "Ara...",
-    "search_no_result": "Sonuç bulunamadı"
+    "search_no_result": "Sonuç bulunamadı",
+    "status": {
+      "partially_received": "Kısmi Kabul"
+    }
   },
   "goods_receiving_screen": {
     "title": "Mal Kabul",
@@ -283,7 +286,10 @@
     "search_hint": "Sipariş Ara...",
     "no_results": "Uygun sipariş bulunamadı.",
     "error_loading": "Siparişler yüklenemedi: {error}",
-    "no_supplier": "Tedarikçi Bilinmiyor"
+    "no_supplier": "Tedarikçi Bilinmiyor",
+    "status": {
+      "partially_received": "Kısmi Kabul"
+    }
   },
   "login": {
     "title": "Giriş Yap",
