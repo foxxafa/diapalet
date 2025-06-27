@@ -13,6 +13,12 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Tablo Yapıları
 -- =================================================================
 
+CREATE TABLE IF NOT EXISTS `processed_terminal_operations` (
+  `operation_id` INT NOT NULL,
+  `processed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`operation_id`)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS `warehouses` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `dia_id` INT NULL UNIQUE,

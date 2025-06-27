@@ -289,11 +289,6 @@ class _OperationCard extends StatelessWidget {
               operation.errorMessage ?? 'common_labels.unknown_error'.tr(),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-             const SizedBox(height: 16),
-            Text(
-              'pending_operations.attempts'.tr(namedArgs: {'count': operation.attempts.toString()}),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           ],
         ),
         actions: [

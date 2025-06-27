@@ -40,8 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
           // GÜNCELLEME: Giriş başarılı olduktan hemen sonra senkronizasyonu tetikle.
           // Bu, çalışan listesinin anında indirilmesini ve offline login için
           // lokal veritabanının hazır olmasını sağlar.
-          final warehouseId = authData['warehouse_id'] as int?;
-          await context.read<SyncService>().performFullSync(warehouseId: warehouseId);
+          await context.read<SyncService>().performFullSync();
 
           if (!mounted) return;
           Navigator.of(context).pushReplacement(

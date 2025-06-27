@@ -42,7 +42,6 @@ class PendingOperation {
   final String data;
   final DateTime createdAt;
   final String status;
-  final int attempts;
   final String? errorMessage;
   // YENİ: İşlemin ne zaman senkronize olduğunu takip etmek için eklendi.
   final DateTime? syncedAt;
@@ -53,9 +52,8 @@ class PendingOperation {
     required this.data,
     required this.createdAt,
     this.status = 'pending',
-    this.attempts = 0,
     this.errorMessage,
-    this.syncedAt, // Constructor'a eklendi.
+    this.syncedAt,
   });
 
   String get displayTitle {
@@ -104,9 +102,7 @@ class PendingOperation {
       data: map['data'],
       createdAt: DateTime.parse(map['created_at']),
       status: map['status'],
-      attempts: map['attempts'],
       errorMessage: map['error_message'],
-      // Veritabanından synced_at değerini oku.
       syncedAt: map['synced_at'] != null ? DateTime.parse(map['synced_at']) : null,
     );
   }
@@ -118,9 +114,7 @@ class PendingOperation {
       'data': data,
       'created_at': createdAt.toIso8601String(),
       'status': status,
-      'attempts': attempts,
       'error_message': errorMessage,
-      // synced_at değerini veritabanına yaz.
       'synced_at': syncedAt?.toIso8601String(),
     };
   }

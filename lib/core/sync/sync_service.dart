@@ -19,17 +19,14 @@ enum SyncStatus {
 }
 
 class SyncService with ChangeNotifier {
-  DatabaseHelper dbHelper;
-  Dio dio;
-  NetworkInfo networkInfo;
+  final DatabaseHelper dbHelper;
+  final Dio dio;
+  final NetworkInfo networkInfo;
 
   bool _isSyncing = false;
-  final StreamController<SyncStatus> _statusController =
-  StreamController<SyncStatus>.broadcast();
+  final StreamController<SyncStatus> _statusController = StreamController<SyncStatus>.broadcast();
   late final StreamSubscription _connectivitySubscription;
-  Timer? _periodicSyncTimer;
-
-  // YENİ: Anlık durumu tutmak için eklendi.
+  Timer? _periodicTimer;
   SyncStatus _currentStatus = SyncStatus.offline;
 
   static const _lastSyncTimestampKey = 'last_sync_timestamp';
@@ -42,108 +39,53 @@ class SyncService with ChangeNotifier {
     _initialize();
   }
 
-  // YENİ: Arayüzün başlangıç durumunu alabilmesi için getter eklendi.
   SyncStatus get currentStatus => _currentStatus;
+  Stream<SyncStatus> get syncStatusStream => _statusController.stream;
+  bool get isSyncing => _isSyncing;
 
-  // YENİ: Stream'i ve durumu merkezi olarak güncelleyen yardımcı fonksiyon.
   void _updateStatus(SyncStatus status) {
-    if (_currentStatus == status && status != SyncStatus.syncing) return;
+    if (_currentStatus == status) return;
     _currentStatus = status;
     if (!_statusController.isClosed) {
       _statusController.add(status);
     }
-  }
-
-  void updateDependencies({
-    required DatabaseHelper dbHelper,
-    required Dio dio,
-    required NetworkInfo networkInfo,
-  }) {
-    this.dbHelper = dbHelper;
-    this.dio = dio;
-    this.networkInfo = networkInfo;
-    debugPrint("SyncService: Bağımlılıklar güncellendi.");
+    notifyListeners();
   }
 
   void _initialize() {
-    // Başlangıçta varsayılan olarak offline kabul et
     _updateStatus(SyncStatus.offline);
-    
-    // Başlangıçta mevcut bağlantıyı hemen kontrol et
-    networkInfo.isConnected.then((connected) async {
+    networkInfo.isConnected.then((connected) {
       if (connected) {
         _updateStatus(SyncStatus.online);
-        debugPrint("Başlangıçta bağlantı var, senkronizasyon kontrol ediliyor.");
-        
-        // Warehouse ID kontrolü
-        final prefs = await SharedPreferences.getInstance();
-        final warehouseId = prefs.getInt('warehouse_id');
-        
-        if (warehouseId != null) {
-          debugPrint("Warehouse ID mevcut, senkronizasyon başlatılıyor.");
-          performFullSync();
-        } else {
-          debugPrint("Warehouse ID bulunamadı, kullanıcı giriş yapmamış. Senkronizasyon atlanıyor.");
-        }
+        debugPrint("Başlangıçta bağlantı var, senkronizasyon başlatılıyor.");
+        performFullSync();
+      }
+    });
+
+    _connectivitySubscription = networkInfo.onConnectivityChanged.listen((isConnected) {
+      if (isConnected) {
+        _updateStatus(SyncStatus.online);
+        debugPrint("Bağlantı geldi, senkronizasyon kontrol ediliyor.");
+        performFullSync();
       } else {
+        debugPrint("Bağlantı kesildi.");
         _updateStatus(SyncStatus.offline);
       }
     });
-
-    _connectivitySubscription =
-        networkInfo.onConnectivityChanged.listen((isConnected) async {
-          if (isConnected) {
-            _updateStatus(SyncStatus.online);
-            debugPrint("Bağlantı geldi, senkronizasyon kontrol ediliyor.");
-            
-            // Warehouse ID kontrolü
-            final prefs = await SharedPreferences.getInstance();
-            final warehouseId = prefs.getInt('warehouse_id');
-            
-            if (warehouseId != null) {
-              debugPrint("Warehouse ID mevcut, senkronizasyon başlatılıyor.");
-              performFullSync();
-            } else {
-              debugPrint("Warehouse ID bulunamadı, senkronizasyon atlanıyor.");
-            }
-          } else {
-            debugPrint("Bağlantı kesildi.");
-            _updateStatus(SyncStatus.offline);
-          }
-        });
-    _setupPeriodicSync();
+    _startPeriodicSync();
   }
 
-  void _setupPeriodicSync() {
-    _periodicSyncTimer?.cancel();
-    // GÜNCELLEME: Periyodik senkronizasyon sıklığı 1 dakikaya düşürüldü.
-    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 1), (timer) async {
+  void _startPeriodicSync() {
+    _periodicTimer?.cancel();
+    _periodicTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       debugPrint("Periyodik senkronizasyon kontrol ediliyor...");
-      
-      // Warehouse ID kontrolü
-      final prefs = await SharedPreferences.getInstance();
-      final warehouseId = prefs.getInt('warehouse_id');
-      
-      if (warehouseId != null) {
-        debugPrint("Warehouse ID mevcut, periyodik senkronizasyon başlatılıyor.");
-        performFullSync();
-      } else {
-        debugPrint("Warehouse ID bulunamadı, periyodik senkronizasyon atlanıyor.");
-      }
+      performFullSync();
     });
   }
 
-  Stream<SyncStatus> get syncStatusStream => _statusController.stream;
-  bool get isSyncing => _isSyncing;
-
-  Future<void> performFullSync({bool force = false, int? warehouseId}) async {
+  Future<void> performFullSync({bool force = false}) async {
     if (_isSyncing && !force) {
       debugPrint("Senkronizasyon zaten devam ediyor. Atlanıyor.");
-      return;
-    }
-    if (!await networkInfo.isConnected) {
-      debugPrint("İnternet bağlantısı yok. Senkronizasyon atlanıyor.");
-      _updateStatus(SyncStatus.offline);
       return;
     }
 
@@ -151,121 +93,37 @@ class SyncService with ChangeNotifier {
     _updateStatus(SyncStatus.syncing);
     notifyListeners();
 
+    if (!await networkInfo.isConnected) {
+      debugPrint("İnternet bağlantısı yok. Senkronizasyon atlanıyor.");
+      _updateStatus(SyncStatus.offline);
+      _isSyncing = false;
+      notifyListeners();
+      return;
+    }
+
     try {
-      // İlk önce warehouse_id kontrolü yapalım
-      final prefs = await SharedPreferences.getInstance();
-      final finalWarehouseId = warehouseId ?? prefs.getInt('warehouse_id');
+      await uploadPendingOperations();
       
-      if (finalWarehouseId == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseId = prefs.getInt('warehouse_id');
+      if (warehouseId == null) {
         throw Exception("Warehouse ID bulunamadı. Lütfen tekrar giriş yapın.");
       }
-
-      // Upload operations
-      await _uploadPendingOperations();
       
-      // Download data with warehouse_id
-      await _downloadDataFromServer(warehouseId: finalWarehouseId);
-
-      // YENİ: Senkronizasyon sonrası eski kayıtları temizle.
+      await _downloadDataFromServer(warehouseId: warehouseId);
       await dbHelper.cleanupOldSyncedOperations();
 
       final remainingOps = await dbHelper.getPendingOperations();
       if (remainingOps.isEmpty) {
         _updateStatus(SyncStatus.upToDate);
-        await dbHelper.addSyncLog('sync_status', 'success',
-            'Senkronizasyon başarılı ve bekleyen işlem yok.');
+        await dbHelper.addSyncLog('sync_status', 'success', 'Senkronizasyon başarılı ve bekleyen işlem yok.');
       } else {
         _updateStatus(SyncStatus.error);
-        await dbHelper.addSyncLog('sync_status', 'error',
-            'Senkronizasyon sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
+        await dbHelper.addSyncLog('sync_status', 'error', 'Senkronizasyon sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
       }
     } catch (e, s) {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
-      
-      // Timeout hatası kontrolü
-      if (e.toString().contains('SocketException') || 
-          e.toString().contains('TimeoutException') ||
-          e.toString().contains('DioError')) {
-        _updateStatus(SyncStatus.offline);
-      } else {
-        _updateStatus(SyncStatus.error);
-      }
-    } finally {
-      _isSyncing = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> _downloadDataFromServer({int? warehouseId}) async {
-    debugPrint("Sunucudan veri indirme başlıyor...");
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastSync = prefs.getString(_lastSyncTimestampKey);
-      // GÜNCELLEME: warehouseId parametre olarak gelmezse SharedPreferences'dan al.
-      final finalWarehouseId = warehouseId ?? prefs.getInt('warehouse_id');
-
-      if (finalWarehouseId == null) {
-        throw Exception("Warehouse ID bulunamadı. Bu metod doğrudan çağrılmamalı.");
-      }
-
-      final response = await dio.post(
-        ApiConfig.syncDownload,
-        data: {
-          'last_sync_timestamp': lastSync,
-          'warehouse_id': finalWarehouseId,
-        },
-      );
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'] as Map<String, dynamic>;
-        final newTimestamp = response.data['timestamp'] as String? ??
-            DateTime.now().toUtc().toIso8601String();
-        await dbHelper.applyDownloadedData(data);
-        await prefs.setString(_lastSyncTimestampKey, newTimestamp);
-        debugPrint(
-            "Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
-      } else {
-        throw Exception(
-            "Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
-      }
-    } catch (e) {
-      debugPrint("Veri indirme sırasında hata: $e");
-      rethrow;
-    }
-  }
-
-  /// YALNIZCA bekleyen operasyonları sunucuya yüklemeyi dener.
-  /// Kullanıcı tarafından başlatılan anlık işlemler için kullanılır.
-  Future<void> uploadPendingOperations() async {
-    if (_isSyncing) {
-      debugPrint("Senkronizasyon zaten devam ediyor. Yükleme atlanıyor.");
-      return;
-    }
-    if (!await networkInfo.isConnected) {
-      debugPrint("İnternet bağlantısı yok. Yükleme atlanıyor.");
-      _updateStatus(SyncStatus.offline);
-      return;
-    }
-
-    _isSyncing = true;
-    _updateStatus(SyncStatus.syncing);
-    notifyListeners();
-
-    try {
-      await _uploadPendingOperations();
-
-      final remainingOps = await dbHelper.getPendingOperations();
-      if (remainingOps.isEmpty) {
-        _updateStatus(SyncStatus.upToDate);
-        await dbHelper.addSyncLog('upload_only', 'success', 'Bekleyen işlemler başarıyla gönderildi.');
-      } else {
-        _updateStatus(SyncStatus.error);
-        await dbHelper.addSyncLog('upload_only', 'error', 'Yükleme sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
-      }
-    } catch (e, s) {
-      debugPrint("uploadPendingOperations sırasında hata: $e\nStack: $s");
-      await dbHelper.addSyncLog('upload_only', 'error', 'Genel Hata: $e');
       _updateStatus(SyncStatus.error);
     } finally {
       _isSyncing = false;
@@ -273,75 +131,82 @@ class SyncService with ChangeNotifier {
     }
   }
 
-  Future<void> _uploadPendingOperations() async {
+  Future<void> _downloadDataFromServer({required int warehouseId}) async {
+    debugPrint("Sunucudan veri indirme başlıyor...");
+    final prefs = await SharedPreferences.getInstance();
+    final lastSync = prefs.getString(_lastSyncTimestampKey);
+
+    final response = await dio.post(
+      ApiConfig.syncDownload,
+      data: {'last_sync_timestamp': lastSync, 'warehouse_id': warehouseId},
+    );
+
+    if (response.statusCode == 200 && response.data['success'] == true) {
+      final data = response.data['data'] as Map<String, dynamic>;
+      final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
+      await dbHelper.applyDownloadedData(data);
+      await prefs.setString(_lastSyncTimestampKey, newTimestamp);
+      debugPrint("Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
+    } else {
+      throw Exception("Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
+    }
+  }
+
+  Future<void> uploadPendingOperations() async {
     final pendingOps = await dbHelper.getPendingOperations();
-    if (pendingOps.isEmpty) return;
+    if (pendingOps.isEmpty) {
+      debugPrint("Gönderilecek bekleyen işlem yok.");
+      return;
+    }
 
-    debugPrint(
-        "${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
+    debugPrint("${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
 
-    for (final op in pendingOps) {
-      // Maksimum deneme sayısını kontrol et
-      if (op.attempts >= 5) {
-        debugPrint("İşlem #${op.id} maksimum deneme sayısına (5) ulaştı. Failed olarak işaretleniyor.");
-        // Maksimum denemeye ulaşan işlemi failed olarak işaretle
-        if (op.id != null) {
-          await dbHelper.markOperationAsFailed(op.id!);
-        }
-        continue; // Bu işlemi atla ama diğerlerine devam et
+    final operationsPayload = pendingOps.map((op) {
+      return {'id': op.id, 'type': op.type.name, 'data': jsonDecode(op.data)};
+    }).toList();
+
+    try {
+      final response = await dio.post(
+        ApiConfig.syncUpload,
+        data: {'operations': operationsPayload},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        await _handleSyncResults(response.data['results'] ?? []);
+      } else {
+        final serverError = response.data['details'] ?? response.data['error'] ?? 'Bilinmeyen sunucu hatası';
+        throw Exception("Sunucu toplu işlemi reddetti: $serverError");
       }
+    } catch (e) {
+        await dbHelper.addSyncLog('upload', 'error', "Toplu yükleme hatası: $e");
+        rethrow;
+    }
+  }
 
-      try {
-        final payload = {'type': op.type.name, 'data': jsonDecode(op.data)};
-        final response =
-        await dio.post(ApiConfig.syncUpload, data: {'operations': [payload]});
+  Future<void> _handleSyncResults(List<dynamic> results) async {
+    for (var result in results) {
+      final opId = result['operation_id'];
+      final status = result['result']?['status'];
+      final message = result['result']?['message'];
 
-        if (response.statusCode == 201 || response.statusCode == 200) {
-          final results = response.data['results'] as List<dynamic>?;
-          final firstResult =
-          results?.isNotEmpty == true ? results!.first['result'] : null;
+      if (opId == null) continue;
 
-          if (firstResult != null && firstResult['status'] == 'success') {
-            // GÜNCELLEME: İşlemi silmek yerine 'synced' olarak işaretle.
-            await dbHelper.markOperationAsSynced(op.id!);
-            await dbHelper.addSyncLog('upload', 'success',
-                'İşlem #${op.id} (${op.displayTitle}) sunucuya gönderildi.');
-          } else {
-            throw Exception(
-                firstResult?['error'] ?? 'Bilinmeyen sunucu hatası.');
-          }
-        } else {
-          throw Exception(
-              "Sunucu işlemi reddetti. Status: ${response.statusCode}");
-        }
-      } catch (e) {
-        final errorMessage = "İşlem #${op.id} yüklenirken hata oluştu: $e";
-        debugPrint(errorMessage);
-        await dbHelper.addSyncLog('upload', 'error', errorMessage);
-        if (op.id != null) {
-          await dbHelper.updateOperationWithError(op.id!, e.toString());
-        }
-        // Continue kullanarak diğer işlemlerin denenmesine izin ver
-        continue;
+      if (status == 'success') {
+        await dbHelper.markOperationAsSynced(opId);
+      } else {
+        await dbHelper.updateOperationWithError(opId, message ?? 'Bilinmeyen sunucu hatası');
       }
     }
   }
 
-  // Bekleyen işlemleri getirir.
-  Future<List<PendingOperation>> getPendingOperations() =>
-      dbHelper.getPendingOperations();
-
-  // YENİ/GÜNCELLENMİŞ: Kullanıcı arayüzünün senkronize olmuş geçmişi çekmesi için.
-  Future<List<PendingOperation>> getSyncedOperationHistory() =>
-      dbHelper.getSyncedOperations();
-
-  // Teknik logları getirir.
+  Future<List<PendingOperation>> getPendingOperations() => dbHelper.getPendingOperations();
+  Future<List<PendingOperation>> getSyncedOperationHistory() => dbHelper.getSyncedOperations();
   Future<List<SyncLog>> getSyncLogs() => dbHelper.getSyncLogs();
 
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    _periodicSyncTimer?.cancel();
+    _periodicTimer?.cancel();
     _statusController.close();
     super.dispose();
   }

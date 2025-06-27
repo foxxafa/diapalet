@@ -58,7 +58,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'receipt_id': receiptId, 'urun_id': item.urunId,
             'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
           });
-          await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode);
+          await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode, 'receiving');
         }
 
         // GÜNCELLEME: Mal kabul yapıldığında siparişin durumunu lokalde anında güncelle.
@@ -86,21 +86,31 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode) async {
+  Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode, String stockStatus) async {
+    String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
+    List<dynamic> whereArgs = [urunId, locationId, stockStatus];
+    if (palletBarcode != null) {
+      whereArgs.add(palletBarcode);
+    }
+    
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND pallet_barcode ${palletBarcode == null ? 'IS NULL' : '= ?'}',
-        whereArgs: palletBarcode == null ? [urunId, locationId] : [urunId, locationId, palletBarcode]
-    );
+        where: 'urun_id = ? AND location_id = ? AND stock_status = ? AND $palletWhereClause',
+        whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
       final currentStock = existingStock.first;
       final newQty = (currentStock['quantity'] as num) + quantityChange;
-      await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-          where: 'id = ?', whereArgs: [currentStock['id']]);
+      if (newQty > 0.001) {
+        await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+            where: 'id = ?', whereArgs: [currentStock['id']]);
+      } else {
+        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
+      }
     } else if (quantityChange > 0) {
       await txn.insert('inventory_stock', {
         'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
-        'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String()
+        'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
+        'stock_status': stockStatus
       });
     }
   }

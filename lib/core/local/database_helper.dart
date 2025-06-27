@@ -59,7 +59,6 @@ class DatabaseHelper {
         data TEXT NOT NULL,
         created_at TEXT NOT NULL,
         status TEXT NOT NULL,
-        attempts INTEGER NOT NULL,
         error_message TEXT,
         synced_at TEXT 
       )
@@ -233,21 +232,9 @@ class DatabaseHelper {
 
   Future<void> updateOperationWithError(int id, String errorMessage) async {
     final db = await database;
-    await db.rawUpdate('''
-      UPDATE pending_operation 
-      SET error_message = ?, attempts = attempts + 1 
-      WHERE id = ?
-    ''', [errorMessage, id]);
-  }
-
-  Future<void> markOperationAsFailed(int id) async {
-    final db = await database;
     await db.update(
       'pending_operation',
-      {
-        'status': 'failed',
-        'error_message': 'Maximum retry attempts (5) reached'
-      },
+      {'error_message': errorMessage},
       where: 'id = ?',
       whereArgs: [id],
     );
