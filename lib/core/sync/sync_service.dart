@@ -66,6 +66,9 @@ class SyncService with ChangeNotifier {
   }
 
   void _initialize() {
+    // Başlangıçta varsayılan olarak offline kabul et
+    _updateStatus(SyncStatus.offline);
+    
     // Başlangıçta mevcut bağlantıyı hemen kontrol et
     networkInfo.isConnected.then((connected) async {
       if (connected) {
@@ -179,7 +182,15 @@ class SyncService with ChangeNotifier {
     } catch (e, s) {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
-      _updateStatus(SyncStatus.error);
+      
+      // Timeout hatası kontrolü
+      if (e.toString().contains('SocketException') || 
+          e.toString().contains('TimeoutException') ||
+          e.toString().contains('DioError')) {
+        _updateStatus(SyncStatus.offline);
+      } else {
+        _updateStatus(SyncStatus.error);
+      }
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -226,17 +237,39 @@ class SyncService with ChangeNotifier {
 
   /// YALNIZCA bekleyen operasyonları sunucuya yüklemeyi dener.
   /// Kullanıcı tarafından başlatılan anlık işlemler için kullanılır.
-  Future<bool> uploadPendingOperations() async {
+  Future<void> uploadPendingOperations() async {
+    if (_isSyncing) {
+      debugPrint("Senkronizasyon zaten devam ediyor. Yükleme atlanıyor.");
+      return;
+    }
     if (!await networkInfo.isConnected) {
       debugPrint("İnternet bağlantısı yok. Yükleme atlanıyor.");
-      return false;
+      _updateStatus(SyncStatus.offline);
+      return;
     }
+
+    _isSyncing = true;
+    _updateStatus(SyncStatus.syncing);
+    notifyListeners();
+
     try {
       await _uploadPendingOperations();
-      return true;
-    } catch (e) {
-      debugPrint("uploadPendingOperations sırasında hata: $e");
-      return false;
+
+      final remainingOps = await dbHelper.getPendingOperations();
+      if (remainingOps.isEmpty) {
+        _updateStatus(SyncStatus.upToDate);
+        await dbHelper.addSyncLog('upload_only', 'success', 'Bekleyen işlemler başarıyla gönderildi.');
+      } else {
+        _updateStatus(SyncStatus.error);
+        await dbHelper.addSyncLog('upload_only', 'error', 'Yükleme sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
+      }
+    } catch (e, s) {
+      debugPrint("uploadPendingOperations sırasında hata: $e\nStack: $s");
+      await dbHelper.addSyncLog('upload_only', 'error', 'Genel Hata: $e');
+      _updateStatus(SyncStatus.error);
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
     }
   }
 
@@ -248,6 +281,16 @@ class SyncService with ChangeNotifier {
         "${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
 
     for (final op in pendingOps) {
+      // Maksimum deneme sayısını kontrol et
+      if (op.attempts >= 5) {
+        debugPrint("İşlem #${op.id} maksimum deneme sayısına (5) ulaştı. Failed olarak işaretleniyor.");
+        // Maksimum denemeye ulaşan işlemi failed olarak işaretle
+        if (op.id != null) {
+          await dbHelper.markOperationAsFailed(op.id!);
+        }
+        continue; // Bu işlemi atla ama diğerlerine devam et
+      }
+
       try {
         final payload = {'type': op.type.name, 'data': jsonDecode(op.data)};
         final response =
@@ -278,7 +321,7 @@ class SyncService with ChangeNotifier {
         if (op.id != null) {
           await dbHelper.updateOperationWithError(op.id!, e.toString());
         }
-        // Hata durumunda döngüyü kırarak bir sonraki senkronizasyon döngüsünü bekle.
+        // Continue kullanarak diğer işlemlerin denenmesine izin ver
         continue;
       }
     }

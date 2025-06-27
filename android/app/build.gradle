@@ -15,9 +15,9 @@ def flutterVersionName =  localProperties.getProperty("flutter.versionName") ?: 
 
 android {
     namespace   = "com.example.diapalet"      // ← kendi paket adın
-    compileSdk  = 35                           // 34 veya 35
+    compileSdk  = 36                           // 34 veya 35
 
-    ndkVersion  = "26.3.11579264"              // Flutter'ın ndkVersion’ı yerine sabit yazmak sorun çıkarmaz
+    ndkVersion  = "26.3.11579264"              // Flutter'ın ndkVersion'ı yerine sabit yazmak sorun çıkarmaz
 
     defaultConfig {
         applicationId         = "com.example.diapalet"   // ← aynı paket
@@ -28,7 +28,7 @@ android {
     }
 
     compileOptions {                            // JAVA 17
-        sourceCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {                             // KOTLIN 1.9.x → JVM 17

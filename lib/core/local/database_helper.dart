@@ -205,7 +205,10 @@ class DatabaseHelper {
 
   Future<List<PendingOperation>> getPendingOperations() async {
     final db = await database;
-    final maps = await db.query('pending_operation', where: "status = ?", whereArgs: ['pending'], orderBy: 'created_at ASC');
+    final maps = await db.query('pending_operation', 
+      where: "status = ?", 
+      whereArgs: ['pending'], 
+      orderBy: 'created_at ASC');
     return maps.map((map) => PendingOperation.fromMap(map)).toList();
   }
 
@@ -235,6 +238,19 @@ class DatabaseHelper {
       SET error_message = ?, attempts = attempts + 1 
       WHERE id = ?
     ''', [errorMessage, id]);
+  }
+
+  Future<void> markOperationAsFailed(int id) async {
+    final db = await database;
+    await db.update(
+      'pending_operation',
+      {
+        'status': 'failed',
+        'error_message': 'Maximum retry attempts (5) reached'
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> cleanupOldSyncedOperations({int days = 7}) async {

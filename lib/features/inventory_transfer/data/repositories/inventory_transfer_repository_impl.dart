@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
@@ -20,6 +21,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
+  final SyncService syncService;
 
   static const int malKabulLocationId = 1;
 
@@ -27,6 +29,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required this.dbHelper,
     required this.dio,
     required this.networkInfo,
+    required this.syncService,
   });
 
   @override
@@ -179,6 +182,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
       });
+      
+      // İnternet varsa anında sync başlat
+      if (await networkInfo.isConnected) {
+        debugPrint("Transfer kaydedildi, anında sync başlatılıyor...");
+        syncService.uploadPendingOperations();
+      }
     } catch (e, s) {
       debugPrint("Lokal transfer kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına transfer kaydedilirken hata oluştu: $e");

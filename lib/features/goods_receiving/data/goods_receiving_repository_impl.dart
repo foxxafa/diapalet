@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:dio/dio.dart';
@@ -16,6 +17,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
+  final SyncService syncService;
 
   static const int malKabulLocationId = 1;
 
@@ -23,11 +25,19 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     required this.dbHelper,
     required this.dio,
     required this.networkInfo,
+    required this.syncService,
   });
 
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
     await _saveGoodsReceiptLocally(payload);
+    
+    // İnternet varsa anında sync başlat
+    if (await networkInfo.isConnected) {
+      debugPrint("Mal kabul kaydedildi, anında sync başlatılıyor...");
+      // uploadPendingOperations sadece pending işlemleri gönderir, full sync'e gerek yok
+      syncService.uploadPendingOperations();
+    }
   }
 
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
@@ -175,6 +185,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         await txn.insert('pending_operation', pendingOp.toDbMap());
       });
       debugPrint("Order #$orderId marked as closed and queued for sync.");
+      
+      // İnternet varsa anında sync başlat
+      if (await networkInfo.isConnected) {
+        debugPrint("Sipariş kapatma işlemi kaydedildi, anında sync başlatılıyor...");
+        syncService.uploadPendingOperations();
+      }
     } catch (e, s) {
       debugPrint("Local 'mark as closed' error: $e\n$s");
       throw Exception("Failed to mark order as closed locally: $e");

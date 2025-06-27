@@ -398,6 +398,7 @@ class TerminalController extends Controller
             if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
                  $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
+                 // stock_status string olduğu için cast edilmedi, ama frontend'de string olarak bekleniyor
             } else {
                 $data['inventory_stock'] = [];
             }

@@ -21,8 +21,8 @@ import 'package:provider/provider.dart';
 Dio createDioClient() {
   final dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(milliseconds: 15000),
-      receiveTimeout: const Duration(milliseconds: 15000),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
       headers: { 'Accept': 'application/json', },
     ),
   );
@@ -56,9 +56,22 @@ void main() async {
       fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [
+          // Temel servisler (bağımlılığı olmayanlar)
           Provider<NetworkInfo>.value(value: networkInfo),
           Provider<Dio>.value(value: dio),
           Provider<DatabaseHelper>.value(value: dbHelper),
+          ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
+
+          // SyncService, diğer repolardan önce tanımlanmalı çünkü onlar buna bağımlı.
+          ChangeNotifierProvider<SyncService>(
+            create: (context) => SyncService(
+              dbHelper: context.read<DatabaseHelper>(),
+              dio: context.read<Dio>(),
+              networkInfo: context.read<NetworkInfo>(),
+            ),
+          ),
+
+          // Diğer provider'lar (SyncService'e bağımlı olabilirler)
           Provider<AuthRepository>(
             create: (context) => AuthRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
@@ -71,26 +84,16 @@ void main() async {
               dbHelper: context.read<DatabaseHelper>(),
               networkInfo: context.read<NetworkInfo>(),
               dio: context.read<Dio>(),
+              syncService: context.read<SyncService>(),
             ),
           ),
-          // # DÜZELTME: Hata veren 'goodsReceivingRepo' parametresi buradan tamamen kaldırıldı.
-          // InventoryTransferRepositoryImpl artık bu bağımlılığa ihtiyaç duymuyor.
           Provider<InventoryTransferRepository>(
             create: (context) => InventoryTransferRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
               networkInfo: context.read<NetworkInfo>(),
               dio: context.read<Dio>(),
+              syncService: context.read<SyncService>(),
             ),
-          ),
-          ChangeNotifierProvider<SyncService>(
-            create: (context) => SyncService(
-              dbHelper: context.read<DatabaseHelper>(),
-              dio: context.read<Dio>(),
-              networkInfo: context.read<NetworkInfo>(),
-            ),
-          ),
-          ChangeNotifierProvider<ThemeProvider>(
-            create: (_) => ThemeProvider(),
           ),
         ],
         child: const MyApp(),
