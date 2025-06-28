@@ -207,6 +207,9 @@
     "cancel": "Cancel",
     "close": "Close"
   },
+  "common_labels": {
+    "delete": "Delete"
+  },
   "pending_operations": {
     "title": "Sync Status",
     "tabs": {

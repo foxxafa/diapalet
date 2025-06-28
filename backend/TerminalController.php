@@ -97,60 +97,89 @@ class TerminalController extends Controller
     {
         $payload = $this->getJsonBody();
         $operations = $payload['operations'] ?? [];
-        $results = [];
         $db = Yii::$app->db;
+        $maxRetries = 3;
 
-        $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
+        for ($i = 0; $i < $maxRetries; $i++) {
+            $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
+            try {
+                $results = [];
+                foreach ($operations as $op) {
+                    $opId = $op['id'] ?? null;
+                    $opType = $op['type'] ?? 'unknown';
+                    
+                    if (!$opId) {
+                        throw new \Exception("Tüm operasyonlar bir 'id' içermelidir.");
+                    }
 
-        try {
-            foreach ($operations as $op) {
-                $opId = $op['id'] ?? null;
-                $opType = $op['type'] ?? 'unknown';
+                    $isProcessed = (new Query())->from('processed_terminal_operations')->where(['operation_id' => $opId])->exists($db);
+                    if ($isProcessed) {
+                        $results[] = ['operation_id' => $opId, 'result' => ['status' => 'success', 'message' => 'Already processed']];
+                        continue;
+                    }
+                    
+                    $opData = $op['data'] ?? [];
+                    $result = ['status' => 'error', 'message' => 'Unknown operation'];
+
+                    if ($opType === 'goodsReceipt') {
+                        $result = $this->_createGoodsReceipt($opData, $db);
+                    } elseif ($opType === 'inventoryTransfer') {
+                        $result = $this->_createInventoryTransfer($opData, $db);
+                    } elseif ($opType === 'forceCloseOrder') {
+                        $result = $this->_forceCloseOrder($opData, $db);
+                    } else {
+                        $result['message'] = "Bilinmeyen operasyon tipi: {$opType}";
+                    }
+                    
+                    if (isset($result['status']) && $result['status'] === 'success') {
+                        $db->createCommand()->insert('processed_terminal_operations', ['operation_id' => $opId])->execute();
+                        $results[] = ['operation_id' => $opId, 'result' => $result];
+                    } else {
+                        throw new \Exception("Operation (ID: {$opId}, Tip: {$opType}) başarısız oldu: " . ($result['message'] ?? 'Bilinmeyen hata'));
+                    }
+                }
                 
-                if (!$opId) {
-                    throw new \Exception("Tüm operasyonlar bir 'id' içermelidir.");
+                $transaction->commit();
+                return ['success' => true, 'results' => $results];
+
+            } catch (\Exception $e) {
+                $transaction->rollBack();
+
+                $isDeadlock = false;
+                if ($e instanceof \yii\db\Exception && isset($e->errorInfo[1])) {
+                    if ($e->errorInfo[1] == 1213) { // 1213 is the MySQL error code for deadlock
+                        $isDeadlock = true;
+                    }
+                }
+                
+                if (!$isDeadlock) {
+                    $errMsg = $e->getMessage();
+                    if (strpos($errMsg, 'Deadlock') !== false || strpos($errMsg, 'Serialization failure') !== false) {
+                        $isDeadlock = true;
+                    }
                 }
 
-                $isProcessed = (new Query())->from('processed_terminal_operations')->where(['operation_id' => $opId])->exists($db);
-                if ($isProcessed) {
-                    $results[] = ['operation_id' => $opId, 'result' => ['status' => 'success', 'message' => 'Already processed']];
+                if ($isDeadlock && $i < $maxRetries - 1) {
+                    Yii::warning("Deadlock detected, retrying transaction... (" . ($i + 1) . "/{$maxRetries})", __METHOD__);
+                    usleep(mt_rand(100000, 300000));
                     continue;
                 }
                 
-                $opData = $op['data'] ?? [];
-                $result = ['status' => 'error', 'message' => 'Unknown operation'];
-
-                if ($opType === 'goodsReceipt') {
-                    $result = $this->_createGoodsReceipt($opData, $db);
-                } elseif ($opType === 'inventoryTransfer') {
-                    $result = $this->_createInventoryTransfer($opData, $db);
-                } elseif ($opType === 'forceCloseOrder') {
-                    $result = $this->_forceCloseOrder($opData, $db);
-                } else {
-                    $result['message'] = "Bilinmeyen operasyon tipi: {$opType}";
-                }
-                
-                if (isset($result['status']) && $result['status'] === 'success') {
-                    $db->createCommand()->insert('processed_terminal_operations', ['operation_id' => $opId])->execute();
-                    $results[] = ['operation_id' => $opId, 'result' => $result];
-                } else {
-                    throw new \Exception("Operation (ID: {$opId}, Tip: {$opType}) başarısız oldu: " . ($result['message'] ?? 'Bilinmeyen hata'));
-                }
+                Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}", __METHOD__);
+                Yii::$app->response->setStatusCode(500);
+                return [
+                    'success' => false,
+                    'error' => 'Toplu senkronizasyon işlemi bir hata nedeniyle geri alındı.',
+                    'details' => $e->getMessage()
+                ];
             }
-            
-            $transaction->commit();
-            return ['success' => true, 'results' => $results];
-
-        } catch (\Exception $e) {
-            $transaction->rollBack();
-            Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}", __METHOD__);
-            Yii::$app->response->setStatusCode(500);
-            return [
-                'success' => false, 
-                'error' => 'Toplu senkronizasyon işlemi bir hata nedeniyle geri alındı.', 
-                'details' => $e->getMessage()
-            ];
         }
+        
+        Yii::$app->response->setStatusCode(500);
+        return [
+            'success' => false,
+            'error' => 'İşlem maksimum deneme sayısına ulaştıktan sonra bile başarısız oldu.',
+        ];
     }
 
     private function _createGoodsReceipt($data, $db) {
@@ -159,10 +188,10 @@ class TerminalController extends Controller
         if (empty($header) || empty($items) || empty($header['employee_id'])) {
             return ['status' => 'error', 'message' => 'Geçersiz veri: "header", "items" veya "employee_id" eksik.'];
         }
-        
+
         $malKabulLocationId = 1;
         $siparisId = $header['siparis_id'] ?? null;
-        
+
         $db->createCommand()->insert('goods_receipts', [
             'siparis_id' => $siparisId,
             'invoice_number' => $header['invoice_number'] ?? null,
@@ -198,11 +227,12 @@ class TerminalController extends Controller
         $sourceLocationId = $header['source_location_id'];
         $operationType = $header['operation_type'] ?? 'box_transfer';
         $siparisId = $header['siparis_id'] ?? null;
-        $isPutawayOperation = ($sourceLocationId == 1); 
+        $isPutawayOperation = ($sourceLocationId == 1);
 
         foreach ($items as $item) {
             $productId = $item['product_id'];
             $quantity = (float)$item['quantity'];
+            // DÜZELTME: Flutter tarafından 'pallet_id' olarak gönderiliyor.
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
@@ -234,16 +264,23 @@ class TerminalController extends Controller
 
         return ['status' => 'success'];
     }
-    
-    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus) {
-        $condition = ['urun_id' => $urunId, 'location_id' => $locationId, 'stock_status' => $stockStatus];
-        if ($palletBarcode === null) {
-            $condition['pallet_barcode'] = null;
-        } else {
-            $condition['pallet_barcode'] = $palletBarcode;
-        }
 
-        $stock = (new Query())->from('inventory_stock')->where($condition)->forUpdate()->one($db);
+    // ANA DÜZELTME: Bu fonksiyon, hatalı forUpdate() metodunu kullanmayacak şekilde yeniden yazıldı.
+    // Artık stok kilitleme işlemi için standart "SELECT ... FOR UPDATE" kullanılıyor.
+    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus) {
+
+        $sql = "SELECT * FROM inventory_stock WHERE urun_id = :urun_id AND location_id = :location_id AND stock_status = :stock_status";
+        $params = [':urun_id' => $urunId, ':location_id' => $locationId, ':stock_status' => $stockStatus];
+
+        if ($palletBarcode === null) {
+            $sql .= " AND pallet_barcode IS NULL";
+        } else {
+            $sql .= " AND pallet_barcode = :pallet_barcode";
+            $params[':pallet_barcode'] = $palletBarcode;
+        }
+        $sql .= " FOR UPDATE"; // Kilitleme işlemi burada yapılır.
+
+        $stock = $db->createCommand($sql, $params)->queryOne();
 
         if ($stock) {
             $newQty = (float)($stock['quantity']) + (float)$qtyChange;
@@ -261,6 +298,7 @@ class TerminalController extends Controller
                 'stock_status' => $stockStatus
             ])->execute();
         } else {
+            // Negatif bir değişiklik (stok düşüşü) isteniyor ama kaynakta stok bulunamadı.
             throw new \Exception("Stok düşme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı. Ürün: $urunId, Lokasyon: $locationId, Palet: $palletBarcode, Statü: $stockStatus");
         }
     }
@@ -279,7 +317,7 @@ class TerminalController extends Controller
         foreach ($orderLines as $line) {
             $ordered = (float)$line['miktar'];
             $putaway = (float)$line['putaway_quantity'];
-            if ($putaway < $ordered) {
+            if ($putaway < $ordered - 0.001) { // Tolerans payı eklendi
                 $allLinesCompleted = false;
                 break;
             }
