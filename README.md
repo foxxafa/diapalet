@@ -1,4 +1,4 @@
-# Diapalet - Mobil Depo Yönetim Sistemi  v1.0.6
+# Diapalet - Mobil Depo Yönetim Sistemi  v1.0.7
 
 Bu proje, Flutter ile geliştirilmiş, Android ve iOS platformlarını destekleyen bir mobil depo yönetim sistemi uygulamasıdır. Uygulama, depo operasyonlarını kolaylaştırmak ve verimliliği artırmak için tasarlanmıştır.
 
