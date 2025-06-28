@@ -1,159 +1,184 @@
--- VTYS Mobil Depo Yönetim Sistemi için Veritabanı Şeması
--- v5.0 - stock_status ve putaway_quantity alanları eklendi.
+-- Diapallet WMS için Gerekli Minimum Veritabanı Şeması
+-- Bu script, sadece WMS uygulamasının çalışması için gereken tabloları içerir.
+-- Mevcut 'enzo' tablolarının yapısını DEĞİŞTİRMEZ.
 
-SET NAMES utf8mb4 COLLATE utf8mb4_turkish_ci;
-SET FOREIGN_KEY_CHECKS = 0;
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS=0;
 
--- Önce mevcut tabloları sil
-DROP TABLE IF EXISTS `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `satin_alma_siparis_fis_satir`, `satin_alma_siparis_fis`, `urunler`, `employees`, `warehouses_shelfs`, `warehouses`;
-
-SET FOREIGN_KEY_CHECKS = 1;
+-- ÖNCE MEVCUT TABLOLARI TEMİZLE (LOKAL KURULUM İÇİN)
+DROP TABLE IF EXISTS `wms_putaway_status`, `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `warehouses_shelfs`, `warehouses`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`, `satin_alma_siparis_fis`, `urunler`, `employees`;
 
 -- =================================================================
--- Tablo Yapıları
+-- MEVCUT SİSTEMDEN GELEN ANA TABLOLAR (YAPI OLARAK OLUŞTURULUYOR)
 -- =================================================================
 
-CREATE TABLE IF NOT EXISTS `processed_terminal_operations` (
-  `operation_id` INT NOT NULL,
-  `processed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`operation_id`)
+CREATE TABLE `employees` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(100) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `last_name` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `branch_id` int DEFAULT NULL,
+  `role` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `username` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `password` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `photo` varchar(150) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `warehouse_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `warehouses` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `dia_id` INT NULL UNIQUE,
-  `name` VARCHAR(255) NOT NULL,
-  `warehouse_code` VARCHAR(15) NOT NULL UNIQUE,
-  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE `urunler` (
+  `UrunId` int NOT NULL AUTO_INCREMENT,
+  `StokKodu` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `UrunAdi` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `AdetFiyati` decimal(10,2) DEFAULT NULL,
+  `KutuFiyati` decimal(10,2) DEFAULT NULL,
+  `Vat` decimal(5,2) DEFAULT NULL,
+  `aktif` int DEFAULT '1',
+  `Barcode1` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  `Barcode2` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
+  PRIMARY KEY (`UrunId`),
+  UNIQUE KEY `StokKodu_UNIQUE` (`StokKodu`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `satin_alma_siparis_fis` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `tarih` date DEFAULT NULL,
+  `notlar` text CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci,
+  `user` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `gun` int DEFAULT '0',
+  `lokasyon_id` int DEFAULT NULL,
+  `invoice` varchar(45) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `delivery` int DEFAULT NULL,
+  `po_id` varchar(11) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `status` int DEFAULT '0' COMMENT '0:Beklemede, 1:Onaylandi, 2:Kismi Kabul, 3:Tamamlandi, 4:Kapatıldı',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `warehouses_shelfs` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `warehouse_id` INT NOT NULL,
-  `name` VARCHAR(255) NOT NULL,
-  `code` VARCHAR(20) NOT NULL,
-  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_warehouse_shelf` (`warehouse_id`, `code`),
-  FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `employees` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `first_name` VARCHAR(100) NOT NULL,
-  `last_name` VARCHAR(100) NOT NULL,
-  `username` VARCHAR(50) NOT NULL UNIQUE,
-  `password` VARCHAR(255) NOT NULL,
-  `warehouse_id` INT NULL,
-  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `urunler` (
-  `UrunId` INT NOT NULL AUTO_INCREMENT,
-  `StokKodu` VARCHAR(50) NOT NULL UNIQUE,
-  `UrunAdi` VARCHAR(255) NOT NULL,
-  `Barcode1` VARCHAR(255) NULL,
-  `aktif` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`UrunId`)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `tarih` date DEFAULT NULL,
-  `notlar` text,
-  `user` varchar(255) DEFAULT NULL,
-  `gun` int DEFAULT '0',
-  `lokasyon_id` int DEFAULT NULL,
-  `invoice` varchar(45) DEFAULT NULL,
-  `delivery` int DEFAULT NULL,
-  `po_id` varchar(20) DEFAULT NULL,
-  `status` int DEFAULT '0' COMMENT '0:Beklemede, 1:Onaylandi, 2:Kismi Kabul, 3:Tamamlandi',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `fk_satin_alma_lokasyon_idx` (`lokasyon_id`),
-  CONSTRAINT `fk_satin_alma_warehouse` FOREIGN KEY (`lokasyon_id`) REFERENCES `warehouses` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `satin_alma_siparis_fis_satir` (
+CREATE TABLE `satin_alma_siparis_fis_satir` (
   `id` int NOT NULL AUTO_INCREMENT,
   `siparis_id` int DEFAULT NULL,
   `urun_id` int DEFAULT NULL,
   `miktar` decimal(10,2) DEFAULT NULL,
-  `putaway_quantity` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Rafa yerleştirilen miktar',
-  `birim` varchar(10) DEFAULT NULL,
-  `notes` varchar(255) DEFAULT NULL,
-  `status` int DEFAULT '0',
+  `birim` varchar(10) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `notes` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `siparis_id` (`siparis_id`),
-  KEY `fk_satin_alma_urun_idx` (`urun_id`),
-  CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_satin_alma_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE SET NULL
+  CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `goods_receipts` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `siparis_id` INT NULL,
-  `invoice_number` VARCHAR(255) NULL,
-  `employee_id` INT NOT NULL,
-  `receipt_date` DATETIME NOT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+-- =================================================================
+-- WMS (DEPO YÖNETİM SİSTEMİ) İÇİN GEREKLİ YENİ TABLOLAR
+-- =================================================================
+
+CREATE TABLE `warehouses` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `dia_id` int DEFAULT NULL,
+  `name` varchar(255) NOT NULL,
+  `warehouse_code` varchar(15) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis`(`id`),
-  FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`)
+  UNIQUE KEY `dia_id_UNIQUE` (`dia_id`),
+  UNIQUE KEY `warehouse_code_UNIQUE` (`warehouse_code`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `goods_receipt_items` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `receipt_id` INT NOT NULL,
-  `urun_id` INT NOT NULL,
-  `quantity_received` DECIMAL(10, 2) NOT NULL,
-  `pallet_barcode` VARCHAR(50) NULL,
+CREATE TABLE `warehouses_shelfs` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `warehouse_id` int NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `code` varchar(20) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`urun_id`) REFERENCES `urunler`(`UrunId`)
+  UNIQUE KEY `uk_warehouse_shelf` (`warehouse_id`,`code`),
+  CONSTRAINT `fk_wms_shelf_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `inventory_stock` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `urun_id` INT NOT NULL,
-  `location_id` INT NOT NULL,
-  `quantity` DECIMAL(10, 2) NOT NULL,
-  `pallet_barcode` VARCHAR(50) NULL,
+CREATE TABLE `goods_receipts` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `siparis_id` int DEFAULT NULL,
+  `invoice_number` varchar(255) DEFAULT NULL,
+  `employee_id` int NOT NULL,
+  `receipt_date` datetime NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `fk_wms_receipt_order` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wms_receipt_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `goods_receipt_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `receipt_id` int NOT NULL,
+  `urun_id` int NOT NULL,
+  `quantity_received` decimal(10,2) NOT NULL,
+  `pallet_barcode` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `fk_wms_receiptitem_receipt` FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_wms_receiptitem_product` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `inventory_stock` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `urun_id` int NOT NULL,
+  `location_id` int NOT NULL,
+  `quantity` decimal(10,2) NOT NULL,
+  `pallet_barcode` varchar(50) DEFAULT NULL,
   `stock_status` enum('receiving','available') NOT NULL DEFAULT 'available' COMMENT 'receiving: Mal kabulde, available: Kullanilabilir',
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_stock_item` (`urun_id`, `location_id`, `pallet_barcode`, `stock_status`),
-  KEY `idx_stock_status` (`stock_status`),
-  FOREIGN KEY (`urun_id`) REFERENCES `urunler`(`UrunId`) ON DELETE CASCADE,
-  FOREIGN KEY (`location_id`) REFERENCES `warehouses_shelfs`(`id`) ON DELETE CASCADE
+  UNIQUE KEY `uk_stock_item` (`urun_id`,`location_id`,`pallet_barcode`,`stock_status`),
+  CONSTRAINT `fk_wms_stock_product` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE CASCADE,
+  CONSTRAINT `fk_wms_stock_location` FOREIGN KEY (`location_id`) REFERENCES `warehouses_shelfs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS `inventory_transfers` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `urun_id` INT NOT NULL,
-  `from_location_id` INT NULL,
-  `to_location_id` INT NOT NULL,
-  `quantity` DECIMAL(10, 2) NOT NULL,
-  `from_pallet_barcode` VARCHAR(50) NULL,
-  `pallet_barcode` VARCHAR(50) NULL,
-  `employee_id` INT NOT NULL,
-  `transfer_date` DATETIME NOT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `inventory_transfers` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `urun_id` int NOT NULL,
+  `from_location_id` int DEFAULT NULL,
+  `to_location_id` int NOT NULL,
+  `quantity` decimal(10,2) NOT NULL,
+  `from_pallet_barcode` varchar(50) DEFAULT NULL,
+  `pallet_barcode` varchar(50) DEFAULT NULL,
+  `employee_id` int NOT NULL,
+  `transfer_date` datetime NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  FOREIGN KEY (`urun_id`) REFERENCES `urunler`(`UrunId`),
-  FOREIGN KEY (`from_location_id`) REFERENCES `warehouses_shelfs`(`id`),
-  FOREIGN KEY (`to_location_id`) REFERENCES `warehouses_shelfs`(`id`),
-  FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`)
+  CONSTRAINT `fk_wms_transfer_product` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`),
+  CONSTRAINT `fk_wms_transfer_from` FOREIGN KEY (`from_location_id`) REFERENCES `warehouses_shelfs` (`id`),
+  CONSTRAINT `fk_wms_transfer_to` FOREIGN KEY (`to_location_id`) REFERENCES `warehouses_shelfs` (`id`),
+  CONSTRAINT `fk_wms_transfer_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`)
 ) ENGINE=InnoDB;
+
+-- YENİ YARDIMCI TABLO: Bu tablo, mevcut şemayı bozmadan rafa yerleştirme takibi yapar.
+CREATE TABLE `wms_putaway_status` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `satin_alma_siparis_fis_satir_id` int NOT NULL COMMENT 'orijinal sipariş satırının IDsi',
+  `putaway_quantity` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'rafa yerleştirilen miktar',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_line_item` (`satin_alma_siparis_fis_satir_id`),
+  CONSTRAINT `fk_putaway_order_line` FOREIGN KEY (`satin_alma_siparis_fis_satir_id`) REFERENCES `satin_alma_siparis_fis_satir` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+SET FOREIGN_KEY_CHECKS=1;
+
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;

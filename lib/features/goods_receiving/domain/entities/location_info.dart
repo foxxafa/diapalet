@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 
+@immutable
 class LocationInfo extends Equatable {
   final int id;
   final String name;
@@ -19,7 +21,7 @@ class LocationInfo extends Equatable {
     return LocationInfo(
       id: map['id'] as int,
       name: map['name'] as String,
-      code: map['code'] as String? ?? '',
+      code: map['code'] as String,
     );
   }
 
@@ -32,4 +34,7 @@ class LocationInfo extends Equatable {
   }
 
   String get location => name;
+
+  @override
+  String toString() => name;
 } 

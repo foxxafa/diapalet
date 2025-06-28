@@ -3,7 +3,7 @@ class ApiConfig {
   // --- YEREL DOCKER SUNUCUSU ---
   // Android emülatöründen PC'nizdeki localhost'a erişmek için '10.0.2.2' kullanılır.
   // Docker sunucunuzun çalıştığı portu (örn: 5000) buraya yazın.
-  static const String _localHost = 'http://192.168.10.133:5000';//'http://192.168.1.122:5000'      http://10.0.2.2:5000
+  static const String _localHost = 'http://10.5.39.88:5000';//'http://192.168.1.122:5000'      http://10.0.2.2:5000
 
   // --- TEMEL YOL (BASE PATH) ---
   // Sunucudaki Yii2 controller'ı 'TerminalController' olduğu için,

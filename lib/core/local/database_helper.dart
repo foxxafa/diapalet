@@ -266,4 +266,50 @@ class DatabaseHelper {
     final maps = await db.query('sync_log', orderBy: 'timestamp DESC', limit: 100);
     return maps.map((map) => SyncLog.fromMap(map)).toList();
   }
+
+  // YENİ: Sipariş ID'sine göre PO ID'sini getir
+  Future<String?> getPoIdBySiparisId(int siparisId) async {
+    final db = await database;
+    final result = await db.query(
+      'satin_alma_siparis_fis',
+      columns: ['po_id'],
+      where: 'id = ?',
+      whereArgs: [siparisId],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first['po_id'] as String?;
+    }
+    return null;
+  }
+
+  // YENİ: Ürün ID'sine göre ürün bilgilerini getir
+  Future<Map<String, dynamic>?> getProductById(int productId) async {
+    final db = await database;
+    final result = await db.query(
+      'urunler',
+      where: 'id = ?',
+      whereArgs: [productId],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first;
+    }
+    return null;
+  }
+
+  // YENİ: Lokasyon ID'sine göre lokasyon bilgilerini getir
+  Future<Map<String, dynamic>?> getLocationById(int locationId) async {
+    final db = await database;
+    final result = await db.query(
+      'warehouses_shelfs',
+      where: 'id = ?',
+      whereArgs: [locationId],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first;
+    }
+    return null;
+  }
 }

@@ -208,7 +208,8 @@
     "close": "Close"
   },
   "common_labels": {
-    "delete": "Delete"
+    "delete": "Delete",
+    "close": "Close"
   },
   "pending_operations": {
     "title": "Sync Status",
@@ -222,9 +223,11 @@
       "force_close_order": "Force Close Order"
     },
     "subtitles": {
-      "goods_receipt": "PO: #{poId} - {count} items",
-      "inventory_transfer": "Container: {containerId} to {targetId} - {count} items",
-      "force_close_order": "Closing Purchase Order #{poId}",
+      "goods_receipt": "Receipt - {count} items",
+      "goods_receipt_with_po": "{poId} - {count} items",
+      "inventory_transfer": "{source} → {target} - {count} items",
+      "force_close_order": "Closing Order",
+      "force_close_order_with_po": "Closing {poId}",
       "parsing_error": "Could not read details."
     },
     "sync_now": "Sync Now",
@@ -262,6 +265,7 @@
       "reset_success": "Local database has been cleared."
     },
     "error_details": "Error Details",
+    "details_title": "Operation Details",
     "attempts": "Attempts: {count}",
     "no_history": "No sync history available",
     "no_pending": "All operations are synced",
@@ -280,6 +284,15 @@
     "validator_negative": "Cannot be negative",
     "error_invalid_location_code": "Invalid location code: {code}",
     "error_invalid_location_for_operation": "Location ''{location}'' is not a valid {field} for this operation."
+  },
+  "dialog_labels": {
+    "purchase_order": "Purchase Order",
+    "invoice": "Invoice",
+    "from": "From",
+    "to": "To",
+    "container": "Container",
+    "items_count": "Items ({count})",
+    "unknown_product": "Unknown Product"
   },
   "inventory_transfer": {
     "title": "Pallet & Box Transfer",

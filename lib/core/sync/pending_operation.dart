@@ -72,23 +72,38 @@ class PendingOperation {
       final dataMap = jsonDecode(data);
       switch (type) {
         case PendingOperationType.goodsReceipt:
-          final invoice = dataMap['header']?['invoice_number'];
-          final poId = dataMap['header']?['siparis_id'];
+          final poId = dataMap['header']?['po_id'];
+          final siparisId = dataMap['header']?['siparis_id'];
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
-          return 'pending_operations.subtitles.goods_receipt'
-              .tr(namedArgs: {'poId': poId?.toString() ?? 'N/A', 'count': itemCount.toString()});
+          
+          // Eğer gerçek PO ID varsa göster, yoksa sadece item sayısını göster
+          if (poId != null && poId.toString().isNotEmpty) {
+            return 'pending_operations.subtitles.goods_receipt_with_po'
+                .tr(namedArgs: {'poId': poId.toString(), 'count': itemCount.toString()});
+          } else {
+            return 'pending_operations.subtitles.goods_receipt'
+                .tr(namedArgs: {'count': itemCount.toString()});
+          }
         case PendingOperationType.inventoryTransfer:
-          final containerId = dataMap['header']?['container_id']?.toString() ?? 'N/A';
-          final targetLocation = dataMap['header']?['target_location_id']?.toString() ?? 'N/A';
+          final source = dataMap['header']?['source_location_name'] ?? dataMap['header']?['source_location_id'];
+          final target = dataMap['header']?['target_location_name'] ?? dataMap['header']?['target_location_id'];
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
           return 'pending_operations.subtitles.inventory_transfer'.tr(namedArgs: {
-            'containerId': containerId,
-            'targetId': targetLocation,
+            'source': source.toString(),
+            'target': target.toString(),
             'count': itemCount.toString()
           });
         case PendingOperationType.forceCloseOrder:
-          final poId = dataMap['siparis_id'];
-          return 'pending_operations.subtitles.force_close_order'.tr(namedArgs: {'poId': poId?.toString() ?? 'N/A'});
+          final poId = dataMap['po_id'];
+          final siparisId = dataMap['siparis_id'];
+          
+          // Eğer gerçek PO ID varsa göster
+          if (poId != null && poId.toString().isNotEmpty) {
+            return 'pending_operations.subtitles.force_close_order_with_po'
+                .tr(namedArgs: {'poId': poId.toString()});
+          } else {
+            return 'pending_operations.subtitles.force_close_order'.tr();
+          }
       }
     } catch (e) {
       return 'pending_operations.subtitles.parsing_error'.tr();

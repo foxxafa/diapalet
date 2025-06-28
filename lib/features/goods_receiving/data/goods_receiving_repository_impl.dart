@@ -72,9 +72,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           );
         }
 
+        final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload);
+
         final pendingOp = PendingOperation(
           type: PendingOperationType.goodsReceipt,
-          data: jsonEncode(payload.toApiJson()),
+          data: jsonEncode(enrichedData),
           createdAt: DateTime.now(),
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
@@ -84,6 +86,44 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("Lokal mal kabul kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
     }
+  }
+
+  Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload) async {
+    final apiData = payload.toApiJson();
+    
+    if (payload.header.siparisId != null) {
+      final poResult = await txn.query(
+        'satin_alma_siparis_fis',
+        columns: ['po_id'],
+        where: 'id = ?',
+        whereArgs: [payload.header.siparisId],
+        limit: 1,
+      );
+      if (poResult.isNotEmpty) {
+        apiData['header']['po_id'] = poResult.first['po_id'];
+      }
+    }
+    
+    final enrichedItems = <Map<String, dynamic>>[];
+    if (payload.items.isNotEmpty) {
+      for (final item in payload.items) {
+        final itemData = item.toJson();
+        final productResult = await txn.query(
+          'urunler',
+          columns: ['UrunAdi', 'StokKodu'],
+          where: 'id = ?',
+          whereArgs: [item.urunId],
+          limit: 1,
+        );
+        if (productResult.isNotEmpty) {
+          itemData['product_name'] = productResult.first['UrunAdi'];
+          itemData['product_code'] = productResult.first['StokKodu'];
+        }
+        enrichedItems.add(itemData);
+      }
+      apiData['items'] = enrichedItems;
+    }
+    return apiData;
   }
 
   Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode, String stockStatus) async {
@@ -186,10 +226,21 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           throw Exception("Order with ID $orderId not found locally.");
         }
 
-        // GÜNCELLEME: Operasyon tipi 'forceCloseOrder' olarak düzeltildi.
+        final Map<String, dynamic> data = {'siparis_id': orderId};
+        final poResult = await txn.query(
+          'satin_alma_siparis_fis',
+          columns: ['po_id'],
+          where: 'id = ?',
+          whereArgs: [orderId],
+          limit: 1,
+        );
+        if (poResult.isNotEmpty) {
+          data['po_id'] = poResult.first['po_id'];
+        }
+
         final pendingOp = PendingOperation(
           type: PendingOperationType.forceCloseOrder,
-          data: jsonEncode({'siparis_id': orderId}),
+          data: jsonEncode(data),
           createdAt: DateTime.now(),
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());

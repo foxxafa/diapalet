@@ -174,10 +174,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           });
         }
 
+        final enrichedData = await _createEnrichedTransferData(txn, apiPayload, items);
+
         // 5. İşlemi senkronizasyon için kuyruğa ekle.
         final pendingOp = PendingOperation(
           type: PendingOperationType.inventoryTransfer,
-          data: jsonEncode(apiPayload),
+          data: jsonEncode(enrichedData),
           createdAt: DateTime.now(),
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
@@ -192,6 +194,46 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       debugPrint("Lokal transfer kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına transfer kaydedilirken hata oluştu: $e");
     }
+  }
+
+  Future<Map<String, dynamic>> _createEnrichedTransferData(
+    Transaction txn,
+    Map<String, dynamic> apiPayload,
+    List<TransferItemDetail> items,
+  ) async {
+    final header = apiPayload['header'] as Map<String, dynamic>;
+    final sourceLocationId = header['source_location_id'];
+    final targetLocationId = header['target_location_id'];
+
+    if (sourceLocationId != null) {
+      final sourceResult = await txn.query('warehouses_shelfs', columns: ['name'], where: 'id = ?', whereArgs: [sourceLocationId]);
+      if (sourceResult.isNotEmpty) apiPayload['header']['source_location_name'] = sourceResult.first['name'];
+    }
+    if (targetLocationId != null) {
+      final targetResult = await txn.query('warehouses_shelfs', columns: ['name'], where: 'id = ?', whereArgs: [targetLocationId]);
+      if (targetResult.isNotEmpty) apiPayload['header']['target_location_name'] = targetResult.first['name'];
+    }
+
+    final enrichedItems = <Map<String, dynamic>>[];
+    for (int i = 0; i < items.length; i++) {
+      final itemDetail = items[i];
+      final itemPayload = (apiPayload['items'] as List)[i] as Map<String, dynamic>;
+      final productResult = await txn.query(
+        'urunler',
+        columns: ['UrunAdi', 'StokKodu'],
+        where: 'id = ?',
+        whereArgs: [itemDetail.productId],
+        limit: 1,
+      );
+      if (productResult.isNotEmpty) {
+        itemPayload['product_name'] = productResult.first['UrunAdi'];
+        itemPayload['product_code'] = productResult.first['StokKodu'];
+      }
+      enrichedItems.add(itemPayload);
+    }
+    apiPayload['items'] = enrichedItems;
+
+    return apiPayload;
   }
 
   Map<String, dynamic> _buildApiPayload(

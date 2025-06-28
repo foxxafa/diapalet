@@ -505,10 +505,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           setState(() {
             _selectedMode = newSelection.first;
             _isPalletOpening = false;
-            _resetForm(resetAll: _selectedSourceLocationName != null);
+            // Keep source location, but reset container and target.
+            _resetForm(resetAll: false); 
+            
+            // Reload containers for the new mode if a source location is selected.
             if (_selectedSourceLocationName != null) {
               _loadContainersForLocation();
             } else {
+              // If no source is selected, ensure focus is on the source field.
               _sourceLocationFocusNode.requestFocus();
             }
           });

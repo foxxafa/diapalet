@@ -1,8 +1,11 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
+import 'dart:convert';
+
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -271,25 +274,16 @@ class _OperationCard extends StatelessWidget {
 
   const _OperationCard({required this.operation, this.isSynced = false});
 
-  void _showErrorDialog(BuildContext context) {
+  void _showDetailsDialog(BuildContext context, PendingOperation operation) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('pending_operations.error_details'.tr()),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              operation.displayTitle,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              operation.errorMessage ?? 'common_labels.unknown_error'.tr(),
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
+        // Make the dialog wider for better content display
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        title: Text(operation.displayTitle),
+        content: SizedBox(
+          width: MediaQuery.of(context).size.width,
+          child: _OperationDetailsView(operation: operation),
         ),
         actions: [
           TextButton(
@@ -348,7 +342,390 @@ class _OperationCard extends StatelessWidget {
           style: theme.textTheme.bodySmall,
         ),
         trailing: trailingWidget,
-        onTap: hasError ? () => _showErrorDialog(context) : null,
+        onTap: () => _showDetailsDialog(context, operation),
+      ),
+    );
+  }
+}
+
+class _OperationDetailsView extends StatelessWidget {
+  final PendingOperation operation;
+
+  const _OperationDetailsView({required this.operation});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasError =
+        operation.errorMessage != null && operation.errorMessage!.isNotEmpty;
+
+    return SingleChildScrollView(
+      child: ListBody(
+        children: <Widget>[
+          if (hasError) ...[
+            _buildErrorSection(theme),
+            const Divider(height: 32),
+          ],
+          FutureBuilder<Widget>(
+            future: _buildFormattedDetailsAsync(context, operation),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              } else if (snapshot.hasError) {
+                return _buildFormattedDetails(context, operation);
+              } else {
+                return snapshot.data ?? _buildFormattedDetails(context, operation);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorSection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'pending_operations.error_details'.tr(),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.error,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          operation.errorMessage!,
+          style: theme.textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+
+  Future<Widget> _buildFormattedDetailsAsync(BuildContext context, PendingOperation operation) async {
+    try {
+      final data = jsonDecode(operation.data) as Map<String, dynamic>;
+      switch (operation.type) {
+        case PendingOperationType.goodsReceipt:
+          return await _buildGoodsReceiptDetailsAsync(context, data);
+        case PendingOperationType.inventoryTransfer:
+          return await _buildInventoryTransferDetailsAsync(context, data);
+        case PendingOperationType.forceCloseOrder:
+          return await _buildForceCloseOrderDetailsAsync(context, data);
+      }
+    } catch (e) {
+      return _buildFormattedDetails(context, operation);
+    }
+  }
+
+  Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
+    final db = DatabaseHelper.instance;
+    final header = (data['header'] as Map?)?.cast<String, dynamic>();
+    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
+    
+    // Sipariş ID'sinden gerçek PO ID'yi al
+    String poId = 'N/A';
+    final siparisId = header?['siparis_id'];
+    if (siparisId != null) {
+      final realPoId = await db.getPoIdBySiparisId(siparisId);
+      if (realPoId != null) {
+        poId = realPoId;
+      }
+    }
+    
+    final invoice = header?['invoice_number'] ?? 'N/A';
+
+    // Ürün bilgilerini zenginleştir
+    final enrichedItems = <Map<String, dynamic>>[];
+    if (items != null) {
+      for (final item in items) {
+        final enrichedItem = Map<String, dynamic>.from(item);
+        final productId = item['urun_id'];
+        if (productId != null) {
+          final product = await db.getProductById(productId);
+          if (product != null) {
+            enrichedItem['product_name'] = product['UrunAdi'];
+            enrichedItem['product_code'] = product['StokKodu'];
+          }
+        }
+        enrichedItems.add(enrichedItem);
+      }
+    }
+
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.goods_receipt'.tr(),
+      details: {
+        'dialog_labels.purchase_order'.tr(): poId,
+        if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice.toString(),
+      },
+      items: enrichedItems,
+      itemBuilder: (item) {
+        final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
+        final productCode = item['product_code'] ?? '';
+        final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text('$productName$productInfo'),
+          trailing: Text(
+            '${item['quantity']} ${item['unit'] ?? ''}',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Widget> _buildInventoryTransferDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
+    final db = DatabaseHelper.instance;
+    final header = (data['header'] as Map?)?.cast<String, dynamic>();
+    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
+    
+    // Lokasyon isimlerini al
+    String source = 'N/A';
+    String target = 'N/A';
+    
+    final sourceId = header?['source_location_id'];
+    final targetId = header?['target_location_id'];
+    
+    if (sourceId != null) {
+      final sourceLoc = await db.getLocationById(sourceId);
+      if (sourceLoc != null) {
+        source = sourceLoc['name'] ?? sourceLoc['code'] ?? sourceId.toString();
+      }
+    }
+    
+    if (targetId != null) {
+      final targetLoc = await db.getLocationById(targetId);
+      if (targetLoc != null) {
+        target = targetLoc['name'] ?? targetLoc['code'] ?? targetId.toString();
+      }
+    }
+    
+    final containerId = header?['container_id']?.toString();
+
+    // Ürün bilgilerini zenginleştir
+    final enrichedItems = <Map<String, dynamic>>[];
+    if (items != null) {
+      for (final item in items) {
+        final enrichedItem = Map<String, dynamic>.from(item);
+        final productId = item['product_id'] ?? item['urun_id'];
+        if (productId != null) {
+          final product = await db.getProductById(productId);
+          if (product != null) {
+            enrichedItem['product_name'] = product['UrunAdi'];
+            enrichedItem['product_code'] = product['StokKodu'];
+          }
+        }
+        enrichedItems.add(enrichedItem);
+      }
+    }
+
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.inventory_transfer'.tr(),
+      details: {
+        'dialog_labels.from'.tr(): source,
+        'dialog_labels.to'.tr(): target,
+        if (containerId != null) 'dialog_labels.container'.tr(): containerId,
+      },
+      items: enrichedItems,
+      itemBuilder: (item) {
+        final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
+        final productCode = item['product_code'] ?? '';
+        final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text('$productName$productInfo'),
+          trailing: Text(
+            'x ${item['quantity_transferred'] ?? item['quantity']}',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Widget> _buildForceCloseOrderDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
+    final db = DatabaseHelper.instance;
+    
+    // Sipariş ID'sinden gerçek PO ID'yi al
+    String poId = 'N/A';
+    final siparisId = data['siparis_id'];
+    if (siparisId != null) {
+      final realPoId = await db.getPoIdBySiparisId(siparisId);
+      if (realPoId != null) {
+        poId = realPoId;
+      }
+    }
+    
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.force_close_order'.tr(),
+      details: {'dialog_labels.purchase_order'.tr(): poId},
+    );
+  }
+
+  Widget _buildFormattedDetails(BuildContext context, PendingOperation operation) {
+    try {
+      final data = jsonDecode(operation.data) as Map<String, dynamic>;
+      switch (operation.type) {
+        case PendingOperationType.goodsReceipt:
+          return _buildGoodsReceiptDetails(context, data);
+        case PendingOperationType.inventoryTransfer:
+          return _buildInventoryTransferDetails(context, data);
+        case PendingOperationType.forceCloseOrder:
+          return _buildForceCloseOrderDetails(context, data);
+      }
+    } catch (e) {
+      // Fallback for parsing errors or unknown types
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'pending_operations.subtitles.parsing_error'.tr(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                  fontStyle: FontStyle.italic,
+                ),
+          ),
+          const SizedBox(height: 16),
+          _buildRawJsonView(context, operation.data),
+        ],
+      );
+    }
+  }
+
+  Widget _buildGoodsReceiptDetails(BuildContext context, Map<String, dynamic> data) {
+    final header = (data['header'] as Map?)?.cast<String, dynamic>();
+    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
+    final poId = header?['po_id'] ?? header?['siparis_id'] ?? 'N/A';
+    final invoice = header?['invoice_number'] ?? 'N/A';
+
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.goods_receipt'.tr(),
+      details: {
+        'dialog_labels.purchase_order'.tr(): poId.toString(),
+        if (invoice != 'N/A' && invoice != poId.toString()) 'dialog_labels.invoice'.tr(): invoice.toString(),
+      },
+      items: items,
+      itemBuilder: (item) {
+        final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
+        final productIdInfo = ' (ID: ${item['urun_id']})';
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text(item['product_name'] != null ? productName : '$productName$productIdInfo'),
+          trailing: Text(
+            '${item['quantity']} ${item['unit'] ?? ''}',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInventoryTransferDetails(BuildContext context, Map<String, dynamic> data) {
+    final header = (data['header'] as Map?)?.cast<String, dynamic>();
+    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
+    final source = header?['source_location_name'] ?? header?['source_location_id'] ?? 'N/A';
+    final target = header?['target_location_name'] ?? header?['target_location_id'] ?? 'N/A';
+    final containerId = header?['container_id']?.toString();
+
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.inventory_transfer'.tr(),
+      details: {
+        'dialog_labels.from'.tr(): source.toString(),
+        'dialog_labels.to'.tr(): target.toString(),
+        if (containerId != null) 'dialog_labels.container'.tr(): containerId,
+      },
+      items: items,
+      itemBuilder: (item) {
+        final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
+        final productIdInfo = ' (ID: ${item['product_id']})';
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: Text(item['product_name'] != null ? productName : '$productName$productIdInfo'),
+          trailing: Text(
+            'x ${item['quantity_transferred'] ?? item['quantity']}',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildForceCloseOrderDetails(BuildContext context, Map<String, dynamic> data) {
+    final poId = data['po_id'] ?? data['siparis_id'] ?? 'N/A';
+    return _buildDetailSection(
+      context: context,
+      title: 'pending_operations.titles.force_close_order'.tr(),
+      details: {'dialog_labels.purchase_order'.tr(): poId},
+    );
+  }
+
+  Widget _buildDetailSection({
+    required BuildContext context,
+    required String title,
+    required Map<String, String> details,
+    List<Map<String, dynamic>>? items,
+    Widget Function(Map<String, dynamic> item)? itemBuilder,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...details.entries.map((entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 4.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${entry.key}: ', style: theme.textTheme.labelLarge),
+                  Expanded(
+                      child: Text(entry.value, style: theme.textTheme.bodyMedium)),
+                ],
+              ),
+            )),
+        if (items != null && items.isNotEmpty && itemBuilder != null) ...[
+          const Divider(height: 24),
+          Text(
+            'dialog_labels.items_count'.tr(namedArgs: {'count': items.length.toString()}),
+            style: theme.textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          ...items.map(itemBuilder),
+        ]
+      ],
+    );
+  }
+
+  Widget _buildRawJsonView(BuildContext context, String rawJson) {
+    final prettyJson =
+        const JsonEncoder.withIndent('  ').convert(jsonDecode(rawJson));
+    return Container(
+      padding: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Text(
+          prettyJson,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+        ),
       ),
     );
   }

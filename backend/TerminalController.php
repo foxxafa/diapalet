@@ -75,7 +75,7 @@ class TerminalController extends Controller
                     'id' => (int)$user['id'],
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
-                    'warehouse_id' => (int)$user['warehouse_id'],
+                    'warehouse_id' => (int)($user['warehouse_id'] ?? 0),
                     'username' => $user['username'],
                 ];
                 return [
@@ -106,20 +106,11 @@ class TerminalController extends Controller
                 $results = [];
                 foreach ($operations as $op) {
                     $opId = $op['id'] ?? null;
-                    $opType = $op['type'] ?? 'unknown';
-                    
-                    if (!$opId) {
-                        throw new \Exception("Tüm operasyonlar bir 'id' içermelidir.");
-                    }
+                    if (!$opId) throw new \Exception("Tüm operasyonlar bir 'id' içermelidir.");
 
-                    $isProcessed = (new Query())->from('processed_terminal_operations')->where(['operation_id' => $opId])->exists($db);
-                    if ($isProcessed) {
-                        $results[] = ['operation_id' => $opId, 'result' => ['status' => 'success', 'message' => 'Already processed']];
-                        continue;
-                    }
-                    
+                    $opType = $op['type'] ?? 'unknown';
                     $opData = $op['data'] ?? [];
-                    $result = ['status' => 'error', 'message' => 'Unknown operation'];
+                    $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
 
                     if ($opType === 'goodsReceipt') {
                         $result = $this->_createGoodsReceipt($opData, $db);
@@ -127,31 +118,21 @@ class TerminalController extends Controller
                         $result = $this->_createInventoryTransfer($opData, $db);
                     } elseif ($opType === 'forceCloseOrder') {
                         $result = $this->_forceCloseOrder($opData, $db);
-                    } else {
-                        $result['message'] = "Bilinmeyen operasyon tipi: {$opType}";
                     }
-                    
+
                     if (isset($result['status']) && $result['status'] === 'success') {
-                        $db->createCommand()->insert('processed_terminal_operations', ['operation_id' => $opId])->execute();
                         $results[] = ['operation_id' => $opId, 'result' => $result];
                     } else {
-                        throw new \Exception("Operation (ID: {$opId}, Tip: {$opType}) başarısız oldu: " . ($result['message'] ?? 'Bilinmeyen hata'));
+                        throw new \Exception("İşlem (ID: {$opId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata'));
                     }
                 }
-                
+
                 $transaction->commit();
                 return ['success' => true, 'results' => $results];
 
             } catch (\Exception $e) {
                 $transaction->rollBack();
-
-                $isDeadlock = false;
-                if ($e instanceof \yii\db\Exception && isset($e->errorInfo[1])) {
-                    if ($e->errorInfo[1] == 1213) { // 1213 is the MySQL error code for deadlock
-                        $isDeadlock = true;
-                    }
-                }
-                
+                $isDeadlock = ($e instanceof \yii\db\Exception && isset($e->errorInfo[1]) && $e->errorInfo[1] == 1213);
                 if (!$isDeadlock) {
                     $errMsg = $e->getMessage();
                     if (strpos($errMsg, 'Deadlock') !== false || strpos($errMsg, 'Serialization failure') !== false) {
@@ -160,38 +141,29 @@ class TerminalController extends Controller
                 }
 
                 if ($isDeadlock && $i < $maxRetries - 1) {
-                    Yii::warning("Deadlock detected, retrying transaction... (" . ($i + 1) . "/{$maxRetries})", __METHOD__);
+                    Yii::warning("Deadlock tespit edildi, işlem yeniden deneniyor... (" . ($i + 1) . "/{$maxRetries})", __METHOD__);
                     usleep(mt_rand(100000, 300000));
                     continue;
                 }
-                
+
                 Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}", __METHOD__);
                 Yii::$app->response->setStatusCode(500);
-                return [
-                    'success' => false,
-                    'error' => 'Toplu senkronizasyon işlemi bir hata nedeniyle geri alındı.',
-                    'details' => $e->getMessage()
-                ];
+                return ['success' => false, 'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 'details' => $e->getMessage()];
             }
         }
-        
+
         Yii::$app->response->setStatusCode(500);
-        return [
-            'success' => false,
-            'error' => 'İşlem maksimum deneme sayısına ulaştıktan sonra bile başarısız oldu.',
-        ];
+        return ['success' => false, 'error' => 'İşlem maksimum deneme sayısına ulaştıktan sonra bile başarısız oldu.'];
     }
 
     private function _createGoodsReceipt($data, $db) {
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
         if (empty($header) || empty($items) || empty($header['employee_id'])) {
-            return ['status' => 'error', 'message' => 'Geçersiz veri: "header", "items" veya "employee_id" eksik.'];
+            return ['status' => 'error', 'message' => 'Geçersiz mal kabul verisi.'];
         }
 
-        $malKabulLocationId = 1;
         $siparisId = $header['siparis_id'] ?? null;
-
         $db->createCommand()->insert('goods_receipts', [
             'siparis_id' => $siparisId,
             'invoice_number' => $header['invoice_number'] ?? null,
@@ -202,15 +174,15 @@ class TerminalController extends Controller
 
         foreach ($items as $item) {
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId,
-                'urun_id' => $item['urun_id'],
-                'quantity_received' => $item['quantity'],
-                'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                'receipt_id' => $receiptId, 'urun_id' => $item['urun_id'],
+                'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
             ])->execute();
-            $this->upsertStock($db, $item['urun_id'], $malKabulLocationId, $item['quantity'], $item['pallet_barcode'] ?? null, 'receiving');
+            // Mal kabul alanı ID'si 1 olarak varsayıldı
+            $this->upsertStock($db, $item['urun_id'], 1, $item['quantity'], $item['pallet_barcode'] ?? null, 'receiving');
         }
 
         if ($siparisId) {
+            // Statü: 2 (Mal Kabul Edildi)
             $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
         }
 
@@ -221,65 +193,65 @@ class TerminalController extends Controller
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
         if (empty($header) || empty($items) || !isset($header['employee_id'], $header['source_location_id'], $header['target_location_id'])) {
-            return ['status' => 'error', 'message' => 'Geçersiz transfer verisi: Gerekli başlık bilgileri eksik.'];
+            return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
         }
 
         $sourceLocationId = $header['source_location_id'];
         $operationType = $header['operation_type'] ?? 'box_transfer';
         $siparisId = $header['siparis_id'] ?? null;
-        $isPutawayOperation = ($sourceLocationId == 1);
+        // Yerleştirme operasyonu, kaynak lokasyon 1 (Mal Kabul Alanı) ise ve sipariş ID'si varsa geçerlidir.
+        $isPutawayOperation = ($sourceLocationId == 1 && $siparisId != null);
 
         foreach ($items as $item) {
             $productId = $item['product_id'];
             $quantity = (float)$item['quantity'];
-            // DÜZELTME: Flutter tarafından 'pallet_id' olarak gönderiliyor.
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
+            // Kaynaktan düş
             $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available');
+            // Hedefe ekle
             $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available');
 
-            $db->createCommand()->insert('inventory_transfers', [
-                'urun_id' => $productId,
-                'from_location_id' => $sourceLocationId,
-                'to_location_id' => $header['target_location_id'],
-                'quantity' => $quantity,
-                'from_pallet_barcode' => $sourcePallet,
-                'pallet_barcode' => $targetPallet,
-                'employee_id' => $header['employee_id'],
-                'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
-            ])->execute();
+            $transferData = [
+                'urun_id' => $productId, 'from_location_id' => $sourceLocationId,
+                'to_location_id' => $header['target_location_id'], 'quantity' => $quantity,
+                'from_pallet_barcode' => $sourcePallet, 'pallet_barcode' => $targetPallet,
+                'employee_id' => $header['employee_id'], 'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                'siparis_id' => $siparisId,
+            ];
 
-            if ($isPutawayOperation && $siparisId) {
-                $db->createCommand(
-                    "UPDATE satin_alma_siparis_fis_satir SET putaway_quantity = putaway_quantity + :qty WHERE siparis_id = :sid AND urun_id = :pid",
-                    [':qty' => $quantity, ':sid' => $siparisId, ':pid' => $productId]
-                )->execute();
+            if ($isPutawayOperation) {
+                $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
+                if ($orderLine) {
+                    $orderLineId = $orderLine['id'];
+                    $transferData['satin_alma_siparis_fis_satir_id'] = $orderLineId;
+
+                    // wms_putaway_status tablosuna ekleme/güncelleme yap
+                    $sql = "INSERT INTO wms_putaway_status (satin_alma_siparis_fis_satir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
+                    $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $quantity])->execute();
+                }
             }
+            $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
         }
 
-        if ($isPutawayOperation && $siparisId) {
+        if ($isPutawayOperation) {
             $this->checkAndFinalizePoStatus($db, $siparisId);
         }
 
         return ['status' => 'success'];
     }
 
-    // ANA DÜZELTME: Bu fonksiyon, hatalı forUpdate() metodunu kullanmayacak şekilde yeniden yazıldı.
-    // Artık stok kilitleme işlemi için standart "SELECT ... FOR UPDATE" kullanılıyor.
     private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus) {
-
         $sql = "SELECT * FROM inventory_stock WHERE urun_id = :urun_id AND location_id = :location_id AND stock_status = :stock_status";
         $params = [':urun_id' => $urunId, ':location_id' => $locationId, ':stock_status' => $stockStatus];
-
         if ($palletBarcode === null) {
             $sql .= " AND pallet_barcode IS NULL";
         } else {
             $sql .= " AND pallet_barcode = :pallet_barcode";
             $params[':pallet_barcode'] = $palletBarcode;
         }
-        $sql .= " FOR UPDATE"; // Kilitleme işlemi burada yapılır.
-
+        $sql .= " FOR UPDATE";
         $stock = $db->createCommand($sql, $params)->queryOne();
 
         if ($stock) {
@@ -291,24 +263,23 @@ class TerminalController extends Controller
             }
         } elseif ($qtyChange > 0) {
             $db->createCommand()->insert('inventory_stock', [
-                'urun_id' => $urunId,
-                'location_id' => $locationId,
-                'quantity' => (float)$qtyChange,
-                'pallet_barcode' => $palletBarcode,
-                'stock_status' => $stockStatus
+                'urun_id' => $urunId, 'location_id' => $locationId, 'quantity' => (float)$qtyChange,
+                'pallet_barcode' => $palletBarcode, 'stock_status' => $stockStatus
             ])->execute();
         } else {
-            // Negatif bir değişiklik (stok düşüşü) isteniyor ama kaynakta stok bulunamadı.
-            throw new \Exception("Stok düşme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı. Ürün: $urunId, Lokasyon: $locationId, Palet: $palletBarcode, Statü: $stockStatus");
+            throw new \Exception("Stok düşürme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı.");
         }
     }
 
     private function checkAndFinalizePoStatus($db, $siparisId) {
         if (!$siparisId) return;
 
+        // Sipariş satırlarını ve yerleştirilmiş miktarları wms_putaway_status'tan al
         $orderLines = (new Query())
-            ->from('satin_alma_siparis_fis_satir')
-            ->where(['siparis_id' => $siparisId])
+            ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
+            ->from(['s' => 'satin_alma_siparis_fis_satir'])
+            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.satin_alma_siparis_fis_satir_id')
+            ->where(['s.siparis_id' => $siparisId])
             ->all($db);
 
         if (empty($orderLines)) return;
@@ -316,14 +287,15 @@ class TerminalController extends Controller
         $allLinesCompleted = true;
         foreach ($orderLines as $line) {
             $ordered = (float)$line['miktar'];
-            $putaway = (float)$line['putaway_quantity'];
-            if ($putaway < $ordered - 0.001) { // Tolerans payı eklendi
+            $putaway = (float)($line['putaway_quantity'] ?? 0);
+            if ($putaway < $ordered - 0.001) { // Kayan nokta hataları için tolerans
                 $allLinesCompleted = false;
                 break;
             }
         }
 
         if ($allLinesCompleted) {
+            // Statü: 3 (Tamamlandı/Yerleştirildi)
             $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
         }
     }
@@ -333,7 +305,7 @@ class TerminalController extends Controller
         if (empty($siparisId)) {
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
-
+        // Statü: 4 (Zorla Kapatıldı)
         $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 4], ['id' => $siparisId])->execute();
 
         if ($count > 0) {
@@ -366,7 +338,8 @@ class TerminalController extends Controller
             $data['employees'] = (new Query())->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId]);
+            // Sadece status değeri 3'ten küçük olan (Tamamlanmamış) siparişleri indir
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId])->andWhere(['<', 'status', 3]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
             $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status', 'delivery', 'gun']);
 
@@ -391,7 +364,10 @@ class TerminalController extends Controller
                  $data['goods_receipt_items'] = [];
             }
 
+            // Sadece Mal Kabul(1) ve ilgili depo lokasyonlarındaki stokları indir
             $locationIds = array_column($data['warehouses_shelfs'], 'id');
+            $locationIds[] = 1; // Mal Kabul lokasyonunu ekle
+
             if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
                  $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
