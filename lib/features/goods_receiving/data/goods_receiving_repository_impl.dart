@@ -31,13 +31,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
     await _saveGoodsReceiptLocally(payload);
-    
-    // İnternet varsa anında sync başlat
-    if (await networkInfo.isConnected) {
-      debugPrint("Mal kabul kaydedildi, anında sync başlatılıyor...");
-      // uploadPendingOperations sadece pending işlemleri gönderir, full sync'e gerek yok
-      syncService.uploadPendingOperations();
-    }
   }
 
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
@@ -219,50 +212,35 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<void> markOrderAsComplete(int orderId) async {
     final db = await dbHelper.database;
-    try {
-      await db.transaction((txn) async {
-        // GÜNCELLEME: Siparişin durumunu 4 (Closed) olarak güncelle.
-        final count = await txn.update(
-          'satin_alma_siparis_fis',
-          {'status': 4},
-          where: 'id = ?',
-          whereArgs: [orderId],
-        );
 
-        if (count == 0) {
-          throw Exception("Order with ID $orderId not found locally.");
-        }
-
-        final Map<String, dynamic> data = {'siparis_id': orderId};
-        final poResult = await txn.query(
+    await db.transaction((txn) async {
+      final poResult = await txn.query(
           'satin_alma_siparis_fis',
           columns: ['po_id'],
           where: 'id = ?',
-          whereArgs: [orderId],
           limit: 1,
-        );
-        if (poResult.isNotEmpty) {
-          data['po_id'] = poResult.first['po_id'];
-        }
+          whereArgs: [orderId]
+      );
+      final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
 
-        final pendingOp = PendingOperation(
+      // 1. Senkronizasyon için bekleyen işlem oluştur
+      final pendingOp = PendingOperation(
           type: PendingOperationType.forceCloseOrder,
-          data: jsonEncode(data),
-          createdAt: DateTime.now(),
-        );
-        await txn.insert('pending_operation', pendingOp.toDbMap());
-      });
-      debugPrint("Order #$orderId marked as closed and queued for sync.");
-      
-      // İnternet varsa anında sync başlat
-      if (await networkInfo.isConnected) {
-        debugPrint("Sipariş kapatma işlemi kaydedildi, anında sync başlatılıyor...");
-        syncService.uploadPendingOperations();
-      }
-    } catch (e, s) {
-      debugPrint("Local 'mark as closed' error: $e\n$s");
-      throw Exception("Failed to mark order as closed locally: $e");
-    }
+          data: jsonEncode({'siparis_id': orderId, 'po_id': poId}),
+          createdAt: DateTime.now()
+      );
+      await txn.insert('pending_operation', pendingOp.toDbMap());
+
+      // 2. Siparişin LOKAL durumunu anında güncelle
+      await txn.update(
+        'satin_alma_siparis_fis',
+        {'status': 4}, // 4: Kapatıldı
+        where: 'id = ?',
+        whereArgs: [orderId],
+      );
+    });
+
+    debugPrint("Sipariş #$orderId lokal olarak kapatıldı (status 4) ve senkronizasyon için sıraya alındı.");
   }
 
   @override

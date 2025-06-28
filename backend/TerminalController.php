@@ -182,8 +182,7 @@ class TerminalController extends Controller
         }
 
         if ($siparisId) {
-            // Statü: 2 (Mal Kabul Edildi)
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
+            $this->checkAndFinalizeReceiptStatus($db, $siparisId);
         }
 
         return ['status' => 'success', 'receipt_id' => $receiptId];
@@ -267,6 +266,55 @@ class TerminalController extends Controller
             ])->execute();
         } else {
             throw new \Exception("Stok düşürme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı.");
+        }
+    }
+
+    private function checkAndFinalizeReceiptStatus($db, $siparisId) {
+        if (!$siparisId) return;
+
+        $sql = "
+            SELECT
+                s.id,
+                s.miktar,
+                (SELECT COALESCE(SUM(gri.quantity_received), 0)
+                 FROM goods_receipt_items gri
+                 JOIN goods_receipts gr ON gr.id = gri.receipt_id
+                 WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id
+                ) as received_quantity
+            FROM satin_alma_siparis_fis_satir s
+            WHERE s.siparis_id = :siparis_id
+        ";
+        $lines = $db->createCommand($sql, [':siparis_id' => $siparisId])->queryAll();
+
+        if (empty($lines)) return;
+
+        $allLinesCompleted = true;
+        $anyLineReceived = false;
+
+        foreach ($lines as $line) {
+            $ordered = (float)$line['miktar'];
+            $received = (float)$line['received_quantity'];
+
+            if ($received > 0.001) {
+                $anyLineReceived = true;
+            }
+            if ($received < $ordered - 0.001) {
+                $allLinesCompleted = false;
+            }
+        }
+
+        $newStatus = null;
+        if ($allLinesCompleted) {
+            $newStatus = 3; // Tamamlandı
+        } elseif ($anyLineReceived) {
+            $newStatus = 2; // Kısmi Kabul
+        }
+
+        if ($newStatus !== null) {
+            $currentStatus = (new Query())->select('status')->from('satin_alma_siparis_fis')->where(['id' => $siparisId])->scalar($db);
+            if ($currentStatus != $newStatus) {
+                $db->createCommand()->update('satin_alma_siparis_fis', ['status' => $newStatus], ['id' => $siparisId])->execute();
+            }
         }
     }
 

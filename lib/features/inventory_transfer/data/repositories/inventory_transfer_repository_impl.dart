@@ -222,13 +222,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           createdAt: DateTime.now(),
         );
         await txn.insert('pending_operation', pendingOp.toDbMap());
+
+        debugPrint("Lokal transfer işlemi kuyruğa eklendi. Payload: ${jsonEncode(enrichedData)}");
       });
-      
-      // İnternet varsa anında sync başlat
-      if (await networkInfo.isConnected) {
-        debugPrint("Transfer kaydedildi, anında sync başlatılıyor...");
-        syncService.uploadPendingOperations();
-      }
     } catch (e, s) {
       debugPrint("Lokal transfer kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına transfer kaydedilirken hata oluştu: $e");

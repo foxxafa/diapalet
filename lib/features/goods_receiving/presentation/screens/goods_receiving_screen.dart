@@ -65,11 +65,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // Barcode service
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
+  StreamSubscription<SyncStatus>? _syncStatusSub;
 
   @override
   void initState() {
     super.initState();
     _repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
+    final syncService = Provider.of<SyncService>(context, listen: false);
+
     _selectedOrder = widget.selectedOrder;
     _isFreeReceiveMode = widget.selectedOrder == null;
 
@@ -78,11 +81,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     _loadInitialData();
     _initBarcode();
+
+    _syncStatusSub = syncService.syncStatusStream.listen((status) {
+      if (status == SyncStatus.upToDate && mounted && isOrderBased) {
+        debugPrint("Sync completed on goods receiving screen, refreshing order details...");
+        _loadOrderDetails(_selectedOrder!.id);
+      }
+    });
   }
 
   @override
   void dispose() {
     _intentSub?.cancel();
+    _syncStatusSub?.cancel();
     _palletIdFocusNode.removeListener(_onFocusChange);
     _productFocusNode.removeListener(_onFocusChange);
     _palletIdController.dispose();
@@ -233,7 +244,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
       final orderItem = _orderItems.firstWhere((item) => item.product?.id == currentProduct.id, orElse: () => throw Exception("Item not found in order"));
       final alreadyAddedInUI = _addedItems
-          .where((item) => item.product.id == currentProduct.id && (_receivingMode == ReceivingMode.palet ? item.palletBarcode == _palletIdController.text : true))
+          .where((item) => item.product.id == currentProduct.id)
           .map((item) => item.quantity)
           .fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
@@ -273,7 +284,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Future<void> _saveAndConfirm() async {
-    if (_addedItems.isEmpty) {
+    if (_addedItems.isEmpty && (_selectedOrder == null || _orderItems.every((item) => item.receivedQuantity >= item.expectedQuantity))) {
       _showErrorSnackBar('goods_receiving_screen.error_at_least_one_item'.tr());
       return;
     }
@@ -283,29 +294,44 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     if (result == null) return; // Kullanıcı dialogu kapattı
 
-    if (result == ConfirmationAction.save) {
-      final success = await _executeSave();
-      if (success) {
-        // Sadece 'Save' seçildiğinde ekranı kapat ve geri dön.
-        _handleSuccessfulSave();
+    setState(() => _isSaving = true);
+    try {
+      if (result == ConfirmationAction.save) {
+        // SADECE KAYDETME İŞLEMİ
+        if (_addedItems.isEmpty) {
+          _showErrorSnackBar('goods_receiving_screen.error_no_new_items_to_save'.tr());
+          return;
+        }
+        await _executeSave();
+        if (mounted) {
+          _handleSuccessfulSave();
+          context.read<SyncService>().uploadPendingOperations(); // TEK SENKRONİZASYON ÇAĞRISI
+        }
+      } else if (result == ConfirmationAction.complete && _selectedOrder != null) {
+        // KAYDET VE TAMAMLA İŞLEMİ
+        // Adım 1: Varsa, yeni eklenen ürünleri yerel olarak kaydet.
+        if (_addedItems.isNotEmpty) {
+          await _executeSave(); // Bu fonksiyon artık sync tetiklemiyor.
+        }
+
+        // Adım 2: Siparişi tamamlama işlemini yerel olarak kuyruğa ekle.
+        await _repository.markOrderAsComplete(_selectedOrder!.id);
+
+        // Adım 3: Tüm yerel işlemler bittikten sonra, TEK BİR senkronizasyon başlat.
+        if (mounted) {
+          context.read<SyncService>().uploadPendingOperations();
+          _showSuccessSnackBar('orders.dialog.success_message'.tr(namedArgs: {'poId': _selectedOrder!.poId ?? ''}));
+          Navigator.of(context).pop(true); // Liste ekranına dön ve yenile.
+        }
       }
-    } else if (result == ConfirmationAction.complete && _selectedOrder != null) {
-      bool canProceed = true;
-      // Eğer listede kaydedilecek yeni ürün varsa, önce onları kaydet.
-      if (_addedItems.isNotEmpty) {
-        canProceed = await _executeSave();
-      }
-      
-      // Kaydetme başarılıysa veya kaydedilecek yeni ürün yoksa, tamamlama işlemine geç.
-      if (canProceed) {
-        await _executeMarkAsComplete(_selectedOrder!);
-      }
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  Future<bool> _executeSave() async {
-    setState(() => _isSaving = true);
-    bool isSuccess = false;
+  Future<void> _executeSave() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final employeeId = prefs.getInt('user_id');
@@ -328,35 +354,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
       await _repository.saveGoodsReceipt(payload);
 
-      if (mounted) {
-        _showSuccessSnackBar('goods_receiving_screen.success_receipt_saved'.tr());
-        context.read<SyncService>().performFullSync(force: true);
-        // EKRANI KAPATMA İŞLEMİ BURADAN KALDIRILDI.
-      }
-      isSuccess = true;
     } catch (e) {
-      if (mounted) _showErrorSnackBar('goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()}));
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-    return isSuccess;
-  }
-
-  Future<void> _executeMarkAsComplete(PurchaseOrder order) async {
-    setState(() => _isSaving = true);
-    try {
-      // Not: Kaydetme işlemi artık _saveAndConfirm içinde yönetiliyor.
-      await _repository.markOrderAsComplete(order.id);
-
-      if (!mounted) return;
-      _showSuccessSnackBar('orders.dialog.success_message'.tr(namedArgs: {'poId': order.poId ?? ''}));
-      // Tamamlama işlemi bittikten sonra ekranı kapat.
-      Navigator.of(context).pop(true); 
-    } catch (e) {
-      if (!mounted) return;
-      _showErrorSnackBar('orders.dialog.error_message'.tr(namedArgs: {'error': e.toString()}));
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      rethrow;
     }
   }
 
