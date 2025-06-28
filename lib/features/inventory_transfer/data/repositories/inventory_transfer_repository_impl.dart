@@ -144,8 +144,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     try {
       await db.transaction((txn) async {
-        final isPutawayOperation = sourceLocationId == malKabulLocationId;
-        final isFullPalletTransfer = header.operationType == AssignmentMode.pallet;
+        final isPutawayOperation = sourceLocationId == malKabulLocationId && header.siparisId != null;
 
         for (final item in items) {
           // 1. Kaynak stoktan düşür.
@@ -154,7 +153,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
               isPutawayOperation ? 'receiving' : 'available');
 
           // 2. Hedefteki palet durumunu belirle.
-          final targetPalletId = isFullPalletTransfer ? item.palletId : null;
+          final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
           
           // 3. Hedef stoka doğru palet durumuyla ekle.
           await _updateStock(
@@ -172,11 +171,51 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             'employee_id': header.employeeId,
             'transfer_date': header.transferDate.toIso8601String(),
           });
+
+          // 5. EĞER BU BİR RAFA KALDIRMA İŞLEMİ İSE, wms_putaway_status'u GÜNCELLE
+          if (isPutawayOperation) {
+            final orderLine = await txn.query(
+              'satin_alma_siparis_fis_satir',
+              columns: ['id'],
+              where: 'siparis_id = ? AND urun_id = ?',
+              whereArgs: [header.siparisId, item.productId],
+              limit: 1,
+            );
+            if (orderLine.isNotEmpty) {
+              final lineId = orderLine.first['id'] as int;
+              
+              final existingPutaway = await txn.query(
+                'wms_putaway_status',
+                where: 'satin_alma_siparis_fis_satir_id = ?',
+                whereArgs: [lineId],
+                limit: 1,
+              );
+
+              if (existingPutaway.isNotEmpty) {
+                final currentPutawayQty = existingPutaway.first['putaway_quantity'] as num;
+                await txn.update(
+                  'wms_putaway_status',
+                  {
+                    'putaway_quantity': currentPutawayQty + item.quantity,
+                    'updated_at': DateTime.now().toIso8601String(),
+                  },
+                  where: 'satin_alma_siparis_fis_satir_id = ?',
+                  whereArgs: [lineId],
+                );
+              } else {
+                await txn.insert('wms_putaway_status', {
+                  'satin_alma_siparis_fis_satir_id': lineId,
+                  'putaway_quantity': item.quantity,
+                  'created_at': DateTime.now().toIso8601String(),
+                  'updated_at': DateTime.now().toIso8601String(),
+                });
+              }
+            }
+          }
         }
 
+        // 6. İşlemi senkronizasyon için kuyruğa ekle (zenginleştirilmiş veri ile).
         final enrichedData = await _createEnrichedTransferData(txn, apiPayload, items);
-
-        // 5. İşlemi senkronizasyon için kuyruğa ekle.
         final pendingOp = PendingOperation(
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode(enrichedData),

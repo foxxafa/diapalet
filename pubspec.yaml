@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
+  cupertino_icons: ^1.0.2
   flutter_form_builder: ^10.0.1
   form_builder_validators: ^11.1.2
   intl: ^0.20.2
@@ -22,21 +22,22 @@ dependencies:
   shared_preferences: ^2.2.3
   equatable: ^2.0.5
   collection: ^1.17.2
-  path_provider: ^2.1.1
+  path_provider: ^2.1.3
   uuid: ^4.3.3
   connectivity_plus: ^5.0.2
-  dio: ^5.4.0
+  dio: ^5.4.3+1
   provider: ^6.1.2
-  easy_localization: ^3.0.5
-  sqflite: ^2.3.2
+  easy_localization: ^3.0.7
+  sqflite: ^2.3.3+1
   rxdart: ^0.27.7
+  flutter_typeahead: ^5.2.0
+  flutter_animate: ^4.5.0
   google_fonts: ^6.2.1
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^3.0.2
   test: ^1.24.0
   sqflite_common_ffi: ^2.3.0
 
@@ -44,3 +45,17 @@ flutter:
   uses-material-design: true
   assets:
     - assets/lang/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter_18pt-Regular.ttf
+        - asset: assets/fonts/Inter_18pt-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter_18pt-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter_18pt-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter_18pt-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Inter_18pt-Black.ttf
+          weight: 900

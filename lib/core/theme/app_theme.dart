@@ -20,9 +20,9 @@ class AppTheme {
   static const Color warningColor = Color(0xFFFFA000);
 
   static final TextTheme _lightTextTheme =
-  GoogleFonts.interTextTheme(ThemeData.light().textTheme);
+      GoogleFonts.interTextTheme(ThemeData.light().textTheme);
   static final TextTheme _darkTextTheme =
-  GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+      GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
 
   // --- AÇIK TEMA TANIMI ---
   static final ThemeData light = ThemeData(

@@ -218,14 +218,13 @@ class TerminalController extends Controller
                 'to_location_id' => $header['target_location_id'], 'quantity' => $quantity,
                 'from_pallet_barcode' => $sourcePallet, 'pallet_barcode' => $targetPallet,
                 'employee_id' => $header['employee_id'], 'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
-                'siparis_id' => $siparisId,
             ];
 
             if ($isPutawayOperation) {
                 $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
                 if ($orderLine) {
                     $orderLineId = $orderLine['id'];
-                    $transferData['satin_alma_siparis_fis_satir_id'] = $orderLineId;
+                    // $transferData['satin_alma_siparis_fis_satir_id'] = $orderLineId; // Bu tabloya bu veri yazılmamalı.
 
                     // wms_putaway_status tablosuna ekleme/güncelleme yap
                     $sql = "INSERT INTO wms_putaway_status (satin_alma_siparis_fis_satir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
@@ -335,7 +334,8 @@ class TerminalController extends Controller
             $data['warehouses_shelfs'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['warehouses_shelfs'], ['id', 'warehouse_id', 'is_active']);
 
-            $data['employees'] = (new Query())->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
+            $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
+            $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
             // Sadece status değeri 3'ten küçük olan (Tamamlanmamış) siparişleri indir
@@ -346,7 +346,16 @@ class TerminalController extends Controller
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
-                $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id', 'status'], ['miktar', 'putaway_quantity']);
+                $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
+
+                // Yeni eklenen kısım: wms_putaway_status verilerini çek
+                $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
+                if (!empty($poLineIds)) {
+                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'satin_alma_siparis_fis_satir_id', $poLineIds])->all();
+                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'satin_alma_siparis_fis_satir_id'], ['putaway_quantity']);
+                } else {
+                    $data['wms_putaway_status'] = [];
+                }
 
                 $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
@@ -362,6 +371,7 @@ class TerminalController extends Controller
                  $data['satin_alma_siparis_fis_satir'] = [];
                  $data['goods_receipts'] = [];
                  $data['goods_receipt_items'] = [];
+                 $data['wms_putaway_status'] = [];
             }
 
             // Sadece Mal Kabul(1) ve ilgili depo lokasyonlarındaki stokları indir

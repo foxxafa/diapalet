@@ -11,7 +11,7 @@ class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
   // # GÜNCELLEME: Veritabanı şeması değiştiği için versiyon bir artırıldı.
   // Bu, onUpgrade metodunun tetiklenmesini ve tabloların yeniden oluşturulmasını sağlar.
-  static const _databaseVersion = 14;
+  static const _databaseVersion = 15;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -101,8 +101,17 @@ class DatabaseHelper {
     batch.execute('''
       CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
         id INTEGER PRIMARY KEY, siparis_id INTEGER, urun_id INTEGER, miktar REAL,
-        putaway_quantity REAL DEFAULT 0,
         birim TEXT, notes TEXT, status INTEGER DEFAULT 0
+      )
+    ''');
+
+    batch.execute('''
+      CREATE TABLE IF NOT EXISTS wms_putaway_status (
+        id INTEGER PRIMARY KEY,
+        satin_alma_siparis_fis_satir_id INTEGER UNIQUE,
+        putaway_quantity REAL NOT NULL,
+        created_at TEXT,
+        updated_at TEXT
       )
     ''');
 
@@ -153,7 +162,8 @@ class DatabaseHelper {
     final tables = [
       'pending_operation', 'sync_log', 'warehouses_shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
-      'goods_receipt_items', 'inventory_stock', 'inventory_transfers'
+      'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
+      'wms_putaway_status'
     ];
     await db.transaction((txn) async {
       for (final table in tables) {
@@ -172,7 +182,7 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
-        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'inventory_stock'];
+        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'inventory_stock', 'wms_putaway_status'];
         if(fullRefreshTables.contains(table)) {
           await txn.delete(table);
         }

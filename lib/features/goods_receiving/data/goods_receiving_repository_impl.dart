@@ -173,13 +173,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     final maps = await db.rawQuery('''
-        SELECT s.*, u.UrunAdi, u.StokKodu, u.Barcode1, u.aktif,
-               COALESCE((SELECT SUM(gri.quantity_received) 
-                         FROM goods_receipt_items gri 
-                         JOIN goods_receipts gr ON gr.id = gri.receipt_id 
-                         WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity
+        SELECT 
+            s.*, 
+            u.UrunAdi, 
+            u.StokKodu, 
+            u.Barcode1, 
+            u.aktif,
+            COALESCE((SELECT SUM(gri.quantity_received) 
+                      FROM goods_receipt_items gri 
+                      JOIN goods_receipts gr ON gr.id = gri.receipt_id 
+                      WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
+            COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
         JOIN urunler u ON u.id = s.urun_id
+        LEFT JOIN wms_putaway_status wps ON wps.satin_alma_siparis_fis_satir_id = s.id
         WHERE s.siparis_id = ?
     ''', [orderId]);
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
