@@ -162,7 +162,12 @@ class SyncService with ChangeNotifier {
     debugPrint("${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
 
     final operationsPayload = pendingOps.map((op) {
-      return {'id': op.id, 'type': op.type.name, 'data': jsonDecode(op.data)};
+      return {
+        'local_id': op.id,
+        'idempotency_key': op.uniqueId,
+        'type': op.type.name,
+        'data': jsonDecode(op.data)
+      };
     }).toList();
 
     try {

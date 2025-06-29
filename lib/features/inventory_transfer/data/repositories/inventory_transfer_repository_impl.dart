@@ -63,12 +63,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
-    final maps = await db.query(
-      'satin_alma_siparis_fis',
-      where: 'status IN (?, ?)',
-      whereArgs: [2, 4],
-      orderBy: 'tarih DESC',
-    );
+    // Rafa kaldırılmayı bekleyen ürünleri olan siparişleri getir.
+    // Durum 2 olmalı ve `inventory_stock`'ta 'receiving' durumunda en az bir kaydı olmalı.
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT DISTINCT T1.*
+      FROM satin_alma_siparis_fis AS T1
+      INNER JOIN inventory_stock AS T2 ON T1.id = T2.siparis_id
+      WHERE T2.stock_status = 'receiving' AND T1.status = 2
+      ORDER BY T1.tarih DESC
+    ''');
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -216,7 +219,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
         // 6. İşlemi senkronizasyon için kuyruğa ekle (zenginleştirilmiş veri ile).
         final enrichedData = await _createEnrichedTransferData(txn, apiPayload, items);
-        final pendingOp = PendingOperation(
+        final pendingOp = PendingOperation.create(
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode(enrichedData),
           createdAt: DateTime.now(),
@@ -335,47 +338,45 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<String>> getPalletIdsAtLocation(int locationId) async {
+  Future<List<String>> getPalletIdsAtLocation(int locationId, {String stockStatus = 'available'}) async {
     final db = await dbHelper.database;
-    final maps = await db.rawQuery('''
-      SELECT DISTINCT pallet_barcode FROM inventory_stock
-      WHERE location_id = ? AND pallet_barcode IS NOT NULL AND stock_status = 'available'
-    ''', [locationId]);
+    final List<Map<String, dynamic>> maps = await db.query(
+      'inventory_stock',
+      distinct: true,
+      columns: ['pallet_barcode'],
+      where: 'location_id = ? AND pallet_barcode IS NOT NULL AND stock_status = ?',
+      whereArgs: [locationId, stockStatus],
+    );
     return maps.map((map) => map['pallet_barcode'] as String).toList();
   }
 
   @override
-  Future<List<BoxItem>> getBoxesAtLocation(int locationId) async {
+  Future<List<BoxItem>> getBoxesAtLocation(int locationId, {String stockStatus = 'available'}) async {
     final db = await dbHelper.database;
-    final maps = await db.rawQuery('''
-      SELECT u.id as productId, u.UrunAdi as productName, u.StokKodu as productCode, u.Barcode1 as barcode1, SUM(s.quantity) as quantity
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT s.urun_id, s.quantity, u.UrunAdi, u.StokKodu, u.Barcode1
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
-      WHERE s.location_id = ? AND s.pallet_barcode IS NULL AND s.stock_status = 'available'
-      GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
-    ''', [locationId]);
+      WHERE s.location_id = ? AND s.pallet_barcode IS NULL AND s.stock_status = ?
+    ''', [locationId, stockStatus]);
     return maps.map((map) => BoxItem.fromDbMap(map)).toList();
   }
 
   @override
-  Future<List<ProductItem>> getPalletContents(String palletId, int locationId) async {
+  Future<List<ProductItem>> getPalletContents(String palletBarcode, int locationId, {String stockStatus = 'available'}) async {
     final db = await dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT 
-        u.id,
-        u.StokKodu as code,
+      SELECT
+        s.urun_id as id,
         u.UrunAdi as name,
-        s.quantity as currentQuantity,
-        s.pallet_barcode as pallet_barcode,
-        u.Barcode1 as barcode1
+        u.StokKodu as productCode,
+        u.Barcode1 as barcode1,
+        s.quantity as currentQuantity
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.id
-      WHERE s.pallet_barcode = ? AND s.location_id = ? AND s.stock_status = 'available'
-    ''', [palletId, locationId]);
-
-    return List.generate(maps.length, (i) {
-      return ProductItem.fromMap(maps[i]);
-    });
+      JOIN urunler u ON u.id = s.urun_id
+      WHERE s.location_id = ? AND s.pallet_barcode = ? AND s.stock_status = ?
+    ''', [locationId, palletBarcode, stockStatus]);
+    return maps.map((map) => ProductItem.fromMap(map)).toList();
   }
 
   @override
@@ -426,5 +427,67 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       }
     }
     return headers;
+  }
+
+  @override
+  Future<void> checkAndCompletePutaway(int orderId) async {
+    final db = await dbHelper.database;
+    await db.transaction((txn) async {
+      // 1. Siparişteki tüm satırların toplam istenen miktarını al
+      final orderLines = await txn.query(
+        'satin_alma_siparis_fis_satir',
+        columns: ['id', 'miktar'],
+        where: 'siparis_id = ?',
+        whereArgs: [orderId],
+      );
+
+      if (orderLines.isEmpty) return;
+
+      double totalOrdered = orderLines.fold(0.0, (sum, row) => sum + (row['miktar'] as num));
+
+      // 2. Bu sipariş için rafa yerleştirilmiş toplam miktarı al
+      final lineIds = orderLines.map((row) => row['id'] as int).toList();
+      final placeholders = List.generate(lineIds.length, (_) => '?').join(',');
+      final putawayResult = await txn.rawQuery('''
+        SELECT SUM(putaway_quantity) as total_putaway
+        FROM wms_putaway_status
+        WHERE satin_alma_siparis_fis_satir_id IN ($placeholders)
+      ''', lineIds);
+      
+      double totalPutaway = 0;
+      if (putawayResult.isNotEmpty && putawayResult.first['total_putaway'] != null) {
+        totalPutaway = (putawayResult.first['total_putaway'] as num).toDouble();
+      }
+
+      // 3. Karşılaştır ve gerekirse durumu 3 (Tamamlandı) yap.
+      if (totalPutaway >= totalOrdered - 0.001) { // Tolerans payı
+        await txn.update(
+          'satin_alma_siparis_fis',
+          {'status': 3}, 
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+        debugPrint("Sipariş #$orderId rafa yerleştirme işlemi tamamlandı ve durumu 3 (Tamamlandı) olarak güncellendi.");
+      }
+
+      // Bu siparişe ait hala 'receiving' durumunda stok olup olmadığını kontrol et
+      final receivingStock = await txn.query(
+        'inventory_stock',
+        where: 'siparis_id = ? AND stock_status = ?',
+        whereArgs: [orderId, 'receiving'],
+        limit: 1,
+      );
+
+      // Eğer hiç 'receiving' stoğu kalmadıysa, siparişi otomatik tamamla.
+      if (receivingStock.isEmpty) {
+        await txn.update(
+          'satin_alma_siparis_fis',
+          {'status': 4}, // 4: Otomatik Tamamlandı
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+        debugPrint("Sipariş #$orderId için yerleştirilecek ürün kalmadı. Durum 4 (Otomatik Tamamlandı) olarak güncellendi.");
+      }
+    });
   }
 }

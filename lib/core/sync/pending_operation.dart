@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 enum PendingOperationType {
   goodsReceipt,
@@ -38,23 +39,24 @@ extension PendingOperationTypeExtension on PendingOperationType {
 @immutable
 class PendingOperation {
   final int? id;
+  final String uniqueId;
   final PendingOperationType type;
   final String data;
   final DateTime createdAt;
   final String status;
   final String? errorMessage;
-  // YENİ: İşlemin ne zaman senkronize olduğunu takip etmek için eklendi.
   final DateTime? syncedAt;
 
   const PendingOperation({
     this.id,
+    String? uniqueId,
     required this.type,
     required this.data,
     required this.createdAt,
     this.status = 'pending',
     this.errorMessage,
     this.syncedAt,
-  });
+  }) : uniqueId = uniqueId ?? '';
 
   String get displayTitle {
     switch (type) {
@@ -73,10 +75,8 @@ class PendingOperation {
       switch (type) {
         case PendingOperationType.goodsReceipt:
           final poId = dataMap['header']?['po_id'];
-          final siparisId = dataMap['header']?['siparis_id'];
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
           
-          // Eğer gerçek PO ID varsa göster, yoksa sadece item sayısını göster
           if (poId != null && poId.toString().isNotEmpty) {
             return 'pending_operations.subtitles.goods_receipt_with_po'
                 .tr(namedArgs: {'poId': poId.toString(), 'count': itemCount.toString()});
@@ -95,9 +95,7 @@ class PendingOperation {
           });
         case PendingOperationType.forceCloseOrder:
           final poId = dataMap['po_id'];
-          final siparisId = dataMap['siparis_id'];
           
-          // Eğer gerçek PO ID varsa göster
           if (poId != null && poId.toString().isNotEmpty) {
             return 'pending_operations.subtitles.force_close_order_with_po'
                 .tr(namedArgs: {'poId': poId.toString()});
@@ -111,8 +109,9 @@ class PendingOperation {
   }
 
   factory PendingOperation.fromMap(Map<String, dynamic> map) {
-    return PendingOperation(
+    return PendingOperation.create(
       id: map['id'],
+      uniqueId: map['unique_id'],
       type: PendingOperationType.values.firstWhere((e) => e.name == map['type']),
       data: map['data'],
       createdAt: DateTime.parse(map['created_at']),
@@ -125,6 +124,7 @@ class PendingOperation {
   Map<String, dynamic> toDbMap() {
     return {
       'id': id,
+      'unique_id': uniqueId,
       'type': type.name,
       'data': data,
       'created_at': createdAt.toIso8601String(),
@@ -132,5 +132,28 @@ class PendingOperation {
       'error_message': errorMessage,
       'synced_at': syncedAt?.toIso8601String(),
     };
+  }
+
+  // Static method to create with UUID
+  static PendingOperation create({
+    int? id,
+    String? uniqueId,
+    required PendingOperationType type,
+    required String data,
+    required DateTime createdAt,
+    String status = 'pending',
+    String? errorMessage,
+    DateTime? syncedAt,
+  }) {
+    return PendingOperation(
+      id: id,
+      uniqueId: uniqueId ?? const Uuid().v4(),
+      type: type,
+      data: data,
+      createdAt: createdAt,
+      status: status,
+      errorMessage: errorMessage,
+      syncedAt: syncedAt,
+    );
   }
 }

@@ -98,62 +98,74 @@ class TerminalController extends Controller
         $payload = $this->getJsonBody();
         $operations = $payload['operations'] ?? [];
         $db = Yii::$app->db;
-        $maxRetries = 3;
+        $results = [];
 
-        for ($i = 0; $i < $maxRetries; $i++) {
-            $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
-            try {
-                $results = [];
-                foreach ($operations as $op) {
-                    $opId = $op['id'] ?? null;
-                    if (!$opId) throw new \Exception("Tüm operasyonlar bir 'id' içermelidir.");
-
-                    $opType = $op['type'] ?? 'unknown';
-                    $opData = $op['data'] ?? [];
-                    $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
-
-                    if ($opType === 'goodsReceipt') {
-                        $result = $this->_createGoodsReceipt($opData, $db);
-                    } elseif ($opType === 'inventoryTransfer') {
-                        $result = $this->_createInventoryTransfer($opData, $db);
-                    } elseif ($opType === 'forceCloseOrder') {
-                        $result = $this->_forceCloseOrder($opData, $db);
-                    }
-
-                    if (isset($result['status']) && $result['status'] === 'success') {
-                        $results[] = ['operation_id' => $opId, 'result' => $result];
-                    } else {
-                        throw new \Exception("İşlem (ID: {$opId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata'));
-                    }
-                }
-
-                $transaction->commit();
-                return ['success' => true, 'results' => $results];
-
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                $isDeadlock = ($e instanceof \yii\db\Exception && isset($e->errorInfo[1]) && $e->errorInfo[1] == 1213);
-                if (!$isDeadlock) {
-                    $errMsg = $e->getMessage();
-                    if (strpos($errMsg, 'Deadlock') !== false || strpos($errMsg, 'Serialization failure') !== false) {
-                        $isDeadlock = true;
-                    }
-                }
-
-                if ($isDeadlock && $i < $maxRetries - 1) {
-                    Yii::warning("Deadlock tespit edildi, işlem yeniden deneniyor... (" . ($i + 1) . "/{$maxRetries})", __METHOD__);
-                    usleep(mt_rand(100000, 300000));
-                    continue;
-                }
-
-                Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}", __METHOD__);
-                Yii::$app->response->setStatusCode(500);
-                return ['success' => false, 'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 'details' => $e->getMessage()];
-            }
+        if (empty($operations)) {
+            return ['success' => true, 'results' => []];
         }
 
-        Yii::$app->response->setStatusCode(500);
-        return ['success' => false, 'error' => 'İşlem maksimum deneme sayısına ulaştıktan sonra bile başarısız oldu.'];
+        $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
+
+        try {
+            foreach ($operations as $op) {
+                $localId = $op['local_id'] ?? null;
+                $idempotencyKey = $op['idempotency_key'] ?? null;
+
+                if (!$localId || !$idempotencyKey) {
+                    throw new \Exception("Tüm operasyonlar 'local_id' ve 'idempotency_key' içermelidir.");
+                }
+
+                // 1. IDEMPOTENCY KONTROLÜ
+                $existingRequest = (new Query())
+                    ->from('processed_requests')
+                    ->where(['idempotency_key' => $idempotencyKey])
+                    ->one($db);
+
+                if ($existingRequest) {
+                    // 2. Bu işlem daha önce yapılmışsa, kayıtlı sonucu döndür.
+                    $results[] = [
+                        'local_id' => $localId, // Flutter tarafında bu isim bekleniyor
+                        'result' => json_decode($existingRequest['response_body'], true)
+                    ];
+                    continue; // Sonraki operasyona geç
+                }
+
+                // 3. Yeni işlem ise, operasyonu işle.
+                $opType = $op['type'] ?? 'unknown';
+                $opData = $op['data'] ?? [];
+                $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
+
+                if ($opType === 'goodsReceipt') {
+                    $result = $this->_createGoodsReceipt($opData, $db);
+                } elseif ($opType === 'inventoryTransfer') {
+                    $result = $this->_createInventoryTransfer($opData, $db);
+                } elseif ($opType === 'forceCloseOrder') {
+                    $result = $this->_forceCloseOrder($opData, $db);
+                }
+
+                // 4. Başarılı ise, sonucu hem yanıt dizisine hem de idempotency tablosuna ekle
+                if (isset($result['status']) && $result['status'] === 'success') {
+                    $db->createCommand()->insert('processed_requests', [
+                        'idempotency_key' => $idempotencyKey,
+                        'response_code' => 200,
+                        'response_body' => json_encode($result)
+                    ])->execute();
+                    
+                    $results[] = ['local_id' => $localId, 'result' => $result];
+                } else {
+                    throw new \Exception("İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata'));
+                }
+            }
+
+            $transaction->commit();
+            return ['success' => true, 'results' => $results];
+
+        } catch (\Exception $e) {
+            $transaction->rollBack();
+            Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}", __METHOD__);
+            Yii::$app->response->setStatusCode(500);
+            return ['success' => false, 'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 'details' => $e->getMessage()];
+        }
     }
 
     private function _createGoodsReceipt($data, $db) {

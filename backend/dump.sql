@@ -6,7 +6,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS=0;
 
 -- ÖNCE MEVCUT TABLOLARI TEMİZLE (LOKAL KURULUM İÇİN)
-DROP TABLE IF EXISTS `wms_putaway_status`, `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `warehouses_shelfs`, `warehouses`;
+DROP TABLE IF EXISTS `wms_putaway_status`, `inventory_transfers`, `inventory_stock`, `goods_receipt_items`, `goods_receipts`, `warehouses_shelfs`, `warehouses`, `processed_requests`;
 DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`, `satin_alma_siparis_fis`, `urunler`, `employees`;
 
 -- =================================================================
@@ -17,16 +17,9 @@ CREATE TABLE `employees` (
   `id` int NOT NULL AUTO_INCREMENT,
   `first_name` varchar(100) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `last_name` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
-  `branch_id` int DEFAULT NULL,
-  `role` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
   `username` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
   `password` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
-  `start_date` date DEFAULT NULL,
-  `end_date` date DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `photo` varchar(150) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `warehouse_id` int DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`)
@@ -36,30 +29,24 @@ CREATE TABLE `urunler` (
   `UrunId` int NOT NULL AUTO_INCREMENT,
   `StokKodu` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `UrunAdi` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `AdetFiyati` decimal(10,2) DEFAULT NULL,
-  `KutuFiyati` decimal(10,2) DEFAULT NULL,
-  `Vat` decimal(5,2) DEFAULT NULL,
   `aktif` int DEFAULT '1',
   `Barcode1` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
-  `Barcode2` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
   PRIMARY KEY (`UrunId`),
-  UNIQUE KEY `StokKodu_UNIQUE` (`StokKodu`)
+  UNIQUE KEY `StokKodu_UNIQUE` (`StokKodu`),
+  KEY `idx_urunler_barcode1` (`Barcode1`),
+  KEY `idx_urunler_adi` (`UrunAdi`)
 ) ENGINE=InnoDB;
 
 CREATE TABLE `satin_alma_siparis_fis` (
   `id` int NOT NULL AUTO_INCREMENT,
   `tarih` date DEFAULT NULL,
   `notlar` text CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci,
-  `user` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `gun` int DEFAULT '0',
-  `lokasyon_id` int DEFAULT NULL,
-  `invoice` varchar(45) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `delivery` int DEFAULT NULL,
   `po_id` varchar(11) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `status` int DEFAULT '0' COMMENT '0:Beklemede, 1:Onaylandi, 2:Kismi Kabul, 3:Tamamlandi, 4:Kapatıldı',
-  PRIMARY KEY (`id`)
+  `status` int DEFAULT '0' COMMENT '1:Onaylandi, 2:Islemde, 3:Manuel Kapatildi, 4:Oto. Tamamlandi',
+  `lokasyon_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_siparis_status` (`status`),
+  KEY `idx_siparis_lokasyon` (`lokasyon_id`)
 ) ENGINE=InnoDB;
 
 CREATE TABLE `satin_alma_siparis_fis_satir` (
@@ -68,7 +55,6 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
   `urun_id` int DEFAULT NULL,
   `miktar` decimal(10,2) DEFAULT NULL,
   `birim` varchar(10) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `notes` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `siparis_id` (`siparis_id`),
   CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE
@@ -81,14 +67,11 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
 
 CREATE TABLE `warehouses` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `dia_id` int DEFAULT NULL,
+  `dia_id` int DEFAULT NULL,  -- YENİDEN EKLENDİ
   `name` varchar(255) NOT NULL,
   `warehouse_code` varchar(15) NOT NULL,
-  `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `dia_id_UNIQUE` (`dia_id`),
+  UNIQUE KEY `dia_id_UNIQUE` (`dia_id`), -- YENİDEN EKLENDİ
   UNIQUE KEY `warehouse_code_UNIQUE` (`warehouse_code`)
 ) ENGINE=InnoDB;
 
@@ -97,9 +80,6 @@ CREATE TABLE `warehouses_shelfs` (
   `warehouse_id` int NOT NULL,
   `name` varchar(255) NOT NULL,
   `code` varchar(20) NOT NULL,
-  `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_warehouse_shelf` (`warehouse_id`,`code`),
   CONSTRAINT `fk_wms_shelf_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`) ON DELETE CASCADE
@@ -113,6 +93,7 @@ CREATE TABLE `goods_receipts` (
   `receipt_date` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  KEY `idx_receipt_siparis` (`siparis_id`),
   CONSTRAINT `fk_wms_receipt_order` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_wms_receipt_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`)
 ) ENGINE=InnoDB;
@@ -133,11 +114,13 @@ CREATE TABLE `inventory_stock` (
   `urun_id` int NOT NULL,
   `location_id` int NOT NULL,
   `quantity` decimal(10,2) NOT NULL,
-  `pallet_barcode` varchar(50) DEFAULT NULL,
-  `stock_status` enum('receiving','available') NOT NULL DEFAULT 'available' COMMENT 'receiving: Mal kabulde, available: Kullanilabilir',
+  `pallet_barcode` varchar(50) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `stock_status` enum('receiving','available') COLLATE utf8mb4_turkish_ci NOT NULL DEFAULT 'available' COMMENT 'receiving: Mal kabulde, available: Kullanilabilir',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stock_item` (`urun_id`,`location_id`,`pallet_barcode`,`stock_status`),
+  KEY `idx_stock_location` (`location_id`),
+  KEY `idx_stock_pallet` (`pallet_barcode`),
   CONSTRAINT `fk_wms_stock_product` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE CASCADE,
   CONSTRAINT `fk_wms_stock_location` FOREIGN KEY (`location_id`) REFERENCES `warehouses_shelfs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -154,6 +137,9 @@ CREATE TABLE `inventory_transfers` (
   `transfer_date` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  KEY `idx_transfer_from_location` (`from_location_id`),
+  KEY `idx_transfer_to_location` (`to_location_id`),
+  KEY `idx_transfer_employee` (`employee_id`),
   CONSTRAINT `fk_wms_transfer_product` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`),
   CONSTRAINT `fk_wms_transfer_from` FOREIGN KEY (`from_location_id`) REFERENCES `warehouses_shelfs` (`id`),
   CONSTRAINT `fk_wms_transfer_to` FOREIGN KEY (`to_location_id`) REFERENCES `warehouses_shelfs` (`id`),
@@ -170,6 +156,15 @@ CREATE TABLE `wms_putaway_status` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_line_item` (`satin_alma_siparis_fis_satir_id`),
   CONSTRAINT `fk_putaway_order_line` FOREIGN KEY (`satin_alma_siparis_fis_satir_id`) REFERENCES `satin_alma_siparis_fis_satir` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- İDEMPOTENCY SUPPORT: İsteklerin tekrar işlenmesini önlemek için
+CREATE TABLE `processed_requests` (
+  `idempotency_key` VARCHAR(36) NOT NULL,
+  `response_code` INT NOT NULL,
+  `response_body` JSON NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`idempotency_key`)
 ) ENGINE=InnoDB;
 
 SET FOREIGN_KEY_CHECKS=1;

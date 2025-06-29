@@ -51,15 +51,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'receipt_id': receiptId, 'urun_id': item.urunId,
             'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
           });
-          await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode, 'receiving');
+          await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode, 'receiving', payload.header.siparisId);
         }
 
-        // GÜNCELLEME: Mal kabul yapıldığında siparişin durumunu lokalde anında güncelle.
-        // Bu, senkronizasyonu beklemeden arayüzün doğru durumu göstermesini sağlar.
+        // Mal kabul yapıldığında siparişin durumunu 2 (İşlemde) yap.
         if (payload.header.siparisId != null) {
           await txn.update(
             'satin_alma_siparis_fis',
-            {'status': 2}, // Durumu 2 (Kısmi Kabul) yap.
+            {'status': 2},
             where: 'id = ?',
             whereArgs: [payload.header.siparisId],
           );
@@ -67,7 +66,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
         final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload);
 
-        final pendingOp = PendingOperation(
+        final pendingOp = PendingOperation.create(
           type: PendingOperationType.goodsReceipt,
           data: jsonEncode(enrichedData),
           createdAt: DateTime.now(),
@@ -119,15 +118,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode, String stockStatus) async {
+  Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId]) async {
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
+    String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     List<dynamic> whereArgs = [urunId, locationId, stockStatus];
-    if (palletBarcode != null) {
-      whereArgs.add(palletBarcode);
-    }
+    if (palletBarcode != null) whereArgs.add(palletBarcode);
+    if (siparisId != null) whereArgs.add(siparisId);
     
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND stock_status = ? AND $palletWhereClause',
+        where: 'urun_id = ? AND location_id = ? AND stock_status = ? AND $palletWhereClause AND $siparisWhereClause',
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
@@ -143,7 +142,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       await txn.insert('inventory_stock', {
         'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
         'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
-        'stock_status': stockStatus
+        'stock_status': stockStatus,
+        'siparis_id': siparisId
       });
     }
   }
@@ -151,12 +151,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
-    // GÜNCELLEME: Sorgu, durumu 1 (Onaylandı) veya 2 (Kısmi Kabul) olan,
-    // yani henüz tamamlanmamış tüm siparişleri getirecek şekilde güncellendi.
+    // Durumu 1 (Onaylandı) veya 2 (İşlemde) olan siparişleri getir.
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status IN (?, ?)',
-      whereArgs: [1, 2], // Durumu 1 ve 2 olanlar
+      whereArgs: [1, 2],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -224,23 +223,23 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
 
       // 1. Senkronizasyon için bekleyen işlem oluştur
-      final pendingOp = PendingOperation(
+      final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'po_id': poId}),
           createdAt: DateTime.now()
       );
       await txn.insert('pending_operation', pendingOp.toDbMap());
 
-      // 2. Siparişin LOKAL durumunu anında güncelle
+      // 2. Siparişin LOKAL durumunu 3 (Manuel Kapatıldı) yap.
       await txn.update(
         'satin_alma_siparis_fis',
-        {'status': 4}, // 4: Kapatıldı
+        {'status': 3}, 
         where: 'id = ?',
         whereArgs: [orderId],
       );
     });
 
-    debugPrint("Sipariş #$orderId lokal olarak kapatıldı (status 4) ve senkronizasyon için sıraya alındı.");
+    debugPrint("Sipariş #$orderId lokal olarak manuel kapatıldı (status 3) ve senkronizasyon için sıraya alındı.");
   }
 
   @override

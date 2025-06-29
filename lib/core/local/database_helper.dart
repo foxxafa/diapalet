@@ -9,9 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // # GÜNCELLEME: Veritabanı şeması değiştiği için versiyon bir artırıldı.
-  // Bu, onUpgrade metodunun tetiklenmesini ve tabloların yeniden oluşturulmasını sağlar.
-  static const _databaseVersion = 15;
+  // GÜNCELLEME: Şema değişikliği için sürüm artırıldı.
+  static const _databaseVersion = 18;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -55,6 +54,7 @@ class DatabaseHelper {
     batch.execute('''
       CREATE TABLE IF NOT EXISTS pending_operation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        unique_id TEXT NOT NULL UNIQUE,
         type TEXT NOT NULL,
         data TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -132,10 +132,14 @@ class DatabaseHelper {
     // # GÜNCELLEME: 'stock_status' alanı eklendi.
     batch.execute('''
       CREATE TABLE IF NOT EXISTS inventory_stock (
-        id INTEGER PRIMARY KEY, urun_id INTEGER NOT NULL, location_id INTEGER NOT NULL,
-        quantity REAL NOT NULL, pallet_barcode TEXT,
-        stock_status TEXT NOT NULL DEFAULT 'available',
-        updated_at TEXT
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        urun_id INTEGER NOT NULL,
+        location_id INTEGER NOT NULL,
+        quantity REAL NOT NULL,
+        pallet_barcode TEXT,
+        stock_status TEXT NOT NULL,
+        updated_at TEXT, 
+        UNIQUE(urun_id, location_id, pallet_barcode, stock_status)
       )
     ''');
 

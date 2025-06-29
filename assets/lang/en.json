@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Diapalet"
+    "title": "DIAPALET WMS"
   },
   "language": {
     "turkish": "Turkish",
@@ -92,11 +92,13 @@
     "error_quantity_exceeds_order": "You are exceeding the order quantity! Remaining: {remainingQuantity} {unit}",
     "error_box_mode_single_product": "You can only add one type of product in box mode.",
     "error_at_least_one_item": "You must add at least one item to the list to save.",
+    "error_no_new_items_to_save": "No new items to save.",
     "error_select_order": "Please select an order.",
     "error_saving": "Save error: {error}",
     "success_item_added": "{productName} added to the list.",
     "success_item_removed": "{removedItemName} removed from the list.",
     "success_receipt_saved": "Goods receipt saved successfully!",
+    "success_saved": "Items saved successfully!",
     "mode_pallet": "Pallet",
     "mode_box": "Box",
     "error_change_mode": "To change the mode, first complete or reset the current operation.",
@@ -109,7 +111,7 @@
     "validator_select_product": "Please select a product.",
     "label_quantity": "Quantity",
     "validator_enter_quantity": "Please enter quantity.",
-    "validator_enter_valid_quantity": "Please enter a valid quantity.",
+    "validator_valid_quantity": "Please enter a valid quantity.",
     "header_last_added_item": "Last Added Item",
     "no_items": "No items added yet.",
     "label_pallet_barcode_display": "Pallet: {barcode}",
@@ -120,20 +122,31 @@
     "dialog_list_empty": "Your list is empty. Add items to see them here.",
     "dialog_button_cancel": "Cancel",
     "dialog_button_save_receipt": "Save Receipt",
+    "dialog_button_save_continue": "Save and Continue Receiving",
+    "dialog_button_force_close": "Force Close Order",
     "dialog_search_hint": "Search...",
     "dialog_search_no_results": "No results found.",
     "label_order_status": "Order Status",
     "order_info_title": "Order Information",
     "dialog_total_quantity": "Total",
     "label_pallet_barcode_display_short": "Pallet: {barcode}",
-    "dialog_list_empty": "Your list is empty. Add items to see them here.",
+    "dialog_list_empty": "List is empty, nothing to save.",
     "dialog_button_confirm_and_save": "Confirm & Save",
     "confirmation": {
       "ordered": "Ordered",
       "previously_received": "Prev. Received",
-      "currently_adding": "Currently Adding",
+      "currently_adding": "Currently Adding",  
       "remaining_after": "Remaining"
-    }
+    },
+    "empty_list_message": "No items added yet. Use the form above to add products.",
+    "added_items_title": "Added Items ({count})",
+    "item_details": "{stockCode} - Qty: {quantity}",
+    "pallet_info": "Pallet: {palletId}",
+    "tooltip_scan_pallet": "Scan Pallet QR",
+    "tooltip_remove_item": "Remove Item",
+    "button_add": "Add",
+    "button_save_confirm": "Save & Confirm",
+    "label_pallet_id": "Pallet ID"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",
@@ -209,7 +222,11 @@
   },
   "common_labels": {
     "delete": "Delete",
-    "close": "Close"
+    "close": "Close",
+    "data_load_error": "Error loading data: {error}",
+    "barcode_reading_error": "Error reading barcode: {error}",
+    "user_id_not_found": "User ID not found.",
+    "not_available": "N/A"
   },
   "pending_operations": {
     "title": "Sync Status",
@@ -295,7 +312,8 @@
     "unknown_product": "Unknown Product"
   },
   "inventory_transfer": {
-    "title": "Pallet & Box Transfer",
+    "title": "Inventory Transfer",
+    "putaway_title": "Putaway Transfer",
     "mode_pallet": "Pallet",
     "mode_box": "Box",
     "label_break_pallet": "Break Pallet",
@@ -439,5 +457,8 @@
   },
   "splash": {
     "loading": "Checking session, please wait..."
+  },
+  "login_screen": {
+    "remember_me": "Remember Me"
   }
 }

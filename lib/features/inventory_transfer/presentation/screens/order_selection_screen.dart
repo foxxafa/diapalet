@@ -3,6 +3,8 @@ import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_transfer_screen.dart';
+import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
+import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +22,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
   List<PurchaseOrder> _allOrders = [];
   List<PurchaseOrder> _filteredOrders = [];
   final _searchController = TextEditingController();
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -37,41 +40,24 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
   }
 
   Future<void> _loadOrders() async {
-    setState(() {
-      _ordersFuture = _fetchAndFilterOrders();
-    });
-  }
-
-  Future<List<PurchaseOrder>> _fetchAndFilterOrders() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
     try {
-      // # GÜNCELLEME: Bu metod artık sadece durumu 2 (Kısmi Kabul) olanları getirecek.
-      final orders = await _repo.getOpenPurchaseOrdersForTransfer();
-      List<PurchaseOrder> transferableOrders = [];
-
-      // # GÜNCELLEME: Her sipariş için mal kabulde bekleyen stoğu var mı diye kontrol et.
-      // Eğer hiç yerleştirilecek ürünü kalmadıysa listede gösterme.
-      for (final order in orders) {
-        final containers = await _repo.getTransferableContainers(order.id);
-        if (containers.isNotEmpty) {
-          transferableOrders.add(order);
-        }
-      }
-
-      // UI'ı anında güncellemek için setState içinde ata
+      final repo = Provider.of<InventoryTransferRepository>(context, listen: false);
+      final orders = await repo.getOpenPurchaseOrdersForTransfer();
       if (mounted) {
         setState(() {
-          _allOrders = transferableOrders;
-          _filteredOrders = transferableOrders;
+          _allOrders = orders;
+          _filteredOrders = orders;
+          _isLoading = false;
         });
       }
-      return transferableOrders;
     } catch(e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('order_selection.error_loading'.tr(namedArgs: {'error': e.toString()}))),
         );
       }
-      return []; // Hata durumunda boş liste dön
     }
   }
 
@@ -88,6 +74,20 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
         return (order.poId?.toLowerCase().contains(query) ?? false);
       }).toList();
     });
+  }
+
+  void _navigateToTransfer(BuildContext context, PurchaseOrder order) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => InventoryTransferScreen(selectedOrder: order),
+      ),
+    ).then((_) {
+      _loadOrders(); // Refresh list when returning
+    });
+  }
+
+  void _showErrorDialog(String message) {
+    // ... existing code
   }
 
   @override
