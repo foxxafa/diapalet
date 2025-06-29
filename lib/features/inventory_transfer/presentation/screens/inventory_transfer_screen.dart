@@ -565,20 +565,23 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required void Function(T? item) onItemSelected,
     required bool Function(T item, String query) filterCondition,
     required FormFieldValidator<String>? validator,
+    bool isEnabled = true,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start, // Hata mesajı için hizalama
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: TextFormField(
-            readOnly: true,
+            readOnly: true, // Make it readonly to force selection from dialog
             controller: controller,
             focusNode: focusNode,
+            enabled: isEnabled,
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
+              enabled: isEnabled,
             ),
-            onTap: () async {
+            onTap: items.isEmpty ? null : () async {
               FocusScope.of(context).unfocus();
 
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
@@ -595,16 +598,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         ),
         const SizedBox(width: _smallGap),
-        Padding(
-          padding: const EdgeInsets.only(top: 4.0), // TextFormField ile hizala
-          child: _QrButton(
-            onTap: () async {
-              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-              if (result != null && result.isNotEmpty) {
-                _processScannedData(fieldIdentifier, result);
-              }
-            },
-          ),
+        _QrButton(
+          onTap: () async {
+            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+            if (result != null && result.isNotEmpty) {
+              _processScannedData(fieldIdentifier, result);
+            }
+          },
+          isEnabled: isEnabled,
         ),
       ],
     );
@@ -829,16 +830,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
 class _QrButton extends StatelessWidget {
   final VoidCallback onTap;
+  final bool isEnabled;
 
-  const _QrButton({required this.onTap});
+  const _QrButton({required this.onTap, this.isEnabled = true});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 52, // Yüksekliği TextFormField ile aynı yapmak için ayarlandı.
+      height: 52, // Goods receiving screen ile tutarlı yükseklik
       width: 56,
       child: ElevatedButton(
-        onPressed: onTap,
+        onPressed: isEnabled ? onTap : null,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,

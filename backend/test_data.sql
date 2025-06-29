@@ -21,8 +21,8 @@ INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `user`, `lokasyon_id`, `po_
 (201, '2025-06-22', 'sistem', 2, 'PO-25I001', 0);
 
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
-(1, 101, 1, 50.00, 'KUTU'),
-(2, 101, 2, 100.00, 'KUTU'),
-(3, 102, 5, 250.00, 'KUTU'),
-(4, 201, 3, 300.00, 'ADET'),
-(5, 201, 4, 150.00, 'KUTU');
+(1, 101, 1, 50.00, 'BOX'),
+(2, 101, 2, 100.00, 'BOX'),
+(3, 102, 5, 250.00, 'BOX'),
+(4, 201, 3, 300.00, 'BOX'),
+(5, 201, 4, 150.00, 'BOX');
