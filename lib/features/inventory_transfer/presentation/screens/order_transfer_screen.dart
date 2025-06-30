@@ -85,7 +85,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final containers = await _repo.getTransferableContainers(widget.order.id);
+      final containers = await _repo.getTransferableContainers(sourceLocationId, orderId: widget.order.id);
       final locations = await _repo.getTargetLocations();
 
       if (mounted) {

@@ -24,7 +24,7 @@ abstract class InventoryTransferRepository {
     Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer();
 
     /// ANA GÜNCELLEME: Belirli bir sipariş için transfer edilebilir tüm fiziksel birimleri (paletler ve paletsiz gruplar) getirir.
-    Future<List<TransferableContainer>> getTransferableContainers(int purchaseOrderId);
+    Future<List<TransferableContainer>> getTransferableContainers(int locationId, {int? orderId});
 
     /// GÜNCELLEME: Koda göre lokasyon arayan yeni fonksiyon.
     /// Başarılı olursa MapEntry<name, id> döner, bulunamazsa null döner.

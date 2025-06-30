@@ -123,9 +123,10 @@ class TerminalController extends Controller
 
                 if ($existingRequest) {
                     // 2. Bu işlem daha önce yapılmışsa, kayıtlı sonucu döndür.
+                    $resultData = json_decode($existingRequest['response_body'], true);
                     $results[] = [
-                        'local_id' => $localId, // Flutter tarafında bu isim bekleniyor
-                        'result' => json_decode($existingRequest['response_body'], true)
+                        'local_id' => (int)$localId, // Flutter tarafında bu isim bekleniyor
+                        'result' => is_string($resultData) ? json_decode($resultData, true) : $resultData
                     ];
                     continue; // Sonraki operasyona geç
                 }
@@ -189,8 +190,9 @@ class TerminalController extends Controller
                 'receipt_id' => $receiptId, 'urun_id' => $item['urun_id'],
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
             ])->execute();
-            // Mal kabul alanı ID'si 1 olarak varsayıldı
-            $this->upsertStock($db, $item['urun_id'], 1, $item['quantity'], $item['pallet_barcode'] ?? null, 'receiving');
+            // Sipariş varsa 'receiving', yoksa (serbest kabul) 'available' olarak ekle
+            $stockStatus = $siparisId ? 'receiving' : 'available';
+            $this->upsertStock($db, $item['urun_id'], 1, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId);
         }
 
         if ($siparisId) {
@@ -220,7 +222,7 @@ class TerminalController extends Controller
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
             // Kaynaktan düş
-            $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available');
+            $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available', $isPutawayOperation ? $siparisId : null);
             // Hedefe ekle
             $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available');
 
@@ -252,15 +254,24 @@ class TerminalController extends Controller
         return ['status' => 'success'];
     }
 
-    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus) {
+    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null) {
         $sql = "SELECT * FROM inventory_stock WHERE urun_id = :urun_id AND location_id = :location_id AND stock_status = :stock_status";
         $params = [':urun_id' => $urunId, ':location_id' => $locationId, ':stock_status' => $stockStatus];
+        
         if ($palletBarcode === null) {
             $sql .= " AND pallet_barcode IS NULL";
         } else {
             $sql .= " AND pallet_barcode = :pallet_barcode";
             $params[':pallet_barcode'] = $palletBarcode;
         }
+
+        if ($siparisId === null) {
+            $sql .= " AND siparis_id IS NULL";
+        } else {
+            $sql .= " AND siparis_id = :siparis_id";
+            $params[':siparis_id'] = $siparisId;
+        }
+
         $sql .= " FOR UPDATE";
         $stock = $db->createCommand($sql, $params)->queryOne();
 
@@ -274,7 +285,7 @@ class TerminalController extends Controller
         } elseif ($qtyChange > 0) {
             $db->createCommand()->insert('inventory_stock', [
                 'urun_id' => $urunId, 'location_id' => $locationId, 'quantity' => (float)$qtyChange,
-                'pallet_barcode' => $palletBarcode, 'stock_status' => $stockStatus
+                'pallet_barcode' => $palletBarcode, 'stock_status' => $stockStatus, 'siparis_id' => $siparisId
             ])->execute();
         } else {
             throw new \Exception("Stok düşürme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı.");
@@ -317,7 +328,7 @@ class TerminalController extends Controller
 
         $newStatus = null;
         if ($allLinesCompleted) {
-            $newStatus = 3; // Tamamlandı
+            $newStatus = 2; // Tamamlandı -> Kısmi Kabul olarak değiştirildi. Asıl tamamlama rafa yerleştirme sonrası olacak.
         } elseif ($anyLineReceived) {
             $newStatus = 2; // Kısmi Kabul
         }
@@ -354,8 +365,8 @@ class TerminalController extends Controller
         }
 
         if ($allLinesCompleted) {
-            // Statü: 3 (Tamamlandı/Yerleştirildi)
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
+            // Statü: 4 (Oto. Tamamlandı/Yerleştirildi)
+            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 4], ['id' => $siparisId])->execute();
         }
     }
 
@@ -364,8 +375,8 @@ class TerminalController extends Controller
         if (empty($siparisId)) {
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
-        // Statü: 4 (Zorla Kapatıldı)
-        $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 4], ['id' => $siparisId])->execute();
+        // Statü: 3 (Manuel Kapatıldı)
+        $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
 
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];
@@ -440,7 +451,7 @@ class TerminalController extends Controller
 
             if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
-                 $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id'], ['quantity']);
+                 $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id'], ['quantity']);
             } else {
                 $data['inventory_stock'] = [];
             }

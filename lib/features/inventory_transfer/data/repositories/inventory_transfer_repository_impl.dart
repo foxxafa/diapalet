@@ -76,36 +76,31 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<TransferableContainer>> getTransferableContainers(int orderId) async {
+  Future<List<TransferableContainer>> getTransferableContainers(int locationId, {int? orderId}) async {
     final db = await dbHelper.database;
-    final stockInReceivingArea = await db.rawQuery('''
-        SELECT s.urun_id, s.quantity, s.pallet_barcode, s.stock_status, u.UrunAdi, u.StokKodu, u.Barcode1, u.aktif, u.id
-        FROM inventory_stock s
-        JOIN urunler u ON u.id = s.urun_id
-        WHERE s.location_id = ? AND s.stock_status = 'receiving'
-    ''', [malKabulLocationId]);
+    String whereClause;
+    List<Object?> whereArgs;
 
-    if (stockInReceivingArea.isEmpty) return [];
+    if (orderId != null) {
+      // Siparişe bağlı yerleştirme: Sadece 'receiving' statüsündeki ve o siparişe ait stokları getir
+      whereClause = 'location_id = ? AND stock_status = ? AND siparis_id = ?';
+      whereArgs = [locationId, 'receiving', orderId];
+    } else {
+      // Serbest Transfer: Sadece 'available' statüsündeki stokları getir
+      whereClause = 'location_id = ? AND stock_status = ?';
+      whereArgs = [locationId, 'available'];
+    }
 
-    final receiptItemsForOrder = await db.rawQuery('''
-        SELECT DISTINCT gri.urun_id, gri.pallet_barcode
-        FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
-        WHERE gr.siparis_id = ?
-    ''', [orderId]);
+    final List<Map<String, dynamic>> maps = await db.query(
+      'inventory_stock',
+      where: whereClause,
+      whereArgs: whereArgs,
+    );
 
-    final relevantStock = stockInReceivingArea.where((stock) {
-      return receiptItemsForOrder.any((receiptItem) {
-        bool isSameProduct = stock['urun_id'] == receiptItem['urun_id'];
-        bool isSamePallet = stock['pallet_barcode'] == receiptItem['pallet_barcode'];
-        return isSameProduct && isSamePallet;
-      });
-    }).toList();
-
-    if (relevantStock.isEmpty) return [];
+    if (maps.isEmpty) return [];
 
     final containers = <String, List<Map<String, dynamic>>>{};
-    for (var stockItem in relevantStock) {
+    for (var stockItem in maps) {
       final pallet = stockItem['pallet_barcode'] as String?;
       final key = pallet ?? 'PALETSIZ_${stockItem['urun_id']}';
       containers.putIfAbsent(key, () => []).add(stockItem);
@@ -153,7 +148,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 1. Kaynak stoktan düşür.
           await _updateStock(
               txn, item.productId, sourceLocationId, -item.quantity, item.palletId,
-              isPutawayOperation ? 'receiving' : 'available');
+              isPutawayOperation ? 'receiving' : 'available', isPutawayOperation ? header.siparisId : null);
 
           // 2. Hedefteki palet durumunu belirle.
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
@@ -161,7 +156,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 3. Hedef stoka doğru palet durumuyla ekle.
           await _updateStock(
               txn, item.productId, targetLocationId, item.quantity, targetPalletId,
-              'available');
+              'available', null);
 
           // 4. Transfer işlemini logla.
           await txn.insert('inventory_transfers', {
@@ -287,16 +282,27 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
   
   Future<void> _updateStock(Transaction txn, int urunId, int locationId,
-      double quantityChange, String? palletBarcode, String stockStatus) async {
-    String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
-    List<dynamic> whereArgs = [urunId, locationId, stockStatus];
+      double quantityChange, String? palletBarcode, String stockStatus, int? siparisId) async {
+    var selectWhere = 'urun_id = ? AND location_id = ? AND stock_status = ?';
+    var selectArgs = <dynamic>[urunId, locationId, stockStatus];
+
     if (palletBarcode != null) {
-      whereArgs.add(palletBarcode);
+      selectWhere += ' AND pallet_barcode = ?';
+      selectArgs.add(palletBarcode);
+    } else {
+      selectWhere += ' AND pallet_barcode IS NULL';
+    }
+
+    if (siparisId != null) {
+      selectWhere += ' AND siparis_id = ?';
+      selectArgs.add(siparisId);
+    } else {
+      selectWhere += ' AND siparis_id IS NULL';
     }
 
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND stock_status = ? AND $palletWhereClause',
-        whereArgs: whereArgs);
+        where: selectWhere,
+        whereArgs: selectArgs);
 
     if (existingStock.isNotEmpty) {
       final currentStock = existingStock.first;
@@ -314,7 +320,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'location_id': locationId,
         'quantity': quantityChange,
         'pallet_barcode': palletBarcode,
-        'stock_status': stockStatus
+        'stock_status': stockStatus,
+        'siparis_id': siparisId,
       });
     } else {
       final errorMessage = "Kaynakta stok bulunamadı veya düşülecek miktar yetersiz (Lokasyon: $locationId, Ürün: $urunId, Statü: $stockStatus).";

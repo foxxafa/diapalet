@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
   // GÜNCELLEME: Şema değişikliği için sürüm artırıldı.
-  static const _databaseVersion = 18;
+  static const _databaseVersion = 19;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -135,11 +135,12 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         urun_id INTEGER NOT NULL,
         location_id INTEGER NOT NULL,
+        siparis_id INTEGER,
         quantity REAL NOT NULL,
         pallet_barcode TEXT,
         stock_status TEXT NOT NULL,
         updated_at TEXT, 
-        UNIQUE(urun_id, location_id, pallet_barcode, stock_status)
+        UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
       )
     ''');
 
@@ -186,14 +187,39 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
-        final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'inventory_stock', 'wms_putaway_status'];
-        if(fullRefreshTables.contains(table)) {
-          await txn.delete(table);
-        }
+        // inventory_stock için özel işlem
+        if (table == 'inventory_stock') {
+          // Önce lokaldeki 'receiving' statüsündeki kayıtları sakla
+          final localReceivingStock = await txn.query(
+            'inventory_stock',
+            where: 'stock_status = ?',
+            whereArgs: ['receiving'],
+          );
+          
+          // Tabloyu temizle
+          await txn.delete('inventory_stock');
+          
+          // Sunucudan gelen kayıtları ekle
+          for (final record in records) {
+            final sanitizedRecord = _sanitizeRecord(table, record);
+            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+          
+          // Lokaldeki 'receiving' kayıtlarını geri ekle
+          for (final receivingRecord in localReceivingStock) {
+            batch.insert(table, receivingRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        } else {
+          // Diğer tablolar için normal işlem
+          final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
+          if(fullRefreshTables.contains(table)) {
+            await txn.delete(table);
+          }
 
-        for (final record in records) {
-          final sanitizedRecord = _sanitizeRecord(table, record);
-          batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+          for (final record in records) {
+            final sanitizedRecord = _sanitizeRecord(table, record);
+            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
       }
       await batch.commit(noResult: true);

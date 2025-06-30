@@ -189,16 +189,25 @@ class SyncService with ChangeNotifier {
   }
 
   Future<void> _handleSyncResults(List<dynamic> results) async {
+    debugPrint("_handleSyncResults çağrıldı. Results: $results");
+    
     for (var result in results) {
-      final opId = result['operation_id'];
+      final opId = result['local_id'];
       final status = result['result']?['status'];
       final message = result['result']?['message'];
 
-      if (opId == null) continue;
+      debugPrint("İşleniyor - opId: $opId, status: $status, message: $message");
+
+      if (opId == null) {
+        debugPrint("opId null, bu kayıt atlanıyor");
+        continue;
+      }
 
       if (status == 'success') {
+        debugPrint("İşlem $opId başarılı, synced olarak işaretleniyor");
         await dbHelper.markOperationAsSynced(opId);
       } else {
+        debugPrint("İşlem $opId başarısız, hata mesajı kaydediliyor: $message");
         await dbHelper.updateOperationWithError(opId, message ?? 'Bilinmeyen sunucu hatası');
       }
     }
