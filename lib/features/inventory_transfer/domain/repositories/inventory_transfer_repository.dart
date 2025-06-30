@@ -41,4 +41,7 @@ abstract class InventoryTransferRepository {
 
     /// Barkoda göre ürün bilgilerini getirir.
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
+
+    /// YENI: Barkod/stok koduna göre lokasyondaki kutu moduna uygun ürünü bulur.
+    Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {String stockStatus = 'available'});
 }

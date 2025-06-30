@@ -19,20 +19,21 @@ class InventoryTransferViewModel extends ChangeNotifier {
   final BarcodeIntentService _barcodeService;
 
   // Controllers
-  final TextEditingController sourceLocationController = TextEditingController();
-  final TextEditingController targetLocationController = TextEditingController();
-  final TextEditingController scannedContainerIdController = TextEditingController();
+  TextEditingController sourceLocationController = TextEditingController();
+  TextEditingController targetLocationController = TextEditingController();
+  TextEditingController scannedContainerIdController = TextEditingController();
 
   // Focus nodes
-  final FocusNode sourceLocationFocusNode = FocusNode();
-  final FocusNode targetLocationFocusNode = FocusNode();
-  final FocusNode containerFocusNode = FocusNode();
+  FocusNode sourceLocationFocusNode = FocusNode();
+  FocusNode targetLocationFocusNode = FocusNode();
+  FocusNode containerFocusNode = FocusNode();
 
   // State variables
   bool _isLoadingInitialData = true;
   bool _isLoadingContainerContents = false;
   bool _isSaving = false;
   bool _isPalletOpening = false;
+  bool _isDisposed = false;
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
   
@@ -93,6 +94,18 @@ class InventoryTransferViewModel extends ChangeNotifier {
        _barcodeService = barcodeService;
   
   void init(PurchaseOrder? order) {
+    if (_isDisposed) {
+      // Re-initialize controllers and focus nodes if the view model is being reused.
+      sourceLocationController = TextEditingController();
+      targetLocationController = TextEditingController();
+      scannedContainerIdController = TextEditingController();
+      sourceLocationFocusNode = FocusNode();
+      targetLocationFocusNode = FocusNode();
+      containerFocusNode = FocusNode();
+      _productQuantityControllers.clear();
+      _productQuantityFocusNodes.clear();
+      _isDisposed = false;
+    }
     _selectedOrder = order;
     _initializeListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
@@ -100,6 +113,9 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_isDisposed) return; // Prevent double disposal
+    _isDisposed = true; // Set flag at the beginning
+
     _intentSub?.cancel();
     sourceLocationFocusNode.removeListener(_onFocusChange);
     containerFocusNode.removeListener(_onFocusChange);
@@ -258,11 +274,22 @@ class InventoryTransferViewModel extends ChangeNotifier {
             orElse: () => null
           );
         } else {
+          // Önce mevcut listede ara
           foundItem = _availableContainers.cast<BoxItem?>().firstWhere(
             (box) => box?.productCode.toLowerCase() == cleanData.toLowerCase() || 
                     box?.barcode1?.toLowerCase() == cleanData.toLowerCase(), 
             orElse: () => null
           );
+
+          // Mevcut listede bulunamazsa, veritabanında bu lokasyon için anlık sorgu yap
+          if (foundItem == null) {
+            debugPrint("Ürün '$cleanData' mevcut listede bulunamadı. Veritabanında anlık olarak aranıyor...");
+            final locationId = _availableSourceLocations[_selectedSourceLocationName];
+            if (locationId != null) {
+              final String stockStatus = isPutawayMode ? 'receiving' : 'available';
+              foundItem = await _repository.findBoxByCodeAtLocation(cleanData, locationId, stockStatus: stockStatus);
+            }
+          }
         }
 
         if (foundItem != null) {
@@ -557,9 +584,18 @@ class InventoryTransferViewModel extends ChangeNotifier {
           palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
           targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
           targetLocationName: _selectedTargetLocationName!,
+          stockStatus: product.stockStatus,
+          siparisId: product.siparisId,
         ));
       }
     }
     return items;
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
   }
 } 

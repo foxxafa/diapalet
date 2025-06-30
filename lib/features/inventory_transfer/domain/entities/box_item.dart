@@ -10,6 +10,8 @@ class BoxItem extends Equatable {
   final String productCode;
   final double quantity;
   final String? barcode1; // GÜNCELLEME: Barkod alanı eklendi
+  final String stockStatus; // YENİ EKLENDİ
+  final int? siparisId;     // YENİ EKLENDİ
 
   const BoxItem({
     this.boxId,
@@ -18,11 +20,13 @@ class BoxItem extends Equatable {
     required this.productCode,
     required this.quantity,
     this.barcode1, // GÜNCELLEME: Constructor'a eklendi
+    required this.stockStatus, // YENİ EKLENDİ
+    this.siparisId,         // YENİ EKLENDİ
   });
 
   @override
   // GÜNCELLEME: Eşitlik kontrolü için props listesine eklendi
-  List<Object?> get props => [boxId, productId, productName, productCode, quantity, barcode1];
+  List<Object?> get props => [boxId, productId, productName, productCode, quantity, barcode1, stockStatus, siparisId];
 
   /// GÜNCELLEME: JSON'dan gelen 'quantity' alanı string veya num olabilir.
   /// Bu durumu yönetmek için daha güvenli bir parse metodu eklendi.
@@ -43,17 +47,21 @@ class BoxItem extends Equatable {
       productCode: json['productCode'] as String,
       quantity: parseQuantity(json['quantity']),
       barcode1: json['barcode1'] as String?, // GÜNCELLEME: JSON'dan okunuyor
+      stockStatus: json['stock_status'] as String, // YENİ EKLENDİ
+      siparisId: json['siparis_id'] as int?,      // YENİ EKLENDİ
     );
   }
 
   /// Lokal veritabanından gelen map verisini parse eder.
   factory BoxItem.fromDbMap(Map<String, dynamic> map) {
     return BoxItem(
-      productId: map['productId'] as int,
-      productName: map['productName'] as String,
-      productCode: map['productCode'] as String,
+      productId: map['urun_id'] as int,
+      productName: map['UrunAdi'] as String,
+      productCode: map['StokKodu'] as String,
       quantity: (map['quantity'] as num).toDouble(),
-      barcode1: map['barcode1'] as String?, // GÜNCELLEME: Map'ten okunuyor
+      barcode1: map['Barcode1'] as String?,
+      stockStatus: map['stock_status'] as String, // YENİ EKLENDİ
+      siparisId: map['siparis_id'] as int?,      // YENİ EKLENDİ
     );
   }
 }

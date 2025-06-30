@@ -7,13 +7,19 @@ class ProductItem {
   final int id;
   final String name;
   final String productCode;
+  final String? barcode1;
   final double currentQuantity;
+  final String stockStatus;
+  final int? siparisId;
 
   const ProductItem({
     required this.id,
     required this.name,
     required this.productCode,
+    this.barcode1,
     required this.currentQuantity,
+    required this.stockStatus,
+    this.siparisId,
   });
 
   factory ProductItem.fromBoxItem(BoxItem box) {
@@ -21,7 +27,10 @@ class ProductItem {
       id: box.productId,
       name: box.productName,
       productCode: box.productCode,
+      barcode1: box.barcode1,
       currentQuantity: box.quantity,
+      stockStatus: box.stockStatus,
+      siparisId: box.siparisId,
     );
   }
 
@@ -42,16 +51,22 @@ class ProductItem {
       id: parseToNum(idValue).toInt(),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
+      barcode1: json['barcode1'] as String?,
       currentQuantity: parseToNum(qtyValue).toDouble(),
+      stockStatus: json['stock_status'] as String,
+      siparisId: json['siparis_id'] as int?,
     );
   }
 
   factory ProductItem.fromMap(Map<String, dynamic> map) {
     return ProductItem(
       id: map['id'] as int,
-      name: (map['name'] ?? '').toString(),
-      productCode: (map['code'] ?? '').toString(),
-      currentQuantity: (map['currentQuantity'] as num?)?.toDouble() ?? 0.0,
+      name: map['name'] as String,
+      productCode: map['productCode'] as String,
+      barcode1: map['barcode1'] as String?,
+      currentQuantity: (map['currentQuantity'] as num).toDouble(),
+      stockStatus: map['stock_status'] as String,
+      siparisId: map['siparis_id'] as int?,
     );
   }
 
@@ -62,6 +77,8 @@ class ProductItem {
       'name': name,
       'productCode': productCode,
       'currentQuantity': currentQuantity,
+      'stock_status': stockStatus,
+      'siparis_id': siparisId,
     };
   }
 

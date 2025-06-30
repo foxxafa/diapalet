@@ -211,6 +211,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               palletId: item.sourcePalletBarcode,
               targetLocationId: targetLocation.value,
               targetLocationName: targetLocation.key,
+              stockStatus: 'receiving',
+              siparisId: widget.order.id,
             ));
           }
         }
