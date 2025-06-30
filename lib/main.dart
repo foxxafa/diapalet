@@ -15,7 +15,8 @@ import 'package:diapalet/features/goods_receiving/domain/repositories/goods_rece
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
+// DÜZELTME: InventoryTransferViewModel artık global olarak sağlanmıyor.
+// import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -39,7 +40,6 @@ Dio createDioClient() {
   return dio;
 }
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
@@ -55,18 +55,18 @@ void main() async {
     EasyLocalization(
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      startLocale: const Locale('en'),
+      startLocale: const Locale('tr'), // DÜZELTME: Başlangıç dili Türkçe yapıldı
       fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [
-          // Temel servisler (bağımlılığı olmayanlar)
+          // Temel servisler
           Provider<NetworkInfo>.value(value: networkInfo),
           Provider<Dio>.value(value: dio),
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<BarcodeIntentService>(create: (_) => BarcodeIntentService()),
           ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
 
-          // SyncService, diğer repolardan önce tanımlanmalı çünkü onlar buna bağımlı.
+          // SyncService
           ChangeNotifierProvider<SyncService>(
             create: (context) => SyncService(
               dbHelper: context.read<DatabaseHelper>(),
@@ -75,7 +75,7 @@ void main() async {
             ),
           ),
 
-          // Diğer provider'lar (SyncService'e bağımlı olabilirler)
+          // Repositories
           Provider<AuthRepository>(
             create: (context) => AuthRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
@@ -100,7 +100,7 @@ void main() async {
             ),
           ),
 
-          // View modeller
+          // View modeller (Artık sadece ihtiyaç duyulanlar global)
           ChangeNotifierProvider(
             create: (context) => GoodsReceivingViewModel(
               repository: context.read<GoodsReceivingRepository>(),
@@ -108,13 +108,8 @@ void main() async {
               barcodeService: context.read<BarcodeIntentService>(),
             ),
           ),
-          ChangeNotifierProvider<InventoryTransferViewModel>(
-            create: (context) => InventoryTransferViewModel(
-              repository: context.read<InventoryTransferRepository>(),
-              syncService: context.read<SyncService>(),
-              barcodeService: context.read<BarcodeIntentService>(),
-            ),
-          ),
+          // DÜZELTME: InventoryTransferViewModel buradan kaldırıldı.
+          // İlgili ekran kendi Provider'ını oluşturacak.
         ],
         child: const MyApp(),
       ),
@@ -130,11 +125,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
-      locale: const Locale('en'),
+      locale: context.locale, // DÜZELTME: EasyLocalization'dan gelen locale kullanılıyor.
       title: 'app.title'.tr(),
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.light, // veya ThemeMode.system
+      themeMode: ThemeMode.light,
       home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );

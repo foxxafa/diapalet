@@ -1,20 +1,6 @@
 // lib/core/network/api_config.dart
 class ApiConfig {
-  // --- YEREL DOCKER SUNUCUSU ---
-  // Android emülatöründen PC'nizdeki localhost'a erişmek için '10.0.2.2' kullanılır.
-  // Docker sunucunuzun çalıştığı portu (örn: 5000) buraya yazın.
-  static const String _localHost = 'http://192.168.10.133:5000';//'http://192.168.1.122:5000'      http://10.0.2.2:5000
-
-  // --- TEMEL YOL (BASE PATH) ---
-  // Sunucudaki Yii2 controller'ı 'TerminalController' olduğu için,
-  // framework bunu varsayılan olarak 'terminal' yoluna (route) eşler.
-  // Tüm istekler bu temel yol üzerinden yapılır.
-  static const String baseUrl = '$_localHost/terminal';
-
-  // --- ENDPOINT'LER ---
-  // Her bir endpoint, TerminalController içindeki bir 'action' metoduna karşılık gelir.
-  // Yii2, action isimlerini (örn: actionLogin) URL formatına (örn: /login) dönüştürür.
-  // Yii2, action metodlarındaki parametreleri (örn: $order_id) query string olarak bekler.
+  static const String baseUrl = 'https://enzo.rowhub.net/index.php?r=apiterminal';
 
   // Kimlik Doğrulama
   static const String login = '$baseUrl/login';
@@ -42,5 +28,3 @@ class ApiConfig {
   // Sunucu Sağlık Kontrolü
   static const String healthCheck = '$baseUrl/health-check';
 }
-
-const String apiBaseUrl = 'https://api.example.com';

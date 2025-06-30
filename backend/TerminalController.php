@@ -60,7 +60,7 @@ class TerminalController extends Controller
 
         if (!$username || !$password) {
             Yii::$app->response->statusCode = 400;
-            return ['status' => 400, 'message' => 'Kullanıcı adı ve şifre gereklidir.'];
+            return $this->asJson(['status' => 400, 'message' => 'Kullanıcı adı ve şifre gereklidir.']);
         }
 
         try {
@@ -78,18 +78,18 @@ class TerminalController extends Controller
                     'warehouse_id' => (int)($user['warehouse_id'] ?? 0),
                     'username' => $user['username'],
                 ];
-                return [
+                return $this->asJson([
                     'status' => 200, 'message' => 'Giriş başarılı.',
                     'user' => $userData, 'apikey' => $apiKey
-                ];
+                ]);
             } else {
                 Yii::$app->response->statusCode = 401;
-                return ['status' => 401, 'message' => 'Kullanıcı adı veya şifre hatalı.'];
+                return $this->asJson(['status' => 401, 'message' => 'Kullanıcı adı veya şifre hatalı.']);
             }
         } catch (\yii\db\Exception $e) {
             Yii::error("Login DB Hatası: " . $e->getMessage(), __METHOD__);
             Yii::$app->response->statusCode = 500;
-            return ['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu.'];
+            return $this->asJson(['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu.']);
         }
     }
 
@@ -190,9 +190,11 @@ class TerminalController extends Controller
                 'receipt_id' => $receiptId, 'urun_id' => $item['urun_id'],
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
             ])->execute();
-            // Sipariş varsa 'receiving', yoksa (serbest kabul) 'available' olarak ekle
+
+            // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
+            // sanal bir alana eklenir.
             $stockStatus = $siparisId ? 'receiving' : 'available';
-            $this->upsertStock($db, $item['urun_id'], 1, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId);
+            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId);
         }
 
         if ($siparisId) {
@@ -209,11 +211,13 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
         }
 
-        $sourceLocationId = $header['source_location_id'];
+        // DÜZELTME: kaynak lokasyon ID'si 0 ise, bunu NULL olarak yorumla. Bu, sanal 'Mal Kabul Alanı'nı temsil eder.
+        $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
         $operationType = $header['operation_type'] ?? 'box_transfer';
         $siparisId = $header['siparis_id'] ?? null;
-        // Yerleştirme operasyonu, kaynak lokasyon 1 (Mal Kabul Alanı) ise ve sipariş ID'si varsa geçerlidir.
-        $isPutawayOperation = ($sourceLocationId == 1 && $siparisId != null);
+        
+        // DÜZELTME: Rafa yerleştirme işlemi, kaynak lokasyonun NULL olması ve sipariş ID'sinin var olmasıyla belirlenir.
+        $isPutawayOperation = ($sourceLocationId === null && $siparisId != null);
 
         foreach ($items as $item) {
             $productId = $item['product_id'];
@@ -223,7 +227,7 @@ class TerminalController extends Controller
 
             // Kaynaktan düş
             $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available', $isPutawayOperation ? $siparisId : null);
-            // Hedefe ekle
+            // Hedefe ekle (hedef her zaman 'available' ve siparişsizdir)
             $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available');
 
             $transferData = [
@@ -255,25 +259,30 @@ class TerminalController extends Controller
     }
 
     private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null) {
-        $sql = "SELECT * FROM inventory_stock WHERE urun_id = :urun_id AND location_id = :location_id AND stock_status = :stock_status";
-        $params = [':urun_id' => $urunId, ':location_id' => $locationId, ':stock_status' => $stockStatus];
-        
-        if ($palletBarcode === null) {
-            $sql .= " AND pallet_barcode IS NULL";
+        $query = new Query();
+        $query->from('inventory_stock')
+            ->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+
+        if ($locationId === null) {
+            $query->andWhere(['is', 'location_id', new \yii\db\Expression('NULL')]);
         } else {
-            $sql .= " AND pallet_barcode = :pallet_barcode";
-            $params[':pallet_barcode'] = $palletBarcode;
+            $query->andWhere(['location_id' => $locationId]);
+        }
+
+        if ($palletBarcode === null) {
+            $query->andWhere(['is', 'pallet_barcode', new \yii\db\Expression('NULL')]);
+        } else {
+            $query->andWhere(['pallet_barcode' => $palletBarcode]);
         }
 
         if ($siparisId === null) {
-            $sql .= " AND siparis_id IS NULL";
+            $query->andWhere(['is', 'siparis_id', new \yii\db\Expression('NULL')]);
         } else {
-            $sql .= " AND siparis_id = :siparis_id";
-            $params[':siparis_id'] = $siparisId;
+            $query->andWhere(['siparis_id' => $siparisId]);
         }
 
-        $sql .= " FOR UPDATE";
-        $stock = $db->createCommand($sql, $params)->queryOne();
+        $stock = $query->one($db);
+
 
         if ($stock) {
             $newQty = (float)($stock['quantity']) + (float)$qtyChange;
@@ -410,7 +419,7 @@ class TerminalController extends Controller
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
             // Sadece status değeri 5'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId])->andWhere(['<', 'status', 5]);
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 5]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
             
             // DEBUG: Kaç sipariş bulundu?
@@ -419,7 +428,7 @@ class TerminalController extends Controller
                 Yii::info("Sipariş ID: {$order['id']}, Status: {$order['status']}, PO ID: {$order['po_id']}", __METHOD__);
             }
             
-            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status']);
+            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'branch_id', 'status']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
             if (!empty($poIds)) {
@@ -452,23 +461,28 @@ class TerminalController extends Controller
                  $data['wms_putaway_status'] = [];
             }
 
-            // Sadece Mal Kabul(1) ve ilgili depo lokasyonlarındaki stokları indir
+            // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
+            // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
             $locationIds = array_column($data['warehouses_shelfs'], 'id');
-            $locationIds[] = 1; // Mal Kabul lokasyonunu ekle
-
+            
+            $stockQuery = (new Query())->from('inventory_stock');
             if (!empty($locationIds)) {
-                $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
-                
-                // DEBUG: Kaç inventory stock kaydı bulundu?
-                Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
-                foreach ($data['inventory_stock'] as $stock) {
-                    Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
-                }
-                
-                 $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id'], ['quantity']);
+                 $stockQuery->where(['in', 'location_id', $locationIds])
+                           ->orWhere(['is', 'location_id', new \yii\db\Expression('NULL')]);
             } else {
-                $data['inventory_stock'] = [];
+                 $stockQuery->where(['is', 'location_id', new \yii\db\Expression('NULL')]);
             }
+
+            $data['inventory_stock'] = $stockQuery->all();
+            
+            // DEBUG: Kaç inventory stock kaydı bulundu?
+            Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
+            foreach ($data['inventory_stock'] as $stock) {
+                Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
+            }
+            
+             $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id'], ['quantity']);
+
 
             return [
                 'success' => true, 'data' => $data,

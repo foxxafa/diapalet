@@ -1,4 +1,4 @@
-// ----- lib/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart (GÜNCELLENDİ) -----
+// lib/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
@@ -17,31 +17,24 @@ abstract class InventoryTransferRepository {
     Future<void> recordTransferOperation(
         TransferOperationHeader header,
         List<TransferItemDetail> items,
-        int sourceLocationId,
+        // DÜZELTME: Kaynak lokasyon artık nullable.
+        int? sourceLocationId,
         int targetLocationId,
         );
 
     /// Transfer için uygun (Kısmi/Tam Kabul) siparişleri getirir.
     Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer();
 
-    /// ANA GÜNCELLEME: Belirli bir sipariş için transfer edilebilir tüm fiziksel birimleri (paletler ve paletsiz gruplar) getirir.
-    Future<List<TransferableContainer>> getTransferableContainers(int locationId, {int? orderId});
+    /// ANA GÜNCELLEME: Belirli bir lokasyondaki veya sanal mal kabul alanındaki transfer edilebilir birimleri getirir.
+    /// `orderId` null değilse, bu bir rafa kaldırma işlemidir ve sanal alandan (`locationId` null) veri çeker.
+    /// `orderId` null ise, bu bir serbest transferdir ve belirtilen `locationId`'den veri çeker.
+    Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId});
 
-    /// GÜNCELLEME: Koda göre lokasyon arayan yeni fonksiyon.
-    /// Başarılı olursa MapEntry<name, id> döner, bulunamazsa null döner.
     Future<MapEntry<String, int>?> findLocationByCode(String code);
-
-    Future<List<MapEntry<String, int>>> getAllLocations(int warehouseId);
-
-    Future<void> updatePurchaseOrderStatus(int orderId, int status);
-
-    Future<List<TransferOperationHeader>> getPendingTransfers();
 
     Future<void> checkAndCompletePutaway(int orderId);
 
-    /// Barkoda göre ürün bilgilerini getirir.
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 
-    /// YENI: Barkod/stok koduna göre lokasyondaki kutu moduna uygun ürünü bulur.
     Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {List<String> stockStatuses = const ['available']});
 }

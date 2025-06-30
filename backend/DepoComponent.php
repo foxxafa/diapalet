@@ -29,18 +29,6 @@ class DepoComponent extends Component
                 throw new \Exception("AŞAMA 1 (Depo Çekme) BAŞARISIZ: " . $warehousesResult['message']);
             }
 
-            // --- YENİ ADIM: Her depo için özel bir "Mal Kabul" rafı oluştur ---
-            $allWarehouses = (new \yii\db\Query())->from('warehouses')->all();
-            foreach ($allWarehouses as $warehouse) {
-                $db->createCommand()->insert('warehouses_shelfs', [
-                    'warehouse_id' => $warehouse['id'],
-                    'name' => 'Mal Kabul Alanı',
-                    'code' => 'MAL_KABUL', // Standart ve sorgulanabilir bir kod
-                    'is_active' => 1,
-                ])->execute();
-            }
-            // --- YENİ ADIM SONU ---
-
             // 3. Dia'dan rafları çek ve doğru depoyla ilişkilendirerek kaydet
             $shelfsResult = self::fetchAndSaveShelfs();
             if ($shelfsResult['status'] === 'error') {
@@ -50,7 +38,7 @@ class DepoComponent extends Component
             $transaction->commit();
             return [
                 'status' => 'success',
-                'message' => $warehousesResult['message'] . ' Her depo için Mal Kabul Alanı oluşturuldu. ' . $shelfsResult['message']
+                'message' => $warehousesResult['message'] . ' ' . $shelfsResult['message']
             ];
 
         } catch (\Exception $e) {

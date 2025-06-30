@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // Şema değişikliği ve temizlik sonrası sürümü güncelleyelim.
-  static const _databaseVersion = 24;
+  // ANA GÜNCELLEME: Şema değişikliği sonrası versiyon artırıldı.
+  static const _databaseVersion = 25;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -48,7 +48,7 @@ class DatabaseHelper {
 
   Future<void> _createAllTables(Database db) async {
     debugPrint("Veritabanı tabloları (Sürüm $_databaseVersion) oluşturuluyor...");
-    
+
     await db.transaction((txn) async {
       final batch = txn.batch();
 
@@ -120,7 +120,7 @@ class DatabaseHelper {
           notlar TEXT
         )
       ''');
-      
+
       batch.execute('''
         CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
           id INTEGER PRIMARY KEY,
@@ -130,12 +130,13 @@ class DatabaseHelper {
           birim TEXT
         )
       ''');
-      
+
+      // DÜZELTME: 'wms_putaway_status' tablosu eklendi.
       batch.execute('''
         CREATE TABLE IF NOT EXISTS wms_putaway_status (
           id INTEGER PRIMARY KEY,
-          satin_alma_siparis_fis_satir_id INTEGER UNIQUE,
-          putaway_quantity REAL NOT NULL,
+          satin_alma_siparis_fis_satir_id INTEGER UNIQUE NOT NULL,
+          putaway_quantity REAL NOT NULL DEFAULT 0,
           created_at TEXT,
           updated_at TEXT
         )
@@ -162,27 +163,29 @@ class DatabaseHelper {
         )
       ''');
 
+      // ANA GÜNCELLEME: `inventory_stock` tablosu güncellendi.
+      // - location_id artık NULL olabilir (mal kabul alanı için).
+      // - siparis_id eklendi.
+      // - stock_status 'receiving' ve 'available' durumlarını içerir.
+      // - UNIQUE constraint güncellendi.
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           urun_id INTEGER NOT NULL,
-          location_id INTEGER NOT NULL,
+          location_id INTEGER, 
           siparis_id INTEGER,
           quantity REAL NOT NULL,
           pallet_barcode TEXT,
-          stock_status TEXT NOT NULL,
+          stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
           updated_at TEXT, 
           UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
         )
       ''');
-      
-      // Performance için index'ler ekle
+
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_location ON inventory_stock(location_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_status ON inventory_stock(stock_status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_siparis ON inventory_stock(siparis_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_composite ON inventory_stock(location_id, stock_status, siparis_id)');
-      
-      // Diğer sık sorgulanan tablolar için index'ler
+
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON warehouses_shelfs(warehouse_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON warehouses_shelfs(code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON satin_alma_siparis_fis_satir(siparis_id)');
@@ -202,7 +205,7 @@ class DatabaseHelper {
           created_at TEXT
         )
       ''');
-      
+
       await batch.commit(noResult: true);
     });
 
@@ -233,24 +236,27 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
+        // ANA GÜNCELLEME: `inventory_stock` tablosunu güncellerken, lokalde `receiving` durumunda
+        // olan ve henüz sunucuya gönderilmemiş kayıtları koru. Diğer tüm stokları sil ve sunucudan gelenlerle değiştir.
         if (table == 'inventory_stock') {
           final localReceivingStock = await txn.query(
             'inventory_stock',
             where: 'stock_status = ?',
             whereArgs: ['receiving'],
           );
-          
+
           await txn.delete('inventory_stock');
-          
+
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
-          
+
           for (final receivingRecord in localReceivingStock) {
             batch.insert(table, receivingRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         } else {
+          // Diğer tüm tablolar için tam yenileme yap
           final fullRefreshTables = ['employees', 'urunler', 'warehouses', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
           if(fullRefreshTables.contains(table)) {
             await txn.delete(table);
@@ -274,26 +280,11 @@ class DatabaseHelper {
     }
     return newRecord;
   }
-  
+
   // --- YARDIMCI FONKSİYONLAR ---
 
-  Future<int?> getReceivingLocationId(int warehouseId, {DatabaseExecutor? txn}) async {
-    final executor = txn ?? await database;
-    final result = await executor.query(
-      'warehouses_shelfs',
-      columns: ['id'],
-      where: 'warehouse_id = ? AND code = ? AND is_active = 1',
-      whereArgs: [warehouseId, 'MAL_KABUL'],
-      limit: 1,
-    );
-    if (result.isNotEmpty) {
-      final id = result.first['id'] as int?;
-      debugPrint("Depo ID $warehouseId için Mal Kabul Alanı bulundu: ID $id");
-      return id;
-    }
-    debugPrint("HATA: Depo ID $warehouseId için aktif bir 'MAL_KABUL' rafı bulunamadı.");
-    return null;
-  }
+  // DÜZELTME: Bu fonksiyon artık kullanılmıyor, kaldırıldı.
+  // Future<int?> getReceivingLocationId(int warehouseId, {DatabaseExecutor? txn}) async { ... }
 
   Future<String?> getPoIdBySiparisId(int siparisId) async {
     final db = await database;
@@ -338,10 +329,10 @@ class DatabaseHelper {
 
   Future<List<PendingOperation>> getPendingOperations() async {
     final db = await database;
-    final maps = await db.query('pending_operation', 
-      where: "status = ?", 
-      whereArgs: ['pending'], 
-      orderBy: 'created_at ASC');
+    final maps = await db.query('pending_operation',
+        where: "status = ?",
+        whereArgs: ['pending'],
+        orderBy: 'created_at ASC');
     return maps.map((map) => PendingOperation.fromMap(map)).toList();
   }
 

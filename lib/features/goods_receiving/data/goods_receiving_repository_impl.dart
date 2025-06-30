@@ -37,17 +37,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     try {
       await db.transaction((txn) async {
-        // Kullanıcının depo ID'sini al
-        final prefs = await SharedPreferences.getInstance();
-        final warehouseId = prefs.getInt('warehouse_id');
-        if (warehouseId == null) {
-          throw Exception("Depo bilgisi bulunamadı. Lütfen tekrar giriş yapın.");
-        }
-        // Dinamik olarak mal kabul lokasyon ID'sini al - transaction kullanarak
-        final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId, txn: txn);
-        if (malKabulLocationId == null) {
-          throw Exception("Bu depo için Mal Kabul Alanı tanımlanmamış.");
-        }
         final receiptHeaderData = {
           'siparis_id': payload.header.siparisId,
           'invoice_number': payload.header.invoiceNumber,
@@ -62,10 +51,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'receipt_id': receiptId, 'urun_id': item.urunId,
             'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
           });
-          await _updateStock(txn, item.urunId, malKabulLocationId, item.quantity, item.palletBarcode, 'receiving', payload.header.siparisId);
+          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, 'receiving', payload.header.siparisId);
         }
 
-        // Mal kabul yapıldığında siparişin durumunu 2 (İşlemde) yap.
         if (payload.header.siparisId != null) {
           await txn.update(
             'satin_alma_siparis_fis',
@@ -129,15 +117,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId]) async {
+  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId]) async {
+    String locationWhereClause = locationId == null ? 'location_id IS NULL' : 'location_id = ?';
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
-    List<dynamic> whereArgs = [urunId, locationId, stockStatus];
+    
+    List<dynamic> whereArgs = [urunId, stockStatus];
+    if (locationId != null) whereArgs.add(locationId);
     if (palletBarcode != null) whereArgs.add(palletBarcode);
     if (siparisId != null) whereArgs.add(siparisId);
     
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND location_id = ? AND stock_status = ? AND $palletWhereClause AND $siparisWhereClause',
+        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause',
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
@@ -165,43 +156,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final prefs = await SharedPreferences.getInstance();
     final warehouseId = prefs.getInt('warehouse_id');
 
-    // Bu sorgu, sadece henüz tam olarak mal kabulü yapılmamış siparişlerin ID'lerini getirir.
-    // 1. Sipariş edilen toplam miktarı bulur.
-    // 2. Mal kabulü yapılan toplam miktarı bulur.
-    // 3. Sadece sipariş edilen > kabul edilen ise o sipariş ID'sini alır.
-    final List<Map<String, dynamic>> receivableOrderIds = await db.rawQuery('''
-      SELECT T1.id
-      FROM satin_alma_siparis_fis AS T1
-      WHERE 
-        T1.status IN (1, 2) AND T1.lokasyon_id = ? AND
-        (
-          SELECT TOTAL(T2.miktar) 
-          FROM satin_alma_siparis_fis_satir AS T2 
-          WHERE T2.siparis_id = T1.id
-        ) > (
-          SELECT TOTAL(T4.quantity_received) 
-          FROM goods_receipts AS T3 
-          JOIN goods_receipt_items AS T4 ON T3.id = T4.receipt_id 
-          WHERE T3.siparis_id = T1.id
-        )
-    ''', [warehouseId]);
-
-    if (receivableOrderIds.isEmpty) {
-      debugPrint("Mal kabulü yapılacak açık sipariş bulunamadı.");
-      return [];
-    }
-
-    final ids = receivableOrderIds.map((map) => map['id'] as int).toList();
-    final placeholders = List.generate(ids.length, (_) => '?').join(',');
-
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'id IN ($placeholders)',
-      whereArgs: ids,
+      where: 'status IN (1, 2) AND lokasyon_id = ?',
+      whereArgs: [warehouseId],
       orderBy: 'tarih DESC',
     );
     
-    debugPrint("Açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu (tamamı alınmamış olanlar)");
+    debugPrint("Açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -210,19 +172,19 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     final maps = await db.rawQuery('''
         SELECT 
-            s.*, 
-            u.UrunAdi, 
-            u.StokKodu, 
-            u.Barcode1, 
-            u.aktif,
-            COALESCE((SELECT SUM(gri.quantity_received) 
-                      FROM goods_receipt_items gri 
-                      JOIN goods_receipts gr ON gr.id = gri.receipt_id 
-                      WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
-            COALESCE(wps.putaway_quantity, 0) as transferredQuantity
+          s.*, 
+          u.UrunAdi, 
+          u.StokKodu, 
+          u.Barcode1, 
+          u.aktif,
+          COALESCE((SELECT SUM(gri.quantity_received) 
+                    FROM goods_receipt_items gri 
+                    JOIN goods_receipts gr ON gr.id = gri.receipt_id 
+                    WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
+          COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
         JOIN urunler u ON u.id = s.urun_id
-        LEFT JOIN wms_putaway_status wps ON wps.satin_alma_siparis_fis_satir_id = s.id
+        LEFT JOIN wms_putaway_status wps ON wps.satinalmasiparisfissatir_id = s.id
         WHERE s.siparis_id = ?
     ''', [orderId]);
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
@@ -234,7 +196,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status = ?',
-      whereArgs: [2], // Durumu 2 (Mal Kabulde/Kısmi Kabul) olanlar
+      whereArgs: [2],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -248,10 +210,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           columns: ['po_id'], where: 'id = ?', limit: 1, whereArgs: [orderId]);
       final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
 
-      // NOTE: A new PendingOperationType 'updateOrderStatus' should be added to the enum.
-      // The backend will need a handler for this operation.
       final pendingOp = PendingOperation.create(
-          type: PendingOperationType.forceCloseOrder, // Using existing type; backend should ideally handle a new type.
+          type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'po_id': poId, 'status': newStatus}),
           createdAt: DateTime.now());
       await txn.insert('pending_operation', pendingOp.toDbMap());
@@ -280,7 +240,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       );
       final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
 
-      // 1. Senkronizasyon için bekleyen işlem oluştur
       final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'po_id': poId}),
@@ -288,7 +247,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       );
       await txn.insert('pending_operation', pendingOp.toDbMap());
 
-      // 2. Siparişin LOKAL durumunu 3 (Manuel Kapatıldı) yap.
       await txn.update(
         'satin_alma_siparis_fis',
         {'status': 3}, 

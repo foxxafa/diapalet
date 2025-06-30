@@ -1,11 +1,11 @@
 // lib/features/inventory_transfer/presentation/screens/transfer_type_selection_screen.dart
+import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_selection_screen.dart';
-import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/core/sync/sync_service.dart';
-import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -41,8 +41,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
               context: context,
               icon: Icons.move_up_rounded,
               label: "transfer_type.free_transfer".tr(),
-              onPressed: () async {
-                final result = await Navigator.of(context).push<bool>(
+              onPressed: () {
+                Navigator.of(context).push<bool>(
                   MaterialPageRoute(
                     builder: (_) => ChangeNotifierProvider(
                       create: (context) => InventoryTransferViewModel(
@@ -50,15 +50,10 @@ class TransferTypeSelectionScreen extends StatelessWidget {
                         syncService: context.read<SyncService>(),
                         barcodeService: context.read<BarcodeIntentService>(),
                       ),
-                      child: const InventoryTransferScreen(),
+                      child: const InventoryTransferScreen(selectedOrder: null),
                     ),
                   ),
                 );
-                
-                // Eğer transfer yapıldıysa (result == true), bu ekranı da kapat
-                if (result == true && context.mounted) {
-                  Navigator.of(context).pop();
-                }
               },
             ),
           ],

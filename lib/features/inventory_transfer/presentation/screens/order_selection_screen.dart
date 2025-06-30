@@ -2,10 +2,13 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/features/inventory_transfer/presentation/screens/order_transfer_screen.dart';
+import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
+import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 
 class OrderSelectionScreen extends StatefulWidget {
   const OrderSelectionScreen({super.key});
@@ -115,21 +118,24 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                                   title: Text(order.poId ??
                                       'common_labels.unknown_order'.tr()),
                                   subtitle: Text(
-                                    "${'orders.no_supplier'.tr()}\n" // Tedarikçi adı kaldırıldı, gerekirse eklenebilir.
-                                    "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
+                                    '${'order_selection.order_date'.tr()}: ${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'Bilinmiyor'}\n'
+                                    '${'order_selection.supplier'.tr()}: ${order.supplierName ?? 'Bilinmiyor'}',
                                   ),
-                                  isThreeLine: true,
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: () async {
-                                    final result =
-                                        await Navigator.of(context).push(
+                                    final result = await Navigator.of(context).push<bool>(
                                       MaterialPageRoute(
-                                        builder: (_) =>
-                                            OrderTransferScreen(order: order),
+                                        builder: (_) => ChangeNotifierProvider(
+                                          create: (context) => InventoryTransferViewModel(
+                                            repository: context.read<InventoryTransferRepository>(),
+                                            syncService: context.read<SyncService>(),
+                                            barcodeService: context.read<BarcodeIntentService>(),
+                                          ),
+                                          child: InventoryTransferScreen(selectedOrder: order),
+                                        ),
                                       ),
                                     );
 
-                                    // Yerleştirme ekranından `true` dönerse (yani işlem yapıldıysa) listeyi yenile.
                                     if (result == true && mounted) {
                                       _loadOrders();
                                     }

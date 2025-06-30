@@ -43,7 +43,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
       final orders = await _repository.getOpenPurchaseOrders();
       if (mounted) {
         setState(() {
-          _allOrders = orders.where((o) => o.status == 1 || o.status == 2).toList();
+          _allOrders = orders; // Filtreleme kaldırıldı, tüm açık siparişler gösterilecek
           _filterOrders();
           _isLoading = false;
         });
@@ -70,7 +70,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
   }
 
   Future<void> _onOrderSelected(PurchaseOrder order) async {
-    // GÜNCELLEME: pushReplacement yerine push kullanıldı ve geri dönüldüğünde
+    // ANA GÜNCELLEME: `pushReplacement` yerine `push` kullanıldı ve geri dönüldüğünde
     // listenin yenilenmesi için `await` eklendi.
     final result = await Navigator.push<bool>(
       context,
@@ -79,7 +79,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
       ),
     );
 
-    // GÜNCELLEME: Mal kabul ekranından `true` değeriyle dönülürse (kayıt başarılıysa),
+    // ANA GÜNCELLEME: Mal kabul ekranından `true` değeriyle dönülürse (kayıt başarılıysa),
     // liste otomatik olarak yenilenir.
     if (result == true && mounted) {
       _loadOrders();
@@ -116,8 +116,8 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
                 itemCount: _filteredOrders.length,
                 itemBuilder: (context, index) {
                   final order = _filteredOrders[index];
-                  final statusText = order.status == 2 
-                      ? ' (${'orders.status.partially_received'.tr()})' 
+                  final statusText = order.status == 2
+                      ? ' (${'orders.status.partially_received'.tr()})'
                       : '';
                   final subtitleText = "${order.supplierName ?? 'orders.no_supplier'.tr()}$statusText";
 
