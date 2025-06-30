@@ -56,7 +56,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
                 );
                 
                 // Eğer transfer yapıldıysa (result == true), bu ekranı da kapat
-                if (result == true && mounted) {
+                if (result == true && context.mounted) {
                   Navigator.of(context).pop();
                 }
               },

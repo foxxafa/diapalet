@@ -222,7 +222,14 @@ class SyncService with ChangeNotifier {
     
     if (dataChanged) {
       debugPrint("Veri başarıyla yüklendi, sunucudan güncel durum indiriliyor...");
-      await _downloadDataFromServer(warehouseId: dbHelper.warehouseId);
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseId = prefs.getInt('warehouse_id');
+      if (warehouseId != null) {
+        await _downloadDataFromServer(warehouseId: warehouseId);
+      } else {
+        debugPrint("Warehouse ID SharedPreferences'ta bulunamadı, _downloadDataFromServer atlanıyor.");
+        await dbHelper.addSyncLog('download', 'error', 'Warehouse ID bulunamadığı için veri indirilemedi.');
+      }
     }
   }
 
