@@ -1,5 +1,6 @@
 // ----- lib/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart (GÜNCELLENDİ) -----
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -37,4 +38,7 @@ abstract class InventoryTransferRepository {
     Future<List<TransferOperationHeader>> getPendingTransfers();
 
     Future<void> checkAndCompletePutaway(int orderId);
+
+    /// Barkoda göre ürün bilgilerini getirir.
+    Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 }

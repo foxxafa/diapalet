@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // GÜNCELLEME: Şema değişikliği için sürüm artırıldı.
-  static const _databaseVersion = 19;
+  // Şema değişikliği ve temizlik sonrası sürümü güncelleyelim.
+  static const _databaseVersion = 23;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -41,7 +41,6 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Veritabanı $oldVersion sürümünden $newVersion sürümüne yükseltiliyor...");
-    // Şema tamamen yeniden oluşturulacağı için eski tabloları sil ve yenilerini oluştur.
     await _dropAllTables(db);
     await _createAllTables(db);
     debugPrint("Veritabanı yükseltmesi tamamlandı.");
@@ -49,123 +48,158 @@ class DatabaseHelper {
 
   Future<void> _createAllTables(Database db) async {
     debugPrint("Veritabanı tabloları (Sürüm $_databaseVersion) oluşturuluyor...");
-    final batch = db.batch();
+    
+    await db.transaction((txn) async {
+      final batch = txn.batch();
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS pending_operation (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        unique_id TEXT NOT NULL UNIQUE,
-        type TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        status TEXT NOT NULL,
-        error_message TEXT,
-        synced_at TEXT 
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS pending_operation (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          unique_id TEXT NOT NULL UNIQUE,
+          type TEXT NOT NULL,
+          data TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          status TEXT NOT NULL,
+          error_message TEXT,
+          synced_at TEXT 
+        )
+      ''');
 
-    batch.execute(SyncLog.createTableQuery);
+      batch.execute(SyncLog.createTableQuery);
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS warehouses_shelfs (
-        id INTEGER PRIMARY KEY, name TEXT, code TEXT, is_active INTEGER DEFAULT 1,
-        warehouse_id INTEGER, created_at TEXT, updated_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS warehouses (
+          id INTEGER PRIMARY KEY,
+          dia_id INTEGER,
+          name TEXT,
+          warehouse_code TEXT
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS employees (
-        id INTEGER PRIMARY KEY, first_name TEXT, last_name TEXT, username TEXT UNIQUE,
-        password TEXT, warehouse_id INTEGER, is_active INTEGER DEFAULT 1,
-        created_at TEXT, updated_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS warehouses_shelfs (
+          id INTEGER PRIMARY KEY,
+          warehouse_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          code TEXT NOT NULL,
+          is_active INTEGER DEFAULT 1
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS urunler (
-        id INTEGER PRIMARY KEY, StokKodu TEXT UNIQUE, UrunAdi TEXT, Barcode1 TEXT, aktif INTEGER,
-        created_at TEXT, updated_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS employees (
+          id INTEGER PRIMARY KEY,
+          first_name TEXT,
+          last_name TEXT,
+          username TEXT UNIQUE,
+          password TEXT,
+          warehouse_id INTEGER,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis (
-        id INTEGER PRIMARY KEY, po_id TEXT, tarih TEXT, status INTEGER,
-        lokasyon_id INTEGER, notlar TEXT, user TEXT, gun INTEGER, 
-        invoice TEXT, delivery INTEGER,
-        created_at TEXT, updated_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS urunler (
+          id INTEGER PRIMARY KEY,
+          StokKodu TEXT UNIQUE,
+          UrunAdi TEXT,
+          Barcode1 TEXT,
+          aktif INTEGER
+        )
+      ''');
 
-    // # GÜNCELLEME: 'putaway_quantity' alanı eklendi.
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
-        id INTEGER PRIMARY KEY, siparis_id INTEGER, urun_id INTEGER, miktar REAL,
-        birim TEXT, notes TEXT, status INTEGER DEFAULT 0
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis (
+          id INTEGER PRIMARY KEY,
+          po_id TEXT,
+          tarih TEXT,
+          status INTEGER,
+          lokasyon_id INTEGER,
+          notlar TEXT
+        )
+      ''');
+      
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
+          id INTEGER PRIMARY KEY,
+          siparis_id INTEGER,
+          urun_id INTEGER,
+          miktar REAL,
+          birim TEXT
+        )
+      ''');
+      
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS wms_putaway_status (
+          id INTEGER PRIMARY KEY,
+          satin_alma_siparis_fis_satir_id INTEGER UNIQUE,
+          putaway_quantity REAL NOT NULL,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS wms_putaway_status (
-        id INTEGER PRIMARY KEY,
-        satin_alma_siparis_fis_satir_id INTEGER UNIQUE,
-        putaway_quantity REAL NOT NULL,
-        created_at TEXT,
-        updated_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS goods_receipts (
+          id INTEGER PRIMARY KEY,
+          siparis_id INTEGER,
+          invoice_number TEXT,
+          employee_id INTEGER,
+          receipt_date TEXT,
+          created_at TEXT
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS goods_receipts (
-        id INTEGER PRIMARY KEY, siparis_id INTEGER, invoice_number TEXT,
-        employee_id INTEGER, receipt_date TEXT, created_at TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS goods_receipt_items (
+          id INTEGER PRIMARY KEY,
+          receipt_id INTEGER,
+          urun_id INTEGER,
+          quantity_received REAL,
+          pallet_barcode TEXT
+        )
+      ''');
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS goods_receipt_items (
-        id INTEGER PRIMARY KEY, receipt_id INTEGER, urun_id INTEGER,
-        quantity_received REAL, pallet_barcode TEXT
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_stock (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          urun_id INTEGER NOT NULL,
+          location_id INTEGER NOT NULL,
+          siparis_id INTEGER,
+          quantity REAL NOT NULL,
+          pallet_barcode TEXT,
+          stock_status TEXT NOT NULL,
+          updated_at TEXT, 
+          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
+        )
+      ''');
 
-    // # GÜNCELLEME: 'stock_status' alanı eklendi.
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS inventory_stock (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        urun_id INTEGER NOT NULL,
-        location_id INTEGER NOT NULL,
-        siparis_id INTEGER,
-        quantity REAL NOT NULL,
-        pallet_barcode TEXT,
-        stock_status TEXT NOT NULL,
-        updated_at TEXT, 
-        UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
-      )
-    ''');
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_transfers (
+          id INTEGER PRIMARY KEY, 
+          urun_id INTEGER, 
+          from_location_id INTEGER, 
+          to_location_id INTEGER,
+          quantity REAL, 
+          from_pallet_barcode TEXT,
+          pallet_barcode TEXT,
+          employee_id INTEGER, 
+          transfer_date TEXT, 
+          created_at TEXT
+        )
+      ''');
+      
+      await batch.commit(noResult: true);
+    });
 
-    batch.execute('''
-      CREATE TABLE IF NOT EXISTS inventory_transfers (
-        id INTEGER PRIMARY KEY, 
-        urun_id INTEGER, 
-        from_location_id INTEGER, 
-        to_location_id INTEGER,
-        quantity REAL, 
-        from_pallet_barcode TEXT,
-        pallet_barcode TEXT,
-        employee_id INTEGER, 
-        transfer_date TEXT, 
-        created_at TEXT
-      )
-    ''');
-
-    await batch.commit(noResult: true);
     debugPrint("Tüm tablolar başarıyla oluşturuldu.");
   }
 
   Future<void> _dropAllTables(Database db) async {
     final tables = [
-      'pending_operation', 'sync_log', 'warehouses_shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'warehouses', 'warehouses_shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status'
@@ -187,31 +221,25 @@ class DatabaseHelper {
         final records = List<Map<String, dynamic>>.from(data[table]);
         if (records.isEmpty) continue;
 
-        // inventory_stock için özel işlem
         if (table == 'inventory_stock') {
-          // Önce lokaldeki 'receiving' statüsündeki kayıtları sakla
           final localReceivingStock = await txn.query(
             'inventory_stock',
             where: 'stock_status = ?',
             whereArgs: ['receiving'],
           );
           
-          // Tabloyu temizle
           await txn.delete('inventory_stock');
           
-          // Sunucudan gelen kayıtları ekle
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
           
-          // Lokaldeki 'receiving' kayıtlarını geri ekle
           for (final receivingRecord in localReceivingStock) {
             batch.insert(table, receivingRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         } else {
-          // Diğer tablolar için normal işlem
-          final fullRefreshTables = ['employees', 'urunler', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
+          final fullRefreshTables = ['employees', 'urunler', 'warehouses', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
           if(fullRefreshTables.contains(table)) {
             await txn.delete(table);
           }
@@ -234,9 +262,63 @@ class DatabaseHelper {
     }
     return newRecord;
   }
+  
+  // --- YARDIMCI FONKSİYONLAR ---
 
-  // Diğer yardımcı fonksiyonlar (addPendingOperation, getPendingOperations vb.) burada yer alır...
-  // Bu fonksiyonlarda bir değişiklik yapmaya gerek yoktur.
+  Future<int?> getReceivingLocationId(int warehouseId) async {
+    final db = await database;
+    final result = await db.query(
+      'warehouses_shelfs',
+      columns: ['id'],
+      where: 'warehouse_id = ? AND code = ? AND is_active = 1',
+      whereArgs: [warehouseId, 'MAL_KABUL'],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      final id = result.first['id'] as int?;
+      debugPrint("Depo ID $warehouseId için Mal Kabul Alanı bulundu: ID $id");
+      return id;
+    }
+    debugPrint("HATA: Depo ID $warehouseId için aktif bir 'MAL_KABUL' rafı bulunamadı.");
+    return null;
+  }
+
+  Future<String?> getPoIdBySiparisId(int siparisId) async {
+    final db = await database;
+    final result = await db.query(
+      'satin_alma_siparis_fis',
+      columns: ['po_id'],
+      where: 'id = ?',
+      whereArgs: [siparisId],
+      limit: 1,
+    );
+    return result.isNotEmpty ? result.first['po_id'] as String? : null;
+  }
+
+  Future<Map<String, dynamic>?> getProductById(int productId) async {
+    final db = await database;
+    final result = await db.query(
+      'urunler',
+      where: 'id = ?',
+      whereArgs: [productId],
+      limit: 1,
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<Map<String, dynamic>?> getLocationById(int locationId) async {
+    final db = await database;
+    final result = await db.query(
+      'warehouses_shelfs',
+      where: 'id = ?',
+      whereArgs: [locationId],
+      limit: 1,
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  // --- BEKLEYEN İŞLEMLER (PENDING OPERATIONS) FONKSİYONLARI ---
+
   Future<void> addPendingOperation(PendingOperation operation) async {
     final db = await database;
     await db.insert('pending_operation', operation.toDbMap(), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -293,6 +375,8 @@ class DatabaseHelper {
     }
   }
 
+  // --- SENKRONİZASYON LOG FONKSİYONLARI ---
+
   Future<void> addSyncLog(String type, String status, String message) async {
     final db = await database;
     await db.insert('sync_log', {
@@ -305,51 +389,5 @@ class DatabaseHelper {
     final db = await database;
     final maps = await db.query('sync_log', orderBy: 'timestamp DESC', limit: 100);
     return maps.map((map) => SyncLog.fromMap(map)).toList();
-  }
-
-  // YENİ: Sipariş ID'sine göre PO ID'sini getir
-  Future<String?> getPoIdBySiparisId(int siparisId) async {
-    final db = await database;
-    final result = await db.query(
-      'satin_alma_siparis_fis',
-      columns: ['po_id'],
-      where: 'id = ?',
-      whereArgs: [siparisId],
-      limit: 1,
-    );
-    if (result.isNotEmpty) {
-      return result.first['po_id'] as String?;
-    }
-    return null;
-  }
-
-  // YENİ: Ürün ID'sine göre ürün bilgilerini getir
-  Future<Map<String, dynamic>?> getProductById(int productId) async {
-    final db = await database;
-    final result = await db.query(
-      'urunler',
-      where: 'id = ?',
-      whereArgs: [productId],
-      limit: 1,
-    );
-    if (result.isNotEmpty) {
-      return result.first;
-    }
-    return null;
-  }
-
-  // YENİ: Lokasyon ID'sine göre lokasyon bilgilerini getir
-  Future<Map<String, dynamic>?> getLocationById(int locationId) async {
-    final db = await database;
-    final result = await db.query(
-      'warehouses_shelfs',
-      where: 'id = ?',
-      whereArgs: [locationId],
-      limit: 1,
-    );
-    if (result.isNotEmpty) {
-      return result.first;
-    }
-    return null;
   }
 }

@@ -8,6 +8,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
+
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
@@ -16,14 +17,13 @@ import 'package:diapalet/features/inventory_transfer/domain/repositories/invento
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
   final SyncService syncService;
-
-  static const int malKabulLocationId = 1;
 
   InventoryTransferRepositoryImpl({
     required this.dbHelper,
@@ -63,15 +63,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
+    // Kullanıcının depo ID'sini al
+    final prefs = await SharedPreferences.getInstance();
+    final warehouseId = prefs.getInt('warehouse_id');
+    
     // Rafa kaldırılmayı bekleyen ürünleri olan siparişleri getir.
     // Durum 2 olmalı ve `inventory_stock`'ta 'receiving' durumunda en az bir kaydı olmalı.
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT DISTINCT T1.*
       FROM satin_alma_siparis_fis AS T1
       INNER JOIN inventory_stock AS T2 ON T1.id = T2.siparis_id
-      WHERE T2.stock_status = 'receiving' AND T1.status = 2
+      WHERE T2.stock_status = 'receiving' AND T1.status = 2 AND T1.lokasyon_id = ?
       ORDER BY T1.tarih DESC
-    ''');
+    ''', [warehouseId]);
+    debugPrint("Transfer için açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -137,11 +142,21 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int sourceLocationId,
       int targetLocationId,
       ) async {
-    final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
+    // Kullanıcı işlemi başladığını sync service'e bildir
+    syncService.startUserOperation();
     
-    final db = await dbHelper.database;
     try {
+      final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
+      
+      final db = await dbHelper.database;
       await db.transaction((txn) async {
+        // Dinamik olarak mal kabul lokasyon ID'sini al
+        final prefs = await SharedPreferences.getInstance();
+        final warehouseId = prefs.getInt('warehouse_id');
+        if (warehouseId == null) throw Exception("Depo bilgisi bulunamadı.");
+        final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId);
+        if (malKabulLocationId == null) throw Exception("Bu depo için Mal Kabul Alanı tanımlanmamış.");
+        
         final isPutawayOperation = sourceLocationId == malKabulLocationId && header.siparisId != null;
 
         for (final item in items) {
@@ -226,6 +241,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } catch (e, s) {
       debugPrint("Lokal transfer kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına transfer kaydedilirken hata oluştu: $e");
+    } finally {
+      // Kullanıcı işlemi bittiğini sync service'e bildir
+      syncService.endUserOperation();
     }
   }
 
@@ -283,51 +301,52 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   
   Future<void> _updateStock(Transaction txn, int urunId, int locationId,
       double quantityChange, String? palletBarcode, String stockStatus, int? siparisId) async {
-    var selectWhere = 'urun_id = ? AND location_id = ? AND stock_status = ?';
-    var selectArgs = <dynamic>[urunId, locationId, stockStatus];
+          
+      // Bu fonksiyon hem mal kabul hem de transferde kullanıldığı için
+      // daha sağlam hale getiriliyor.
+      var whereClause = 'urun_id = ? AND location_id = ? AND stock_status = ?';
+      var whereArgs = <dynamic>[urunId, locationId, stockStatus];
 
-    if (palletBarcode != null) {
-      selectWhere += ' AND pallet_barcode = ?';
-      selectArgs.add(palletBarcode);
-    } else {
-      selectWhere += ' AND pallet_barcode IS NULL';
-    }
-
-    if (siparisId != null) {
-      selectWhere += ' AND siparis_id = ?';
-      selectArgs.add(siparisId);
-    } else {
-      selectWhere += ' AND siparis_id IS NULL';
-    }
-
-    final existingStock = await txn.query('inventory_stock',
-        where: selectWhere,
-        whereArgs: selectArgs);
-
-    if (existingStock.isNotEmpty) {
-      final currentStock = existingStock.first;
-      final newQty = (currentStock['quantity'] as num) + quantityChange;
-      if (newQty > 0.001) {
-        await txn.update('inventory_stock', {'quantity': newQty},
-            where: 'id = ?', whereArgs: [currentStock['id']]);
+      if (palletBarcode == null) {
+          whereClause += ' AND pallet_barcode IS NULL';
       } else {
-        await txn.delete('inventory_stock',
-            where: 'id = ?', whereArgs: [currentStock['id']]);
+          whereClause += ' AND pallet_barcode = ?';
+          whereArgs.add(palletBarcode);
       }
-    } else if (quantityChange > 0) {
-      await txn.insert('inventory_stock', {
-        'urun_id': urunId,
-        'location_id': locationId,
-        'quantity': quantityChange,
-        'pallet_barcode': palletBarcode,
-        'stock_status': stockStatus,
-        'siparis_id': siparisId,
-      });
-    } else {
-      final errorMessage = "Kaynakta stok bulunamadı veya düşülecek miktar yetersiz (Lokasyon: $locationId, Ürün: $urunId, Statü: $stockStatus).";
-      debugPrint(errorMessage);
-      throw Exception(errorMessage);
-    }
+
+      if (siparisId == null) {
+          whereClause += ' AND siparis_id IS NULL';
+      } else {
+          whereClause += ' AND siparis_id = ?';
+          whereArgs.add(siparisId);
+      }
+
+      final existingStock = await txn.query('inventory_stock',
+          where: whereClause,
+          whereArgs: whereArgs);
+
+      if (existingStock.isNotEmpty) {
+          final currentStock = existingStock.first;
+          final newQty = (currentStock['quantity'] as num) + quantityChange;
+          if (newQty > 0.001) { // Kayan nokta hatalarına karşı tolerans
+              await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+                  where: 'id = ?', whereArgs: [currentStock['id']]);
+          } else {
+              await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
+          }
+      } else if (quantityChange > 0) {
+          await txn.insert('inventory_stock', {
+              'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
+              'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
+              'stock_status': stockStatus,
+              'siparis_id': siparisId
+          });
+      } else {
+          // Hatanın kaynağını daha net göstermek için log mesajını zenginleştirelim.
+          final errorMessage = "Kaynakta stok bulunamadı veya düşülecek miktar yetersiz. Aranan: {urun_id: $urunId, location_id: $locationId, status: $stockStatus, pallet: $palletBarcode, siparis_id: $siparisId}";
+          debugPrint(errorMessage);
+          throw Exception(errorMessage);
+      }
   }
 
   @override
@@ -340,6 +359,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<Map<String, int>> getTargetLocations() async {
     final db = await dbHelper.database;
+    // Dinamik olarak mal kabul lokasyon ID'sini al
+    final prefs = await SharedPreferences.getInstance();
+    final warehouseId = prefs.getInt('warehouse_id');
+    if (warehouseId == null) {
+      throw Exception("Depo bilgisi bulunamadı.");
+    }
+    final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId);
+    if (malKabulLocationId == null) {
+      // Eğer mal kabul alanı tanımlanmamışsa, tüm aktif lokasyonları getir
+      final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
+      return {for (var map in maps) map['name'] as String: map['id'] as int};
+    }
+    // Mal kabul alanı hariç diğer aktif lokasyonları getir
     final maps = await db.query('warehouses_shelfs', where: 'is_active = 1 AND id != ?', whereArgs: [malKabulLocationId]);
     return {for (var map in maps) map['name'] as String: map['id'] as int};
   }
@@ -496,5 +528,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         debugPrint("Sipariş #$orderId için yerleştirilecek ürün kalmadı. Durum 4 (Otomatik Tamamlandı) olarak güncellendi.");
       }
     });
+  }
+
+  @override
+  Future<List<ProductInfo>> getProductInfoByBarcode(String barcode) async {
+    final db = await dbHelper.database;
+    final maps = await db.query(
+      'urunler',
+      where: 'aktif = 1 AND (Barcode1 = ? OR StokKodu = ?)',
+      whereArgs: [barcode, barcode],
+    );
+    return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 }

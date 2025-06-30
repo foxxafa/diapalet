@@ -12,14 +12,13 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
   final Dio dio;
   final NetworkInfo networkInfo;
   final SyncService syncService;
-
-  static const int malKabulLocationId = 1;
 
   GoodsReceivingRepositoryImpl({
     required this.dbHelper,
@@ -34,8 +33,22 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
-    final db = await dbHelper.database;
+    // Kullanıcı işlemi başladığını sync service'e bildir
+    syncService.startUserOperation();
+    
     try {
+      final db = await dbHelper.database;
+      // Kullanıcının depo ID'sini al
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseId = prefs.getInt('warehouse_id');
+      if (warehouseId == null) {
+        throw Exception("Depo bilgisi bulunamadı. Lütfen tekrar giriş yapın.");
+      }
+      // Dinamik olarak mal kabul lokasyon ID'sini al
+      final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId);
+      if (malKabulLocationId == null) {
+        throw Exception("Bu depo için Mal Kabul Alanı tanımlanmamış.");
+      }
       await db.transaction((txn) async {
         final receiptHeaderData = {
           'siparis_id': payload.header.siparisId,
@@ -77,6 +90,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     } catch (e, s) {
       debugPrint("Lokal mal kabul kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
+    } finally {
+      // Kullanıcı işlemi bittiğini sync service'e bildir
+      syncService.endUserOperation();
     }
   }
 
@@ -151,13 +167,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
-    // Durumu 1 (Onaylandı) veya 2 (İşlemde) olan siparişleri getir.
+    // Kullanıcının depo ID'sini al
+    final prefs = await SharedPreferences.getInstance();
+    final warehouseId = prefs.getInt('warehouse_id');
+    
+    // Durumu 1 (Onaylandı) veya 2 (İşlemde) olan ve kullanıcının deposundaki siparişleri getir.
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (?, ?)',
-      whereArgs: [1, 2],
+      where: 'status IN (?, ?) AND lokasyon_id = ?',
+      whereArgs: [1, 2, warehouseId],
       orderBy: 'tarih DESC',
     );
+    debugPrint("Açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 

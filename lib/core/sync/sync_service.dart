@@ -24,6 +24,7 @@ class SyncService with ChangeNotifier {
   final NetworkInfo networkInfo;
 
   bool _isSyncing = false;
+  bool _userOperationInProgress = false;
   final StreamController<SyncStatus> _statusController = StreamController<SyncStatus>.broadcast();
   late final StreamSubscription _connectivitySubscription;
   Timer? _periodicTimer;
@@ -77,15 +78,24 @@ class SyncService with ChangeNotifier {
 
   void _startPeriodicSync() {
     _periodicTimer?.cancel();
-    _periodicTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+    _periodicTimer = Timer.periodic(const Duration(minutes: 3), (timer) {
       debugPrint("Periyodik senkronizasyon kontrol ediliyor...");
-      performFullSync();
+      if (!_userOperationInProgress) {
+        performFullSync();
+      } else {
+        debugPrint("Kullanıcı işlemi devam ediyor, periyodik senkronizasyon atlanıyor.");
+      }
     });
   }
 
   Future<void> performFullSync({bool force = false}) async {
     if (_isSyncing && !force) {
       debugPrint("Senkronizasyon zaten devam ediyor. Atlanıyor.");
+      return;
+    }
+    
+    if (_userOperationInProgress && !force) {
+      debugPrint("Kullanıcı işlemi devam ediyor, senkronizasyon atlanıyor.");
       return;
     }
 
@@ -216,6 +226,22 @@ class SyncService with ChangeNotifier {
   Future<List<PendingOperation>> getPendingOperations() => dbHelper.getPendingOperations();
   Future<List<PendingOperation>> getSyncedOperationHistory() => dbHelper.getSyncedOperations();
   Future<List<SyncLog>> getSyncLogs() => dbHelper.getSyncLogs();
+
+  /// Kullanıcı işlemini başlatırken çağrılır - senkronizasyonu geçici olarak durdurur
+  void startUserOperation() {
+    _userOperationInProgress = true;
+    debugPrint("Kullanıcı işlemi başladı, periyodik senkronizasyon duraklatıldı.");
+  }
+
+  /// Kullanıcı işlemi bittiğinde çağrılır - senkronizasyonu yeniden başlatır
+  void endUserOperation() {
+    _userOperationInProgress = false;
+    debugPrint("Kullanıcı işlemi bitti, periyodik senkronizasyon tekrar aktif.");
+    // İşlem bittiğinde hemen bir senkronizasyon yap
+    if (!_isSyncing) {
+      performFullSync();
+    }
+  }
 
   @override
   void dispose() {
