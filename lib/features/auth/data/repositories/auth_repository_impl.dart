@@ -56,8 +56,8 @@ class AuthRepositoryImpl implements AuthRepository {
 
       final response = await dio.post(
         ApiConfig.login,
-        data: {'username': username, 'password': password,},
-        options: Options(contentType: Headers.formUrlEncodedContentType),
+        data: {'username': username, 'password': password},
+        options: Options(contentType: Headers.jsonContentType),
       );
 
       debugPrint("Sunucu Yanıtı (Status ${response.statusCode}): ${response.data}");

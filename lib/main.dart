@@ -55,7 +55,7 @@ void main() async {
     EasyLocalization(
       supportedLocales: const [Locale('tr'), Locale('en')],
       path: 'assets/lang',
-      startLocale: const Locale('tr'), // DÜZELTME: Başlangıç dili Türkçe yapıldı
+      startLocale: const Locale('en'), // App starts in English by default
       fallbackLocale: const Locale('en'),
       child: MultiProvider(
         providers: [

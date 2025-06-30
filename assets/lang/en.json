@@ -747,15 +747,15 @@
   },
   "login": {
     "title": "DIAPALET Login",
-    "username_hint": "Username",
+    "subtitle": "Please enter your credentials to log in.",
     "username": "Username",
+    "username_hint": "Username",
     "password": "Password",
     "button": "Login",
     "forgot_password": "Forgot Password",
     "error_invalid_credentials": "Invalid username or password.",
     "loading": "Logging in...",
     "language_select": "Select Language",
-    "subtitle": "Please enter your credentials to log in.",
     "error": {
       "required_field": "This field is required."
     }

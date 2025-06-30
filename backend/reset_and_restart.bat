@@ -23,7 +23,7 @@ echo.
 echo [4/6] Web sunucusunun ayaga kalkmasi bekleniyor...
 :check_web
 timeout /t 5 /nobreak > NUL
-curl --head --fail http://localhost:5000/terminal/health-check > NUL 2>&1
+curl --head --fail http://localhost:5000/index.php?r=terminal/health-check > NUL 2>&1
 if %errorlevel% neq 0 (
     echo Web sunucusu henuz hazir degil, 5 saniye sonra tekrar denenecek...
     goto check_web
@@ -32,12 +32,12 @@ echo ✅ Web sunucusu hazir!
 echo.
 
 echo [5/6] Dia'dan gercek depo ve raf verileri cekiliyor...
-curl http://localhost:5000/terminal/sync-shelfs
+curl http://localhost:5000/index.php?r=terminal/sync-shelfs
 echo.
 echo.
 
 echo [6/6] Test verileri (calisanlar, urunler) veritabanina ekleniyor...
-docker compose exec -T db mysql -uroot -p123456 diapalet_test < test_data.sql
+docker compose exec -T db mysql -uroot -p123456 enzo < test_data.sql
 echo ✅ Test verileri eklendi.
 
 echo.

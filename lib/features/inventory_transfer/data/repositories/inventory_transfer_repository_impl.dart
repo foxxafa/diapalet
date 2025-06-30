@@ -61,7 +61,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT DISTINCT T1.*
       FROM satin_alma_siparis_fis AS T1
       INNER JOIN inventory_stock AS T2 ON T1.id = T2.siparis_id
-      WHERE T2.stock_status = 'receiving' AND T1.status = 2 AND T1.lokasyon_id = ?
+      WHERE T2.stock_status = 'receiving' AND T1.status = 2 AND T1.branch_id = ?
       ORDER BY T1.tarih DESC
     ''', [warehouseId]);
     debugPrint("Transfer için açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
@@ -463,7 +463,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final putawayResult = await txn.rawQuery('''
         SELECT SUM(putaway_quantity) as total_putaway
         FROM wms_putaway_status
-        WHERE satin_alma_siparis_fis_satir_id IN ($placeholders)
+        WHERE satinalmasiparisfissatir_id IN ($placeholders)
       ''', lineIds);
       
       double totalPutaway = 0;

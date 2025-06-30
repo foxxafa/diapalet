@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: Şema değişikliği sonrası versiyon artırıldı.
-  static const _databaseVersion = 25;
+  // ANA GÜNCELLEME: dump.sql'e uygun şema değişikliği
+  static const _databaseVersion = 26;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -70,9 +70,21 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS warehouses (
           id INTEGER PRIMARY KEY,
-          dia_id INTEGER,
           name TEXT,
+          post_code TEXT,
+          ap TEXT,
+          branch_id INTEGER,
           warehouse_code TEXT
+        )
+      ''');
+
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS shelfs (
+          id INTEGER PRIMARY KEY,
+          warehouse_id INTEGER,
+          name TEXT,
+          code TEXT,
+          is_active INTEGER DEFAULT 1
         )
       ''');
 
@@ -113,11 +125,17 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis (
           id INTEGER PRIMARY KEY,
-          po_id TEXT,
           tarih TEXT,
-          status INTEGER,
-          lokasyon_id INTEGER,
-          notlar TEXT
+          notlar TEXT,
+          user TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          gun INTEGER DEFAULT 0,
+          branch_id INTEGER,
+          invoice TEXT,
+          delivery INTEGER,
+          po_id TEXT,
+          status INTEGER DEFAULT 0
         )
       ''');
 
@@ -127,16 +145,24 @@ class DatabaseHelper {
           siparis_id INTEGER,
           urun_id INTEGER,
           miktar REAL,
-          birim TEXT
+          ort_son_30 INTEGER,
+          ort_son_60 INTEGER,
+          ort_son_90 INTEGER,
+          tedarikci_id INTEGER,
+          tedarikci_fis_id INTEGER,
+          invoice TEXT,
+          birim TEXT,
+          layer INTEGER,
+          notes TEXT
         )
       ''');
 
-      // DÜZELTME: 'wms_putaway_status' tablosu eklendi.
+      // wms_putaway_status tablosu dump.sql'e göre
       batch.execute('''
         CREATE TABLE IF NOT EXISTS wms_putaway_status (
           id INTEGER PRIMARY KEY,
-          satin_alma_siparis_fis_satir_id INTEGER UNIQUE NOT NULL,
-          putaway_quantity REAL NOT NULL DEFAULT 0,
+          satinalmasiparisfissatir_id INTEGER,
+          putaway_quantity REAL DEFAULT 0.00,
           created_at TEXT,
           updated_at TEXT
         )
@@ -186,8 +212,10 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_status ON inventory_stock(stock_status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_siparis ON inventory_stock(siparis_id)');
 
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON warehouses_shelfs(warehouse_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON warehouses_shelfs(code)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_warehouses_shelfs_warehouse ON warehouses_shelfs(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_warehouses_shelfs_code ON warehouses_shelfs(code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON satin_alma_siparis_fis_satir(siparis_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON satin_alma_siparis_fis_satir(urun_id)');
 
@@ -214,7 +242,7 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     final tables = [
-      'pending_operation', 'sync_log', 'warehouses', 'warehouses_shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'warehouses_shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status'

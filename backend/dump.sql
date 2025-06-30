@@ -192,10 +192,10 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
 -- Table structure for table `shelfs`
 --
 
-DROP TABLE IF EXISTS `warehouses_shelfs`;
+DROP TABLE IF EXISTS `shelfs`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `warehouses_shelfs` (
+CREATE TABLE `shelfs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `warehouse_id` int DEFAULT NULL,
   `name` varchar(20) DEFAULT NULL,

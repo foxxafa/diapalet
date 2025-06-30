@@ -158,7 +158,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (1, 2) AND lokasyon_id = ?',
+      where: 'status IN (1, 2) AND branch_id = ?',
       whereArgs: [warehouseId],
       orderBy: 'tarih DESC',
     );

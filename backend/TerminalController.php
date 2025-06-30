@@ -54,7 +54,7 @@ class TerminalController extends Controller
 
     public function actionLogin()
     {
-        $params = Yii::$app->request->getBodyParams();
+        $params = $this->getJsonBody();
         $username = $params['username'] ?? null;
         $password = $params['password'] ?? null;
 
@@ -244,7 +244,7 @@ class TerminalController extends Controller
                     // $transferData['satin_alma_siparis_fis_satir_id'] = $orderLineId; // Bu tabloya bu veri yazılmamalı.
 
                     // wms_putaway_status tablosuna ekleme/güncelleme yap
-                    $sql = "INSERT INTO wms_putaway_status (satin_alma_siparis_fis_satir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
+                    $sql = "INSERT INTO wms_putaway_status (satinalmasiparisfissatir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
                     $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $quantity])->execute();
                 }
             }
@@ -357,7 +357,7 @@ class TerminalController extends Controller
         $orderLines = (new Query())
             ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
             ->from(['s' => 'satin_alma_siparis_fis_satir'])
-            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.satin_alma_siparis_fis_satir_id')
+            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.satinalmasiparisfissatir_id')
             ->where(['s.siparis_id' => $siparisId])
             ->all($db);
 
@@ -411,7 +411,7 @@ class TerminalController extends Controller
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
-            $data['warehouses_shelfs'] = (new Query())->from('warehouses_shelfs')->where(['warehouse_id' => $warehouseId])->all();
+            $data['warehouses_shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['warehouses_shelfs'], ['id', 'warehouse_id', 'is_active']);
 
             $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
@@ -438,8 +438,8 @@ class TerminalController extends Controller
                 // Yeni eklenen kısım: wms_putaway_status verilerini çek
                 $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
                 if (!empty($poLineIds)) {
-                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'satin_alma_siparis_fis_satir_id', $poLineIds])->all();
-                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'satin_alma_siparis_fis_satir_id'], ['putaway_quantity']);
+                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'satinalmasiparisfissatir_id', $poLineIds])->all();
+                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'satinalmasiparisfissatir_id'], ['putaway_quantity']);
                 } else {
                     $data['wms_putaway_status'] = [];
                 }

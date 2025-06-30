@@ -1,6 +1,6 @@
 -- Bu dosya, nihai veritabanı şeması oluşturulduktan sonra çalıştırılmalıdır.
 
-USE `diapalet_test`; -- Veritabanı adını doğrulayın
+USE `enzo`; -- Veritabanı adını doğrulayın
 
 -- 1. Depoları ekle (branch_id ile birlikte)
 -- branch_id, ana sistemdeki şube kimliğidir ve siparişlerle eşleşmek için kullanılır.
