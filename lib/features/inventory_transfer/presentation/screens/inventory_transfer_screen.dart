@@ -197,7 +197,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return Material(
       clipBehavior: Clip.antiAlias,
       borderRadius: _borderRadius,
-      color: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
+      color: Theme.of(context).colorScheme.secondary.withAlpha(26),
       child: SwitchListTile(
         title: Text(
           'inventory_transfer.label_break_pallet'.tr(), 
@@ -435,7 +435,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withAlpha(128))),
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),

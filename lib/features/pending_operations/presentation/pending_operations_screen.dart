@@ -319,14 +319,14 @@ class _OperationCard extends StatelessWidget {
     } else if (isSynced) {
       trailingWidget = Icon(Icons.check_circle_outline_rounded, color: theme.colorScheme.primary);
     } else {
-      trailingWidget = Icon(Icons.hourglass_top_rounded, color: AppTheme.warningColor);
+      trailingWidget = const Icon(Icons.hourglass_top_rounded, color: AppTheme.warningColor);
     }
 
     return Card(
       elevation: hasError ? 2 : 1,
       shape: RoundedRectangleBorder(
         side: BorderSide(
-          color: hasError ? theme.colorScheme.error.withOpacity(0.5) : Colors.transparent,
+          color: hasError ? theme.colorScheme.error.withAlpha(128) : Colors.transparent,
           width: 1.5,
         ),
         borderRadius: BorderRadius.circular(12),
@@ -453,6 +453,8 @@ class _OperationDetailsView extends StatelessWidget {
       }
     }
 
+    if (!context.mounted) return const SizedBox.shrink();
+
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.goods_receipt'.tr(),
@@ -524,6 +526,8 @@ class _OperationDetailsView extends StatelessWidget {
       }
     }
 
+    if (!context.mounted) return const SizedBox.shrink();
+
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.inventory_transfer'.tr(),
@@ -564,6 +568,8 @@ class _OperationDetailsView extends StatelessWidget {
       }
     }
     
+    if (!context.mounted) return const SizedBox.shrink();
+
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.force_close_order'.tr(),
@@ -716,7 +722,7 @@ class _OperationDetailsView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8.0),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.05),
+        color: Colors.black.withAlpha(13),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Theme.of(context).dividerColor),
       ),

@@ -83,16 +83,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<TransferableContainer>> getTransferableContainers(int locationId, {int? orderId}) async {
     final db = await dbHelper.database;
-    String whereClause;
     List<Object?> whereArgs;
 
     if (orderId != null) {
       // Siparişe bağlı yerleştirme: Sadece 'receiving' statüsündeki ve o siparişe ait stokları getir
-      whereClause = 'location_id = ? AND stock_status = ? AND siparis_id = ?';
       whereArgs = [locationId, 'receiving', orderId];
     } else {
       // Serbest Transfer: Sadece 'available' statüsündeki stokları getir
-      whereClause = 'location_id = ? AND stock_status = ?';
       whereArgs = [locationId, 'available'];
     }
 

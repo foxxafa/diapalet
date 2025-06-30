@@ -500,7 +500,7 @@ class _ContainerCardState extends State<_ContainerCard> {
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),

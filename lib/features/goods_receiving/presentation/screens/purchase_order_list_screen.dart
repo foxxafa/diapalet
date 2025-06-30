@@ -19,7 +19,6 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
   List<PurchaseOrder> _allOrders = [];
   List<PurchaseOrder> _filteredOrders = [];
   bool _isLoading = true;
-  bool _isCompleting = false;
   final _searchController = TextEditingController();
 
   @override

@@ -342,7 +342,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             text: '${totalReceived.toStringAsFixed(0)} ',
                             style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
                           ),
-                          TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color?.withOpacity(0.7))),
+                          TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color?.withAlpha(179))),
                           TextSpan(text: expectedQty.toStringAsFixed(0), style: TextStyle(color: textTheme.bodyLarge?.color)),
                         ],
                       ),
@@ -461,7 +461,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5))),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withAlpha(128))),
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       isDense: true,
@@ -817,7 +817,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ));
