@@ -68,12 +68,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final warehouseId = prefs.getInt('warehouse_id');
     
     // Rafa kaldırılmayı bekleyen ürünleri olan siparişleri getir.
-    // Durum 2 olmalı ve `inventory_stock`'ta 'receiving' durumunda en az bir kaydı olmalı.
+    // Durum 2 (İşlemde) veya 3 (Manuel Kapatıldı) olmalı ve `inventory_stock`'ta 'receiving' durumunda en az bir kaydı olmalı.
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT DISTINCT T1.*
       FROM satin_alma_siparis_fis AS T1
       INNER JOIN inventory_stock AS T2 ON T1.id = T2.siparis_id
-      WHERE T2.stock_status = 'receiving' AND T1.status = 2 AND T1.lokasyon_id = ?
+      WHERE T2.stock_status = 'receiving' AND T1.status IN (2, 3) AND T1.lokasyon_id = ?
       ORDER BY T1.tarih DESC
     ''', [warehouseId]);
     debugPrint("Transfer için açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
@@ -96,11 +96,47 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs = [locationId, 'available'];
     }
 
-    final List<Map<String, dynamic>> maps = await db.query(
-      'inventory_stock',
-      where: whereClause,
-      whereArgs: whereArgs,
-    );
+    // JOIN ile tek sorguda tüm verileri al
+    String rawQuerySql;
+    if (orderId != null) {
+      rawQuerySql = '''
+        SELECT 
+          s.urun_id,
+          s.location_id,
+          s.siparis_id,
+          s.quantity,
+          s.pallet_barcode,
+          s.stock_status,
+          s.updated_at,
+          u.UrunAdi,
+          u.StokKodu,
+          u.Barcode1,
+          u.aktif
+        FROM inventory_stock s
+        JOIN urunler u ON s.urun_id = u.id
+        WHERE s.location_id = ? AND s.stock_status = ? AND s.siparis_id = ?
+      ''';
+    } else {
+      rawQuerySql = '''
+        SELECT 
+          s.urun_id,
+          s.location_id,
+          s.siparis_id,
+          s.quantity,
+          s.pallet_barcode,
+          s.stock_status,
+          s.updated_at,
+          u.UrunAdi,
+          u.StokKodu,
+          u.Barcode1,
+          u.aktif
+        FROM inventory_stock s
+        JOIN urunler u ON s.urun_id = u.id
+        WHERE s.location_id = ? AND s.stock_status = ?
+      ''';
+    }
+    
+    final List<Map<String, dynamic>> maps = await db.rawQuery(rawQuerySql, whereArgs);
 
     if (maps.isEmpty) return [];
 
@@ -142,19 +178,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int sourceLocationId,
       int targetLocationId,
       ) async {
-    // Kullanıcı işlemi başladığını sync service'e bildir
-    syncService.startUserOperation();
+    final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
     
+    final db = await dbHelper.database;
     try {
-      final apiPayload = _buildApiPayload(header, items, sourceLocationId, targetLocationId);
-      
-      final db = await dbHelper.database;
       await db.transaction((txn) async {
         // Dinamik olarak mal kabul lokasyon ID'sini al
         final prefs = await SharedPreferences.getInstance();
         final warehouseId = prefs.getInt('warehouse_id');
         if (warehouseId == null) throw Exception("Depo bilgisi bulunamadı.");
-        final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId);
+        final malKabulLocationId = await dbHelper.getReceivingLocationId(warehouseId, txn: txn);
         if (malKabulLocationId == null) throw Exception("Bu depo için Mal Kabul Alanı tanımlanmamış.");
         
         final isPutawayOperation = sourceLocationId == malKabulLocationId && header.siparisId != null;
@@ -241,9 +274,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } catch (e, s) {
       debugPrint("Lokal transfer kaydı hatası: $e\n$s");
       throw Exception("Lokal veritabanına transfer kaydedilirken hata oluştu: $e");
-    } finally {
-      // Kullanıcı işlemi bittiğini sync service'e bildir
-      syncService.endUserOperation();
     }
   }
 

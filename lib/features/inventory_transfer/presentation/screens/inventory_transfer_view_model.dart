@@ -423,6 +423,9 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   Future<bool> confirmAndSave() async {
+    // Kullanıcı işlemi başladığını sync service'e bildir
+    _syncService.startUserOperation();
+    
     _isSaving = true;
     notifyListeners();
     try {
@@ -456,6 +459,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         await _repository.checkAndCompletePutaway(_selectedOrder!.id);
       }
 
+      // İşlem başarılı, şimdi sync yapabiliriz
       _syncService.uploadPendingOperations();
 
       resetForm(resetAll: true);
@@ -465,6 +469,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
       return false;
     } finally {
       _isSaving = false;
+      // Kullanıcı işlemi bittiğini sync service'e bildir
+      _syncService.endUserOperation();
       notifyListeners();
     }
   }

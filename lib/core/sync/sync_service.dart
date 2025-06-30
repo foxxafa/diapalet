@@ -237,10 +237,7 @@ class SyncService with ChangeNotifier {
   void endUserOperation() {
     _userOperationInProgress = false;
     debugPrint("Kullanıcı işlemi bitti, periyodik senkronizasyon tekrar aktif.");
-    // İşlem bittiğinde hemen bir senkronizasyon yap
-    if (!_isSyncing) {
-      performFullSync();
-    }
+    // NOT: Otomatik sync kaldırıldı - view model'ler kendileri çağıracak
   }
 
   @override

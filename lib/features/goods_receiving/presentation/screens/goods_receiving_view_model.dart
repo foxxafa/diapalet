@@ -10,7 +10,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ConfirmationAction { save, complete }
+enum ConfirmationAction { saveAndContinue, saveAndComplete, forceClose }
 
 class GoodsReceivingViewModel extends ChangeNotifier {
   final GoodsReceivingRepository _repository;
@@ -65,6 +65,32 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   String? get error => _error;
   String? get successMessage => _successMessage;
   bool get navigateBack => _navigateBack;
+
+  bool get isReceiptCompletingOrder {
+    if (!isOrderBased || _orderItems.isEmpty) return false;
+
+    // Create a map of quantities being added in this receipt session.
+    final currentAdditionMap = <int, double>{};
+    for (final item in _addedItems) {
+      currentAdditionMap.update(item.product.id, (value) => value + item.quantity, ifAbsent: () => item.quantity);
+    }
+
+    // Check if every line item in the order will be complete after this receipt.
+    for (final orderItem in _orderItems) {
+      final product = orderItem.product;
+      if (product == null) continue; 
+
+      final expected = orderItem.expectedQuantity;
+      final previouslyReceived = orderItem.receivedQuantity;
+      final currentlyAdding = currentAdditionMap[product.id] ?? 0.0;
+      
+      if (previouslyReceived + currentlyAdding < expected - 0.001) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
 
   GoodsReceivingViewModel({
     required GoodsReceivingRepository repository,
@@ -294,33 +320,43 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<bool> saveAndConfirm(ConfirmationAction action) async {
+    _syncService.startUserOperation();
+    
     _isSaving = true;
     notifyListeners();
+
     try {
-      if (action == ConfirmationAction.save) {
-        if (_addedItems.isEmpty) {
-          _error = 'goods_receiving_screen.error_no_new_items_to_save'.tr();
-          return false;
-        }
+      if (_addedItems.isNotEmpty) {
         await _executeSave();
-        _successMessage = 'goods_receiving_screen.success_saved'.tr();
-        _handleSuccessfulSave();
-        _syncService.uploadPendingOperations();
-      } else if (action == ConfirmationAction.complete && _selectedOrder != null) {
-        if (_addedItems.isNotEmpty) {
-          await _executeSave();
-        }
-        await _repository.markOrderAsComplete(_selectedOrder!.id);
-        _syncService.uploadPendingOperations();
-        _successMessage = 'orders.dialog.force_close_success'.tr(namedArgs: {'poId': _selectedOrder!.poId ?? ''});
-        _navigateBack = true;
       }
+
+      switch (action) {
+        case ConfirmationAction.saveAndContinue:
+          _successMessage = 'goods_receiving_screen.success_saved'.tr();
+          _handleSuccessfulSave(shouldNavigateBack: false);
+          break;
+        case ConfirmationAction.saveAndComplete:
+           _successMessage = 'goods_receiving_screen.success_receipt_saved'.tr();
+           _handleSuccessfulSave(shouldNavigateBack: true);
+          break;
+        case ConfirmationAction.forceClose:
+          if (_selectedOrder != null) {
+            await _repository.markOrderAsComplete(_selectedOrder!.id);
+            _successMessage = 'orders.dialog.force_close_success'.tr(namedArgs: {'poId': _selectedOrder!.poId ?? ''});
+            _navigateBack = true;
+          }
+          break;
+      }
+      
+      _syncService.uploadPendingOperations();
       return true;
+
     } catch (e) {
       _error = 'goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()});
       return false;
     } finally {
       _isSaving = false;
+      _syncService.endUserOperation();
       notifyListeners();
     }
   }
@@ -346,9 +382,14 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     await _repository.saveGoodsReceipt(payload);
   }
 
-  void _handleSuccessfulSave() {
+  void _handleSuccessfulSave({required bool shouldNavigateBack}) {
     if (isOrderBased) {
-      _navigateBack = true;
+      _navigateBack = shouldNavigateBack;
+      _addedItems.clear();
+      _clearEntryFields(clearPallet: true);
+      if (!shouldNavigateBack && _selectedOrder != null) {
+        _loadOrderDetails(_selectedOrder!.id);
+      }
     } else {
       _addedItems.clear();
       _clearEntryFields(clearPallet: true);

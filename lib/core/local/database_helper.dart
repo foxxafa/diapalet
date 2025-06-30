@@ -4,13 +4,14 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
   // Şema değişikliği ve temizlik sonrası sürümü güncelleyelim.
-  static const _databaseVersion = 23;
+  static const _databaseVersion = 24;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -175,6 +176,18 @@ class DatabaseHelper {
           UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
         )
       ''');
+      
+      // Performance için index'ler ekle
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_location ON inventory_stock(location_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_status ON inventory_stock(stock_status)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_siparis ON inventory_stock(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_composite ON inventory_stock(location_id, stock_status, siparis_id)');
+      
+      // Diğer sık sorgulanan tablolar için index'ler
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON warehouses_shelfs(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON warehouses_shelfs(code)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON satin_alma_siparis_fis_satir(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON satin_alma_siparis_fis_satir(urun_id)');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
@@ -265,9 +278,9 @@ class DatabaseHelper {
   
   // --- YARDIMCI FONKSİYONLAR ---
 
-  Future<int?> getReceivingLocationId(int warehouseId) async {
-    final db = await database;
-    final result = await db.query(
+  Future<int?> getReceivingLocationId(int warehouseId, {DatabaseExecutor? txn}) async {
+    final executor = txn ?? await database;
+    final result = await executor.query(
       'warehouses_shelfs',
       columns: ['id'],
       where: 'warehouse_id = ? AND code = ? AND is_active = 1',

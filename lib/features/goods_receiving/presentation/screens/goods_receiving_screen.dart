@@ -667,22 +667,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     final appBarTheme = theme.appBarTheme;
     final viewModel = context.watch<GoodsReceivingViewModel>();
 
-    bool areAllItemsFullyReceived = false;
-    if (viewModel.isOrderBased) {
-      final currentAdditionMap = <int, double>{};
-      for (var item in viewModel.addedItems) {
-        currentAdditionMap.update(item.product.id, (value) => value + item.quantity, ifAbsent: () => item.quantity);
-      }
-      areAllItemsFullyReceived = viewModel.orderItems.every((orderItem) {
-        final expected = orderItem.expectedQuantity;
-        final previouslyReceived = orderItem.receivedQuantity;
-        final currentlyAdding = currentAdditionMap[orderItem.product!.id] ?? 0;
-        return previouslyReceived + currentlyAdding >= expected - 0.001;
-      });
-    }
-
-    final bool showSaveReceiptButton = true;
-    final bool showCompleteButton = viewModel.isOrderBased;
+    final isCompletingOrder = viewModel.isReceiptCompletingOrder;
 
     return Scaffold(
       appBar: AppBar(
@@ -703,7 +688,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (showSaveReceiptButton)
+            if (isCompletingOrder)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -711,22 +696,34 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                   backgroundColor: theme.colorScheme.primary,
                   foregroundColor: theme.colorScheme.onPrimary,
                 ),
-                onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.save),
-                child: Text('goods_receiving_screen.dialog_button_save_continue'.tr()),
-              ),
-            if (showCompleteButton) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  side: BorderSide(color: theme.colorScheme.error),
-                  foregroundColor: theme.colorScheme.error,
+                onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.saveAndComplete),
+                child: Text('goods_receiving_screen.dialog_button_finish_receiving'.tr()),
+              )
+            else ...[
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                  ),
+                  onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.saveAndContinue),
+                  child: Text('goods_receiving_screen.dialog_button_save_continue'.tr()),
                 ),
-                onPressed: () => Navigator.of(context).pop(ConfirmationAction.complete),
-                child: Text('goods_receiving_screen.dialog_button_force_close'.tr()),
-              ),
-            ],
+                if (viewModel.isOrderBased)...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      side: BorderSide(color: theme.colorScheme.error),
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(ConfirmationAction.forceClose),
+                    child: Text('goods_receiving_screen.dialog_button_force_close'.tr()),
+                  ),
+                ]
+            ]
           ],
         ),
       ),
