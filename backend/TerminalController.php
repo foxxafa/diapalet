@@ -412,6 +412,13 @@ class TerminalController extends Controller
             // Sadece status değeri 5'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
             $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId])->andWhere(['<', 'status', 5]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
+            
+            // DEBUG: Kaç sipariş bulundu?
+            Yii::info("Warehouse $warehouseId için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
+            foreach ($data['satin_alma_siparis_fis'] as $order) {
+                Yii::info("Sipariş ID: {$order['id']}, Status: {$order['status']}, PO ID: {$order['po_id']}", __METHOD__);
+            }
+            
             $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
@@ -451,6 +458,13 @@ class TerminalController extends Controller
 
             if (!empty($locationIds)) {
                 $data['inventory_stock'] = (new Query())->from('inventory_stock')->where(['in', 'location_id', $locationIds])->all();
+                
+                // DEBUG: Kaç inventory stock kaydı bulundu?
+                Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
+                foreach ($data['inventory_stock'] as $stock) {
+                    Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
+                }
+                
                  $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id'], ['quantity']);
             } else {
                 $data['inventory_stock'] = [];
