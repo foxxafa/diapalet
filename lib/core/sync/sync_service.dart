@@ -199,27 +199,30 @@ class SyncService with ChangeNotifier {
   }
 
   Future<void> _handleSyncResults(List<dynamic> results) async {
-    debugPrint("_handleSyncResults çağrıldı. Results: $results");
+    if (_isSyncing) return;
+    debugPrint("_handleSyncResults çağrıldı. Results: ${jsonEncode(results)}");
+
+    bool dataChanged = false;
+    for (var res in results) {
+      final id = res['local_id'];
+      final resultData = res['result'];
+      final status = resultData['status'];
+      final message = resultData['message'];
+
+      debugPrint("İşleniyor - opId: $id, status: $status, message: $message");
+
+      if (id != null && status == 'success') {
+        debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
+        await dbHelper.markOperationAsSynced(id);
+        dataChanged = true; 
+      } else if (id != null) {
+        await dbHelper.updateOperationWithError(id, message ?? 'Bilinmeyen sunucu hatası');
+      }
+    }
     
-    for (var result in results) {
-      final opId = result['local_id'];
-      final status = result['result']?['status'];
-      final message = result['result']?['message'];
-
-      debugPrint("İşleniyor - opId: $opId, status: $status, message: $message");
-
-      if (opId == null) {
-        debugPrint("opId null, bu kayıt atlanıyor");
-        continue;
-      }
-
-      if (status == 'success') {
-        debugPrint("İşlem $opId başarılı, synced olarak işaretleniyor");
-        await dbHelper.markOperationAsSynced(opId);
-      } else {
-        debugPrint("İşlem $opId başarısız, hata mesajı kaydediliyor: $message");
-        await dbHelper.updateOperationWithError(opId, message ?? 'Bilinmeyen sunucu hatası');
-      }
+    if (dataChanged) {
+      debugPrint("Veri başarıyla yüklendi, sunucudan güncel durum indiriliyor...");
+      await _downloadDataFromServer(warehouseId: dbHelper.warehouseId);
     }
   }
 

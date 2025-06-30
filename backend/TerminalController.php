@@ -409,10 +409,10 @@ class TerminalController extends Controller
             $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
-            // Sadece status değeri 3'ten küçük olan (Tamamlanmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId])->andWhere(['<', 'status', 3]);
+            // Sadece status değeri 5'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['lokasyon_id' => $warehouseId])->andWhere(['<', 'status', 5]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
-            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status', 'delivery', 'gun']);
+            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'lokasyon_id', 'status']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
             if (!empty($poIds)) {

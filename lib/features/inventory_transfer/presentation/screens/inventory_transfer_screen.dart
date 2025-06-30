@@ -28,18 +28,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   // --- State ve Controller'lar ---
   final _formKey = GlobalKey<FormState>();
-  late final InventoryTransferViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
-    _viewModel = Provider.of<InventoryTransferViewModel>(context, listen: false);
-    _viewModel.init(widget.selectedOrder); 
+    // ViewModel'i burada almıyoruz, build metodunda Consumer ile alacağız
+    // Bu sayede her zaman güncel ve aktif ViewModel'e erişiriz
   }
 
   @override
   void dispose() {
-    _viewModel.dispose();
+    // ViewModel'i burada dispose etmiyoruz çünkü o üst widget'ın sorumluluğunda
     super.dispose();
   }
 
@@ -47,119 +46,124 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Widget build(BuildContext context) {
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    return ChangeNotifierProvider.value(
-      value: _viewModel,
-      child: Consumer<InventoryTransferViewModel>(
-        builder: (context, viewModel, child) {
-          if (viewModel.lastError != null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showErrorSnackBar(viewModel.lastError!);
-              viewModel.clearError();
-            });
+    return Consumer<InventoryTransferViewModel>(
+      builder: (context, viewModel, child) {
+        // ViewModel'in init metodunu sadece ilk kez çağırıyoruz
+        // Bu kontrolü yapmak için bir flag kullanabiliriz
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!viewModel.isInitialized) {
+            viewModel.init(widget.selectedOrder);
           }
-          
-          return Scaffold(
-            appBar: SharedAppBar(
-              title: _viewModel.isPutawayMode 
-                ? 'inventory_transfer.putaway_title'.tr() 
-                : 'inventory_transfer.title'.tr()
-            ),
-            resizeToAvoidBottomInset: true,
-            bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(viewModel),
-            body: SafeArea(
-              child: viewModel.isLoadingInitialData
-                  ? const Center(child: CircularProgressIndicator())
-                  : GestureDetector(
-                onTap: () => FocusScope.of(context).unfocus(),
-                child: Form(
-                  key: _formKey,
-                  autovalidateMode: AutovalidateMode.disabled,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_viewModel.isPutawayMode && _viewModel.selectedOrder != null) ...[
-                          OrderInfoCard(order: _viewModel.selectedOrder!),
-                          const SizedBox(height: _gap),
-                        ],
-                        _buildModeSelector(viewModel),
-                        const SizedBox(height: _gap),
-                        if (viewModel.selectedMode == AssignmentMode.pallet) ...[
-                          _buildPalletOpeningSwitch(viewModel),
-                          const SizedBox(height: _gap),
-                        ],
-                        _buildHybridDropdownWithQr<String>(
-                          controller: viewModel.sourceLocationController,
-                          focusNode: viewModel.sourceLocationFocusNode,
-                          label: 'inventory_transfer.label_source_location'.tr(),
-                          fieldIdentifier: 'source',
-                          items: viewModel.availableSourceLocations.keys.toList(),
-                          itemToString: (item) => item,
-                          onItemSelected: viewModel.handleSourceSelection,
-                          filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                          validator: viewModel.validateSourceLocation,
-                          viewModel: viewModel,
-                        ),
-                        const SizedBox(height: _gap),
-                        _buildHybridDropdownWithQr<dynamic>(
-                          controller: viewModel.scannedContainerIdController,
-                          focusNode: viewModel.containerFocusNode,
-                          label: viewModel.selectedMode == AssignmentMode.pallet 
-                              ? 'inventory_transfer.label_pallet'.tr() 
-                              : 'inventory_transfer.label_product'.tr(),
-                          fieldIdentifier: 'container',
-                          items: viewModel.availableContainers,
-                          itemToString: (item) {
-                            if (item is String) return item;
-                            if (item is BoxItem) return '${item.productName} (${item.productCode})';
-                            return '';
-                          },
-                          onItemSelected: viewModel.handleContainerSelection,
-                          filterCondition: (item, query) {
-                            final lowerQuery = query.toLowerCase();
-                            if (item is String) return item.toLowerCase().contains(lowerQuery);
-                            if (item is BoxItem) {
-                              return item.productName.toLowerCase().contains(lowerQuery) ||
-                                  item.productCode.toLowerCase().contains(lowerQuery) ||
-                                  (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                            }
-                            return false;
-                          },
-                          validator: viewModel.validateContainer,
-                          viewModel: viewModel,
-                        ),
-                        const SizedBox(height: _gap),
-                        if (viewModel.isLoadingContainerContents)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: _gap), 
-                            child: Center(child: CircularProgressIndicator())
-                          )
-                        else if (viewModel.productsInContainer.isNotEmpty)
-                          _buildProductsList(viewModel),
-                        const SizedBox(height: _gap),
-                        _buildHybridDropdownWithQr<String>(
-                          controller: viewModel.targetLocationController,
-                          focusNode: viewModel.targetLocationFocusNode,
-                          label: 'inventory_transfer.label_target_location'.tr(),
-                          fieldIdentifier: 'target',
-                          items: viewModel.availableTargetLocations.keys.toList(),
-                          itemToString: (item) => item,
-                          onItemSelected: viewModel.handleTargetSelection,
-                          filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                          validator: viewModel.validateTargetLocation,
-                          viewModel: viewModel,
-                        ),
+        });
+
+        if (viewModel.lastError != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showErrorSnackBar(viewModel.lastError!);
+            viewModel.clearError();
+          });
+        }
+        
+        return Scaffold(
+          appBar: SharedAppBar(
+            title: viewModel.isPutawayMode 
+              ? 'inventory_transfer.putaway_title'.tr() 
+              : 'inventory_transfer.title'.tr()
+          ),
+          resizeToAvoidBottomInset: true,
+          bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(viewModel),
+          body: SafeArea(
+            child: viewModel.isLoadingInitialData
+                ? const Center(child: CircularProgressIndicator())
+                : GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: Form(
+                key: _formKey,
+                autovalidateMode: AutovalidateMode.disabled,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (viewModel.isPutawayMode && viewModel.selectedOrder != null) ...[
+                        OrderInfoCard(order: viewModel.selectedOrder!),
                         const SizedBox(height: _gap),
                       ],
-                    ),
+                      _buildModeSelector(viewModel),
+                      const SizedBox(height: _gap),
+                      if (viewModel.selectedMode == AssignmentMode.pallet) ...[
+                        _buildPalletOpeningSwitch(viewModel),
+                        const SizedBox(height: _gap),
+                      ],
+                      _buildHybridDropdownWithQr<String>(
+                        controller: viewModel.sourceLocationController,
+                        focusNode: viewModel.sourceLocationFocusNode,
+                        label: 'inventory_transfer.label_source_location'.tr(),
+                        fieldIdentifier: 'source',
+                        items: viewModel.availableSourceLocations.keys.toList(),
+                        itemToString: (item) => item,
+                        onItemSelected: viewModel.handleSourceSelection,
+                        filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                        validator: viewModel.validateSourceLocation,
+                        viewModel: viewModel,
+                      ),
+                      const SizedBox(height: _gap),
+                      _buildHybridDropdownWithQr<dynamic>(
+                        controller: viewModel.scannedContainerIdController,
+                        focusNode: viewModel.containerFocusNode,
+                        label: viewModel.selectedMode == AssignmentMode.pallet 
+                            ? 'inventory_transfer.label_pallet'.tr() 
+                            : 'inventory_transfer.label_product'.tr(),
+                        fieldIdentifier: 'container',
+                        items: viewModel.availableContainers,
+                        itemToString: (item) {
+                          if (item is String) return item;
+                          if (item is BoxItem) return '${item.productName} (${item.productCode})';
+                          return '';
+                        },
+                        onItemSelected: viewModel.handleContainerSelection,
+                        filterCondition: (item, query) {
+                          final lowerQuery = query.toLowerCase();
+                          if (item is String) return item.toLowerCase().contains(lowerQuery);
+                          if (item is BoxItem) {
+                            return item.productName.toLowerCase().contains(lowerQuery) ||
+                                item.productCode.toLowerCase().contains(lowerQuery) ||
+                                (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                          }
+                          return false;
+                        },
+                        validator: viewModel.validateContainer,
+                        viewModel: viewModel,
+                      ),
+                      const SizedBox(height: _gap),
+                      if (viewModel.isLoadingContainerContents)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: _gap), 
+                          child: Center(child: CircularProgressIndicator())
+                        )
+                      else if (viewModel.productsInContainer.isNotEmpty)
+                        _buildProductsList(viewModel),
+                      const SizedBox(height: _gap),
+                      _buildHybridDropdownWithQr<String>(
+                        controller: viewModel.targetLocationController,
+                        focusNode: viewModel.targetLocationFocusNode,
+                        label: 'inventory_transfer.label_target_location'.tr(),
+                        fieldIdentifier: 'target',
+                        items: viewModel.availableTargetLocations.keys.toList(),
+                        itemToString: (item) => item,
+                        onItemSelected: viewModel.handleTargetSelection,
+                        filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                        validator: viewModel.validateTargetLocation,
+                        viewModel: viewModel,
+                      ),
+                      const SizedBox(height: _gap),
+                    ],
                   ),
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -410,6 +414,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      
+      // Sipariş bazlı transfer ise ve başarılı ise, geri dön
+      if (viewModel.isPutawayMode) {
+        // Listeyi yenilemesi için true değeri ile geri dön
+        Navigator.of(context).pop(true);
+      }
     } else if (mounted && !success) {
       // ViewModel might have set an error message
       if (viewModel.lastError == null) {

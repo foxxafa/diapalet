@@ -592,19 +592,23 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {String stockStatus = 'available'}) async {
+  Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {List<String> stockStatuses = const ['available']}) async {
     final db = await dbHelper.database;
     final cleanCode = productCodeOrBarcode.toLowerCase().trim();
+    
+    final placeholders = List.filled(stockStatuses.length, '?').join(',');
+    final args = [locationId, ...stockStatuses, cleanCode, cleanCode];
+
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT s.urun_id, s.quantity, u.UrunAdi, u.StokKodu, u.Barcode1, s.stock_status, s.siparis_id
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
       WHERE s.location_id = ? 
         AND s.pallet_barcode IS NULL 
-        AND s.stock_status = ?
+        AND s.stock_status IN ($placeholders)
         AND (LOWER(u.StokKodu) = ? OR LOWER(u.Barcode1) = ?)
       LIMIT 1
-    ''', [locationId, stockStatus, cleanCode, cleanCode]);
+    ''', args);
 
     if (maps.isNotEmpty) {
       return BoxItem.fromDbMap(maps.first);

@@ -34,6 +34,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
   bool _isSaving = false;
   bool _isPalletOpening = false;
   bool _isDisposed = false;
+  bool _isInitialized = false;
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
   
@@ -63,6 +64,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
   bool get isSaving => _isSaving;
   bool get isPalletOpening => _isPalletOpening;
   bool get areFieldsEnabled => !_isLoadingInitialData && !_isSaving;
+  bool get isInitialized => _isInitialized;
 
   AssignmentMode get selectedMode => _selectedMode;
   Map<String, int> get availableSourceLocations => _availableSourceLocations;
@@ -94,27 +96,37 @@ class InventoryTransferViewModel extends ChangeNotifier {
        _barcodeService = barcodeService;
   
   void init(PurchaseOrder? order) {
-    if (_isDisposed) {
-      // Re-initialize controllers and focus nodes if the view model is being reused.
-      sourceLocationController = TextEditingController();
-      targetLocationController = TextEditingController();
-      scannedContainerIdController = TextEditingController();
-      sourceLocationFocusNode = FocusNode();
-      targetLocationFocusNode = FocusNode();
-      containerFocusNode = FocusNode();
-      _productQuantityControllers.clear();
-      _productQuantityFocusNodes.clear();
-      _isDisposed = false;
+    // Eğer zaten başlatılmışsa veya dispose edilmişse, tekrar başlatma
+    if (_isInitialized || _isDisposed) {
+      return;
     }
+    
+    _isInitialized = true; // Başlatıldı olarak işaretle
     _selectedOrder = order;
+    
+    // Controllers ve focus nodes'ları oluştur
+    sourceLocationController = TextEditingController();
+    targetLocationController = TextEditingController();
+    scannedContainerIdController = TextEditingController();
+    sourceLocationFocusNode = FocusNode();
+    targetLocationFocusNode = FocusNode();
+    containerFocusNode = FocusNode();
+    _productQuantityControllers.clear();
+    _productQuantityFocusNodes.clear();
+    
     _initializeListeners();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isDisposed) {
+        _loadInitialData();
+      }
+    });
   }
 
   @override
   void dispose() {
     if (_isDisposed) return; // Prevent double disposal
     _isDisposed = true; // Set flag at the beginning
+    _isInitialized = false;
 
     _intentSub?.cancel();
     sourceLocationFocusNode.removeListener(_onFocusChange);
@@ -131,17 +143,21 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   void _initializeListeners() {
+    if (_isDisposed) return; // Dispose edilmişse listener ekleme
+    
     sourceLocationFocusNode.addListener(_onFocusChange);
     containerFocusNode.addListener(_onFocusChange);
     targetLocationFocusNode.addListener(_onFocusChange);
 
     _intentSub?.cancel();
     _intentSub = _barcodeService.stream.listen(_handleBarcode, onError: (e) {
-      showError('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()}));
+      if (!_isDisposed) { // Dispose kontrolü
+        showError('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()}));
+      }
     });
 
     _barcodeService.getInitialBarcode().then((code) {
-      if (code != null && code.isNotEmpty) {
+      if (code != null && code.isNotEmpty && !_isDisposed) { // Dispose kontrolü
         _handleBarcode(code);
       }
     });
@@ -169,6 +185,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadInitialData() async {
+    if (_isDisposed) return; // Dispose edilmişse işlem yapma
+    
     _isLoadingInitialData = true;
     notifyListeners();
 
@@ -178,6 +196,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
         _repository.getTargetLocations(),
       ]);
       
+      if (_isDisposed) return; // Async işlem sırasında dispose edilmiş olabilir
+      
       _availableSourceLocations = results[0];
       _availableTargetLocations = results[1];
       
@@ -185,9 +205,13 @@ class InventoryTransferViewModel extends ChangeNotifier {
       notifyListeners();
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        sourceLocationFocusNode.requestFocus();
+        if (!_isDisposed) { // Dispose kontrolü
+          sourceLocationFocusNode.requestFocus();
+        }
       });
     } catch (e) {
+      if (_isDisposed) return; // Hata durumunda da kontrol
+      
       _isLoadingInitialData = false;
       showError('inventory_transfer.error_generic'.tr(namedArgs: {'error': e.toString()}));
       notifyListeners();
@@ -286,8 +310,20 @@ class InventoryTransferViewModel extends ChangeNotifier {
             debugPrint("Ürün '$cleanData' mevcut listede bulunamadı. Veritabanında anlık olarak aranıyor...");
             final locationId = _availableSourceLocations[_selectedSourceLocationName];
             if (locationId != null) {
-              final String stockStatus = isPutawayMode ? 'receiving' : 'available';
-              foundItem = await _repository.findBoxByCodeAtLocation(cleanData, locationId, stockStatus: stockStatus);
+              
+              // HEDEF ODAKLI DÜZELTME:
+              // Kaynak lokasyonun Mal Kabul Alanı olup olmadığını kontrol et
+              final malKabulLocationName = _availableSourceLocations.entries
+                  .firstWhere((entry) => entry.value == 1, // Varsayılan mal kabul ID'si 1
+                      orElse: () => const MapEntry('', -1)).key;
+              
+              List<String> statusesToSearch = ['available'];
+              if (_selectedSourceLocationName == malKabulLocationName) {
+                statusesToSearch.add('receiving');
+              }
+              
+              // Güncellenmiş repozitör metodunu doğru parametrelerle çağır
+              foundItem = await _repository.findBoxByCodeAtLocation(cleanData, locationId, stockStatuses: statusesToSearch);
             }
           }
         }
@@ -341,7 +377,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadContainersForLocation() async {
-    if (_selectedSourceLocationName == null) return;
+    if (_selectedSourceLocationName == null || _isDisposed) return;
     
     final locationId = _availableSourceLocations[_selectedSourceLocationName];
     if (locationId == null) return;
@@ -359,21 +395,29 @@ class InventoryTransferViewModel extends ChangeNotifier {
       } else {
         _availableContainers = await _repository.getBoxesAtLocation(locationId, stockStatus: stockStatus);
       }
+      
+      if (_isDisposed) return; // Async işlem sonrası kontrol
     } catch (e) {
-      showError('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
+      if (!_isDisposed) {
+        showError('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
+      }
     } finally {
-      _isLoadingContainerContents = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _isLoadingContainerContents = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> _fetchContainerContents() async {
     final container = _selectedContainer;
-    if (container == null) return;
+    if (container == null || _isDisposed) return;
 
     final locationId = _availableSourceLocations[_selectedSourceLocationName!];
     if (locationId == null) {
-      showError('inventory_transfer.error_source_location_not_found'.tr());
+      if (!_isDisposed) {
+        showError('inventory_transfer.error_source_location_not_found'.tr());
+      }
       return;
     }
 
@@ -391,6 +435,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
         contents = [ProductItem.fromBoxItem(container)];
       }
 
+      if (_isDisposed) return; // Async işlem sonrası kontrol
+      
       _productsInContainer = contents;
       for (var product in contents) {
         final initialQty = product.currentQuantity;
@@ -401,10 +447,14 @@ class InventoryTransferViewModel extends ChangeNotifier {
         _productQuantityFocusNodes[product.id] = FocusNode();
       }
     } catch (e) {
-      showError('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
+      if (!_isDisposed) {
+        showError('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
+      }
     } finally {
-      _isLoadingContainerContents = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _isLoadingContainerContents = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -539,6 +589,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   void _handleBarcode(String code) {
+    if (_isDisposed) return; // Dispose edilmişse işlem yapma
+    
     if (sourceLocationFocusNode.hasFocus) {
       processScannedData('source', code);
     } else if (containerFocusNode.hasFocus) {

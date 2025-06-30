@@ -31,6 +31,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isOrderDetailsLoading = false;
+  bool _isDisposed = false;
   ReceivingMode _receivingMode = ReceivingMode.palet;
   
   PurchaseOrder? _selectedOrder;
@@ -117,6 +118,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _intentSub?.cancel();
     _syncStatusSub?.cancel();
     palletIdFocusNode.removeListener(_onFocusChange);
@@ -130,6 +132,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     super.dispose();
   }
 
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   void _onFocusChange() {
     if (palletIdFocusNode.hasFocus && palletIdController.text.isNotEmpty) {
       palletIdController.selection = TextSelection(baseOffset: 0, extentOffset: palletIdController.text.length);
@@ -140,6 +149,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadInitialData() async {
+    if (_isDisposed) return;
+    
     _isLoading = true;
     notifyListeners();
     try {
@@ -147,6 +158,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         _availableProducts = await _repository.searchProducts('');
       }
 
+      if (_isDisposed) return;
+      
       _isLoading = false;
       notifyListeners();
 
@@ -156,6 +169,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         _setInitialFocus();
       }
     } catch (e) {
+      if (_isDisposed) return;
+      
       _error = 'goods_receiving_screen.error_loading_initial'.tr(namedArgs: {'error': e.toString()});
       _isLoading = false;
       notifyListeners();
@@ -173,19 +188,31 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<void> _loadOrderDetails(int orderId) async {
+    if (_isDisposed) return;
+    
     try {
       _orderItems = await _repository.getPurchaseOrderItems(orderId);
+      
+      if (_isDisposed) return;
     } catch (e) {
+      if (_isDisposed) return;
+      
       _error = 'goods_receiving_screen.error_loading_details'.tr(namedArgs: {'error': e.toString()});
     } finally {
-      _isOrderDetailsLoading = false;
-      _setInitialFocus();
-      notifyListeners();
+      if (!_isDisposed) {
+        _isOrderDetailsLoading = false;
+        _setInitialFocus();
+        notifyListeners();
+      }
     }
   }
   
   void _setInitialFocus() {
-     WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (_isDisposed) return;
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isDisposed) return;
+      
       if (_receivingMode == ReceivingMode.palet) {
         palletIdFocusNode.requestFocus();
       } else {
@@ -203,17 +230,25 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
   
   void _initBarcode() {
+    if (_isDisposed) return;
+    
     _intentSub?.cancel();
     _intentSub = _barcodeService.stream.listen(_handleBarcode, onError: (e) {
-      _error = 'common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()});
-      notifyListeners();
+      if (!_isDisposed) {
+        _error = 'common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()});
+        notifyListeners();
+      }
     });
     _barcodeService.getInitialBarcode().then((code) {
-      if (code != null && code.isNotEmpty) _handleBarcode(code);
+      if (code != null && code.isNotEmpty && !_isDisposed) {
+        _handleBarcode(code);
+      }
     });
   }
 
   void _handleBarcode(String code) {
+    if (_isDisposed) return;
+    
     if (palletIdFocusNode.hasFocus) {
       processScannedData('pallet', code);
     } else if (productFocusNode.hasFocus) {
@@ -362,6 +397,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<void> _executeSave() async {
+    if (_isDisposed) return;
+    
     final prefs = await SharedPreferences.getInstance();
     final employeeId = prefs.getInt('user_id');
     if (employeeId == null) throw Exception('common_labels.user_id_not_found'.tr());
@@ -383,6 +420,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   void _handleSuccessfulSave({required bool shouldNavigateBack}) {
+    if (_isDisposed) return;
+    
     if (isOrderBased) {
       _navigateBack = shouldNavigateBack;
       _addedItems.clear();
@@ -393,7 +432,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     } else {
       _addedItems.clear();
       _clearEntryFields(clearPallet: true);
-      WidgetsBinding.instance.addPostFrameCallback((_) => productFocusNode.requestFocus());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) {
+          productFocusNode.requestFocus();
+        }
+      });
     }
   }
 
