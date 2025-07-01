@@ -5,8 +5,8 @@ USE `enzo`; -- Veritabanı adını doğrulayın
 -- 1. Depoları ekle (branch_id ile birlikte)
 -- branch_id, ana sistemdeki şube kimliğidir ve siparişlerle eşleşmek için kullanılır.
 INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `branch_id`) VALUES
-(1, 'SOUTHALL WAREHOUSE', 'WHS-SLL', 10),
-(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 20);
+(1, 'SOUTHALL WAREHOUSE', 'WHS-SLL', 1),
+(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 2);
 
 -- 2. Rafları ekle (Artık warehouses_shelfs değil, 'shelfs' tablosuna)
 -- Sanal Mal Kabul Alanı (shelf_id=NULL) için buraya bir kayıt eklenmez.
@@ -18,9 +18,9 @@ INSERT INTO `shelfs` (`warehouse_id`, `name`, `code`, `is_active`) VALUES
 
 -- 3. Çalışanları ekle (warehouse_id ile depolara atanır)
 INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `branch_id`) VALUES
-(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 10),
-(2, 'Mehmet', 'Kaya', 'mehmet', '123', 1, 10),
-(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 20);
+(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 1),
+(2, 'Mehmet', 'Kaya', 'mehmet', '123', 1, 1),
+(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 2);
 
 -- 4. Ürünleri ekle (sadece temel alanlar)
 INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VALUES
@@ -31,12 +31,12 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 (5, 'MKN-001', 'Makarna 500g', '8690005123450', 1);
 
 -- 5. Satın Alma Siparişlerini ekle
--- DİKKAT: Artık lokasyon_id/shelf_id yerine 'branch_id' kullanılıyor.
+-- DİKKAT: branch_id değerleri warehouse_id ile uyumlu hale getirildi
 -- Bu branch_id, siparişin hangi depoya ait olduğunu belirtir.
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
-(101, '2025-06-22', 'PO-25B001', 1, 10), -- Depo 1'in (branch_id=10) siparişi
-(102, '2025-06-23', 'PO-25B002', 1, 10), -- Depo 1'in (branch_id=10) siparişi
-(201, '2025-06-22', 'PO-25I001', 1, 20); -- Depo 2'nin (branch_id=20) siparişi
+(101, '2025-06-22', 'PO-25B001', 1, 1), -- Depo 1'in (branch_id=1) siparişi
+(102, '2025-06-23', 'PO-25B002', 1, 1), -- Depo 1'in (branch_id=1) siparişi
+(201, '2025-06-22', 'PO-25I001', 1, 2); -- Depo 2'nin (branch_id=2) siparişi
 
 -- 6. Sipariş Satırlarını ekle
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
