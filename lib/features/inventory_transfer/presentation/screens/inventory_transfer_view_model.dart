@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 
 // ANA GÜNCELLEME: Bu ViewModel artık hem "Serbest Transfer" hem de "Rafa Kaldırma" işlemlerini yönetiyor.
 class InventoryTransferViewModel extends ChangeNotifier {
@@ -33,8 +34,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
   AssignmentMode _selectedMode = AssignmentMode.pallet;
   Map<String, int> _availableSourceLocations = {}, _availableTargetLocations = {};
   String? _selectedSourceLocationName, _selectedTargetLocationName;
+  
+  // GÜNCELLEME: Veri tipi `TransferableContainer` olarak değiştirildi.
   List<TransferableContainer> _availableContainers = [];
   TransferableContainer? _selectedContainer;
+  
   List<ProductItem> _productsInContainer = [];
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
@@ -42,6 +46,10 @@ class InventoryTransferViewModel extends ChangeNotifier {
   StreamSubscription<String>? _intentSub;
   String? _lastError;
   PurchaseOrder? _selectedOrder;
+
+  // GÜNCELLEME: UI olayları için state'ler eklendi.
+  String? _error;
+  String? _successMessage;
 
   // Getters
   bool get isLoadingInitialData => _isLoadingInitialData;
@@ -56,8 +64,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
   String? get selectedSourceLocationName => _selectedSourceLocationName;
   Map<String, int> get availableTargetLocations => _availableTargetLocations;
   String? get selectedTargetLocationName => _selectedTargetLocationName;
+  
+  // GÜNCELLEME: Veri tipi `TransferableContainer` olarak değiştirildi.
   List<TransferableContainer> get availableContainers => _availableContainers;
   TransferableContainer? get selectedContainer => _selectedContainer;
+  
   List<ProductItem> get productsInContainer => _productsInContainer;
   Map<int, TextEditingController> get productQuantityControllers => _productQuantityControllers;
   Map<int, FocusNode> get productQuantityFocusNodes => _productQuantityFocusNodes;
@@ -70,6 +81,10 @@ class InventoryTransferViewModel extends ChangeNotifier {
   AssignmentMode get finalOperationMode => _selectedMode == AssignmentMode.pallet
       ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
       : AssignmentMode.box;
+
+  // Getters for UI events
+  String? get error => _error;
+  String? get successMessage => _successMessage;
 
   InventoryTransferViewModel({
     required InventoryTransferRepository repository,
@@ -100,36 +115,51 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _isLoadingInitialData = true;
     notifyListeners();
     try {
+      // Hedef lokasyonları her zaman yükle.
+      _availableTargetLocations = await _repository.getTargetLocations();
+
       if (isPutawayMode) {
-        // Rafa kaldırma modunda, kaynak lokasyon sabittir (Mal Kabul Alanı)
-        // ve konteynerler (paletler/kutular) bu sanal alandan yüklenir.
+        // Rafa kaldırma modunda, kaynak lokasyon sabittir (Mal Kabul Alanı).
+        // Konteynerler bu sanal alandan (`locationId: null`) ve siparişe göre yüklenir.
         _selectedSourceLocationName = 'common_labels.goods_receiving_area'.tr();
         sourceLocationController.text = _selectedSourceLocationName!;
-        await _loadContainersForLocation(null, orderId: _selectedOrder!.id); 
+        await _loadContainers();
       } else {
-        // Serbest transferde kaynak lokasyonlar yüklenir.
+        // Serbest transferde kaynak lokasyonlar kullanıcı tarafından seçilmek üzere yüklenir.
         _availableSourceLocations = await _repository.getSourceLocations();
       }
-      _availableTargetLocations = await _repository.getTargetLocations();
     } catch (e) {
       _setError('inventory_transfer.error_loading_locations', e);
     } finally {
-      _isLoadingInitialData = false;
-      if (!_isDisposed) notifyListeners();
+      if (!_isDisposed) {
+        _isLoadingInitialData = false;
+        notifyListeners();
+        // Serbest transferde, başlangıçta kaynak lokasyona odaklan.
+        if (!isPutawayMode) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            sourceLocationFocusNode.requestFocus();
+          });
+        }
+      }
     }
   }
   
   Future<bool> confirmAndSave() async {
-    _setError(null);
-    if (!_validateForm()) return false;
-
+    _syncService.startUserOperation();
     _isSaving = true;
     notifyListeners();
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final employeeId = prefs.getInt('user_id') ?? 0;
+      final employeeId = prefs.getInt('user_id');
+      final sourceId = isPutawayMode ? null : _availableSourceLocations[_selectedSourceLocationName!];
+      final targetId = _availableTargetLocations[_selectedTargetLocationName!];
 
+      if ((!isPutawayMode && sourceId == null) || targetId == null || employeeId == null) {
+        _setError('inventory_transfer.error_location_id_not_found'.tr());
+        return false;
+      }
+      
       final header = TransferOperationHeader(
         employeeId: employeeId,
         transferDate: DateTime.now(),
@@ -138,38 +168,26 @@ class InventoryTransferViewModel extends ChangeNotifier {
         targetLocationName: _selectedTargetLocationName!,
       );
 
-      final itemsToTransfer = _collectItemsToTransfer();
-      if (itemsToTransfer.isEmpty) {
-        _setError('inventory_transfer.error_no_items_to_transfer');
-        return false;
-      }
+      final itemsToTransfer = getTransferItems();
       
-      final sourceId = isPutawayMode ? null : _availableSourceLocations[_selectedSourceLocationName!];
-      final targetId = _availableTargetLocations[_selectedTargetLocationName!];
-
-      if (targetId == null) {
-         _setError('inventory_transfer.error_no_target_location');
-         return false;
-      }
-
       await _repository.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
-      
-      if (isPutawayMode) {
+
+      if (isPutawayMode && _selectedOrder != null) {
         await _repository.checkAndCompletePutaway(_selectedOrder!.id);
       }
-      
-      await _syncService.uploadPendingOperations();
 
+      _syncService.uploadPendingOperations();
+
+      _successMessage = 'inventory_transfer.success_transfer_saved'.tr();
       _navigateBack = true;
-      notifyListeners();
       return true;
-
     } catch (e) {
-      _setError('inventory_transfer.error_saving_transfer', e);
+      _setError('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
       return false;
     } finally {
       _isSaving = false;
-      if (!_isDisposed) notifyListeners();
+      _syncService.endUserOperation();
+      notifyListeners();
     }
   }
   
@@ -208,9 +226,9 @@ class InventoryTransferViewModel extends ChangeNotifier {
     if (_isDisposed) return;
 
     if (sourceLocationFocusNode.hasFocus) {
-      _findLocationAndSet(barcode, 'source');
+      _findLocationAndSet(barcode, isSource: true);
     } else if (targetLocationFocusNode.hasFocus) {
-      _findLocationAndSet(barcode, 'target');
+      _findLocationAndSet(barcode, isSource: false);
     } else if (containerFocusNode.hasFocus) {
       _findContainerAndSet(barcode);
     } else {
@@ -229,10 +247,9 @@ class InventoryTransferViewModel extends ChangeNotifier {
     
     _selectedSourceLocationName = selection;
     sourceLocationController.text = selection;
-    final locationId = _availableSourceLocations[selection];
-
-    _clearContainerAndProducts();
-    _loadContainersForLocation(locationId);
+    
+    _resetContainerAndProducts();
+    _loadContainers();
     notifyListeners();
   }
 
@@ -253,30 +270,49 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   void togglePalletOpening(bool value) {
-    if (_isPalletOpening == value) return;
+    if (_isPalletOpening == value || productsInContainer.isEmpty) return;
     _isPalletOpening = value;
+    
+    // Eğer palet açma kapatılıyorsa, miktarları sıfırla.
+    if (!value) {
+      _productsInContainer.forEach((product) {
+        final initialQty = product.currentQuantity;
+        _productQuantityControllers[product.id]?.text = initialQty.toStringAsFixed(initialQty.truncateToDouble() == initialQty ? 0 : 2);
+      });
+    }
     notifyListeners();
   }
   
   void changeAssignmentMode(AssignmentMode newMode) {
     if (_selectedMode == newMode) return;
     _selectedMode = newMode;
-    _clearContainerAndProducts();
+    // Mod değiştiğinde konteyner ve ürün listesini sıfırla ve yeniden yükle.
+    _resetContainerAndProducts();
+    _loadContainers(); 
     notifyListeners();
   }
 
   // Data Loading & Processing
-  Future<void> _loadContainersForLocation(int? locationId, {int? orderId}) async {
+  Future<void> _loadContainers() async {
+    // Rafa kaldırma modunda locationId null, serbest transferde ise seçili olmalı.
+    final locationId = isPutawayMode ? null : _availableSourceLocations[_selectedSourceLocationName];
+    if (locationId == null && !isPutawayMode) return;
+
     _isLoadingContainerContents = true;
+    _resetContainerAndProducts();
     notifyListeners();
+    
     try {
-      _availableContainers = await _repository.getTransferableContainers(locationId, orderId: orderId);
+      // GÜNCELLEME: Yeni birleşik metod kullanılıyor.
+      _availableContainers = await _repository.getTransferableContainers(locationId, orderId: _selectedOrder?.id);
     } catch (e) {
       _setError('inventory_transfer.error_loading_containers', e);
       _availableContainers = [];
     } finally {
-      _isLoadingContainerContents = false;
-      if (!_isDisposed) notifyListeners();
+      if (!_isDisposed) {
+        _isLoadingContainerContents = false;
+        notifyListeners();
+      }
     }
   }
   
@@ -284,6 +320,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _clearProducts();
     if (_selectedContainer == null) return;
 
+    // `TransferableContainer` içindeki `TransferableItem`'ları `ProductItem`'lara dönüştür.
     final products = _selectedContainer!.items.map((item) {
       return ProductItem(
         id: item.product.id,
@@ -291,8 +328,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
         productCode: item.product.stockCode,
         barcode1: item.product.barcode1,
         currentQuantity: item.quantity,
-        stockStatus: 'available', // Default status since ProductInfo doesn't have stockStatus
-        siparisId: null, // ProductInfo doesn't have siparisId
+        stockStatus: 'available', // Bu bilgi TransferableItem'da yok, gerekirse eklenmeli
+        siparisId: _selectedOrder?.id,
       );
     }).toList();
 
@@ -302,48 +339,25 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
   
   void _initializeProductControllers() {
-    _productQuantityControllers.forEach((_, controller) => controller.dispose());
-    _productQuantityFocusNodes.forEach((_, node) => node.dispose());
-    _productQuantityControllers.clear();
-    _productQuantityFocusNodes.clear();
-
+    _clearProductControllers();
     for (var product in _productsInContainer) {
-      _productQuantityControllers[product.id] = TextEditingController(text: product.currentQuantity.toString());
+      final qty = product.currentQuantity;
+      _productQuantityControllers[product.id] = TextEditingController(text: qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2));
       _productQuantityFocusNodes[product.id] = FocusNode();
     }
   }
   
-  List<TransferItemDetail> _collectItemsToTransfer() {
-    final itemsToTransfer = <TransferItemDetail>[];
-    for (final product in _productsInContainer) {
-      final controller = _productQuantityControllers[product.id];
-      final qty = double.tryParse(controller?.text ?? '0') ?? 0;
-      if (qty > 0) {
-        itemsToTransfer.add(TransferItemDetail(
-          productId: product.id,
-          productName: product.name,
-          productCode: product.productCode,
-          quantity: qty,
-          palletId: product.barcode1, // Using barcode1 as pallet identifier
-          stockStatus: product.stockStatus,
-          siparisId: product.siparisId,
-        ));
-      }
-    }
-    return itemsToTransfer;
-  }
-  
   // Field Handling (Find, Set, Clear)
-  Future<void> _findLocationAndSet(String barcode, String field) async {
+  Future<void> _findLocationAndSet(String barcode, {required bool isSource}) async {
     final location = await _repository.findLocationByCode(barcode);
     if (location != null) {
-      if (field == 'source' && !isPutawayMode) {
+      if (isSource) {
         if (_availableSourceLocations.containsKey(location.key)) {
           handleSourceSelection(location.key);
         } else {
           _setError('inventory_transfer.error_location_not_in_source_list');
         }
-      } else if (field == 'target') {
+      } else {
         if (_availableTargetLocations.containsKey(location.key)) {
           handleTargetSelection(location.key);
         } else {
@@ -356,16 +370,16 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   void _findContainerAndSet(String barcode) {
-    final found = _availableContainers.where((c) => c.id.toLowerCase() == barcode.toLowerCase() || c.displayName.toLowerCase().contains(barcode.toLowerCase())).toList();
+    final found = _availableContainers.where((c) => c.id.toLowerCase() == barcode.toLowerCase()).toList();
     if (found.isNotEmpty) {
       handleContainerSelection(found.first);
     } else {
-       scannedContainerIdController.text = barcode;
+      scannedContainerIdController.text = barcode;
       _setError('inventory_transfer.error_container_not_found');
     }
   }
   
-  void _clearContainerAndProducts() {
+  void _resetContainerAndProducts() {
     _selectedContainer = null;
     scannedContainerIdController.clear();
     _availableContainers = [];
@@ -374,11 +388,15 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
   void _clearProducts() {
     _productsInContainer = [];
-    _productQuantityControllers.forEach((_, c) => c.dispose());
-    _productQuantityFocusNodes.forEach((_, n) => n.dispose());
+    _clearProductControllers();
+    _isPalletOpening = false;
+  }
+
+  void _clearProductControllers() {
+    _productQuantityControllers.forEach((_, controller) => controller.dispose());
+    _productQuantityFocusNodes.forEach((_, node) => node.dispose());
     _productQuantityControllers.clear();
     _productQuantityFocusNodes.clear();
-    _isPalletOpening = false;
   }
 
   // Validation
@@ -430,7 +448,16 @@ class InventoryTransferViewModel extends ChangeNotifier {
   void _setError(String? messageKey, [Object? e]) {
     if (e != null) {
       debugPrint("Error in InventoryTransferViewModel: $e");
-      _lastError = messageKey?.tr(namedArgs: {'error': e.toString()});
+      // Hata mesajına göre doğru parametreleri belirle
+      if (messageKey?.contains('error_invalid_location_code') == true) {
+        _lastError = messageKey?.tr(namedArgs: {'code': e.toString()});
+      } else if (messageKey?.contains('error_invalid_location_for_operation') == true) {
+        _lastError = messageKey?.tr(namedArgs: {'location': e.toString(), 'field': 'location'});
+      } else if (messageKey?.contains('error_item_not_found') == true) {
+        _lastError = messageKey?.tr(namedArgs: {'data': e.toString()});
+      } else {
+        _lastError = messageKey?.tr(namedArgs: {'error': e.toString()});
+      }
     } else {
       _lastError = messageKey?.tr();
     }
@@ -438,11 +465,165 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
   
   void clearError() {
-    _lastError = null;
-    // No need to notify, typically called before another state change
+    _error = null;
   }
 
+  void clearSuccessMessage() {
+    _successMessage = null;
+  }
+  
   void clearNavigateBack() {
     _navigateBack = false;
+  }
+
+  // Eksik metodları ekle
+  void changeMode(AssignmentMode newMode) {
+    if (_isSaving) return;
+    
+    _selectedMode = newMode;
+    _isPalletOpening = false;
+    _resetContainerAndProducts();
+    
+    if (_selectedSourceLocationName != null) {
+      _loadContainers();
+    }
+    
+    notifyListeners();
+  }
+
+  void setPalletOpening(bool value) {
+    if (_productsInContainer.isEmpty) return;
+    
+    _isPalletOpening = value;
+    
+    if (!value) {
+      // Reset all quantities to maximum when disabling pallet opening
+      for (var product in _productsInContainer) {
+        final initialQty = product.currentQuantity;
+        final initialQtyText = initialQty == initialQty.truncate()
+            ? initialQty.toInt().toString()
+            : initialQty.toString();
+        _productQuantityControllers[product.id]?.text = initialQtyText;
+      }
+    }
+    
+    notifyListeners();
+  }
+
+  Future<void> processScannedData(String field, String data) async {
+    final cleanData = data.trim();
+    if (cleanData.isEmpty) return;
+
+    switch (field) {
+      case 'source':
+      case 'target':
+        final location = await _repository.findLocationByCode(cleanData);
+        if (location != null) {
+          final bool isValidSource = field == 'source' && _availableSourceLocations.containsKey(location.key);
+          final bool isValidTarget = field == 'target' && _availableTargetLocations.containsKey(location.key);
+
+          if (isValidSource) {
+            handleSourceSelection(location.key);
+          } else if (isValidTarget) {
+            handleTargetSelection(location.key);
+          } else {
+            if (field == 'source') sourceLocationController.clear();
+            if (field == 'target') targetLocationController.clear();
+            _setError('inventory_transfer.error_invalid_location_for_operation', location.key);
+          }
+        } else {
+          if (field == 'source') sourceLocationController.clear();
+          if (field == 'target') targetLocationController.clear();
+          _setError('inventory_transfer.error_invalid_location_code', cleanData);
+        }
+        break;
+
+      case 'container':
+        dynamic foundItem;
+        if (_selectedMode == AssignmentMode.pallet) {
+          foundItem = _availableContainers.cast<String?>().firstWhere(
+            (id) => id?.toLowerCase() == cleanData.toLowerCase(), 
+            orElse: () => null
+          );
+        } else {
+          // Box mode için BoxItem arama
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere(
+            (box) => box?.productCode.toLowerCase() == cleanData.toLowerCase() || 
+                    box?.barcode1?.toLowerCase() == cleanData.toLowerCase(), 
+            orElse: () => null
+          );
+
+          // Mevcut listede bulunamazsa, veritabanında bu lokasyon için anlık sorgu yap
+          if (foundItem == null) {
+            final locationId = _availableSourceLocations[_selectedSourceLocationName];
+            if (locationId != null) {
+              List<String> statusesToSearch = ['available'];
+              if (_selectedSourceLocationName == 'Goods Receiving Area') {
+                statusesToSearch.add('receiving');
+              }
+              
+              foundItem = await _repository.findBoxByCodeAtLocation(cleanData, locationId, stockStatuses: statusesToSearch);
+            }
+          }
+        }
+
+        if (foundItem != null) {
+          handleContainerSelection(foundItem);
+        } else {
+          scannedContainerIdController.clear();
+          _setError('inventory_transfer.error_item_not_found', cleanData);
+        }
+        break;
+    }
+  }
+
+  String? validateProductQuantity(String? value, ProductItem product) {
+    if (value == null || value.isEmpty) {
+      return 'inventory_transfer.validator_required'.tr();
+    }
+    final qty = double.tryParse(value);
+    if (qty == null) {
+      return 'inventory_transfer.validator_invalid'.tr();
+    }
+    if (qty > product.currentQuantity + 0.001) {
+      return 'inventory_transfer.validator_max'.tr();
+    }
+    if (qty < 0) {
+      return 'inventory_transfer.validator_negative'.tr();
+    }
+    return null;
+  }
+
+  void focusNextProductOrTarget(int currentProductId) {
+    final productIds = _productQuantityFocusNodes.keys.toList();
+    final currentIndex = productIds.indexOf(currentProductId);
+    if (currentIndex < productIds.length - 1) {
+      _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+    } else {
+      targetLocationFocusNode.requestFocus();
+    }
+  }
+
+  List<TransferItemDetail> getTransferItems() {
+    final List<TransferItemDetail> items = [];
+    
+    for (var product in _productsInContainer) {
+      final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
+      final qty = double.tryParse(qtyText) ?? 0.0;
+      if (qty > 0) {
+        items.add(TransferItemDetail(
+          productId: product.id,
+          productName: product.name,
+          productCode: product.productCode,
+          quantity: qty,
+          palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String?) : null,
+          targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
+          targetLocationName: _selectedTargetLocationName!,
+          stockStatus: product.stockStatus,
+          siparisId: product.siparisId,
+        ));
+      }
+    }
+    return items;
   }
 } 

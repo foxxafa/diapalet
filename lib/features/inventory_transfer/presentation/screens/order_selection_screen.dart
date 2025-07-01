@@ -3,7 +3,6 @@ import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
-import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -125,14 +124,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                                   onTap: () async {
                                     final result = await Navigator.of(context).push<bool>(
                                       MaterialPageRoute(
-                                        builder: (_) => ChangeNotifierProvider(
-                                          create: (context) => InventoryTransferViewModel(
-                                            repository: context.read<InventoryTransferRepository>(),
-                                            syncService: context.read<SyncService>(),
-                                            barcodeService: context.read<BarcodeIntentService>(),
-                                          ),
-                                          child: InventoryTransferScreen(selectedOrder: order),
-                                        ),
+                                        builder: (_) => InventoryTransferScreen(selectedOrder: order),
                                       ),
                                     );
 

@@ -10,8 +10,11 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transferabl
 abstract class InventoryTransferRepository {
     Future<Map<String, int>> getSourceLocations();
     Future<Map<String, int>> getTargetLocations();
-    Future<List<String>> getPalletIdsAtLocation(int locationId, {String stockStatus = 'available'});
-    Future<List<BoxItem>> getBoxesAtLocation(int locationId, {String stockStatus = 'available'});
+    
+    // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
+    // Future<List<String>> getPalletIdsAtLocation(int locationId, {String stockStatus = 'available'});
+    // Future<List<BoxItem>> getBoxesAtLocation(int locationId, {String stockStatus = 'available'});
+    
     Future<List<ProductItem>> getPalletContents(String palletBarcode, int locationId, {String stockStatus = 'available'});
 
     Future<void> recordTransferOperation(

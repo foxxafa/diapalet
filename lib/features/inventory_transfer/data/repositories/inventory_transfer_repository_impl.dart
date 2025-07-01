@@ -89,9 +89,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     String rawQuerySql = '''
       SELECT 
         s.urun_id, s.location_id, s.siparis_id, s.quantity, s.pallet_barcode, s.stock_status, s.updated_at,
-        u.UrunAdi, u.StokKodu, u.Barcode1, u.aktif
+        u.UrunAdi, u.StokKodu, u.Barcode1, u.aktif, u.UrunId
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.id
+      JOIN urunler u ON s.urun_id = u.UrunId
       WHERE $whereClause
     ''';
     
@@ -110,9 +110,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final result = <TransferableContainer>[];
     for (var entry in containers.entries) {
       final firstItem = entry.value.first;
-      final displayName = (firstItem['pallet_barcode'] as String?) != null
+      final isPallet = (firstItem['pallet_barcode'] as String?) != null;
+      final displayName = isPallet
           ? "Palet: ${firstItem['pallet_barcode']}"
-          : "Paletsiz: ${firstItem['UrunAdi']}";
+          : "${firstItem['UrunAdi']}";
 
       result.add(
         TransferableContainer(

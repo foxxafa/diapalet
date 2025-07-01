@@ -44,14 +44,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push<bool>(
                   MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider(
-                      create: (context) => InventoryTransferViewModel(
-                        repository: context.read<InventoryTransferRepository>(),
-                        syncService: context.read<SyncService>(),
-                        barcodeService: context.read<BarcodeIntentService>(),
-                      ),
-                      child: const InventoryTransferScreen(selectedOrder: null),
-                    ),
+                    builder: (_) => const InventoryTransferScreen(selectedOrder: null),
                   ),
                 );
               },
