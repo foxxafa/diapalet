@@ -6,8 +6,6 @@ import 'package:diapalet/features/inventory_transfer/presentation/screens/invent
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:diapalet/core/services/barcode_intent_service.dart';
-import 'package:diapalet/core/sync/sync_service.dart';
 
 class OrderSelectionScreen extends StatefulWidget {
   const OrderSelectionScreen({super.key});

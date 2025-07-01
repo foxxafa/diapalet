@@ -33,7 +33,7 @@ echo ✅ Web sunucusu hazir!
 echo.
 
 echo [5/6] Veritabani semasi olusturuluyor...
-docker compose exec -T db mysql -uroot -p123456 < create_db.sql
+docker compose exec db mysql -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS enzo CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
 docker compose exec -T db mysql -uroot -p123456 enzo < dump.sql
 echo ✅ Veritabani semasi olusturuldu.
 

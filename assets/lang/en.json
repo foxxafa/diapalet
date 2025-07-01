@@ -770,7 +770,10 @@
     "search_hint": "Search by Order ID or Supplier",
     "no_results": "No transferable orders found.",
     "error_loading": "Failed to load orders: {error}",
-    "no_date": "No Date"
+    "no_date": "No Date",
+    "order_date": "Order Date",
+    "supplier": "Supplier",
+    "order_info": "Order: {poId} | Date: {date}"
   },
   "order_transfer": {
     "title": "Order Transfer",

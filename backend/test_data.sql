@@ -45,3 +45,96 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 (3, 102, 5, 250.00, 'BOX'),
 (4, 201, 3, 300.00, 'BOX'),
 (5, 201, 4, 150.00, 'BOX');
+
+-- Test Data for Inventory Transfer System
+
+-- Insert test employees
+INSERT INTO employees (id, first_name, last_name, username, password, warehouse_id, is_active) VALUES 
+(1, 'Test', 'Employee', 'test', 'test123', 1, 1)
+ON DUPLICATE KEY UPDATE 
+first_name = VALUES(first_name), 
+last_name = VALUES(last_name), 
+warehouse_id = VALUES(warehouse_id);
+
+-- Insert test warehouse and shelfs
+INSERT INTO warehouses (id, name, warehouse_code, branch_id) VALUES 
+(1, 'Ana Depo', 'WH001', 1)
+ON DUPLICATE KEY UPDATE 
+name = VALUES(name), 
+warehouse_code = VALUES(warehouse_code);
+
+INSERT INTO shelfs (id, warehouse_id, name, code, is_active) VALUES 
+(1, 1, 'A-01-01', 'A0101', 1),
+(2, 1, 'A-01-02', 'A0102', 1),
+(3, 1, 'B-01-01', 'B0101', 1),
+(4, 1, 'B-01-02', 'B0102', 1)
+ON DUPLICATE KEY UPDATE 
+name = VALUES(name), 
+code = VALUES(code), 
+is_active = VALUES(is_active);
+
+-- Insert test products
+INSERT INTO urunler (UrunId, StokKodu, UrunAdi, Barcode1, aktif) VALUES 
+(1001, 'PROD001', 'Test Ürün 1', '1234567890123', 1),
+(1002, 'PROD002', 'Test Ürün 2', '2345678901234', 1),
+(1003, 'PROD003', 'Test Ürün 3', '3456789012345', 1),
+(1004, 'PROD004', 'Test Ürün 4', '4567890123456', 1)
+ON DUPLICATE KEY UPDATE 
+UrunAdi = VALUES(UrunAdi), 
+Barcode1 = VALUES(Barcode1), 
+aktif = VALUES(aktif);
+
+-- Insert test purchase order
+INSERT INTO satin_alma_siparis_fis (id, po_id, tarih, branch_id, status) VALUES 
+(101, 'PO-2024-001', '2024-01-15', 1, 2)
+ON DUPLICATE KEY UPDATE 
+po_id = VALUES(po_id), 
+tarih = VALUES(tarih), 
+status = VALUES(status);
+
+-- Insert purchase order lines
+INSERT INTO satin_alma_siparis_fis_satir (id, siparis_id, urun_id, miktar) VALUES 
+(201, 101, 1001, 100.00),
+(202, 101, 1002, 50.00),
+(203, 101, 1003, 75.00)
+ON DUPLICATE KEY UPDATE 
+miktar = VALUES(miktar);
+
+-- Insert inventory stock in goods receiving area (NULL location_id)
+-- These represent items that have been received but not yet placed on shelves
+INSERT INTO inventory_stock (id, urun_id, location_id, quantity, pallet_barcode, stock_status, siparis_id) VALUES 
+(1, 1001, NULL, 80.00, 'PLT001', 'receiving', 101),
+(2, 1002, NULL, 30.00, 'PLT002', 'receiving', 101),
+(3, 1003, NULL, 60.00, NULL, 'receiving', 101)
+ON DUPLICATE KEY UPDATE 
+quantity = VALUES(quantity), 
+stock_status = VALUES(stock_status), 
+siparis_id = VALUES(siparis_id);
+
+-- Insert inventory stock on shelves (available for transfer)
+INSERT INTO inventory_stock (id, urun_id, location_id, quantity, pallet_barcode, stock_status, siparis_id) VALUES 
+(4, 1001, 1, 50.00, 'PLT003', 'available', NULL),
+(5, 1002, 2, 25.00, NULL, 'available', NULL),
+(6, 1004, 3, 100.00, 'PLT004', 'available', NULL),
+(7, 1004, 4, 75.00, NULL, 'available', NULL)
+ON DUPLICATE KEY UPDATE 
+quantity = VALUES(quantity), 
+stock_status = VALUES(stock_status);
+
+-- Insert goods receipt for the test order
+INSERT INTO goods_receipts (id, siparis_id, employee_id, receipt_date) VALUES 
+(1, 101, 1, '2024-01-15 10:00:00')
+ON DUPLICATE KEY UPDATE 
+employee_id = VALUES(employee_id), 
+receipt_date = VALUES(receipt_date);
+
+-- Insert goods receipt items
+INSERT INTO goods_receipt_items (id, receipt_id, urun_id, quantity_received, pallet_barcode) VALUES 
+(1, 1, 1001, 80.00, 'PLT001'),
+(2, 1, 1002, 30.00, 'PLT002'),
+(3, 1, 1003, 60.00, NULL)
+ON DUPLICATE KEY UPDATE 
+quantity_received = VALUES(quantity_received), 
+pallet_barcode = VALUES(pallet_barcode);
+
+-- Note: wms_putaway_status table will be populated automatically as transfers are made from receiving area to shelves

@@ -1,25 +1,28 @@
-// lib/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart
-import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
-import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:diapalet/core/network/network_info.dart';
 
-// ANA DEĞİŞİKLİK: Bu ekran artık hem "Serbest Transfer" hem de "Siparişli Rafa Kaldırma" işlemlerini yönetiyor.
+import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+
 class InventoryTransferScreen extends StatefulWidget {
-  // DÜZELTME: Siparişli mod için opsiyonel bir sipariş parametresi eklendi.
   final PurchaseOrder? selectedOrder;
+  
   const InventoryTransferScreen({super.key, this.selectedOrder});
 
   @override
@@ -34,156 +37,543 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   // --- State ve Controller'lar ---
   final _formKey = GlobalKey<FormState>();
+  late InventoryTransferRepository _repo;
+  bool _isLoadingInitialData = true;
+  bool _isLoadingContainerContents = false;
+  bool _isSaving = false;
+  bool _isPalletOpening = false;
 
-  // GÜNCELLEME: ViewModel artık ekranın state'i tarafından yönetiliyor.
-  late final InventoryTransferViewModel _viewModel;
+  AssignmentMode _selectedMode = AssignmentMode.pallet;
+
+  Map<String, int> _availableSourceLocations = {};
+  String? _selectedSourceLocationName;
+  final _sourceLocationController = TextEditingController();
+  final _sourceLocationFocusNode = FocusNode();
+
+  Map<String, int> _availableTargetLocations = {};
+  String? _selectedTargetLocationName;
+  final _targetLocationController = TextEditingController();
+  final _targetLocationFocusNode = FocusNode();
+
+  List<dynamic> _availableContainers = [];
+  dynamic _selectedContainer;
+  final _scannedContainerIdController = TextEditingController();
+  final _containerFocusNode = FocusNode();
+
+  List<ProductItem> _productsInContainer = [];
+  final Map<int, TextEditingController> _productQuantityControllers = {};
+  final Map<int, FocusNode> _productQuantityFocusNodes = {};
+
+  // Barcode service
+  late final BarcodeIntentService _barcodeService;
+  StreamSubscription<String>? _intentSub;
 
   @override
   void initState() {
     super.initState();
-    // ViewModel'i burada oluşturuyoruz.
-    _viewModel = InventoryTransferViewModel(
-      repository: context.read<InventoryTransferRepository>(),
-      syncService: context.read<SyncService>(),
-      barcodeService: context.read<BarcodeIntentService>(),
-    );
-    _viewModel.init(widget.selectedOrder);
-    _viewModel.addListener(_onViewModelUpdate);
-  }
+    _sourceLocationFocusNode.addListener(_onFocusChange);
+    _containerFocusNode.addListener(_onFocusChange);
+    _targetLocationFocusNode.addListener(_onFocusChange);
 
-  void _onViewModelUpdate() {
-    if (!mounted) return;
-    if (_viewModel.error != null) {
-      _showErrorSnackBar(_viewModel.error!);
-      _viewModel.clearError();
-    }
-    if (_viewModel.successMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(_viewModel.successMessage!),
-        backgroundColor: Colors.green,
-      ));
-      _viewModel.clearSuccessMessage();
-    }
-    if (_viewModel.navigateBack) {
-      Navigator.of(context).pop(true);
-      _viewModel.clearNavigateBack();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
+      _loadInitialData();
+      _initBarcode();
+    });
   }
 
   @override
   void dispose() {
-    _viewModel.removeListener(_onViewModelUpdate);
-    _viewModel.dispose();
+    _intentSub?.cancel();
+    _sourceLocationFocusNode.removeListener(_onFocusChange);
+    _containerFocusNode.removeListener(_onFocusChange);
+    _targetLocationFocusNode.removeListener(_onFocusChange);
+    _sourceLocationController.dispose();
+    _targetLocationController.dispose();
+    _scannedContainerIdController.dispose();
+    _sourceLocationFocusNode.dispose();
+    _targetLocationFocusNode.dispose();
+    _containerFocusNode.dispose();
+    _clearProductControllers();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_sourceLocationFocusNode.hasFocus && _sourceLocationController.text.isNotEmpty) {
+      _sourceLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _sourceLocationController.text.length);
+    }
+    if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
+      _scannedContainerIdController.selection = TextSelection(baseOffset: 0, extentOffset: _scannedContainerIdController.text.length);
+    }
+    if (_targetLocationFocusNode.hasFocus && _targetLocationController.text.isNotEmpty) {
+      _targetLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _targetLocationController.text.length);
+    }
+  }
+
+  void _clearProductControllers() {
+    _productQuantityControllers.forEach((_, controller) => controller.dispose());
+    _productQuantityFocusNodes.forEach((_, focusNode) => focusNode.dispose());
+    _productQuantityControllers.clear();
+    _productQuantityFocusNodes.clear();
+  }
+
+  Future<void> _loadInitialData() async {
+    if (!mounted) return;
+    setState(() => _isLoadingInitialData = true);
+    try {
+      final results = await Future.wait([
+        _repo.getSourceLocations(),
+        _repo.getTargetLocations(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _availableSourceLocations = results[0];
+        _availableTargetLocations = results[1];
+        
+        // If this is order-based transfer, automatically set source to goods receiving area
+        if (widget.selectedOrder != null) {
+          _selectedSourceLocationName = 'Mal Kabul Alanı';
+          _sourceLocationController.text = 'Mal Kabul Alanı';
+          _loadContainersForLocation();
+        }
+      });
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (widget.selectedOrder != null) {
+          // For order-based transfer, focus on container selection
+          FocusScope.of(context).requestFocus(_containerFocusNode);
+        } else {
+          // For free transfer, focus on source location
+          FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('inventory_transfer.error_generic'.tr(namedArgs: {'error': e.toString()}));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingInitialData = false);
+    }
+  }
+
+  Future<void> _processScannedData(String field, String data) async {
+    final cleanData = data.trim();
+    if (cleanData.isEmpty) return;
+
+    switch (field) {
+      case 'source':
+      case 'target':
+        final location = await _repo.findLocationByCode(cleanData);
+        if (location != null) {
+          final bool isValidSource = field == 'source' && _availableSourceLocations.containsKey(location.key);
+          final bool isValidTarget = field == 'target' && _availableTargetLocations.containsKey(location.key);
+
+          if (isValidSource) {
+            _handleSourceSelection(location.key);
+          } else if (isValidTarget) {
+            _handleTargetSelection(location.key);
+          } else {
+            _showErrorSnackBar('inventory_transfer.error_invalid_location_for_operation'.tr(namedArgs: {'location': location.key, 'field': field}));
+          }
+        } else {
+          if (field == 'source') _sourceLocationController.clear();
+          if (field == 'target') _targetLocationController.clear();
+          _showErrorSnackBar('inventory_transfer.error_invalid_location_code'.tr(namedArgs: {'code': cleanData}));
+        }
+        break;
+
+      case 'container':
+        dynamic foundItem;
+        if (_selectedMode == AssignmentMode.pallet) {
+          foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
+        } else {
+          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode.toLowerCase() == cleanData.toLowerCase() || box?.barcode1?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
+        }
+
+        if (foundItem != null) {
+          _handleContainerSelection(foundItem);
+        } else {
+          _scannedContainerIdController.clear();
+          _showErrorSnackBar('inventory_transfer.error_item_not_found'.tr(namedArgs: {'data': cleanData}));
+        }
+        break;
+    }
+  }
+
+  void _handleSourceSelection(String? locationName) {
+    if (locationName == null || locationName == _selectedSourceLocationName) return;
+    setState(() {
+      _selectedSourceLocationName = locationName;
+      _sourceLocationController.text = locationName;
+      _resetContainerAndProducts();
+      _selectedTargetLocationName = null;
+      _targetLocationController.clear();
+    });
+    _loadContainersForLocation();
+    _containerFocusNode.requestFocus();
+  }
+
+  Future<void> _handleContainerSelection(dynamic selectedItem) async {
+    if (selectedItem == null) return;
+    setState(() {
+      _selectedContainer = selectedItem;
+      _scannedContainerIdController.text = (selectedItem is BoxItem)
+          ? '${selectedItem.productName} (${selectedItem.productCode})'
+          : selectedItem.toString();
+    });
+    await _fetchContainerContents();
+    _targetLocationFocusNode.requestFocus();
+  }
+
+  void _handleTargetSelection(String? locationName) {
+    if (locationName == null) return;
+    setState(() {
+      _selectedTargetLocationName = locationName;
+      _targetLocationController.text = locationName;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _loadContainersForLocation() async {
+    if (_selectedSourceLocationName == null) return;
+    final locationId = _availableSourceLocations[_selectedSourceLocationName];
+    if (locationId == null) return;
+
+    setState(() {
+      _isLoadingContainerContents = true;
+      _resetContainerAndProducts();
+    });
+    try {
+      // Determine stock status based on transfer type
+      final stockStatus = widget.selectedOrder != null ? 'receiving' : 'available';
+      
+      if (_selectedMode == AssignmentMode.pallet) {
+        // Use the helper method from repository implementation
+        final repo = _repo as dynamic; // Cast to access helper methods
+        _availableContainers = await repo.getPalletIdsAtLocation(
+          locationId == 0 ? null : locationId, 
+          stockStatus: stockStatus
+        );
+      } else {
+        // Use the helper method from repository implementation
+        final repo = _repo as dynamic; // Cast to access helper methods
+        _availableContainers = await repo.getBoxesAtLocation(
+          locationId == 0 ? null : locationId, 
+          stockStatus: stockStatus
+        );
+      }
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isLoadingContainerContents = false);
+    }
+  }
+
+  Future<void> _fetchContainerContents() async {
+    final container = _selectedContainer;
+    if (container == null) return;
+
+    final locationId = _availableSourceLocations[_selectedSourceLocationName!];
+    if (locationId == null) {
+      _showErrorSnackBar('inventory_transfer.error_source_location_not_found'.tr());
+      return;
+    }
+
+    setState(() {
+      _isLoadingContainerContents = true;
+      _productsInContainer = [];
+      _clearProductControllers();
+    });
+
+    try {
+      List<ProductItem> contents = [];
+      final stockStatus = widget.selectedOrder != null ? 'receiving' : 'available';
+      
+      if (_selectedMode == AssignmentMode.pallet && container is String) {
+        contents = await _repo.getPalletContents(
+          container, 
+          locationId == 0 ? 0 : locationId, 
+          stockStatus: stockStatus
+        );
+      } else if (_selectedMode == AssignmentMode.box && container is BoxItem) {
+        contents = [ProductItem.fromBoxItem(container)];
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _productsInContainer = contents;
+        for (var product in contents) {
+          final initialQty = product.currentQuantity;
+          final initialQtyText = initialQty == initialQty.truncate()
+              ? initialQty.toInt().toString()
+              : initialQty.toString();
+          _productQuantityControllers[product.id] = TextEditingController(text: initialQtyText);
+          _productQuantityFocusNodes[product.id] = FocusNode();
+        }
+      });
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isLoadingContainerContents = false);
+    }
+  }
+
+  Future<void> _onConfirmSave() async {
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      _showErrorSnackBar('inventory_transfer.error_fill_required_fields'.tr());
+      return;
+    }
+
+    final List<TransferItemDetail> itemsToTransfer = [];
+
+    for (var product in _productsInContainer) {
+      final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
+      final qty = double.tryParse(qtyText) ?? 0.0;
+      if (qty > 0) {
+        // Determine stock status and siparis_id based on source location
+        final sourceLocationId = _availableSourceLocations[_selectedSourceLocationName!];
+        final isFromReceivingArea = sourceLocationId == 0; // 0 represents NULL location_id
+        
+        itemsToTransfer.add(TransferItemDetail(
+          productId: product.id,
+          productName: product.name,
+          productCode: product.productCode,
+          quantity: qty,
+          palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
+          targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
+          targetLocationName: _selectedTargetLocationName!,
+          stockStatus: isFromReceivingArea ? 'receiving' : 'available',
+          siparisId: isFromReceivingArea ? product.siparisId : null,
+        ));
+      }
+    }
+
+    if (itemsToTransfer.isEmpty) {
+      _showErrorSnackBar('inventory_transfer.error_no_items_to_transfer'.tr());
+      return;
+    }
+
+    final finalOperationMode = _selectedMode == AssignmentMode.pallet
+        ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
+        : AssignmentMode.box;
+
+    final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
+    if (confirm != true) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final employeeId = prefs.getInt('user_id');
+
+    final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
+    final targetId = _availableTargetLocations[_selectedTargetLocationName!];
+
+    if (targetId == null || employeeId == null) {
+      _showErrorSnackBar('inventory_transfer.error_location_id_not_found'.tr());
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final header = TransferOperationHeader(
+        employeeId: employeeId,
+        operationType: finalOperationMode,
+        sourceLocationName: _selectedSourceLocationName!,
+        targetLocationName: _selectedTargetLocationName!,
+        containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as BoxItem?)?.productCode,
+        transferDate: DateTime.now(),
+      );
+      
+      // Convert sourceId 0 to null for the repository call
+      final actualSourceId = sourceId == 0 ? null : sourceId;
+      await _repo.recordTransferOperation(header, itemsToTransfer, actualSourceId, targetId);
+
+      if (mounted && await context.read<NetworkInfo>().isConnected) {
+        // notifyListeners() in syncService will handle UI updates
+        context.read<SyncService>().uploadPendingOperations();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('inventory_transfer.success_transfer_saved'.tr()),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _resetForm(resetAll: true);
+      }
+    } catch (e, s) {
+      debugPrint('Lokal transfer kaydı hatası: $e\n$s');
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _resetContainerAndProducts() {
+    _scannedContainerIdController.clear();
+    _productsInContainer = [];
+    _selectedContainer = null;
+    _clearProductControllers();
+    _availableContainers = [];
+  }
+
+  void _resetForm({bool resetAll = false}) {
+    setState(() {
+      _resetContainerAndProducts();
+      _selectedTargetLocationName = null;
+      _targetLocationController.clear();
+
+      if (resetAll) {
+        _selectedSourceLocationName = null;
+        _sourceLocationController.clear();
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _formKey.currentState?.reset();
+        FocusScope.of(context).requestFocus(resetAll ? _sourceLocationFocusNode : _containerFocusNode);
+      });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
-      value: _viewModel,
-      child: Consumer<InventoryTransferViewModel>(
-        builder: (context, viewModel, child) {
-          final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-          return Scaffold(
-            appBar: SharedAppBar(
-              title: viewModel.isPutawayMode 
-                ? 'inventory_transfer.putaway_title'.tr() 
-                : 'inventory_transfer.title'.tr(),
-              showBackButton: true,
-            ),
-            resizeToAvoidBottomInset: true,
-            bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(viewModel),
-            body: SafeArea(
-              child: viewModel.isLoadingInitialData
-                  ? const Center(child: CircularProgressIndicator())
-                  : GestureDetector(
-                      onTap: () => FocusScope.of(context).unfocus(),
-                      child: Form(
-                        key: _formKey,
-                        autovalidateMode: AutovalidateMode.disabled,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (viewModel.isPutawayMode && viewModel.selectedOrder != null) ...[
-                                OrderInfoCard(order: viewModel.selectedOrder!),
-                                const SizedBox(height: _gap),
-                              ],
-                              _buildModeSelector(viewModel),
-                              const SizedBox(height: _gap),
-                              
-                              // ANA GÜNCELLEME: Sadece serbest transfer modunda kaynak lokasyon seçimi gösterilir.
-                              if (!viewModel.isPutawayMode) ...[
-                                _buildHybridDropdownWithQr<String>(
-                                  controller: viewModel.sourceLocationController,
-                                  focusNode: viewModel.sourceLocationFocusNode,
-                                  label: 'inventory_transfer.label_source_location'.tr(),
-                                  items: viewModel.availableSourceLocations.keys.toList(),
-                                  itemToString: (item) => item,
-                                  onItemSelected: viewModel.handleSourceSelection,
-                                  filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                                  validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                                ),
-                                const SizedBox(height: _gap),
-                              ],
+    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
-                              if (viewModel.selectedMode == AssignmentMode.pallet && viewModel.productsInContainer.isNotEmpty) ...[
-                                _buildPalletOpeningSwitch(viewModel),
-                                const SizedBox(height: _gap),
-                              ],
-
-                              _buildHybridDropdownWithQr<TransferableContainer>(
-                                controller: viewModel.scannedContainerIdController,
-                                focusNode: viewModel.containerFocusNode,
-                                label: viewModel.selectedMode == AssignmentMode.pallet 
-                                    ? 'inventory_transfer.label_pallet'.tr() 
-                                    : 'inventory_transfer.label_product'.tr(),
-                                items: viewModel.availableContainers,
-                                itemToString: (item) => item.displayName,
-                                onItemSelected: viewModel.handleContainerSelection,
-                                filterCondition: (item, query) => item.displayName.toLowerCase().contains(query.toLowerCase()),
-                                validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                              ),
-                              const SizedBox(height: _gap),
-                              
-                              if (viewModel.isLoadingContainerContents)
-                                const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
-                              else if (viewModel.productsInContainer.isNotEmpty)
-                                _buildProductsList(viewModel),
-                              
-                              const SizedBox(height: _gap),
-
-                              _buildHybridDropdownWithQr<String>(
-                                controller: viewModel.targetLocationController,
-                                focusNode: viewModel.targetLocationFocusNode,
-                                label: 'inventory_transfer.label_target_location'.tr(),
-                                items: viewModel.availableTargetLocations.keys.toList(),
-                                itemToString: (item) => item,
-                                onItemSelected: viewModel.handleTargetSelection,
-                                filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                                validator: (val) {
-                                  if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
-                                  if (!viewModel.isPutawayMode && val == viewModel.sourceLocationController.text) {
-                                    return 'inventory_transfer.validator_target_cannot_be_source'.tr();
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: _gap),
-                            ],
+    return Scaffold(
+      appBar: SharedAppBar(title: 'inventory_transfer.title'.tr()),
+      resizeToAvoidBottomInset: true,
+      bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
+      body: SafeArea(
+        child: _isLoadingInitialData
+            ? const Center(child: CircularProgressIndicator())
+            : GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Form(
+            key: _formKey,
+            autovalidateMode: AutovalidateMode.disabled,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Show transfer type info for order-based transfers
+                  if (widget.selectedOrder != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                        borderRadius: _borderRadius,
+                        border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'transfer_type.by_order'.tr(),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'order_selection.order_info'.tr(namedArgs: {
+                              'poId': widget.selectedOrder!.poId ?? 'N/A',
+                              'date': widget.selectedOrder!.date?.toString().split(' ')[0] ?? 'N/A'
+                            }),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Source: Mal Kabul Alanı → Target: Shelf Location',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: _gap),
+                  ],
+                  _buildModeSelector(),
+                  const SizedBox(height: _gap),
+                  if (_selectedMode == AssignmentMode.pallet) ...[
+                    _buildPalletOpeningSwitch(),
+                    const SizedBox(height: _gap),
+                  ],
+                  // Only show source location selector for free transfers
+                  if (widget.selectedOrder == null) ...[
+                    _buildHybridDropdownWithQr<String>(
+                      controller: _sourceLocationController,
+                      focusNode: _sourceLocationFocusNode,
+                      label: 'inventory_transfer.label_source_location'.tr(),
+                      fieldIdentifier: 'source',
+                      items: _availableSourceLocations.keys.toList(),
+                      itemToString: (item) => item,
+                      onItemSelected: _handleSourceSelection,
+                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                      validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                    ),
+                    const SizedBox(height: _gap),
+                  ],
+                  _buildHybridDropdownWithQr<dynamic>(
+                    controller: _scannedContainerIdController,
+                    focusNode: _containerFocusNode,
+                    label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
+                    fieldIdentifier: 'container',
+                    items: _availableContainers,
+                    itemToString: (item) {
+                      if (item is String) return item;
+                      if (item is BoxItem) return '${item.productName} (${item.productCode})';
+                      return '';
+                    },
+                    onItemSelected: _handleContainerSelection,
+                    filterCondition: (item, query) {
+                      final lowerQuery = query.toLowerCase();
+                      if (item is String) return item.toLowerCase().contains(lowerQuery);
+                      if (item is BoxItem) {
+                        return item.productName.toLowerCase().contains(lowerQuery) ||
+                            item.productCode.toLowerCase().contains(lowerQuery) ||
+                            (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                      }
+                      return false;
+                    },
+                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                  ),
+                  const SizedBox(height: _gap),
+                  if (_isLoadingContainerContents)
+                    const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
+                  else if (_productsInContainer.isNotEmpty)
+                    _buildProductsList(),
+                  const SizedBox(height: _gap),
+                  _buildHybridDropdownWithQr<String>(
+                    controller: _targetLocationController,
+                    focusNode: _targetLocationFocusNode,
+                    label: 'inventory_transfer.label_target_location'.tr(),
+                    fieldIdentifier: 'target',
+                    items: _availableTargetLocations.keys.toList(),
+                    itemToString: (item) => item,
+                    onItemSelected: _handleTargetSelection,
+                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                    validator: (val) {
+                      if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
+                      if (val == _sourceLocationController.text) {
+                        return 'inventory_transfer.validator_target_cannot_be_source'.tr();
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: _gap),
+                ],
+              ),
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildModeSelector(InventoryTransferViewModel viewModel) {
+  Widget _buildModeSelector() {
     return Center(
       child: SegmentedButton<AssignmentMode>(
         segments: [
@@ -196,9 +586,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               label: Text('inventory_transfer.mode_box'.tr()),
               icon: const Icon(Icons.inventory_2_outlined)),
         ],
-        selected: {viewModel.selectedMode},
+        selected: {_selectedMode},
         onSelectionChanged: (newSelection) {
-          viewModel.changeMode(newSelection.first);
+          setState(() {
+            _selectedMode = newSelection.first;
+            _isPalletOpening = false;
+            // Keep source location, but reset container and target.
+            _resetForm(resetAll: false); 
+            
+            // Reload containers for the new mode if a source location is selected.
+            if (_selectedSourceLocationName != null) {
+              _loadContainersForLocation();
+            } else {
+              // If no source is selected, ensure focus is on the source field.
+              _sourceLocationFocusNode.requestFocus();
+            }
+          });
         },
         style: SegmentedButton.styleFrom(
           visualDensity: VisualDensity.comfortable,
@@ -209,19 +612,30 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildPalletOpeningSwitch(InventoryTransferViewModel viewModel) {
+  Widget _buildPalletOpeningSwitch() {
     return Material(
       clipBehavior: Clip.antiAlias,
       borderRadius: _borderRadius,
-      color: Theme.of(context).colorScheme.secondary.withAlpha(26),
+      color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
       child: SwitchListTile(
-        title: Text(
-          'inventory_transfer.label_break_pallet'.tr(), 
-          style: const TextStyle(fontWeight: FontWeight.bold)
-        ),
-        value: viewModel.isPalletOpening,
-        onChanged: viewModel.productsInContainer.isNotEmpty ? viewModel.setPalletOpening : null,
+        title: Text('inventory_transfer.label_break_pallet'.tr(), style: const TextStyle(fontWeight: FontWeight.bold)),
+        value: _isPalletOpening,
+        onChanged: _productsInContainer.isNotEmpty ? (bool value) {
+          setState(() {
+            _isPalletOpening = value;
+            if (!value) {
+              for (var product in _productsInContainer) {
+                final initialQty = product.currentQuantity;
+                final initialQtyText = initialQty == initialQty.truncate()
+                    ? initialQty.toInt().toString()
+                    : initialQty.toString();
+                _productQuantityControllers[product.id]?.text = initialQtyText;
+              }
+            }
+          });
+        } : null,
         secondary: const Icon(Icons.inventory_2_outlined),
+        activeThumbColor: Theme.of(context).colorScheme.primary,
         shape: RoundedRectangleBorder(borderRadius: _borderRadius),
       ),
     );
@@ -231,6 +645,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required TextEditingController controller,
     required FocusNode focusNode,
     required String label,
+    required String fieldIdentifier,
     required List<T> items,
     required String Function(T item) itemToString,
     required void Function(T? item) onItemSelected,
@@ -238,7 +653,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required FormFieldValidator<String>? validator,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start, // Hata mesajı için hizalama
       children: [
         Expanded(
           child: TextFormField(
@@ -249,7 +664,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
-            onTap: items.isEmpty ? null : () async {
+            onTap: () async {
               FocusScope.of(context).unfocus();
 
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
@@ -266,22 +681,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         ),
         const SizedBox(width: _smallGap),
-        _QrButton(
-          onTap: () async {
-            final result = await Navigator.push<String>(
-              context, 
-              MaterialPageRoute(builder: (context) => const QrScannerScreen())
-            );
-            if (result != null && result.isNotEmpty) {
-              onItemSelected(result as T?);
-            }
-          },
+        Padding(
+          padding: const EdgeInsets.only(top: 4.0), // TextFormField ile hizala
+          child: _QrButton(
+            onTap: () async {
+              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+              if (result != null && result.isNotEmpty) {
+                _processScannedData(fieldIdentifier, result);
+              }
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildProductsList(InventoryTransferViewModel viewModel) {
+  Widget _buildProductsList() {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
@@ -294,9 +709,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Text(
-              'inventory_transfer.content_title'.tr(namedArgs: {
-                'containerId': viewModel.scannedContainerIdController.text
-              }),
+              'inventory_transfer.content_title'.tr(namedArgs: {'containerId': _scannedContainerIdController.text}),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
@@ -305,18 +718,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.all(_smallGap),
-            itemCount: viewModel.productsInContainer.length,
-            separatorBuilder: (context, index) => const Divider(
-              height: _smallGap, 
-              indent: 16, 
-              endIndent: 16, 
-              thickness: 0.2
-            ),
+            itemCount: _productsInContainer.length,
+            separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16, thickness: 0.2),
             itemBuilder: (context, index) {
-              final product = viewModel.productsInContainer[index];
-              final controller = viewModel.productQuantityControllers[product.id]!;
-              final focusNode = viewModel.productQuantityFocusNodes[product.id]!;
-              
+              final product = _productsInContainer[index];
+              final controller = _productQuantityControllers[product.id]!;
+              final focusNode = _productQuantityFocusNodes[product.id]!;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
@@ -328,20 +735,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text(product.name, style: Theme.of(context).textTheme.bodyLarge, overflow: TextOverflow.ellipsis),
                           Text(
-                            product.name, 
-                            style: Theme.of(context).textTheme.bodyLarge, 
-                            overflow: TextOverflow.ellipsis
-                          ),
-                          Text(
-                            'inventory_transfer.label_current_quantity'.tr(namedArgs: {
-                              'productCode': product.productCode, 
-                              'quantity': product.currentQuantity.toStringAsFixed(
-                                product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
-                              )
-                            }),
-                            style: Theme.of(context).textTheme.bodySmall
-                          ),
+                              'inventory_transfer.label_current_quantity'.tr(
+                                  namedArgs: {'productCode': product.productCode, 'quantity': product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}),
+                              style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ),
                     ),
@@ -351,14 +749,27 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       child: TextFormField(
                         controller: controller,
                         focusNode: focusNode,
-                        enabled: !(viewModel.selectedMode == AssignmentMode.pallet && !viewModel.isPalletOpening),
+                        enabled: !(_selectedMode == AssignmentMode.pallet && !_isPalletOpening),
                         textAlign: TextAlign.center,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
                         decoration: _inputDecoration('inventory_transfer.label_quantity'.tr()),
-                        validator: (value) => viewModel.validateProductQuantity(value, product),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
+                          final qty = double.tryParse(value);
+                          if (qty == null) return 'inventory_transfer.validator_invalid'.tr();
+                          if (qty > product.currentQuantity + 0.001) return 'inventory_transfer.validator_max'.tr();
+                          if (qty < 0) return 'inventory_transfer.validator_negative'.tr();
+                          return null;
+                        },
                         onFieldSubmitted: (value) {
-                           viewModel.focusNextProductOrTarget(product.id);
+                          final productIds = _productQuantityFocusNodes.keys.toList();
+                          final currentIndex = productIds.indexOf(product.id);
+                          if (currentIndex < productIds.length - 1) {
+                            _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+                          } else {
+                            _targetLocationFocusNode.requestFocus();
+                          }
                         },
                       ),
                     ),
@@ -372,21 +783,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildBottomBar(InventoryTransferViewModel viewModel) {
-    if (viewModel.isLoadingInitialData) return const SizedBox.shrink();
-    
+  Widget _buildBottomBar() {
+    if (_isLoadingInitialData) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ElevatedButton.icon(
-        onPressed: viewModel.isSaving || viewModel.productsInContainer.isEmpty 
-            ? null 
-            : () => _onConfirmSave(viewModel),
-        icon: viewModel.isSaving
-            ? const SizedBox(
-                width: 20, 
-                height: 20, 
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-              )
+        onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
+        icon: _isSaving
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.check_circle_outline),
         label: FittedBox(child: Text('inventory_transfer.button_save'.tr())),
         style: ElevatedButton.styleFrom(
@@ -398,62 +802,23 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Future<void> _onConfirmSave(InventoryTransferViewModel viewModel) async {
-    FocusScope.of(context).unfocus();
-    
-    if (!(_formKey.currentState?.validate() ?? false)) {
-      _showErrorSnackBar('inventory_transfer.error_fill_required_fields'.tr());
-      return;
-    }
-
-    final items = viewModel.getTransferItems();
-    if (items.isEmpty) {
-      _showErrorSnackBar('inventory_transfer.error_no_items_to_transfer'.tr());
-      return;
-    }
-
-    final confirm = await _showConfirmationDialog(items, viewModel.finalOperationMode, viewModel);
-    if (confirm != true) return;
-
-    final success = await viewModel.confirmAndSave();
-    
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('inventory_transfer.success_transfer_saved'.tr()),
-          backgroundColor: Colors.green,
-        ),
-      );
-      
-      // Sipariş bazlı transfer ise ve başarılı ise, geri dön
-      if (viewModel.isPutawayMode) {
-        // Listeyi yenilemesi için true değeri ile geri dön
-        Navigator.of(context).pop(true);
-      }
-    } else if (mounted && !success) {
-      // ViewModel might have set an error message
-      if (viewModel.lastError == null) {
-        _showErrorSnackBar('inventory_transfer.error_saving'.tr());
-      }
-    }
-  }
-
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true}) {
     final theme = Theme.of(context);
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: theme.inputDecorationTheme.fillColor,
+      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withValues(alpha: 0.08),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withAlpha(128))),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       isDense: true,
+      enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(height: 0.8, fontSize: 10),
+      errorStyle: const TextStyle(height: 0.8, fontSize: 11),
     );
   }
 
@@ -477,11 +842,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Future<bool?> _showConfirmationDialog(
-    List<TransferItemDetail> items, 
-    AssignmentMode mode, 
-    InventoryTransferViewModel viewModel
-  ) async {
+  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -489,8 +850,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         builder: (context) => _InventoryConfirmationPage(
           items: items,
           mode: mode,
-          sourceLocationName: viewModel.selectedSourceLocationName ?? '',
-          targetLocationName: viewModel.selectedTargetLocationName ?? '',
+          sourceLocationName: _selectedSourceLocationName ?? '',
+          targetLocationName: _selectedTargetLocationName ?? '',
         ),
       ),
     );
@@ -507,6 +868,47 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
   }
+
+  // --- Barcode Handling ---
+  Future<void> _initBarcode() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+
+    _barcodeService = BarcodeIntentService();
+
+    try {
+      final first = await _barcodeService.getInitialBarcode();
+      if (first != null && first.isNotEmpty) _handleBarcode(first);
+    } catch(e) {
+      debugPrint("Initial barcode error: $e");
+    }
+
+    _intentSub = _barcodeService.stream.listen(_handleBarcode,
+        onError: (e) => _showErrorSnackBar('common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()})));
+  }
+
+  void _handleBarcode(String code) {
+    if (!mounted) return;
+
+    if (_sourceLocationFocusNode.hasFocus) {
+      _processScannedData('source', code);
+    } else if (_containerFocusNode.hasFocus) {
+      _processScannedData('container', code);
+    } else if (_targetLocationFocusNode.hasFocus) {
+      _processScannedData('target', code);
+    } else {
+      // Aktif bir odak yoksa, mantıksal bir sıra izle
+      if (_selectedSourceLocationName == null) {
+        _sourceLocationFocusNode.requestFocus();
+        _processScannedData('source', code);
+      } else if (_selectedContainer == null) {
+        _containerFocusNode.requestFocus();
+        _processScannedData('container', code);
+      } else {
+        _targetLocationFocusNode.requestFocus();
+        _processScannedData('target', code);
+      }
+    }
+  }
 }
 
 class _QrButton extends StatelessWidget {
@@ -517,7 +919,7 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 52, 
+      height: 52, // Yüksekliği TextFormField ile aynı yapmak için ayarlandı.
       width: 56,
       child: ElevatedButton(
         onPressed: onTap,
@@ -679,4 +1081,4 @@ class _InventoryConfirmationPage extends StatelessWidget {
       ),
     );
   }
-}
+} 
