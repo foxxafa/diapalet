@@ -152,9 +152,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       await db.transaction((txn) async {
         for (final item in items) {
           // 1. Kaynak stoktan düşür (sourceLocationId null olabilir - mal kabul alanı).
+          // Rafa kaldırma işleminde sipariş ID'si belirtilmeli.
+          final sourceOrderId = (sourceLocationId == null && header.siparisId != null) ? header.siparisId : null;
           await _updateStock(
             txn, item.productId, sourceLocationId, -item.quantity, item.palletId,
-            'receiving', null);
+            'receiving', sourceOrderId);
 
           // 2. Hedefteki palet durumunu belirle.
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
