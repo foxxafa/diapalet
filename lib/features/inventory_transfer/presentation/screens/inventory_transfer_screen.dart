@@ -64,6 +64,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
 
+  // --- YENİ EKLENEN SEPET STATE'İ ---
+  final List<TransferItemDetail> _transferCart = [];
+
   // Barcode service
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -386,6 +389,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
 
     setState(() => _isSaving = true);
+    // Önce lokal kaydı dene
     try {
       final header = TransferOperationHeader(
         employeeId: employeeId,
@@ -401,17 +405,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final actualSourceId = sourceId == 0 ? null : sourceId;
       await _repo.recordTransferOperation(header, itemsToTransfer, actualSourceId, targetId);
 
+      // Lokal kayıt başarılı olursa kullanıcıyı bilgilendir ve formu sıfırla
       if (mounted) {
-        // Wait for the sync to complete before showing success message
-        await context.read<SyncService>().uploadPendingOperations();
-        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('inventory_transfer.success_transfer_saved'.tr()),
             backgroundColor: Colors.green,
           ),
         );
-        _resetForm(resetAll: true);
+        
+        // Sepet sistemine geçişte bu otomatik sıfırlama yerine Navigator.pop(true) kullanılacak.
+        // Şimdilik sadece pop ekliyoruz.
+        Navigator.of(context).pop(true);
+
+        // Arka planda senkronizasyonu tetikle, ama sonucunu bekleme.
+        // Hata olursa SyncService bunu daha sonra tekrar deneyecek.
+        context.read<SyncService>().uploadPendingOperations().catchError((e) {
+          debugPrint("Offline sync attempt failed as expected: $e");
+        });
       }
     } catch (e, s) {
       debugPrint('Lokal transfer veya senkronizasyon hatası: $e\n$s');
@@ -509,73 +520,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   ],
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
-                  if (_selectedMode == AssignmentMode.pallet) ...[
-                    _buildPalletOpeningSwitch(),
-                    const SizedBox(height: _gap),
-                  ],
-                  // Only show source location selector for free transfers
-                  if (widget.selectedOrder == null) ...[
-                    _buildHybridDropdownWithQr<String>(
-                      controller: _sourceLocationController,
-                      focusNode: _sourceLocationFocusNode,
-                      label: 'inventory_transfer.label_source_location'.tr(),
-                      fieldIdentifier: 'source',
-                      items: _availableSourceLocations.keys.toList(),
-                      itemToString: (item) => item,
-                      onItemSelected: _handleSourceSelection,
-                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                      validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                    ),
-                    const SizedBox(height: _gap),
-                  ],
-                  _buildHybridDropdownWithQr<dynamic>(
-                    controller: _scannedContainerIdController,
-                    focusNode: _containerFocusNode,
-                    label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
-                    fieldIdentifier: 'container',
-                    items: _availableContainers,
-                    itemToString: (item) {
-                      if (item is String) return 'inventory_transfer.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item});
-                      if (item is BoxItem) return '${item.productName} (${item.productCode})';
-                      return '';
-                    },
-                    onItemSelected: _handleContainerSelection,
-                    filterCondition: (item, query) {
-                      final lowerQuery = query.toLowerCase();
-                      if (item is String) return item.toLowerCase().contains(lowerQuery);
-                      if (item is BoxItem) {
-                        return item.productName.toLowerCase().contains(lowerQuery) ||
-                            item.productCode.toLowerCase().contains(lowerQuery) ||
-                            (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                      }
-                      return false;
-                    },
-                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                  ),
+                  _buildSourceAndTargetLocations(),
                   const SizedBox(height: _gap),
-                  if (_isLoadingContainerContents)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
-                  else if (_productsInContainer.isNotEmpty)
-                    _buildProductsList(),
+                  
+                  // --- SEPET GÖRÜNÜMÜ ---
+                  _buildTransferCart(),
                   const SizedBox(height: _gap),
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _targetLocationController,
-                    focusNode: _targetLocationFocusNode,
-                    label: 'inventory_transfer.label_target_location'.tr(),
-                    fieldIdentifier: 'target',
-                    items: _availableTargetLocations.keys.toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleTargetSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
-                      if (val == _sourceLocationController.text) {
-                        return 'inventory_transfer.validator_target_cannot_be_source'.tr();
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: _gap),
+
+                  // --- ÜRÜN EKLEME BÖLÜMÜ ---
+                  if (_selectedSourceLocationName != null && _selectedTargetLocationName != null)
+                    _buildItemEntrySection(),
+
                 ],
               ),
             ),
@@ -603,15 +558,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           setState(() {
             _selectedMode = newSelection.first;
             _isPalletOpening = false;
-            // Keep source location, but reset container and target.
-            _resetForm(resetAll: false); 
+            // YENİ MANTIK: Sadece konteyner seçimi sıfırlanır, sepet ve lokasyonlar kalır.
+            _resetContainerAndProducts(); 
             
-            // Reload containers for the new mode if a source location is selected.
             if (_selectedSourceLocationName != null) {
               _loadContainersForLocation();
-            } else {
-              // If no source is selected, ensure focus is on the source field.
-              _sourceLocationFocusNode.requestFocus();
             }
           });
         },
@@ -653,6 +604,91 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
+  Widget _buildSourceAndTargetLocations() {
+    return Column(
+      children: [
+        // Sadece serbest transferde kaynak lokasyon seçilebilir
+        if (widget.selectedOrder == null) ...[
+          _buildHybridDropdownWithQr<String>(
+            controller: _sourceLocationController,
+            focusNode: _sourceLocationFocusNode,
+            label: 'inventory_transfer.label_source_location'.tr(),
+            fieldIdentifier: 'source',
+            // Sepette ürün varken kaynak lokasyonu değiştirilemez
+            isEnabled: _transferCart.isEmpty,
+            items: _availableSourceLocations.keys.toList(),
+            itemToString: (item) => item,
+            onItemSelected: _handleSourceSelection,
+            filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+            validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+          ),
+          const SizedBox(height: _gap),
+        ],
+        _buildHybridDropdownWithQr<String>(
+          controller: _targetLocationController,
+          focusNode: _targetLocationFocusNode,
+          label: 'inventory_transfer.label_target_location'.tr(),
+          fieldIdentifier: 'target',
+          // Sepette ürün varken hedef lokasyonu değiştirilemez
+          isEnabled: _transferCart.isEmpty,
+          items: _availableTargetLocations.keys.toList(),
+          itemToString: (item) => item,
+          onItemSelected: _handleTargetSelection,
+          filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+          validator: (val) {
+            if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
+            if (val == _sourceLocationController.text) {
+              return 'inventory_transfer.validator_target_cannot_be_source'.tr();
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemEntrySection() {
+    return Column(
+      children: [
+        if (_selectedMode == AssignmentMode.pallet) ...[
+          _buildPalletOpeningSwitch(),
+          const SizedBox(height: _gap),
+        ],
+        _buildHybridDropdownWithQr<dynamic>(
+          controller: _scannedContainerIdController,
+          focusNode: _containerFocusNode,
+          label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
+          fieldIdentifier: 'container',
+          isEnabled: true, // Her zaman etkin
+          items: _availableContainers,
+          itemToString: (item) {
+            if (item is String) return 'inventory_transfer.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item});
+            if (item is BoxItem) return '${item.productName} (${item.productCode})';
+            return '';
+          },
+          onItemSelected: _handleContainerSelection,
+          filterCondition: (item, query) {
+            final lowerQuery = query.toLowerCase();
+            if (item is String) return item.toLowerCase().contains(lowerQuery);
+            if (item is BoxItem) {
+              return item.productName.toLowerCase().contains(lowerQuery) ||
+                  item.productCode.toLowerCase().contains(lowerQuery) ||
+                  (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+            }
+            return false;
+          },
+          // Doğrulama anlık ekleme sırasında yapılır
+          validator: null,
+        ),
+        const SizedBox(height: _gap),
+        if (_isLoadingContainerContents)
+          const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
+        else if (_productsInContainer.isNotEmpty)
+          _buildProductsList(),
+      ],
+    );
+  }
+
   Widget _buildHybridDropdownWithQr<T>({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -663,9 +699,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required void Function(T? item) onItemSelected,
     required bool Function(T item, String query) filterCondition,
     required FormFieldValidator<String>? validator,
+    bool isEnabled = true,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start, // Hata mesajı için hizalama
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: TextFormField(
@@ -675,8 +712,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
+              enabled: isEnabled,
             ),
-            onTap: () async {
+            onTap: !isEnabled ? null : () async {
               FocusScope.of(context).unfocus();
 
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
@@ -693,16 +731,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         ),
         const SizedBox(width: _smallGap),
-        Padding(
-          padding: const EdgeInsets.only(top: 4.0), // TextFormField ile hizala
-          child: _QrButton(
-            onTap: () async {
-              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-              if (result != null && result.isNotEmpty) {
-                _processScannedData(fieldIdentifier, result);
-              }
-            },
-          ),
+        _QrButton(
+          onTap: !isEnabled ? null : () async {
+            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+            if (result != null && result.isNotEmpty) {
+              _processScannedData(fieldIdentifier, result);
+            }
+          },
         ),
       ],
     );
@@ -719,7 +754,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
             child: Text(
               'inventory_transfer.content_title'.tr(namedArgs: {'containerId': _scannedContainerIdController.text}),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -790,7 +825,72 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               );
             },
           ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.add_shopping_cart),
+              label: Text("inventory_transfer.add_to_transfer".tr()),
+              onPressed: _onAddToCart,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+                foregroundColor: Theme.of(context).colorScheme.onSecondary,
+              ),
+            ),
+          )
         ],
+      ),
+    );
+  }
+
+  Widget _buildTransferCart() {
+    if (_transferCart.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: _borderRadius, side: BorderSide(color: Theme.of(context).colorScheme.primary)),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                'inventory_transfer.transfer_cart_title'.tr(namedArgs: {'count': _transferCart.length.toString()}),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Divider(),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _transferCart.length,
+              itemBuilder: (context, index) {
+                final item = _transferCart[index];
+                return ListTile(
+                  title: Text(item.productName),
+                  subtitle: Text(item.palletId ?? 'Kutu'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(item.quantity.toStringAsFixed(0), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: Icon(Icons.remove_circle_outline, color: Theme.of(context).colorScheme.error),
+                        onPressed: () {
+                          setState(() {
+                            _transferCart.removeAt(index);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -800,11 +900,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ElevatedButton.icon(
-        onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
+        onPressed: _isSaving || _transferCart.isEmpty ? null : () async {
+            final confirm = await _showConfirmationDialog(_transferCart, finalOperationMode);
+            if(confirm == true) {
+              _onSaveCart();
+            }
+        },
         icon: _isSaving
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.check_circle_outline),
-        label: FittedBox(child: Text('inventory_transfer.button_save'.tr())),
+        label: FittedBox(child: Text('inventory_transfer.button_save_cart'.tr(namedArgs: {'count': _transferCart.length.toString()}))),
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: _borderRadius),
@@ -921,6 +1026,190 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _processScannedData('target', code);
       }
     }
+  }
+
+  // YENİ: Sepete ekleme fonksiyonu
+  void _onAddToCart() {
+    final List<TransferItemDetail> itemsToAdd = [];
+    bool hasValidationError = false;
+
+    if (_selectedContainer == null) {
+      _showErrorSnackBar('inventory_transfer.validation_select_container'.tr());
+      return;
+    }
+
+    for (var product in _productsInContainer) {
+      final controller = _productQuantityControllers[product.id];
+      final validationError = _validateProductQuantity(controller?.text, product);
+      if (validationError != null) {
+        _showErrorSnackBar(validationError);
+        hasValidationError = true;
+        break;
+      }
+      
+      final qty = double.tryParse(controller?.text ?? '0') ?? 0.0;
+      if (qty > 0) {
+        itemsToAdd.add(TransferItemDetail(
+          productId: product.id,
+          productName: product.name,
+          productCode: product.productCode,
+          quantity: qty,
+          palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
+          targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
+          targetLocationName: _selectedTargetLocationName!,
+          stockStatus: product.stockStatus,
+          siparisId: product.siparisId,
+        ));
+      }
+    }
+
+    if (hasValidationError) return;
+
+    if (itemsToAdd.isEmpty) {
+      _showErrorSnackBar('inventory_transfer.error_no_items_to_transfer'.tr());
+      return;
+    }
+
+    setState(() {
+      _transferCart.addAll(itemsToAdd);
+      _resetContainerAndProducts();
+    });
+
+    _showSuccessSnackBar('inventory_transfer.success_items_added'.tr(namedArgs: {'count': itemsToAdd.length.toString()}));
+  }
+
+  // YENİ: Transfer sepetini gösteren widget
+  Widget _buildTransferCart() {
+    if (_transferCart.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: _borderRadius, side: BorderSide(color: Theme.of(context).colorScheme.primary)),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                'inventory_transfer.transfer_cart_title'.tr(namedArgs: {'count': _transferCart.length.toString()}),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Divider(),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _transferCart.length,
+              itemBuilder: (context, index) {
+                final item = _transferCart[index];
+                return ListTile(
+                  title: Text(item.productName),
+                  subtitle: Text(item.palletId ?? 'Kutu'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(item.quantity.toStringAsFixed(0), style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: Icon(Icons.remove_circle_outline, color: Theme.of(context).colorScheme.error),
+                        onPressed: () {
+                          setState(() {
+                            _transferCart.removeAt(index);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // YENİ: Sepeti kaydeden fonksiyon
+  Future<void> _onSaveCart() async {
+     if (_transferCart.isEmpty) {
+      _showErrorSnackBar('inventory_transfer.error_cart_empty'.tr());
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final employeeId = prefs.getInt('user_id');
+    final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
+    final targetId = _availableTargetLocations[_selectedTargetLocationName!];
+
+    if (targetId == null || employeeId == null) {
+      _showErrorSnackBar('inventory_transfer.error_location_id_not_found'.tr());
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      // Bir sepet içindeki farklı operasyon modlarını gruplayarak tek bir başlık altında toplayabiliriz.
+      // Şimdilik en genel transfer tipini (box_transfer) kullanabiliriz veya daha akıllı bir gruplama yapabiliriz.
+      // Örnek olarak, ilk elemanın tipini alalım:
+      final representativeItem = _transferCart.first;
+      final operationType = representativeItem.palletId != null ? AssignmentMode.pallet : AssignmentMode.box;
+
+      final header = TransferOperationHeader(
+        employeeId: employeeId,
+        transferDate: DateTime.now(),
+        // Not: Bu başlık, birden fazla farklı türde (palet/kutu) ürün içerebilen bir operasyon için genelleştirilmelidir.
+        // API'niz buna izin veriyorsa, bu şekilde devam edebiliriz. Değilse, her bir tür için ayrı operasyon oluşturulmalıdır.
+        // Şimdilik en genel `box_transfer` kabul edelim. Daha sonra sunucu tarafı ile netleştirilebilir.
+        operationType: AssignmentMode.box, // Genelleştirilmiş tip
+        sourceLocationName: _selectedSourceLocationName!,
+        targetLocationName: _selectedTargetLocationName!,
+        containerId: null, // Birden fazla konteyner olduğu için null
+        siparisId: widget.selectedOrder?.id,
+      );
+
+      final actualSourceId = sourceId == 0 ? null : sourceId;
+      await _repo.recordTransferOperation(header, _transferCart, actualSourceId, targetId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('inventory_transfer.success_transfer_saved'.tr()),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.of(context).pop(true);
+
+        context.read<SyncService>().uploadPendingOperations().catchError((e) {
+          debugPrint("Offline sync attempt failed as expected: $e");
+        });
+      }
+    } catch (e, s) {
+      debugPrint('Sepet kaydetme hatası: $e\n$s');
+      if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  String? _validateProductQuantity(String? value, ProductItem product) {
+    if (value == null || value.isEmpty) {
+      return 'inventory_transfer.validator_required'.tr();
+    }
+    final qty = double.tryParse(value);
+    if (qty == null) {
+      return 'inventory_transfer.validator_invalid'.tr();
+    }
+    if (qty > product.currentQuantity + 0.001) {
+      return 'inventory_transfer.validator_max'.tr();
+    }
+    if (qty <= 0) {
+      return 'inventory_transfer.validator_negative'.tr();
+    }
+    return null;
   }
 }
 

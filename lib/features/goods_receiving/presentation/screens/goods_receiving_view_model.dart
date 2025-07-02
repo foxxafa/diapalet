@@ -383,7 +383,12 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           break;
       }
       
-      _syncService.uploadPendingOperations();
+      // Arka planda senkronizasyonu tetikle, ama sonucunu bekleme.
+      // Hata olursa (örn. offline), SyncService bunu daha sonra tekrar deneyecek.
+      _syncService.uploadPendingOperations().catchError((e) {
+        debugPrint("Offline sync attempt failed for goods receipt, will retry later: $e");
+      });
+
       return true;
 
     } catch (e) {

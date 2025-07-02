@@ -125,55 +125,60 @@ class _HomeScreenState extends State<HomeScreen> {
         final double horizontalPadding = constraints.maxWidth * 0.05;
 
         return SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            vertical: verticalPadding,
-            horizontal: horizontalPadding,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildWelcomeCard(),
-              const SizedBox(height: 24),
-              _HomeButton(
-                icon: Icons.input_outlined,
-                label: 'home.goods_receiving'.tr(),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const GoodsReceivingOptionsScreen(),
-                    ),
-                  );
-                },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - (verticalPadding * 2)),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: verticalPadding,
+                horizontal: horizontalPadding,
               ),
-              const SizedBox(height: 16),
-              _HomeButton(
-                icon: Icons.warehouse_outlined,
-                label: 'home.pallet_transfer'.tr(),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const TransferTypeSelectionScreen(),
-                    ),
-                  );
-                },
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildWelcomeCard(),
+                  const SizedBox(height: 24),
+                  _HomeButton(
+                    icon: Icons.input_outlined,
+                    label: 'home.goods_receiving'.tr(),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const GoodsReceivingOptionsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _HomeButton(
+                    icon: Icons.warehouse_outlined,
+                    label: 'home.pallet_transfer'.tr(),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const TransferTypeSelectionScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _HomeButton(
+                    icon: Icons.sync_alt,
+                    label: 'home.pending_operations'.tr(),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const PendingOperationsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              _HomeButton(
-                icon: Icons.sync_alt,
-                label: 'home.pending_operations'.tr(),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PendingOperationsScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
+            ),
           ),
         );
       }),

@@ -533,25 +533,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         );
         debugPrint("Sipariş #$orderId rafa yerleştirme işlemi tamamlandı ve durumu 4 (Otomatik Tamamlandı) olarak güncellendi.");
       }
-
-      // Bu siparişe ait hala 'receiving' durumunda stok olup olmadığını kontrol et
-      final receivingStock = await txn.query(
-        'inventory_stock',
-        where: 'siparis_id = ? AND stock_status = ?',
-        whereArgs: [orderId, 'receiving'],
-        limit: 1,
-      );
-
-      // Eğer hiç 'receiving' stoğu kalmadıysa, siparişi otomatik tamamla.
-      if (receivingStock.isEmpty) {
-        await txn.update(
-          'satin_alma_siparis_fis',
-          {'status': 4}, // 4: Otomatik Tamamlandı
-          where: 'id = ?',
-          whereArgs: [orderId],
-        );
-        debugPrint("Sipariş #$orderId için yerleştirilecek ürün kalmadı. Durum 4 (Otomatik Tamamlandı) olarak güncellendi.");
-      }
     });
   }
 

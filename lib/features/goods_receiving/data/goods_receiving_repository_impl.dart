@@ -162,15 +162,39 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final prefs = await SharedPreferences.getInstance();
     final warehouseId = prefs.getInt('warehouse_id');
 
-    final maps = await db.query(
+    final candidateOrdersMaps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status IN (1, 2) AND branch_id = ?',
       whereArgs: [warehouseId],
       orderBy: 'tarih DESC',
     );
+
+    final openOrders = <PurchaseOrder>[];
+    for (var orderMap in candidateOrdersMaps) {
+      final order = PurchaseOrder.fromMap(orderMap);
+      final orderItems = await getPurchaseOrderItems(order.id);
+
+      // Siparişin hiç kalemi yoksa veya tüm kalemleri tam olarak alındıysa,
+      // mal kabul için "açık" sayılmaz.
+      if (orderItems.isEmpty) continue;
+
+      bool isFullyReceived = true;
+      for (var item in orderItems) {
+        // Eğer herhangi bir kalemde beklenen miktar, alınandan fazlaysa
+        // sipariş tam olarak alınmamıştır.
+        if (item.receivedQuantity < item.expectedQuantity - 0.001) {
+          isFullyReceived = false;
+          break;
+        }
+      }
+
+      if (!isFullyReceived) {
+        openOrders.add(order);
+      }
+    }
     
-    debugPrint("Açık siparişler (Depo ID: $warehouseId): ${maps.length} adet bulundu");
-    return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
+    debugPrint("Mal kabul için açık siparişler (Depo ID: $warehouseId): ${openOrders.length} adet bulundu");
+    return openOrders;
   }
 
   @override
