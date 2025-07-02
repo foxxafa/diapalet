@@ -1,4 +1,8 @@
 // lib/core/network/api_config.dart
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+// import 'package:diapalet/core/network/dio_logger.dart';
+
 class ApiConfig {
   // Docker yerel sunucu (geliştirme için)
   // Emülatör için: 10.0.2.2 (Android emülatör host erişimi)
@@ -36,4 +40,42 @@ class ApiConfig {
 
   // Sunucu Sağlık Kontrolü
   static const String healthCheck = '$baseUrl/health';
+
+  static final Dio dio = _createDio();
+
+  static Dio _createDio() {
+    final dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    ));
+
+    // dio.interceptors.add(DioLogger(
+    //   request: true,
+    //   requestHeader: true,
+    //   requestBody: true,
+    //   responseHeader: true,
+    //   responseBody: true,
+    //   error: true,
+    //   compact: true,
+    // ));
+
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        if (options.path != '/v1/login') {
+          final prefs = await SharedPreferences.getInstance();
+          final apiKey = prefs.getString('api_key');
+          if (apiKey != null) {
+            options.headers['Authorization'] = 'Bearer $apiKey';
+          }
+        }
+        return handler.next(options);
+      },
+    ));
+    return dio;
+  }
 }

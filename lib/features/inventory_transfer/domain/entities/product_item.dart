@@ -59,14 +59,21 @@ class ProductItem {
   }
 
   factory ProductItem.fromMap(Map<String, dynamic> map) {
+    final stockStatusValue = map['stockStatus'] ?? map['stock_status'];
+    final siparisIdValue = map['siparisId'] ?? map['siparis_id'];
+
+    if (stockStatusValue == null) {
+      throw const FormatException("The 'stockStatus' or 'stock_status' field is missing or null in the map.");
+    }
+
     return ProductItem(
       id: map['id'] as int,
       name: map['name'] as String,
       productCode: map['productCode'] as String,
       barcode1: map['barcode1'] as String?,
       currentQuantity: (map['currentQuantity'] as num).toDouble(),
-      stockStatus: map['stock_status'] as String,
-      siparisId: map['siparis_id'] as int?,
+      stockStatus: stockStatusValue as String,
+      siparisId: siparisIdValue as int?,
     );
   }
 

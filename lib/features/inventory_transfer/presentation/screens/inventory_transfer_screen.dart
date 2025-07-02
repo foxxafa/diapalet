@@ -292,8 +292,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (_selectedMode == AssignmentMode.pallet && container is String) {
         contents = await _repo.getPalletContents(
           container, 
-          locationId == 0 ? 0 : locationId, 
-          stockStatus: stockStatus
+          locationId == 0 ? null : locationId, 
+          stockStatus: stockStatus,
+          siparisId: widget.selectedOrder?.id,
         );
       } else if (_selectedMode == AssignmentMode.box && container is BoxItem) {
         contents = [ProductItem.fromBoxItem(container)];
@@ -311,7 +312,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _productQuantityFocusNodes[product.id] = FocusNode();
         }
       });
-    } catch (e) {
+    } catch (e, s) {
+      debugPrint('Error fetching container contents: $e\n$s');
       if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
@@ -376,23 +378,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       final header = TransferOperationHeader(
         employeeId: employeeId,
+        transferDate: DateTime.now(),
         operationType: finalOperationMode,
         sourceLocationName: _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
         containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as BoxItem?)?.productCode,
-        transferDate: DateTime.now(),
+        siparisId: widget.selectedOrder?.id,
       );
       
       // Convert sourceId 0 to null for the repository call
       final actualSourceId = sourceId == 0 ? null : sourceId;
       await _repo.recordTransferOperation(header, itemsToTransfer, actualSourceId, targetId);
 
-      if (mounted && await context.read<NetworkInfo>().isConnected) {
-        // notifyListeners() in syncService will handle UI updates
-        context.read<SyncService>().uploadPendingOperations();
-      }
-
       if (mounted) {
+        // Wait for the sync to complete before showing success message
+        await context.read<SyncService>().uploadPendingOperations();
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('inventory_transfer.success_transfer_saved'.tr()),
@@ -402,7 +403,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _resetForm(resetAll: true);
       }
     } catch (e, s) {
-      debugPrint('Lokal transfer kaydı hatası: $e\n$s');
+      debugPrint('Lokal transfer veya senkronizasyon hatası: $e\n$s');
       if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -523,7 +524,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     fieldIdentifier: 'container',
                     items: _availableContainers,
                     itemToString: (item) {
-                      if (item is String) return item;
+                      if (item is String) return 'inventory_transfer.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item});
                       if (item is BoxItem) return '${item.productName} (${item.productCode})';
                       return '';
                     },
@@ -859,6 +860,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
+    debugPrint("Snackbar Error: $message");
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),

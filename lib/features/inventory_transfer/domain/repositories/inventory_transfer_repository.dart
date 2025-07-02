@@ -15,7 +15,8 @@ abstract class InventoryTransferRepository {
     // Future<List<String>> getPalletIdsAtLocation(int locationId, {String stockStatus = 'available'});
     // Future<List<BoxItem>> getBoxesAtLocation(int locationId, {String stockStatus = 'available'});
     
-    Future<List<ProductItem>> getPalletContents(String palletBarcode, int locationId, {String stockStatus = 'available'});
+    /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
+    Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId});
 
     Future<void> recordTransferOperation(
         TransferOperationHeader header,

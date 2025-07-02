@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: dump.sql'e uygun şema değişikliği
-  static const _databaseVersion = 26;
+  // ANA GÜNCELLEME: Şema değişikliği nedeniyle versiyon artırıldı.
+  static const _databaseVersion = 27;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -161,7 +161,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS wms_putaway_status (
           id INTEGER PRIMARY KEY,
-          satinalmasiparisfissatir_id INTEGER,
+          satinalmasiparisfissatir_id INTEGER UNIQUE,
           putaway_quantity REAL DEFAULT 0.00,
           created_at TEXT,
           updated_at TEXT
@@ -267,21 +267,16 @@ class DatabaseHelper {
         // ANA GÜNCELLEME: `inventory_stock` tablosunu güncellerken, lokalde `receiving` durumunda
         // olan ve henüz sunucuya gönderilmemiş kayıtları koru. Diğer tüm stokları sil ve sunucudan gelenlerle değiştir.
         if (table == 'inventory_stock') {
-          final localReceivingStock = await txn.query(
-            'inventory_stock',
-            where: 'stock_status = ?',
-            whereArgs: ['receiving'],
-          );
-
-          await txn.delete('inventory_stock');
-
+          // Sunucudan gelen 'available' stoklar için temizlik yap.
+          // 'receiving' durumundakilere dokunma.
+          await txn.delete('inventory_stock', where: 'stock_status = ?', whereArgs: ['available']);
+          
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
-            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-          }
-
-          for (final receivingRecord in localReceivingStock) {
-            batch.insert(table, receivingRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            // Sadece 'available' stokları ekle, çünkü 'receiving' olanlar sunucudan gelmemeli.
+            if (sanitizedRecord['stock_status'] == 'available') {
+              batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
           }
         } else {
           // Diğer tüm tablolar için tam yenileme yap

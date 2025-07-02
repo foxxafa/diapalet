@@ -245,7 +245,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final productResult = await txn.query(
         'urunler',
         columns: ['UrunAdi', 'StokKodu'],
-        where: 'UrunId = ?',
+        where: 'id = ?',
         whereArgs: [itemDetail.productId],
         limit: 1,
       );
@@ -350,38 +350,31 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   // Helper methods for the existing screen interface
+  @override
   Future<List<String>> getPalletIdsAtLocation(int? locationId, {String stockStatus = 'available'}) async {
     final db = await dbHelper.database;
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
 
-    List<String> statusesToQuery = [stockStatus];
-    // For putaway mode, also include 'receiving' status
-    if (stockStatus == 'receiving') {
-      statusesToQuery = ['receiving'];
+    if (locationId == null) {
+      whereClauses.add('location_id IS NULL');
     } else {
-      statusesToQuery = ['available'];
+      whereClauses.add('location_id = ?');
+      whereArgs.add(locationId);
     }
-    final placeholders = List.filled(statusesToQuery.length, '?').join(',');
+    whereClauses.add('stock_status = ?');
+    whereArgs.add(stockStatus);
+    whereClauses.add('pallet_barcode IS NOT NULL');
 
-    String whereClause;
-    List<dynamic> whereArgs;
-    
-    if (locationId == null || locationId == 0) {
-      // NULL location_id represents the goods receiving area
-      whereClause = 'location_id IS NULL AND pallet_barcode IS NOT NULL AND stock_status IN ($placeholders)';
-      whereArgs = statusesToQuery;
-    } else {
-      whereClause = 'location_id = ? AND pallet_barcode IS NOT NULL AND stock_status IN ($placeholders)';
-      whereArgs = [locationId, ...statusesToQuery];
-    }
-
-    final List<Map<String, dynamic>> maps = await db.query(
+    final results = await db.query(
       'inventory_stock',
       distinct: true,
       columns: ['pallet_barcode'],
-      where: whereClause,
+      where: whereClauses.join(' AND '),
       whereArgs: whereArgs,
     );
-    return maps.map((map) => map['pallet_barcode'] as String).toList();
+
+    return results.map((row) => row['pallet_barcode'] as String).toList();
   }
 
   Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {String stockStatus = 'available'}) async {
@@ -417,34 +410,42 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<ProductItem>> getPalletContents(String palletBarcode, int locationId, {String stockStatus = 'available'}) async {
+  Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId}) async {
     final db = await dbHelper.database;
-    
-    String whereClause;
-    List<dynamic> whereArgs;
-    
-    if (locationId == 0) {
-      // NULL location_id represents the goods receiving area
-      whereClause = 's.location_id IS NULL AND s.pallet_barcode = ? AND s.stock_status = ?';
-      whereArgs = [palletBarcode, stockStatus];
+    final whereClauses = <String>[
+      's.pallet_barcode = ?',
+      's.stock_status = ?'
+    ];
+    final whereArgs = <dynamic>[palletBarcode, stockStatus];
+
+    if (locationId == null) {
+      whereClauses.add('s.location_id IS NULL');
     } else {
-      whereClause = 's.location_id = ? AND s.pallet_barcode = ? AND s.stock_status = ?';
-      whereArgs = [locationId, palletBarcode, stockStatus];
+      whereClauses.add('s.location_id = ?');
+      whereArgs.add(locationId);
     }
     
-    final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT
+    // Sipariş ID'si verilmişse, sorguya ekle
+    if (siparisId != null) {
+        whereClauses.add('s.siparis_id = ?');
+        whereArgs.add(siparisId);
+    }
+
+    final query = '''
+      SELECT 
         s.urun_id as id,
         u.UrunAdi as name,
         u.StokKodu as productCode,
         u.Barcode1 as barcode1,
         s.quantity as currentQuantity,
-        s.stock_status,
-        s.siparis_id
+        s.siparis_id as siparisId,
+        s.stock_status as stockStatus
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
-      WHERE $whereClause
-    ''', whereArgs);
+      WHERE ${whereClauses.join(' AND ')}
+    ''';
+    
+    final List<Map<String, dynamic>> maps = await db.rawQuery(query, whereArgs);
     return maps.map((map) => ProductItem.fromMap(map)).toList();
   }
 

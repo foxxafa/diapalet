@@ -125,7 +125,7 @@ class TerminalController extends Controller
                     // 2. Bu işlem daha önce yapılmışsa, kayıtlı sonucu döndür.
                     $resultData = json_decode($existingRequest['response_body'], true);
                     $results[] = [
-                        'local_id' => (int)$localId, // Flutter tarafında bu isim bekleniyor
+                        'local_id' => (int)$localId,
                         'result' => is_string($resultData) ? json_decode($resultData, true) : $resultData
                     ];
                     continue; // Sonraki operasyona geç
@@ -152,8 +152,15 @@ class TerminalController extends Controller
                         'response_body' => json_encode($result)
                     ])->execute();
                     
-                    $results[] = ['local_id' => $localId, 'result' => $result];
+                    $results[] = ['local_id' => (int)$localId, 'result' => $result];
                 } else {
+                    // İşlem başarısız olsa bile idempotency anahtarı ile hatayı kaydet.
+                    // Bu, aynı hatalı isteğin tekrar tekrar işlenmesini önler.
+                    $db->createCommand()->insert('processed_requests', [
+                        'idempotency_key' => $idempotencyKey,
+                        'response_code' => 500, // veya uygun bir hata kodu
+                        'response_body' => json_encode($result)
+                    ])->execute();
                     throw new \Exception("İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata'));
                 }
             }
@@ -207,7 +214,7 @@ class TerminalController extends Controller
     private function _createInventoryTransfer($data, $db) {
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
-        if (empty($header) || empty($items) || !isset($header['employee_id'], $header['source_location_id'], $header['target_location_id'])) {
+        if (empty($header) || empty($items) || !isset($header['employee_id'], $header['target_location_id']) || !array_key_exists('source_location_id', $header)) {
             return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
         }
 

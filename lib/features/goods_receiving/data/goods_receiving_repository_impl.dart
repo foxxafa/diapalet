@@ -29,6 +29,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
+    debugPrint("--- Mal Kabul Kaydı Başlatılıyor ---");
+    debugPrint("Header: ${jsonEncode(payload.header.toJson())}");
+    debugPrint("Items: ${jsonEncode(payload.items.map((e) => e.toJson()).toList())}");
+    debugPrint("------------------------------------");
     await _saveGoodsReceiptLocally(payload);
   }
 

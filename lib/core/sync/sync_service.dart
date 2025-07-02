@@ -199,7 +199,6 @@ class SyncService with ChangeNotifier {
   }
 
   Future<void> _handleSyncResults(List<dynamic> results) async {
-    if (_isSyncing) return;
     debugPrint("_handleSyncResults çağrıldı. Results: ${jsonEncode(results)}");
 
     bool dataChanged = false;

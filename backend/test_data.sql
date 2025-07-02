@@ -11,10 +11,10 @@ INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `branch_id`) VALUES
 -- 2. Rafları ekle (Artık warehouses_shelfs değil, 'shelfs' tablosuna)
 -- Sanal Mal Kabul Alanı (shelf_id=NULL) için buraya bir kayıt eklenmez.
 INSERT INTO `shelfs` (`warehouse_id`, `name`, `code`, `is_active`) VALUES
-(1, 'Koridor A, Raf 01', 'A-01', 1),
-(1, 'Koridor A, Raf 02', 'A-02', 1),
-(1, 'Koridor B, Raf 01', 'B-01', 1),
-(2, 'Koridor X, Raf 01', 'X-01', 1);
+(1, '10A21', '10A21', 1),
+(1, '10A22', '10A22', 1),
+(1, '10B21', '10B21', 1),
+(2, '10B22', '10B22', 1);
 
 -- 3. Çalışanları ekle (warehouse_id ile depolara atanır)
 INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `branch_id`) VALUES
@@ -64,10 +64,10 @@ name = VALUES(name),
 warehouse_code = VALUES(warehouse_code);
 
 INSERT INTO shelfs (id, warehouse_id, name, code, is_active) VALUES 
-(1, 1, 'A-01-01', 'A0101', 1),
-(2, 1, 'A-01-02', 'A0102', 1),
-(3, 1, 'B-01-01', 'B0101', 1),
-(4, 1, 'B-01-02', 'B0102', 1)
+(1, 1, '10A21', '10A21', 1),
+(2, 1, '10A22', '10A22', 1),
+(3, 1, '10B21', '10B21', 1),
+(4, 1, '10B22', '10B22', 1)
 ON DUPLICATE KEY UPDATE 
 name = VALUES(name), 
 code = VALUES(code), 

@@ -715,6 +715,7 @@
     "dialog_confirm_transfer_body": "The following items will be transferred from {source} to {target}:",
     "dialog_confirm_transfer_item": "• {productName} (x{quantity})",
     "dialog_button_confirm": "Confirm",
+    "label_pallet_barcode_display_short": "Pallet: {barcode}",
     "validator_required_field": "This field cannot be empty.",
     "validator_target_cannot_be_source": "Target and source location cannot be the same.",
     "validator_required": "Required",
