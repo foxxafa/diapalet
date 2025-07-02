@@ -43,7 +43,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   final Map<String, bool> _isPalletOpeningMap = {};
 
   static String get sourceLocationName => 'common_labels.goods_receiving_area'.tr();
-  static const int sourceLocationId = 1;
+  static const int? sourceLocationId = null;
 
   @override
   void initState() {
@@ -85,7 +85,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final containers = await _repo.getTransferableContainers(sourceLocationId, orderId: widget.order.id);
+      final containers = await _repo.getTransferableContainers(null, orderId: widget.order.id);
       final locations = await _repo.getTargetLocations();
 
       if (mounted) {
@@ -133,7 +133,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     try {
       final match = await _repo.findLocationByCode(clean);
       if (!mounted) return;
-      if (match != null && match.value != sourceLocationId) {
+      if (match != null && (sourceLocationId == null || match.value != sourceLocationId)) {
         _assignTarget(container, match);
       } else {
         final reason = match == null ? 'order_transfer.invalid_location'.tr() : 'order_transfer.same_as_source_location'.tr();
@@ -211,8 +211,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               palletId: item.sourcePalletBarcode,
               targetLocationId: targetLocation.value,
               targetLocationName: targetLocation.key,
-              stockStatus: 'receiving',
-              siparisId: widget.order.id,
             ));
           }
         }

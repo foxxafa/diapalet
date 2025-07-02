@@ -17,10 +17,7 @@ class TransferItemDetail {
   final int? targetLocationId;
   final String? targetLocationName;
 
-  final String stockStatus;
-  final int? siparisId;
-
-  const TransferItemDetail({
+  TransferItemDetail({
     required this.productId,
     required this.productName,
     required this.productCode,
@@ -28,8 +25,6 @@ class TransferItemDetail {
     this.palletId,
     this.targetLocationId,
     this.targetLocationName,
-    required this.stockStatus,
-    this.siparisId,
   });
 
   /// Sunucuya gönderilecek olan, sadeleştirilmiş JSON formatını oluşturur.

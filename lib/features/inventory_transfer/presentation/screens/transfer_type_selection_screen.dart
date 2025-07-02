@@ -37,10 +37,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
               icon: Icons.move_up_rounded,
               label: "transfer_type.free_transfer".tr(),
               onPressed: () {
-                Navigator.of(context).push<bool>(
-                  MaterialPageRoute(
-                    builder: (_) => const InventoryTransferScreen(selectedOrder: null),
-                  ),
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen()),
                 );
               },
             ),

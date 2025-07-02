@@ -20,14 +20,14 @@ class TransferOperationHeader {
     this.siparisId,
   });
 
-  Map<String, dynamic> toApiJson(int? sourceLocationId, int targetLocationId) {
+  Map<String, dynamic> toApiJson(int sourceLocationId, int targetLocationId) {
     // # HATA DÜZELTMESİ: Map'in tipi açıkça 'Map<String, dynamic>' olarak belirtildi.
     // Bu, 'invalid_assignment' hatasını çözer.
     final Map<String, dynamic> jsonMap = {
       'employee_id': employeeId,
       'transfer_date': transferDate.toIso8601String(),
       'operation_type': operationType.apiName,
-      'source_location_id': sourceLocationId == 0 ? null : sourceLocationId,
+      'source_location_id': sourceLocationId,
       'target_location_id': targetLocationId,
     };
 

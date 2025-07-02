@@ -154,7 +154,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 1. Kaynak stoktan düşür (sourceLocationId null olabilir - mal kabul alanı).
           await _updateStock(
             txn, item.productId, sourceLocationId, -item.quantity, item.palletId,
-            item.stockStatus, item.siparisId);
+            'receiving', null);
 
           // 2. Hedefteki palet durumunu belirle.
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
@@ -177,12 +177,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           });
 
           // 5. EĞER BU BİR RAFA KALDIRMA İŞLEMİ İSE, wms_putaway_status'u GÜNCELLE
-          if ((item.stockStatus == 'receiving' || sourceLocationId == null) && item.siparisId != null) {
+          if (sourceLocationId == null && header.siparisId != null) {
             final orderLine = await txn.query(
               'satin_alma_siparis_fis_satir',
               columns: ['id'],
               where: 'siparis_id = ? AND urun_id = ?',
-              whereArgs: [item.siparisId, item.productId],
+              whereArgs: [header.siparisId, item.productId],
               limit: 1,
             );
             if (orderLine.isNotEmpty) {
@@ -267,7 +267,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       int targetLocationId,
       ) {
     return {
-      "header": header.toApiJson(sourceLocationId, targetLocationId),
+      "header": header.toApiJson(sourceLocationId ?? 0, targetLocationId),
       "items": items.map((item) => item.toApiJson()).toList(),
     };
   }
@@ -379,6 +379,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return results.map((row) => row['pallet_barcode'] as String).toList();
   }
 
+  @override
   Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available']}) async {
     final db = await dbHelper.database;
 
@@ -397,7 +398,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT s.urun_id, s.quantity, u.UrunAdi, u.StokKodu, u.Barcode1, s.stock_status, s.siparis_id
+      SELECT s.urun_id as productId, s.quantity, u.UrunAdi as productName, u.StokKodu as productCode, u.Barcode1 as barcode1
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
       WHERE $whereClause
@@ -431,11 +432,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT 
         s.urun_id as id,
         u.UrunAdi as name,
-        u.StokKodu as productCode,
-        u.Barcode1 as barcode1,
-        s.quantity as currentQuantity,
-        s.siparis_id as siparisId,
-        s.stock_status as stockStatus
+        u.StokKodu as code,
+        s.quantity as currentQuantity
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
       WHERE ${whereClauses.join(' AND ')}
@@ -567,7 +565,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT s.urun_id, s.quantity, u.UrunAdi, u.StokKodu, u.Barcode1, s.stock_status, s.siparis_id
+      SELECT s.urun_id as productId, s.quantity, u.UrunAdi as productName, u.StokKodu as productCode, u.Barcode1 as barcode1
       FROM inventory_stock s
       JOIN urunler u ON u.id = s.urun_id
       WHERE $whereClause
