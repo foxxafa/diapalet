@@ -351,7 +351,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   // Helper methods for the existing screen interface
   @override
-  Future<List<String>> getPalletIdsAtLocation(int? locationId, {String stockStatus = 'available'}) async {
+  Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available']}) async {
     final db = await dbHelper.database;
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
@@ -362,8 +362,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereClauses.add('location_id = ?');
       whereArgs.add(locationId);
     }
-    whereClauses.add('stock_status = ?');
-    whereArgs.add(stockStatus);
+    
+    final placeholders = List.filled(stockStatuses.length, '?').join(',');
+    whereClauses.add('stock_status IN ($placeholders)');
+    whereArgs.addAll(stockStatuses);
     whereClauses.add('pallet_barcode IS NOT NULL');
 
     final results = await db.query(
@@ -377,16 +379,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return results.map((row) => row['pallet_barcode'] as String).toList();
   }
 
-  Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {String stockStatus = 'available'}) async {
+  Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available']}) async {
     final db = await dbHelper.database;
 
-    List<String> statusesToQuery = [stockStatus];
-    if (stockStatus == 'receiving') {
-      statusesToQuery = ['receiving'];
-    } else {
-      statusesToQuery = ['available'];
-    }
-    final placeholders = List.filled(statusesToQuery.length, '?').join(',');
+    final placeholders = List.filled(stockStatuses.length, '?').join(',');
 
     String whereClause;
     List<dynamic> whereArgs;
@@ -394,10 +390,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (locationId == null || locationId == 0) {
       // NULL location_id represents the goods receiving area
       whereClause = 's.location_id IS NULL AND s.pallet_barcode IS NULL AND s.stock_status IN ($placeholders)';
-      whereArgs = statusesToQuery;
+      whereArgs = stockStatuses;
     } else {
       whereClause = 's.location_id = ? AND s.pallet_barcode IS NULL AND s.stock_status IN ($placeholders)';
-      whereArgs = [locationId, ...statusesToQuery];
+      whereArgs = [locationId, ...stockStatuses];
     }
 
     final List<Map<String, dynamic>> maps = await db.rawQuery('''

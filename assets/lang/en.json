@@ -1,10 +1,11 @@
 {
   "app": {
-    "title": "DIAPALET WMS"
+    "title": "ROWHUB"
   },
   "language": {
     "turkish": "Turkish",
-    "english": "English"
+    "english": "English",
+    "system": "System Default"
   },
   "settings": {
     "title": "Settings"
@@ -15,7 +16,7 @@
     "system": "System Default"
   },
   "home": {
-    "title": "DiaPallet WMS",
+    "title": "ROWHUB",
     "reset_db": "Reset Database",
     "db_reset_complete": "Database reset complete",
     "populate_test": "Populate Test Data",
@@ -30,6 +31,9 @@
       "pending_title": "Pending Operations Found",
       "pending_message": "There are unsynced operations. Please sync them before logging out.",
       "button": "Logout"
+    },
+    "status": {
+      "partially_received": "Partially Received"
     }
   },
   "goods_receiving": {
@@ -747,7 +751,7 @@
     }
   },
   "login": {
-    "title": "DIAPALET Login",
+    "title": "ROWHUB",
     "subtitle": "Please enter your credentials to log in.",
     "username": "Username",
     "username_hint": "Username",

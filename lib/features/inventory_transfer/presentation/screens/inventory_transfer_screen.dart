@@ -244,22 +244,33 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _resetContainerAndProducts();
     });
     try {
-      // Determine stock status based on transfer type
-      final stockStatus = widget.selectedOrder != null ? 'receiving' : 'available';
+      final repo = _repo as dynamic; // Cast to access helper methods
+      final bool isReceivingArea = locationId == 0;
+      
+      List<String> statusesToQuery;
+      if (widget.selectedOrder != null) {
+        // Rafa Kaldırma Modu: Sadece 'receiving' statüsündeki ürünler.
+        statusesToQuery = ['receiving'];
+      } else {
+        // Serbest Transfer Modu
+        if (isReceivingArea) {
+          // Kaynak "Mal Kabul Alanı" ise, hem 'receiving' hem de 'available' olanları göster.
+          statusesToQuery = ['receiving', 'available'];
+        } else {
+          // Kaynak normal bir raf ise, sadece 'available' olanları göster.
+          statusesToQuery = ['available'];
+        }
+      }
       
       if (_selectedMode == AssignmentMode.pallet) {
-        // Use the helper method from repository implementation
-        final repo = _repo as dynamic; // Cast to access helper methods
         _availableContainers = await repo.getPalletIdsAtLocation(
-          locationId == 0 ? null : locationId, 
-          stockStatus: stockStatus
+          isReceivingArea ? null : locationId, 
+          stockStatuses: statusesToQuery
         );
       } else {
-        // Use the helper method from repository implementation
-        final repo = _repo as dynamic; // Cast to access helper methods
         _availableContainers = await repo.getBoxesAtLocation(
-          locationId == 0 ? null : locationId, 
-          stockStatus: stockStatus
+          isReceivingArea ? null : locationId, 
+          stockStatuses: statusesToQuery
         );
       }
     } catch (e) {
@@ -345,8 +356,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           palletId: _selectedMode == AssignmentMode.pallet ? (_selectedContainer as String) : null,
           targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
           targetLocationName: _selectedTargetLocationName!,
-          stockStatus: isFromReceivingArea ? 'receiving' : 'available',
-          siparisId: isFromReceivingArea ? product.siparisId : null,
+          stockStatus: product.stockStatus,
+          siparisId: product.siparisId,
         ));
       }
     }

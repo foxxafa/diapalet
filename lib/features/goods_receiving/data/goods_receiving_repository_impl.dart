@@ -50,12 +50,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         };
         final receiptId = await txn.insert('goods_receipts', receiptHeaderData);
 
+        final stockStatus = payload.header.siparisId != null ? 'receiving' : 'available';
+
         for (final item in payload.items) {
           await txn.insert('goods_receipt_items', {
             'receipt_id': receiptId, 'urun_id': item.urunId,
             'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
           });
-          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, 'receiving', payload.header.siparisId);
+          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, stockStatus, payload.header.siparisId);
         }
 
         if (payload.header.siparisId != null) {
