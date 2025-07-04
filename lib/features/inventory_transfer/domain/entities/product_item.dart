@@ -7,12 +7,14 @@ class ProductItem {
   final int id;
   final String name;
   final String productCode;
+  final String? barcode1;
   final double currentQuantity;
 
   const ProductItem({
     required this.id,
     required this.name,
     required this.productCode,
+    this.barcode1,
     required this.currentQuantity,
   });
 
@@ -21,6 +23,7 @@ class ProductItem {
       id: box.productId,
       name: box.productName,
       productCode: box.productCode,
+      barcode1: box.barcode1,
       currentQuantity: box.quantity,
     );
   }
@@ -29,6 +32,7 @@ class ProductItem {
     final dynamic idValue = json['id'] ?? json['productId'];
     final dynamic nameValue = json['name'] ?? json['productName'];
     final dynamic codeValue = json['productCode'] ?? json['code'];
+    final dynamic barcodeValue = json['barcode1'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
 
     num parseToNum(dynamic val) {
@@ -42,6 +46,7 @@ class ProductItem {
       id: parseToNum(idValue).toInt(),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
+      barcode1: barcodeValue?.toString(),
       currentQuantity: parseToNum(qtyValue).toDouble(),
     );
   }
@@ -51,6 +56,7 @@ class ProductItem {
       id: map['id'] as int,
       name: (map['name'] ?? '').toString(),
       productCode: (map['code'] ?? '').toString(),
+      barcode1: map['barcode1']?.toString(),
       currentQuantity: (map['currentQuantity'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -61,6 +67,7 @@ class ProductItem {
       'id': id,
       'name': name,
       'productCode': productCode,
+      'barcode1': barcode1,
       'currentQuantity': currentQuantity,
     };
   }

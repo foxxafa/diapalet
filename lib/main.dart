@@ -94,9 +94,7 @@ void main() async {
           Provider<InventoryTransferRepository>(
             create: (context) => InventoryTransferRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
-              networkInfo: context.read<NetworkInfo>(),
               dio: context.read<Dio>(),
-              syncService: context.read<SyncService>(),
             ),
           ),
 

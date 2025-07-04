@@ -300,10 +300,16 @@ class TerminalController extends Controller
             }
         } elseif ($qtyChange > 0) {
             $db->createCommand()->insert('inventory_stock', [
-                'urun_id' => $urunId, 'location_id' => $locationId, 'quantity' => (float)$qtyChange,
-                'pallet_barcode' => $palletBarcode, 'stock_status' => $stockStatus, 'siparis_id' => $siparisId
+                'urun_id' => $urunId, 
+                'location_id' => $locationId, 
+                'siparis_id' => $siparisId,
+                'quantity' => (float)$qtyChange,
+                'pallet_barcode' => $palletBarcode, 
+                'stock_status' => $stockStatus
             ])->execute();
         } else {
+            // Stok düşürme işlemi sırasında negatif miktar gelirse ve stok bulunamazsa hata ver.
+            Yii::warning("Stok düşürme hatası: Kaynakta stok bulunamadı. urun_id: {$urunId}, location_id: {$locationId}, pallet: {$palletBarcode}, status: {$stockStatus}, siparis_id: {$siparisId}", __METHOD__);
             throw new \Exception("Stok düşürme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı.");
         }
     }

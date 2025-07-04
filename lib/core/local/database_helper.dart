@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: Şema değişikliği nedeniyle versiyon artırıldı.
-  static const _databaseVersion = 27;
+  // ANA GÜNCELLEME: Şema hataları nedeniyle versiyon artırıldı ve veritabanı yeniden oluşturulacak.
+  static const _databaseVersion = 28;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
