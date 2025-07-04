@@ -252,14 +252,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         // Rafa Kaldırma Modu: Sadece 'receiving' statüsündeki ürünler.
         statusesToQuery = ['receiving'];
       } else {
-        // Serbest Transfer Modu
-        if (isReceivingArea) {
-          // Kaynak "000" (Mal Kabul Alanı) ise, hem 'receiving' hem de 'available' olanları göster.
-          statusesToQuery = ['receiving', 'available'];
-        } else {
-          // Kaynak normal bir raf ise, sadece 'available' olanları göster.
-          statusesToQuery = ['available'];
-        }
+        // Serbest Transfer Modu: Sadece 'available' statüsündeki ürünler gösterilir
+        statusesToQuery = ['available'];
       }
       
       if (_selectedMode == AssignmentMode.pallet) {

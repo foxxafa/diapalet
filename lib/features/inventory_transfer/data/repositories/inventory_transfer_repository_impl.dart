@@ -284,10 +284,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       stockMaps = await db.query('inventory_stock', where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
       debugPrint("Stok kayıtları (sipariş $orderId): ${stockMaps.length}");
     } else {
-      // Serbest Transfer
+      // Serbest Transfer: Sadece 'available' statüsündeki ürünler gösterilir
       if (locationId == null || locationId == 0) {
-        // Mal kabul alanından serbest transfer: Hem 'receiving' hem 'available' stokları al
-        stockMaps = await db.query('inventory_stock', where: 'location_id IS NULL AND (stock_status = ? OR stock_status = ?)', whereArgs: ['receiving', 'available']);
+        // Mal kabul alanından serbest transfer: Sadece 'available' stokları al
+        stockMaps = await db.query('inventory_stock', where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);
         debugPrint("Stok kayıtları (mal kabul alanı): ${stockMaps.length}");
       } else {
         // Belirli bir raftan serbest transfer: Sadece 'available' stokları al
