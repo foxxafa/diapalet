@@ -207,7 +207,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 4. Transfer işlemini logla
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
-            'from_location_id': sourceLocationId,
+            'from_location_id': (sourceLocationId == 0) ? null : sourceLocationId,
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
             'from_pallet_barcode': item.palletId,
@@ -479,7 +479,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.add(palletId);
     }
 
-    if (locationId == null) {
+    if (locationId == null || locationId == 0) {
       whereParts.add('location_id IS NULL');
     } else {
       whereParts.add('location_id = ?');
