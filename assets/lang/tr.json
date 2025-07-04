@@ -192,6 +192,10 @@
     "cancel": "İptal",
     "close": "Kapat"
   },
+  "common_labels": {
+    "goods_receiving_area": "000",
+    "quantity": "Miktar"
+  },
   "pending_operations": {
     "title": "Bekleyenler & Senkronizasyon",
     "tabs": {

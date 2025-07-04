@@ -119,7 +119,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _availableTargetLocationsMap = await _repo.getTargetLocations();
 
       if (isPutawayMode) {
-        _selectedSourceLocationName = 'Mal Kabul Alanı';
+        _selectedSourceLocationName = '000';
         sourceLocationController.text = _selectedSourceLocationName!;
         await _loadContainers();
       } else {
@@ -161,7 +161,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         employeeId: employeeId,
         transferDate: DateTime.now(),
         operationType: finalOperationMode,
-        sourceLocationName: isPutawayMode ? 'Mal Kabul Alanı' : _selectedSourceLocationName!,
+        sourceLocationName: isPutawayMode ? '000' : _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
       );
 

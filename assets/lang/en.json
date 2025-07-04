@@ -593,17 +593,12 @@
     "po_prefix": "PO: ",
     "not_available": "N/A",
     "status_separator": "/ ",
-    "goods_receiving_area": "Goods Receiving Area",
+    "goods_receiving_area": "000",
     "quantity": "Qty",
     "user_id_not_found": "User ID not found. Please log in again.",
     "unknown_order": "Unknown Order",
     "active_session_found": "Active session found. Redirecting to main page.",
-    "no_active_session": "No active session found. Showing login screen.",
-    "quantity": "Qty",
-    "goods_receiving_area": "Goods Receiving Area",
-    "cancel": "Cancel",
-    "confirm": "Confirm",
-    "unknown_order": "Unknown Order"
+    "no_active_session": "No active session found. Showing login screen."
   },
   "orders": {
     "dialog": {

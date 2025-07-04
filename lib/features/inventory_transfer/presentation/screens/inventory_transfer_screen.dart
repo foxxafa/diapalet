@@ -132,8 +132,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         
         // If this is order-based transfer, automatically set source to goods receiving area
         if (widget.selectedOrder != null) {
-          _selectedSourceLocationName = 'Mal Kabul Alanı';
-          _sourceLocationController.text = 'Mal Kabul Alanı';
+          _selectedSourceLocationName = '000';
+          _sourceLocationController.text = '000';
           _loadContainersForLocation();
         }
       });
@@ -254,7 +254,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       } else {
         // Serbest Transfer Modu
         if (isReceivingArea) {
-          // Kaynak "Mal Kabul Alanı" ise, hem 'receiving' hem de 'available' olanları göster.
+          // Kaynak "000" (Mal Kabul Alanı) ise, hem 'receiving' hem de 'available' olanları göster.
           statusesToQuery = ['receiving', 'available'];
         } else {
           // Kaynak normal bir raf ise, sadece 'available' olanları göster.

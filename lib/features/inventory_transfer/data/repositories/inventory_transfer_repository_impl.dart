@@ -38,8 +38,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final cleanCode = code.toLowerCase().trim();
     
     // Check for "Mal Kabul Alanı" keywords
-    if (cleanCode.contains('kabul') || cleanCode.contains('receiving') || cleanCode == '0') {
-      return const MapEntry('Mal Kabul Alanı', 0);
+    if (cleanCode.contains('kabul') || cleanCode.contains('receiving') || cleanCode == '0' || cleanCode == '000') {
+      return const MapEntry('000', 0);
     }
     
     final maps = await db.query(
@@ -233,7 +233,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (sourceResult.isNotEmpty) apiPayload['header']['source_location_name'] = sourceResult.first['name'];
     } else {
       // NULL location_id means "Goods Receiving Area"
-      apiPayload['header']['source_location_name'] = 'Mal Kabul Alanı';
+      apiPayload['header']['source_location_name'] = '000';
     }
     if (targetLocationId != null) {
       final targetResult = await txn.query('warehouses_shelfs', columns: ['name'], where: 'id = ?', whereArgs: [targetLocationId]);
@@ -336,7 +336,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
     // Add the virtual "Goods Receiving Area" with ID 0 to represent NULL location_id
-    final result = <String, int>{'Mal Kabul Alanı': 0};
+    final result = <String, int>{'000': 0};
     for (var map in maps) {
       result[map['name'] as String] = map['id'] as int;
     }
