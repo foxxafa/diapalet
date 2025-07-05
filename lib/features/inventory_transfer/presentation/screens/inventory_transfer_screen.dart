@@ -638,8 +638,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         ),
         const SizedBox(width: _smallGap),
-        Padding(
-          padding: const EdgeInsets.only(top: 4.0), // TextFormField ile hizala
+        SizedBox(
+          height: 56, // TextFormField ile aynı yükseklik
           child: _QrButton(
             onTap: () async {
               final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
@@ -882,7 +882,6 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 52, // Yüksekliği TextFormField ile aynı yapmak için ayarlandı.
       width: 56,
       child: ElevatedButton(
         onPressed: onTap,

@@ -85,8 +85,25 @@ class PendingOperation {
                 .tr(namedArgs: {'count': itemCount.toString()});
           }
         case PendingOperationType.inventoryTransfer:
-          final source = dataMap['header']?['source_location_name'] ?? dataMap['header']?['source_location_id'];
-          final target = dataMap['header']?['target_location_name'] ?? dataMap['header']?['target_location_id'];
+          // Önce isimleri dene, yoksa "Kaynak" ve "Hedef" gibi anlamlı ifadeler kullan
+          var source = dataMap['header']?['source_location_name'];
+          var target = dataMap['header']?['target_location_name'];
+          
+          // Eğer isim yoksa ID'den anlamlı çeviri yap
+          if (source == null) {
+            final sourceId = dataMap['header']?['source_location_id'];
+            if (sourceId == null || sourceId == 0) {
+              source = 'Mal Kabul Alanı';
+            } else {
+              source = 'Raf $sourceId';
+            }
+          }
+          
+          if (target == null) {
+            final targetId = dataMap['header']?['target_location_id'];
+            target = targetId != null ? 'Raf $targetId' : 'Bilinmeyen Hedef';
+          }
+          
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
           return 'pending_operations.subtitles.inventory_transfer'.tr(namedArgs: {
             'source': source.toString(),

@@ -104,9 +104,15 @@ class TerminalController extends Controller
             return ['success' => true, 'results' => []];
         }
 
+        // İşlem sayısını logla
+        Yii::info("SyncUpload başlıyor: " . count($operations) . " işlem", __METHOD__);
+
         $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
         try {
+            // Transaction timeout ayarla (MySQL için)
+            $db->createCommand("SET SESSION innodb_lock_wait_timeout = 10")->execute();
+            
             foreach ($operations as $op) {
                 $localId = $op['local_id'] ?? null;
                 $idempotencyKey = $op['idempotency_key'] ?? null;
@@ -128,6 +134,7 @@ class TerminalController extends Controller
                         'local_id' => (int)$localId,
                         'result' => is_string($resultData) ? json_decode($resultData, true) : $resultData
                     ];
+                    Yii::info("İşlem zaten işlenmiş (idempotency): $idempotencyKey", __METHOD__);
                     continue; // Sonraki operasyona geç
                 }
 
@@ -135,6 +142,8 @@ class TerminalController extends Controller
                 $opType = $op['type'] ?? 'unknown';
                 $opData = $op['data'] ?? [];
                 $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
+
+                Yii::info("İşlem işleniyor: ID=$localId, Tip=$opType", __METHOD__);
 
                 if ($opType === 'goodsReceipt') {
                     $result = $this->_createGoodsReceipt($opData, $db);
@@ -153,6 +162,7 @@ class TerminalController extends Controller
                     ])->execute();
                     
                     $results[] = ['local_id' => (int)$localId, 'result' => $result];
+                    Yii::info("İşlem başarılı: ID=$localId", __METHOD__);
                 } else {
                     // İşlem başarısız olsa bile idempotency anahtarı ile hatayı kaydet.
                     // Bu, aynı hatalı isteğin tekrar tekrar işlenmesini önler.
@@ -161,18 +171,28 @@ class TerminalController extends Controller
                         'response_code' => 500, // veya uygun bir hata kodu
                         'response_body' => json_encode($result)
                     ])->execute();
-                    throw new \Exception("İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata'));
+                    
+                    $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
+                    Yii::error($errorMsg, __METHOD__);
+                    throw new \Exception($errorMsg);
                 }
             }
 
             $transaction->commit();
+            Yii::info("SyncUpload başarılı: " . count($results) . " işlem tamamlandı", __METHOD__);
             return ['success' => true, 'results' => $results];
 
         } catch (\Exception $e) {
             $transaction->rollBack();
-            Yii::error("SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}", __METHOD__);
+            $errorDetail = "SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}";
+            Yii::error($errorDetail, __METHOD__);
             Yii::$app->response->setStatusCode(500);
-            return ['success' => false, 'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 'details' => $e->getMessage()];
+            return [
+                'success' => false, 
+                'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 
+                'details' => $e->getMessage(),
+                'processed_count' => count($results)
+            ];
         }
     }
 

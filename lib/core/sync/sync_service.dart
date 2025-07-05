@@ -188,13 +188,14 @@ class SyncService with ChangeNotifier {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         await _handleSyncResults(response.data['results'] ?? []);
+        await dbHelper.addSyncLog('upload', 'success', '${pendingOps.length} işlem başarıyla gönderildi.');
       } else {
         final serverError = response.data['details'] ?? response.data['error'] ?? 'Bilinmeyen sunucu hatası';
         throw Exception("Sunucu toplu işlemi reddetti: $serverError");
       }
     } catch (e) {
-        await dbHelper.addSyncLog('upload', 'error', "Toplu yükleme hatası: $e");
-        rethrow;
+      await dbHelper.addSyncLog('upload', 'error', "Upload hatası: $e");
+      rethrow;
     }
   }
 
