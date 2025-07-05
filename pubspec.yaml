@@ -40,11 +40,13 @@ dev_dependencies:
   flutter_lints: ^3.0.2
   test: ^1.24.0
   sqflite_common_ffi: ^2.3.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
   assets:
     - assets/lang/
+    - assets/images/RHt.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware
@@ -71,3 +73,8 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/RHt.png"
