@@ -347,6 +347,8 @@
     "error_location_id_not_found": "Lokasyon ID bulunamadı.",
     "error_saving": "Kaydetme hatası: {error}",
     "all_items_transferred": "Bu siparişin tüm ürünleri zaten transfer edilmiş.",
+    "no_pallets_available": "Bu siparişte transfer edilecek palet bulunmuyor. Lütfen Koli modunu deneyin.",
+    "no_boxes_available": "Bu siparişte transfer edilecek ayrı ürün bulunmuyor. Lütfen Palet modunu deneyin.",
     "validator_required_field": "Bu alan zorunludur.",
     "validator_required": "Gerekli",
     "validator_invalid": "Geçersiz",

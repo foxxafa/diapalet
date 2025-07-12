@@ -53,6 +53,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   final _targetLocationController = TextEditingController();
   final _targetLocationFocusNode = FocusNode();
 
+  // GÜNCELLEME: Tüm konteynerler ve mod bazlı filtrelenmiş konteynerler
+  List<TransferableContainer> _allContainers = [];
   List<TransferableContainer> _availableContainers = [];
   TransferableContainer? _selectedContainer;
   final _scannedContainerIdController = TextEditingController();
@@ -61,6 +63,10 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   List<ProductItem> _productsInContainer = [];
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
+
+  // GÜNCELLEME: Mod durumları
+  bool _hasPalletContainers = false;
+  bool _hasBoxContainers = false;
 
   // Barcode service
   late final BarcodeIntentService _barcodeService;
@@ -95,6 +101,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   void _onFocusChange() {
+    if (!mounted) return;
     if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
       _scannedContainerIdController.selection = TextSelection(
         baseOffset: 0, 
@@ -127,11 +134,35 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         _availableTargetLocations = targetLocations;
       });
       
-      await _loadContainersForOrder();
+      await _loadAllContainers();
+      if (!mounted) return;
       
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        FocusScope.of(context).requestFocus(_containerFocusNode);
-      });
+      // GÜNCELLEME: Eğer hiç konteyner yoksa geri dön
+      if (_allContainers.isEmpty) {
+        if (mounted) {
+          _showErrorSnackBar('order_transfer.all_items_transferred'.tr());
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
+      
+      // GÜNCELLEME: Mod durumlarını kontrol et
+      _updateModeAvailability();
+      
+      // GÜNCELLEME: Mevcut olmayan modda başladıysak geçerli moda geç
+      if (!_isModeAvailable(_selectedMode)) {
+        _selectedMode = _hasPalletContainers ? AssignmentMode.pallet : AssignmentMode.box;
+      }
+      
+      _filterContainersByMode();
+      
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            FocusScope.of(context).requestFocus(_containerFocusNode);
+          }
+        });
+      }
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('order_transfer.error_loading_data'.tr(namedArgs: {'error': e.toString()}));
@@ -141,44 +172,45 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
   }
 
-  Future<void> _loadContainersForOrder() async {
-    setState(() {
-      _isLoadingContainerContents = true;
-      _resetContainerAndProducts();
-    });
-    
+  // GÜNCELLEME: Tüm konteynerleri yükle
+  Future<void> _loadAllContainers() async {
     try {
-      final allContainers = await _repo.getTransferableContainers(null, orderId: widget.order.id);
-      
-      // Mode'a göre filtreleme
-      List<TransferableContainer> filteredContainers;
-      if (_selectedMode == AssignmentMode.pallet) {
-        // Palet modu: Sadece palet ID'si olanlar (ID "PALETSIZ_" ile başlamayanlar)
-        filteredContainers = allContainers.where((container) => 
-          !container.id.startsWith('PALETSIZ_')
-        ).toList();
-      } else {
-        // Kutu modu: Sadece paletsiz olanlar (ID "PALETSIZ_" ile başlayanlar)
-        filteredContainers = allContainers.where((container) => 
-          container.id.startsWith('PALETSIZ_')
-        ).toList();
-      }
-      
-      _availableContainers = filteredContainers;
-      
-      if (_availableContainers.isEmpty) {
-        if (mounted) {
-          _showErrorSnackBar('order_transfer.all_items_transferred'.tr());
-          Navigator.of(context).pop(true);
-        }
-        return;
-      }
+      _allContainers = await _repo.getTransferableContainers(null, orderId: widget.order.id);
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('order_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
       }
-    } finally {
-      if (mounted) setState(() => _isLoadingContainerContents = false);
+      _allContainers = [];
+    }
+  }
+
+  // GÜNCELLEME: Mod durumlarını güncelle
+  void _updateModeAvailability() {
+    _hasPalletContainers = _allContainers.any((container) => !container.id.startsWith('PALETSIZ_'));
+    _hasBoxContainers = _allContainers.any((container) => container.id.startsWith('PALETSIZ_'));
+  }
+
+  // GÜNCELLEME: Modun mevcut olup olmadığını kontrol et
+  bool _isModeAvailable(AssignmentMode mode) {
+    switch (mode) {
+      case AssignmentMode.pallet:
+        return _hasPalletContainers;
+      case AssignmentMode.box:
+      case AssignmentMode.boxFromPallet:
+        return _hasBoxContainers;
+    }
+  }
+
+  // GÜNCELLEME: Konteynerleri moda göre filtrele
+  void _filterContainersByMode() {
+    if (_selectedMode == AssignmentMode.pallet) {
+      _availableContainers = _allContainers.where((container) => 
+        !container.id.startsWith('PALETSIZ_')
+      ).toList();
+    } else {
+      _availableContainers = _allContainers.where((container) => 
+        container.id.startsWith('PALETSIZ_')
+      ).toList();
     }
   }
 
@@ -279,6 +311,219 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
   }
 
+  void _resetContainerAndProducts() {
+    _scannedContainerIdController.clear();
+    _productsInContainer = [];
+    _selectedContainer = null;
+    _clearProductControllers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    return Scaffold(
+      appBar: SharedAppBar(title: 'order_transfer.title'.tr()),
+      resizeToAvoidBottomInset: true,
+      bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
+      body: SafeArea(
+        child: _isLoadingInitialData
+            ? const Center(child: CircularProgressIndicator())
+            : GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Form(
+            key: _formKey,
+            autovalidateMode: AutovalidateMode.disabled,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Sipariş Bilgi Kartı
+                  OrderInfoCard(order: widget.order),
+                  const SizedBox(height: _gap),
+                  
+                  // Mod Seçimi
+                  _buildModeSelector(),
+                  const SizedBox(height: _gap),
+                  
+                  // GÜNCELLEME: Mod durumu bilgisi
+                  if (!_isModeAvailable(_selectedMode))
+                    _buildModeUnavailableMessage(),
+                  
+                  // Palet Açma Seçeneği
+                  if (_selectedMode == AssignmentMode.pallet && _isModeAvailable(_selectedMode)) ...[
+                    _buildPalletOpeningSwitch(),
+                    const SizedBox(height: _gap),
+                  ],
+                  
+                  // Kaynak Lokasyon (Disabled - Her zaman Mal Kabul Alanı)
+                  TextFormField(
+                    controller: _sourceLocationController,
+                    enabled: false,
+                    decoration: _inputDecoration('order_transfer.label_source_location'.tr(), enabled: false),
+                  ),
+                  const SizedBox(height: _gap),
+                  
+                  // Konteyner Seçimi
+                  if (_isModeAvailable(_selectedMode))
+                    _buildHybridDropdownWithQr<TransferableContainer>(
+                      controller: _scannedContainerIdController,
+                      focusNode: _containerFocusNode,
+                      label: _selectedMode == AssignmentMode.pallet 
+                          ? 'order_transfer.label_pallet'.tr() 
+                          : 'order_transfer.label_product'.tr(),
+                      fieldIdentifier: 'container',
+                      items: _availableContainers,
+                      itemToString: (item) => item.displayName,
+                      onItemSelected: _handleContainerSelection,
+                      filterCondition: (item, query) {
+                        final lowerQuery = query.toLowerCase();
+                        return item.displayName.toLowerCase().contains(lowerQuery) ||
+                               item.id.toLowerCase().contains(lowerQuery);
+                      },
+                      validator: (val) => (val == null || val.isEmpty) 
+                          ? 'order_transfer.validator_required_field'.tr() 
+                          : null,
+                    ),
+                  const SizedBox(height: _gap),
+                  
+                  // Konteyner İçeriği
+                  if (_isLoadingContainerContents)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: _gap), 
+                      child: Center(child: CircularProgressIndicator())
+                    )
+                  else if (_productsInContainer.isNotEmpty)
+                    _buildProductsList(),
+                  const SizedBox(height: _gap),
+                  
+                  // Hedef Lokasyon Seçimi
+                  if (_isModeAvailable(_selectedMode))
+                    _buildHybridDropdownWithQr<String>(
+                      controller: _targetLocationController,
+                      focusNode: _targetLocationFocusNode,
+                      label: 'order_transfer.label_target_location'.tr(),
+                      fieldIdentifier: 'target',
+                      items: _availableTargetLocations.keys.toList(),
+                      itemToString: (item) => item,
+                      onItemSelected: _handleTargetSelection,
+                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                      validator: (val) => (val == null || val.isEmpty) 
+                          ? 'order_transfer.validator_required_field'.tr() 
+                          : null,
+                    ),
+                  const SizedBox(height: _gap),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeSelector() {
+    return Center(
+      child: SegmentedButton<AssignmentMode>(
+        segments: [
+          ButtonSegment(
+            value: AssignmentMode.pallet,
+            label: Text('order_transfer.mode_pallet'.tr()),
+            icon: const Icon(Icons.pallet),
+            enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
+          ),
+          ButtonSegment(
+            value: AssignmentMode.box,
+            label: Text('order_transfer.mode_box'.tr()),
+            icon: const Icon(Icons.inventory_2_outlined),
+            enabled: _hasBoxContainers, // GÜNCELLEME: Dinamik enable/disable
+          ),
+        ],
+        selected: {_selectedMode},
+        onSelectionChanged: (newSelection) {
+          final newMode = newSelection.first;
+          if (_isModeAvailable(newMode)) {
+            setState(() {
+              _selectedMode = newMode;
+              _isPalletOpening = false;
+              _resetContainerAndProducts();
+              _filterContainersByMode();
+            });
+          }
+        },
+        style: SegmentedButton.styleFrom(
+          visualDensity: VisualDensity.comfortable,
+          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+        ),
+      ),
+    );
+  }
+
+  // GÜNCELLEME: Mod mevcut değilse gösterilecek mesaj
+  Widget _buildModeUnavailableMessage() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: _gap),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer.withAlpha(50),
+        borderRadius: _borderRadius,
+        border: Border.all(color: Theme.of(context).colorScheme.error.withAlpha(100)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _selectedMode == AssignmentMode.pallet
+                  ? 'order_transfer.no_pallets_available'.tr()
+                  : 'order_transfer.no_boxes_available'.tr(),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPalletOpeningSwitch() {
+    return Material(
+      clipBehavior: Clip.antiAlias,
+      borderRadius: _borderRadius,
+      color: Theme.of(context).colorScheme.secondary.withAlpha(26),
+      child: SwitchListTile(
+        title: Text('order_transfer.label_break_pallet'.tr(), 
+                   style: const TextStyle(fontWeight: FontWeight.bold)),
+        value: _isPalletOpening,
+        onChanged: _productsInContainer.isNotEmpty ? (bool value) {
+          setState(() {
+            _isPalletOpening = value;
+            if (!value) {
+              for (var product in _productsInContainer) {
+                final initialQty = product.currentQuantity;
+                final initialQtyText = initialQty == initialQty.truncate()
+                    ? initialQty.toInt().toString()
+                    : initialQty.toString();
+                _productQuantityControllers[product.id]?.text = initialQtyText;
+              }
+            }
+          });
+        } : null,
+        secondary: const Icon(Icons.inventory_2_outlined),
+        activeThumbColor: Theme.of(context).colorScheme.primary,
+        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+      ),
+    );
+  }
+
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) {
@@ -359,176 +604,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  void _resetContainerAndProducts() {
-    _scannedContainerIdController.clear();
-    _productsInContainer = [];
-    _selectedContainer = null;
-    _clearProductControllers();
-    _availableContainers = [];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-
-    return Scaffold(
-      appBar: SharedAppBar(title: 'order_transfer.title'.tr()),
-      resizeToAvoidBottomInset: true,
-      bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
-      body: SafeArea(
-        child: _isLoadingInitialData
-            ? const Center(child: CircularProgressIndicator())
-            : GestureDetector(
-          onTap: () => FocusScope.of(context).unfocus(),
-          child: Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.disabled,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Sipariş Bilgi Kartı
-                  OrderInfoCard(order: widget.order),
-                  const SizedBox(height: _gap),
-                  
-                  // Mod Seçimi
-                  _buildModeSelector(),
-                  const SizedBox(height: _gap),
-                  
-                  // Palet Açma Seçeneği
-                  if (_selectedMode == AssignmentMode.pallet) ...[
-                    _buildPalletOpeningSwitch(),
-                    const SizedBox(height: _gap),
-                  ],
-                  
-                  // Kaynak Lokasyon (Disabled - Her zaman Mal Kabul Alanı)
-                  TextFormField(
-                    controller: _sourceLocationController,
-                    enabled: false,
-                    decoration: _inputDecoration('order_transfer.label_source_location'.tr(), enabled: false),
-                  ),
-                  const SizedBox(height: _gap),
-                  
-                  // Konteyner Seçimi
-                  _buildHybridDropdownWithQr<TransferableContainer>(
-                    controller: _scannedContainerIdController,
-                    focusNode: _containerFocusNode,
-                    label: _selectedMode == AssignmentMode.pallet 
-                        ? 'order_transfer.label_pallet'.tr() 
-                        : 'order_transfer.label_product'.tr(),
-                    fieldIdentifier: 'container',
-                    items: _availableContainers,
-                    itemToString: (item) => item.displayName,
-                    onItemSelected: _handleContainerSelection,
-                    filterCondition: (item, query) {
-                      final lowerQuery = query.toLowerCase();
-                      return item.displayName.toLowerCase().contains(lowerQuery) ||
-                             item.id.toLowerCase().contains(lowerQuery);
-                    },
-                    validator: (val) => (val == null || val.isEmpty) 
-                        ? 'order_transfer.validator_required_field'.tr() 
-                        : null,
-                  ),
-                  const SizedBox(height: _gap),
-                  
-                  // Konteyner İçeriği
-                  if (_isLoadingContainerContents)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: _gap), 
-                      child: Center(child: CircularProgressIndicator())
-                    )
-                  else if (_productsInContainer.isNotEmpty)
-                    _buildProductsList(),
-                  const SizedBox(height: _gap),
-                  
-                  // Hedef Lokasyon Seçimi
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _targetLocationController,
-                    focusNode: _targetLocationFocusNode,
-                    label: 'order_transfer.label_target_location'.tr(),
-                    fieldIdentifier: 'target',
-                    items: _availableTargetLocations.keys.toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleTargetSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) => (val == null || val.isEmpty) 
-                        ? 'order_transfer.validator_required_field'.tr() 
-                        : null,
-                  ),
-                  const SizedBox(height: _gap),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeSelector() {
-    return Center(
-      child: SegmentedButton<AssignmentMode>(
-        segments: [
-          ButtonSegment(
-            value: AssignmentMode.pallet,
-            label: Text('order_transfer.mode_pallet'.tr()),
-            icon: const Icon(Icons.pallet)
-          ),
-          ButtonSegment(
-            value: AssignmentMode.box,
-            label: Text('order_transfer.mode_box'.tr()),
-            icon: const Icon(Icons.inventory_2_outlined)
-          ),
-        ],
-        selected: {_selectedMode},
-        onSelectionChanged: (newSelection) {
-          setState(() {
-            _selectedMode = newSelection.first;
-            _isPalletOpening = false;
-            _resetContainerAndProducts();
-            _loadContainersForOrder();
-          });
-        },
-        style: SegmentedButton.styleFrom(
-          visualDensity: VisualDensity.comfortable,
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPalletOpeningSwitch() {
-    return Material(
-      clipBehavior: Clip.antiAlias,
-      borderRadius: _borderRadius,
-      color: Theme.of(context).colorScheme.secondary.withAlpha(26),
-      child: SwitchListTile(
-        title: Text('order_transfer.label_break_pallet'.tr(), 
-                   style: const TextStyle(fontWeight: FontWeight.bold)),
-        value: _isPalletOpening,
-        onChanged: _productsInContainer.isNotEmpty ? (bool value) {
-          setState(() {
-            _isPalletOpening = value;
-            if (!value) {
-              for (var product in _productsInContainer) {
-                final initialQty = product.currentQuantity;
-                final initialQtyText = initialQty == initialQty.truncate()
-                    ? initialQty.toInt().toString()
-                    : initialQty.toString();
-                _productQuantityControllers[product.id]?.text = initialQtyText;
-              }
-            }
-          });
-        } : null,
-        secondary: const Icon(Icons.inventory_2_outlined),
-        activeThumbColor: Theme.of(context).colorScheme.primary,
-        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-      ),
-    );
   }
 
   Widget _buildHybridDropdownWithQr<T>({
@@ -697,7 +772,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ElevatedButton.icon(
-        onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
+        onPressed: _isSaving || _productsInContainer.isEmpty || !_isModeAvailable(_selectedMode) ? null : _onConfirmSave,
         icon: _isSaving
             ? const SizedBox(
                 width: 20, 

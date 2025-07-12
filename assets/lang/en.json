@@ -856,6 +856,8 @@
     "error_location_id_not_found": "Location ID not found.",
     "error_saving": "Error saving: {error}",
     "all_items_transferred": "All items for this order have been transferred.",
+    "no_pallets_available": "No pallets are available for transfer in this order. Please try Box mode.",
+    "no_boxes_available": "No individual items are available for transfer in this order. Please try Pallet mode.",
     "validator_required_field": "This field is required.",
     "validator_required": "Required",
     "validator_invalid": "Invalid",
