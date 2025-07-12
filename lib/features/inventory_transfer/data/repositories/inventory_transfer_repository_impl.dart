@@ -265,7 +265,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
-    final maps = await db.query('satin_alma_siparis_fis', where: 'status = ?', whereArgs: [2]); // Kısmi Kabul
+    // GÜNCELLEME: Status 2 (Kısmi Kabul) ve 3 (Manuel Kapatıldı) olan siparişleri getir
+    // Status 3 olanlar manuel kapatılmış olsa bile hala 'receiving' statüsünde ürünleri olabilir
+    final maps = await db.query('satin_alma_siparis_fis', where: 'status IN (2, 3)', whereArgs: []); 
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
