@@ -444,8 +444,8 @@ class TerminalController extends Controller
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
-            $data['warehouses_shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
-            $this->castNumericValues($data['warehouses_shelfs'], ['id', 'warehouse_id', 'is_active']);
+            $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
+            $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
 
             $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
             $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
@@ -496,7 +496,7 @@ class TerminalController extends Controller
 
             // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
             // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
-            $locationIds = array_column($data['warehouses_shelfs'], 'id');
+            $locationIds = array_column($data['shelfs'], 'id');
             
             $stockQuery = (new Query())->from('inventory_stock');
             if (!empty($locationIds)) {

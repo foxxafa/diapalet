@@ -1,6 +1,5 @@
 // lib/core/services/pdf_service.dart
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -12,7 +11,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class PdfService {
   static const String _companyName = 'ROWHUB Warehouse Management';
@@ -89,15 +87,124 @@ class PdfService {
     return pdf.save();
   }
   
-  /// Generates a PDF report for pending operation
+    /// Generates a PDF report for pending operation
   static Future<Uint8List> generatePendingOperationPdf({
     required PendingOperation operation,
     Map<String, dynamic>? enrichedData,
   }) async {
-    final pdf = pw.Document();
-    
     final font = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
+    
+         // Operation type'a göre farklı PDF formatları
+     switch (operation.type) {
+       case PendingOperationType.goodsReceipt:
+         return _generateGoodsReceiptOperationPdf(operation, enrichedData, font, boldFont);
+       case PendingOperationType.inventoryTransfer:
+         return _generateInventoryTransferOperationPdf(operation, enrichedData, font, boldFont);
+       case PendingOperationType.forceCloseOrder:
+         return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
+     }
+   }
+  
+  /// Generates a detailed PDF for goods receipt operations
+  static Future<Uint8List> _generateGoodsReceiptOperationPdf(
+    PendingOperation operation,
+    Map<String, dynamic>? enrichedData,
+    pw.Font font,
+    pw.Font boldFont,
+  ) async {
+    
+    // Parse operation data
+    final data = enrichedData ?? {};
+    final header = data['header'] as Map<String, dynamic>? ?? {};
+    final items = data['items'] as List<dynamic>? ?? [];
+    
+         // Extract information
+     final poId = header['po_id'] ?? 'N/A';
+     final invoiceNumber = header['invoice_number'] ?? 'N/A';
+     final employeeName = header['employee_name'] ?? 'System User';
+     final operationDate = operation.createdAt;
+    
+         // Calculate totals
+     final totalItems = items.fold<int>(0, (sum, item) => sum + (item['quantity'] as num? ?? 0).toInt());
+     final uniqueProducts = items.map((item) => item['product_id'] ?? item['urun_id']).toSet().length;
+     
+     final pdf = pw.Document();
+     
+     pdf.addPage(
+       pw.MultiPage(
+         pageFormat: PdfPageFormat.a4,
+         margin: const pw.EdgeInsets.all(20),
+         build: (pw.Context context) {
+           return [
+             // Header
+             _buildHeader('Goods Receipt Report', boldFont),
+             
+             pw.SizedBox(height: 20),
+             
+             // Operation Info Section
+             _buildSpecializedOperationInfoSection(
+               operation: operation,
+               poId: poId,
+               invoiceNumber: invoiceNumber,
+               employeeName: employeeName,
+               date: operationDate,
+               font: font,
+               boldFont: boldFont,
+             ),
+             
+             pw.SizedBox(height: 20),
+             
+             // Summary Section
+             _buildSummarySection(
+               totalItems: totalItems,
+               uniqueProducts: uniqueProducts,
+               font: font,
+               boldFont: boldFont,
+             ),
+             
+             pw.SizedBox(height: 20),
+             
+             // Items Table
+             _buildGoodsReceiptItemsTable(items, font, boldFont),
+             
+             pw.SizedBox(height: 30),
+             
+             // Footer
+             _buildFooter(font),
+           ];
+         },
+       ),
+     );
+     
+     return pdf.save();
+  }
+  
+  /// Generates a detailed PDF for inventory transfer operations
+  static Future<Uint8List> _generateInventoryTransferOperationPdf(
+    PendingOperation operation,
+    Map<String, dynamic>? enrichedData,
+    pw.Font font,
+    pw.Font boldFont,
+  ) async {
+    final pdf = pw.Document();
+    
+    // Parse operation data
+    final data = enrichedData ?? {};
+    final header = data['header'] as Map<String, dynamic>? ?? {};
+    final items = data['items'] as List<dynamic>? ?? [];
+    
+         // Extract information
+     final sourceLocationName = header['source_location_name'] ?? 'Receiving Area';
+     final targetLocationName = header['target_location_name'] ?? 'Unknown Location';
+     final containerId = header['container_id']?.toString();
+     final operationType = header['operation_type'] ?? 'transfer';
+     final employeeName = header['employee_name'] ?? 'System User';
+     final poId = header['po_id'];
+    
+    // Calculate totals
+    final totalItems = items.fold<int>(0, (sum, item) => sum + (item['quantity_transferred'] as num? ?? item['quantity'] as num? ?? 0).toInt());
+    final uniqueProducts = items.map((item) => item['product_id'] ?? item['urun_id']).toSet().length;
     
     pdf.addPage(
       pw.MultiPage(
@@ -106,18 +213,37 @@ class PdfService {
         build: (pw.Context context) {
           return [
             // Header
-            _buildHeader('Operation Details Report', boldFont),
+            _buildHeader('Inventory Transfer Report', boldFont),
             
             pw.SizedBox(height: 20),
             
-            // Operation Info
-            _buildOperationInfoSection(operation, font, boldFont),
+                         // Transfer Info Section
+             _buildTransferInfoSection(
+               operation: operation,
+               sourceLocation: sourceLocationName,
+               targetLocation: targetLocationName,
+               containerId: containerId,
+               operationType: operationType,
+               employeeName: employeeName,
+               poId: poId,
+               font: font,
+               boldFont: boldFont,
+             ),
             
             pw.SizedBox(height: 20),
             
-            // Operation Data
-            if (enrichedData != null)
-              _buildOperationDataSection(enrichedData, operation.type, font, boldFont),
+            // Summary Section
+            _buildSummarySection(
+              totalItems: totalItems,
+              uniqueProducts: uniqueProducts,
+              font: font,
+              boldFont: boldFont,
+            ),
+            
+            pw.SizedBox(height: 20),
+            
+            // Items Table
+            _buildTransferItemsTable(items, font, boldFont),
             
             pw.SizedBox(height: 30),
             
@@ -130,6 +256,60 @@ class PdfService {
     
     return pdf.save();
   }
+  
+  /// Generates a detailed PDF for force close order operations
+  static Future<Uint8List> _generateForceCloseOrderOperationPdf(
+    PendingOperation operation,
+    Map<String, dynamic>? enrichedData,
+    pw.Font font,
+    pw.Font boldFont,
+  ) async {
+    final pdf = pw.Document();
+    
+         // Parse operation data
+     final data = enrichedData ?? {};
+     final poId = data['po_id'] ?? 'N/A';
+     final employeeName = data['employee_name'] ?? 'System User';
+    
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
+        build: (pw.Context context) {
+          return [
+            // Header
+            _buildHeader('Force Close Order Report', boldFont),
+            
+            pw.SizedBox(height: 20),
+            
+                                      // Order Info Section
+             _buildForceCloseOrderInfoSection(
+               operation: operation,
+               poId: poId,
+               employeeName: employeeName,
+               font: font,
+               boldFont: boldFont,
+             ),
+             
+             pw.SizedBox(height: 20),
+             
+             // Order Details if available
+             if (data['order_details'] != null)
+               _buildOrderDetailsSection(data['order_details'], font, boldFont),
+             
+             pw.SizedBox(height: 30),
+            
+            // Footer
+            _buildFooter(font),
+          ];
+        },
+      ),
+    );
+    
+    return pdf.save();
+  }
+  
+
   
   /// Shows a share dialog with options for WhatsApp, Telegram, etc.
   static Future<void> showShareDialog(
@@ -301,55 +481,7 @@ class PdfService {
     );
   }
   
-  static pw.Widget _buildOperationInfoSection(PendingOperation operation, pw.Font font, pw.Font boldFont) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
-          _buildInfoRow('Created at', DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt), font, boldFont),
-          _buildInfoRow('Status', operation.status, font, boldFont),
-          if (operation.errorMessage != null && operation.errorMessage!.isNotEmpty)
-            _buildInfoRow('Error Details', operation.errorMessage!, font, boldFont),
-        ],
-      ),
-    );
-  }
-  
-  static pw.Widget _buildOperationDataSection(
-    Map<String, dynamic> data, 
-    PendingOperationType type, 
-    pw.Font font, 
-    pw.Font boldFont,
-  ) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Operation Data',
-          style: pw.TextStyle(font: boldFont, fontSize: 14),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(12),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.grey50,
-            border: pw.Border.all(color: PdfColors.grey300),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-          ),
-          child: pw.Text(
-            _formatOperationData(data, type),
-            style: pw.TextStyle(font: font, fontSize: 10),
-          ),
-        ),
-      ],
-    );
-  }
+
   
   static pw.Widget _buildInfoRow(String label, String value, pw.Font font, pw.Font boldFont) {
     return pw.Padding(
@@ -406,13 +538,264 @@ class PdfService {
     );
   }
   
-  static String _formatOperationData(Map<String, dynamic> data, PendingOperationType type) {
-    // Simple JSON formatting for operation data
-    final buffer = StringBuffer();
-    data.forEach((key, value) {
-      buffer.writeln('$key: $value');
-    });
-    return buffer.toString();
+
+
+  // New specialized info sections
+  
+  static pw.Widget _buildSpecializedOperationInfoSection({
+    required PendingOperation operation,
+    required String poId,
+    required String invoiceNumber,
+    required String employeeName,
+    required DateTime date,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Operation Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
+          _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
+          _buildInfoRow('Employee', employeeName, font, boldFont),
+          _buildInfoRow('Purchase Order', poId, font, boldFont),
+          if (invoiceNumber != 'N/A' && invoiceNumber != poId)
+            _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
+          _buildInfoRow('Status', operation.status, font, boldFont),
+        ],
+      ),
+    );
+  }
+  
+  static pw.Widget _buildTransferInfoSection({
+    required PendingOperation operation,
+    required String sourceLocation,
+    required String targetLocation,
+    String? containerId,
+    required String operationType,
+    required String employeeName,
+    String? poId,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Transfer Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+                     _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
+           _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt), font, boldFont),
+           _buildInfoRow('Employee', employeeName, font, boldFont),
+           _buildInfoRow('From Location', sourceLocation, font, boldFont),
+           _buildInfoRow('To Location', targetLocation, font, boldFont),
+           if (containerId != null)
+             _buildInfoRow('Container ID', containerId, font, boldFont),
+           if (poId != null)
+             _buildInfoRow('Purchase Order', poId, font, boldFont),
+           _buildInfoRow('Transfer Type', operationType, font, boldFont),
+           _buildInfoRow('Status', operation.status, font, boldFont),
+        ],
+      ),
+    );
+  }
+  
+  static pw.Widget _buildForceCloseOrderInfoSection({
+    required PendingOperation operation,
+    required String poId,
+    required String employeeName,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Force Close Order Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+                     _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
+           _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt), font, boldFont),
+           _buildInfoRow('Employee', employeeName, font, boldFont),
+           _buildInfoRow('Purchase Order', poId, font, boldFont),
+           _buildInfoRow('Status', operation.status, font, boldFont),
+        ],
+      ),
+    );
+  }
+  
+  static pw.Widget _buildOrderDetailsSection(Map<String, dynamic> orderDetails, pw.Font font, pw.Font boldFont) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.grey50,
+        border: pw.Border.all(color: PdfColors.grey300),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Order Details',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          if (orderDetails['tarih'] != null)
+            _buildInfoRow('Order Date', orderDetails['tarih'].toString(), font, boldFont),
+          if (orderDetails['invoice'] != null)
+            _buildInfoRow('Invoice', orderDetails['invoice'].toString(), font, boldFont),
+          if (orderDetails['notlar'] != null && orderDetails['notlar'].toString().isNotEmpty)
+            _buildInfoRow('Notes', orderDetails['notlar'].toString(), font, boldFont),
+          _buildInfoRow('Status', _getOrderStatusText(orderDetails['status']), font, boldFont),
+        ],
+      ),
+    );
+  }
+  
+  static String _getOrderStatusText(dynamic status) {
+    switch (status) {
+      case 0:
+        return 'New';
+      case 1:
+        return 'In Progress';
+      case 2:
+        return 'Partially Received';
+      case 3:
+        return 'Manually Closed';
+      case 4:
+        return 'Completed';
+      case 5:
+        return 'Cancelled';
+      default:
+        return 'Unknown';
+    }
+  }
+  
+  // New specialized item tables
+  
+  static pw.Widget _buildGoodsReceiptItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Received Items',
+          style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1),
+            1: const pw.FlexColumnWidth(3),
+            2: const pw.FlexColumnWidth(1),
+            3: const pw.FlexColumnWidth(2),
+          },
+          children: [
+            // Header
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableCell('Code', boldFont, isHeader: true),
+                _buildTableCell('Product Name', boldFont, isHeader: true),
+                _buildTableCell('Quantity', boldFont, isHeader: true),
+                _buildTableCell('Container', boldFont, isHeader: true),
+              ],
+            ),
+            // Data rows
+            ...items.map((item) {
+              final productName = item['product_name'] ?? 'Unknown Product';
+              final productCode = item['product_code'] ?? 'N/A';
+              final quantity = item['quantity']?.toString() ?? '0';
+              final container = item['pallet_barcode'] ?? 'Box Mode';
+              
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(productCode, font),
+                  _buildTableCell(productName, font),
+                  _buildTableCell(quantity, font),
+                  _buildTableCell(container, font),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+  
+  static pw.Widget _buildTransferItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Transferred Items',
+          style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1),
+            1: const pw.FlexColumnWidth(3),
+            2: const pw.FlexColumnWidth(1),
+            3: const pw.FlexColumnWidth(2),
+          },
+          children: [
+            // Header
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableCell('Code', boldFont, isHeader: true),
+                _buildTableCell('Product Name', boldFont, isHeader: true),
+                _buildTableCell('Quantity', boldFont, isHeader: true),
+                _buildTableCell('Container', boldFont, isHeader: true),
+              ],
+            ),
+            // Data rows
+            ...items.map((item) {
+              final productName = item['product_name'] ?? 'Unknown Product';
+              final productCode = item['product_code'] ?? 'N/A';
+              final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
+              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box Mode';
+              
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(productCode, font),
+                  _buildTableCell(productName, font),
+                  _buildTableCell(quantity, font),
+                  _buildTableCell(container, font),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
   }
 }
 

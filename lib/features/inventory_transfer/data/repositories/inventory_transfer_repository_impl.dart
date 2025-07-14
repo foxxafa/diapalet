@@ -25,7 +25,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<Map<String, int>> getSourceLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
+    final maps = await db.query('shelfs', where: 'is_active = 1');
     final result = <String, int>{'000': 0}; // "Mal Kabul Alanı"
     for (var map in maps) {
       result[map['name'] as String] = map['id'] as int;
@@ -36,7 +36,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<Map<String, int>> getTargetLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
+    final maps = await db.query('shelfs', where: 'is_active = 1');
     final result = <String, int>{};
     for (var map in maps) {
       result[map['name'] as String] = map['id'] as int;
@@ -352,7 +352,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
     
     final maps = await db.query(
-      'warehouses_shelfs',
+      'shelfs',
       where: 'LOWER(code) = ? AND is_active = 1',
       whereArgs: [cleanCode],
       limit: 1,

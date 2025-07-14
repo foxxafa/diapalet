@@ -298,7 +298,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('warehouses_shelfs', where: 'is_active = 1');
+    final maps = await db.query('shelfs', where: 'is_active = 1');
     return maps.map((map) => LocationInfo.fromMap(map)).toList();
   }
 }

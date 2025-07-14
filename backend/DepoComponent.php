@@ -19,7 +19,7 @@ class DepoComponent extends Component
         try {
             // 1. Önce tabloları güvenli bir şekilde boşalt
             $db->createCommand('SET FOREIGN_KEY_CHECKS=0')->execute();
-            $db->createCommand()->truncateTable('warehouses_shelfs')->execute();
+            $db->createCommand()->truncateTable('shelfs')->execute();
             $db->createCommand()->truncateTable('warehouses')->execute();
             $db->createCommand('SET FOREIGN_KEY_CHECKS=1')->execute();
 
@@ -84,7 +84,7 @@ class DepoComponent extends Component
 
     /**
      * Dia'dan 'scf_rafyeri_listele' servisini kullanarak tüm rafları çeker.
-     * Daha önce kaydedilen depolarla eşleştirerek 'warehouses_shelfs' tablosuna kaydeder.
+     * Daha önce kaydedilen depolarla eşleştirerek 'shelfs' tablosuna kaydeder.
      */
     private static function fetchAndSaveShelfs() {
         $session_id = Dia::getsessionid();
@@ -113,7 +113,7 @@ class DepoComponent extends Component
             $dia_warehouse_key = $shelf['_key_sis_depo'];
             if (isset($lookup[$dia_warehouse_key])) {
                 $local_warehouse_id = $lookup[$dia_warehouse_key];
-                $db->createCommand()->insert('warehouses_shelfs', [
+                $db->createCommand()->insert('shelfs', [
                     'warehouse_id' => $local_warehouse_id,
                     'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
                     'code' => $shelf['kod'] ?? 'KODSUZ',

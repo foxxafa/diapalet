@@ -10,7 +10,6 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
   const PendingOperationsScreen({super.key});
@@ -381,13 +380,32 @@ class _OperationCard extends StatelessWidget {
           final header = data['header'] as Map<String, dynamic>?;
           final items = data['items'] as List?;
           
-          if (header?['siparis_id'] != null) {
-            final poId = await db.getPoIdBySiparisId(header!['siparis_id']);
-            if (poId != null) {
-              enrichedData['header']['po_id'] = poId;
+          if (header != null) {
+            // PO bilgilerini al
+            if (header['siparis_id'] != null) {
+              final poId = await db.getPoIdBySiparisId(header['siparis_id']);
+              if (poId != null) {
+                enrichedData['header']['po_id'] = poId;
+              }
+              
+              // Sipariş detaylarını al
+              final orderSummary = await db.getOrderSummary(header['siparis_id']);
+              if (orderSummary != null) {
+                enrichedData['header']['order_details'] = orderSummary['order'];
+              }
+            }
+            
+            // Employee bilgilerini al
+            if (header['employee_id'] != null) {
+              final employee = await db.getEmployeeById(header['employee_id']);
+              if (employee != null) {
+                enrichedData['header']['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
+                enrichedData['header']['employee_username'] = employee['username'];
+              }
             }
           }
           
+          // Ürün bilgilerini zenginleştir
           if (items != null) {
             for (int i = 0; i < items.length; i++) {
               final item = items[i] as Map<String, dynamic>;
@@ -396,6 +414,7 @@ class _OperationCard extends StatelessWidget {
                 if (product != null) {
                   enrichedData['items'][i]['product_name'] = product['UrunAdi'];
                   enrichedData['items'][i]['product_code'] = product['StokKodu'];
+                  enrichedData['items'][i]['product_barcode'] = product['Barcode1'];
                 }
               }
             }
@@ -406,20 +425,52 @@ class _OperationCard extends StatelessWidget {
           final header = data['header'] as Map<String, dynamic>?;
           final items = data['items'] as List?;
           
-          if (header?['source_location_id'] != null) {
-            final sourceLoc = await db.getLocationById(header!['source_location_id']);
-            if (sourceLoc != null) {
-              enrichedData['header']['source_location_name'] = sourceLoc['name'];
+          if (header != null) {
+            // Lokasyon bilgilerini al
+            if (header['source_location_id'] != null) {
+              final sourceLoc = await db.getLocationById(header['source_location_id']);
+              if (sourceLoc != null) {
+                enrichedData['header']['source_location_name'] = sourceLoc['name'];
+                enrichedData['header']['source_location_code'] = sourceLoc['code'];
+              }
+            } else {
+              // Kaynak lokasyon NULL ise mal kabul alanı
+              enrichedData['header']['source_location_name'] = 'Goods Receiving Area';
+              enrichedData['header']['source_location_code'] = 'GRA';
+            }
+            
+            if (header['target_location_id'] != null) {
+              final targetLoc = await db.getLocationById(header['target_location_id']);
+              if (targetLoc != null) {
+                enrichedData['header']['target_location_name'] = targetLoc['name'];
+                enrichedData['header']['target_location_code'] = targetLoc['code'];
+              }
+            }
+            
+            // Employee bilgilerini al
+            if (header['employee_id'] != null) {
+              final employee = await db.getEmployeeById(header['employee_id']);
+              if (employee != null) {
+                enrichedData['header']['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
+                enrichedData['header']['employee_username'] = employee['username'];
+              }
+            }
+            
+            // Sipariş bilgilerini al (rafa yerleştirme işlemi ise)
+            if (header['siparis_id'] != null) {
+              final poId = await db.getPoIdBySiparisId(header['siparis_id']);
+              if (poId != null) {
+                enrichedData['header']['po_id'] = poId;
+              }
+              
+              final orderSummary = await db.getOrderSummary(header['siparis_id']);
+              if (orderSummary != null) {
+                enrichedData['header']['order_details'] = orderSummary['order'];
+              }
             }
           }
           
-          if (header?['target_location_id'] != null) {
-            final targetLoc = await db.getLocationById(header!['target_location_id']);
-            if (targetLoc != null) {
-              enrichedData['header']['target_location_name'] = targetLoc['name'];
-            }
-          }
-          
+          // Ürün bilgilerini zenginleştir
           if (items != null) {
             for (int i = 0; i < items.length; i++) {
               final item = items[i] as Map<String, dynamic>;
@@ -429,6 +480,7 @@ class _OperationCard extends StatelessWidget {
                 if (product != null) {
                   enrichedData['items'][i]['product_name'] = product['UrunAdi'];
                   enrichedData['items'][i]['product_code'] = product['StokKodu'];
+                  enrichedData['items'][i]['product_barcode'] = product['Barcode1'];
                 }
               }
             }
@@ -440,6 +492,22 @@ class _OperationCard extends StatelessWidget {
             final poId = await db.getPoIdBySiparisId(data['siparis_id']);
             if (poId != null) {
               enrichedData['po_id'] = poId;
+            }
+            
+            // Sipariş detaylarını al
+            final orderSummary = await db.getOrderSummary(data['siparis_id']);
+            if (orderSummary != null) {
+              enrichedData['order_details'] = orderSummary['order'];
+              enrichedData['order_lines'] = orderSummary['lines'];
+            }
+          }
+          
+          // Employee bilgilerini al (varsa)
+          if (data['employee_id'] != null) {
+            final employee = await db.getEmployeeById(data['employee_id']);
+            if (employee != null) {
+              enrichedData['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
+              enrichedData['employee_username'] = employee['username'];
             }
           }
           break;

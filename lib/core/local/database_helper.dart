@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: Şema hataları nedeniyle versiyon artırıldı ve veritabanı yeniden oluşturulacak.
-  static const _databaseVersion = 28;
+  // ANA GÜNCELLEME: Tablo adı tutarlılığı için versiyon artırıldı ve veritabanı yeniden oluşturulacak.
+  static const _databaseVersion = 29;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -84,16 +84,6 @@ class DatabaseHelper {
           warehouse_id INTEGER,
           name TEXT,
           code TEXT,
-          is_active INTEGER DEFAULT 1
-        )
-      ''');
-
-      batch.execute('''
-        CREATE TABLE IF NOT EXISTS warehouses_shelfs (
-          id INTEGER PRIMARY KEY,
-          warehouse_id INTEGER NOT NULL,
-          name TEXT NOT NULL,
-          code TEXT NOT NULL,
           is_active INTEGER DEFAULT 1
         )
       ''');
@@ -214,8 +204,6 @@ class DatabaseHelper {
 
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_warehouses_shelfs_warehouse ON warehouses_shelfs(warehouse_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_warehouses_shelfs_code ON warehouses_shelfs(code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON satin_alma_siparis_fis_satir(siparis_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON satin_alma_siparis_fis_satir(urun_id)');
 
@@ -242,7 +230,7 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     final tables = [
-      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'warehouses_shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status'
@@ -280,7 +268,7 @@ class DatabaseHelper {
           }
         } else {
           // Diğer tüm tablolar için tam yenileme yap
-          final fullRefreshTables = ['employees', 'urunler', 'warehouses', 'warehouses_shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
+          final fullRefreshTables = ['employees', 'urunler', 'warehouses', 'shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
           if(fullRefreshTables.contains(table)) {
             await txn.delete(table);
           }
@@ -335,12 +323,210 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getLocationById(int locationId) async {
     final db = await database;
     final result = await db.query(
-      'warehouses_shelfs',
+      'shelfs',
       where: 'id = ?',
       whereArgs: [locationId],
       limit: 1,
     );
     return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<Map<String, dynamic>?> getEmployeeById(int employeeId) async {
+    final db = await database;
+    final result = await db.query(
+      'employees',
+      where: 'id = ?',
+      whereArgs: [employeeId],
+      limit: 1,
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<Map<String, dynamic>?> getWarehouseById(int warehouseId) async {
+    final db = await database;
+    final result = await db.query(
+      'warehouses',
+      where: 'id = ?',
+      whereArgs: [warehouseId],
+      limit: 1,
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  // Sipariş detayları için yeni fonksiyonlar
+  Future<Map<String, dynamic>?> getOrderSummary(int siparisId) async {
+    final db = await database;
+    
+    // Siparişin temel bilgileri
+    final order = await db.query(
+      'satin_alma_siparis_fis',
+      where: 'id = ?',
+      whereArgs: [siparisId],
+      limit: 1,
+    );
+    
+    if (order.isEmpty) return null;
+    
+    // Sipariş satırlarının detayları
+    final sql = '''
+      SELECT 
+        sol.id,
+        sol.urun_id,
+        sol.miktar as ordered_quantity,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode,
+        COALESCE(received.total_received, 0) as received_quantity,
+        COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
+      FROM satin_alma_siparis_fis_satir sol
+      LEFT JOIN urunler u ON u.id = sol.urun_id
+      LEFT JOIN (
+        SELECT 
+          gri.urun_id,
+          SUM(gri.quantity_received) as total_received
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE gr.siparis_id = ?
+        GROUP BY gri.urun_id
+      ) received ON received.urun_id = sol.urun_id
+      LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
+      WHERE sol.siparis_id = ?
+    ''';
+    
+    final lines = await db.rawQuery(sql, [siparisId, siparisId]);
+    
+    return {
+      'order': order.first,
+      'lines': lines,
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> getReceiptItemsWithDetails(int receiptId) async {
+    final db = await database;
+    
+    final sql = '''
+      SELECT 
+        gri.*,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode
+      FROM goods_receipt_items gri
+      LEFT JOIN urunler u ON u.id = gri.urun_id
+      WHERE gri.receipt_id = ?
+      ORDER BY gri.id
+    ''';
+    
+    return await db.rawQuery(sql, [receiptId]);
+  }
+
+  Future<Map<String, dynamic>?> getInventoryTransferDetails(int transferId) async {
+    final db = await database;
+    
+    final sql = '''
+      SELECT 
+        it.*,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode,
+        source_loc.name as source_location_name,
+        source_loc.code as source_location_code,
+        target_loc.name as target_location_name,
+        target_loc.code as target_location_code,
+        emp.first_name || ' ' || emp.last_name as employee_name,
+        emp.username as employee_username
+      FROM inventory_transfers it
+      LEFT JOIN urunler u ON u.id = it.urun_id
+      LEFT JOIN shelfs source_loc ON source_loc.id = it.from_location_id
+      LEFT JOIN shelfs target_loc ON target_loc.id = it.to_location_id
+      LEFT JOIN employees emp ON emp.id = it.employee_id
+      WHERE it.id = ?
+    ''';
+    
+    final result = await db.rawQuery(sql, [transferId]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  Future<List<Map<String, dynamic>>> getInventoryStockForOrder(int siparisId) async {
+    final db = await database;
+    
+    final sql = '''
+      SELECT 
+        ints.*,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode,
+        loc.name as location_name,
+        loc.code as location_code
+      FROM inventory_stock ints
+      LEFT JOIN urunler u ON u.id = ints.urun_id
+      LEFT JOIN shelfs loc ON loc.id = ints.location_id
+      WHERE ints.siparis_id = ? AND ints.stock_status = 'receiving'
+      ORDER BY ints.urun_id
+    ''';
+    
+    return await db.rawQuery(sql, [siparisId]);
+  }
+
+  // Detaylı goods receipt bilgilerini almak için yeni fonksiyon
+  Future<Map<String, dynamic>?> getGoodsReceiptDetails(int receiptId) async {
+    final db = await database;
+    
+    final sql = '''
+      SELECT 
+        gr.*,
+        emp.first_name || ' ' || emp.last_name as employee_name,
+        emp.username as employee_username,
+        po.po_id,
+        po.tarih as order_date,
+        po.notlar as order_notes
+      FROM goods_receipts gr
+      LEFT JOIN employees emp ON emp.id = gr.employee_id
+      LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
+      WHERE gr.id = ?
+    ''';
+    
+    final result = await db.rawQuery(sql, [receiptId]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
+  Future<Map<String, dynamic>?> getSystemInfo(int warehouseId) async {
+    final db = await database;
+    
+    final warehouse = await getWarehouseById(warehouseId);
+    if (warehouse == null) return null;
+    
+    final employeeCount = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM employees WHERE warehouse_id = ? AND is_active = 1',
+      [warehouseId]
+    );
+    
+    final locationCount = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM shelfs WHERE warehouse_id = ? AND is_active = 1',
+      [warehouseId]
+    );
+    
+    return {
+      'warehouse': warehouse,
+      'employee_count': employeeCount.first['count'],
+      'location_count': locationCount.first['count'],
+    };
+  }
+
+  // Pending operation'ların detaylarını almak için
+  Future<Map<String, dynamic>?> getPendingOperationDetails(String uniqueId) async {
+    final db = await database;
+    
+    final operation = await db.query(
+      'pending_operation',
+      where: 'unique_id = ?',
+      whereArgs: [uniqueId],
+      limit: 1,
+    );
+    
+    if (operation.isEmpty) return null;
+    
+    return operation.first;
   }
 
   // --- BEKLEYEN İŞLEMLER (PENDING OPERATIONS) FONKSİYONLARI ---
