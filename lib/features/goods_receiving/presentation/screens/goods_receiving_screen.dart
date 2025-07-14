@@ -744,7 +744,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
             Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
             Text(
               'goods_receiving_screen.total_accepted_items'.tr(namedArgs: {'count': totalAcceptedItems.toString()}),
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
           ],
         ),

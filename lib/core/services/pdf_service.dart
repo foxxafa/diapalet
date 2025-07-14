@@ -1,5 +1,6 @@
 // lib/core/services/pdf_service.dart
 import 'dart:io';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -15,7 +16,7 @@ import 'package:share_plus/share_plus.dart';
 class PdfService {
   static const String _companyName = 'ROWHUB Warehouse Management';
   
-  /// Generates a PDF report for goods receipt operation
+  /// Generates a comprehensive PDF report for goods receipt operation
   static Future<Uint8List> generateGoodsReceiptPdf({
     required List<ReceiptItemDraft> items,
     required bool isOrderBased,
@@ -23,6 +24,9 @@ class PdfService {
     String? invoiceNumber,
     required String employeeName,
     required DateTime date,
+    Map<String, dynamic>? employeeInfo,
+    Map<String, dynamic>? orderInfo,
+    Map<String, dynamic>? warehouseInfo,
   }) async {
     final pdf = pw.Document();
     
@@ -31,8 +35,8 @@ class PdfService {
     final boldFont = await PdfGoogleFonts.robotoBold();
     
     final title = isOrderBased 
-        ? 'Order-based Goods Receipt'
-        : 'Free Goods Receipt';
+        ? 'Order-based Goods Receipt Report'
+        : 'Free Goods Receipt Report';
     
     // Calculate totals
     final totalItems = items.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
@@ -49,13 +53,34 @@ class PdfService {
             
             pw.SizedBox(height: 20),
             
-            // Info Section
-            _buildInfoSection(
-              isOrderBased: isOrderBased,
-              order: order,
-              invoiceNumber: invoiceNumber,
+            // Employee and Warehouse Info Section
+            _buildEmployeeWarehouseInfoSection(
               employeeName: employeeName,
+              employeeInfo: employeeInfo,
+              warehouseInfo: warehouseInfo,
+              font: font,
+              boldFont: boldFont,
+            ),
+            
+            pw.SizedBox(height: 15),
+            
+            // Order Info Section (if order-based)
+            if (isOrderBased && (order != null || orderInfo != null))
+              _buildOrderInfoSection(
+                order: order,
+                orderInfo: orderInfo,
+                invoiceNumber: invoiceNumber,
+                font: font,
+                boldFont: boldFont,
+              ),
+            
+            if (isOrderBased) pw.SizedBox(height: 15),
+            
+            // Receipt Info Section
+            _buildReceiptInfoSection(
               date: date,
+              invoiceNumber: invoiceNumber,
+              isOrderBased: isOrderBased,
               font: font,
               boldFont: boldFont,
             ),
@@ -73,7 +98,7 @@ class PdfService {
             pw.SizedBox(height: 20),
             
             // Items Table
-            _buildItemsTable(items, font, boldFont),
+            _buildDetailedItemsTable(items, font, boldFont),
             
             pw.SizedBox(height: 30),
             
@@ -86,25 +111,28 @@ class PdfService {
     
     return pdf.save();
   }
-  
-    /// Generates a PDF report for pending operation
+
+  /// Generates a PDF report from pending operation
   static Future<Uint8List> generatePendingOperationPdf({
     required PendingOperation operation,
-    Map<String, dynamic>? enrichedData,
   }) async {
     final font = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
     
-         // Operation type'a göre farklı PDF formatları
-     switch (operation.type) {
-       case PendingOperationType.goodsReceipt:
-         return _generateGoodsReceiptOperationPdf(operation, enrichedData, font, boldFont);
-       case PendingOperationType.inventoryTransfer:
-         return _generateInventoryTransferOperationPdf(operation, enrichedData, font, boldFont);
-       case PendingOperationType.forceCloseOrder:
-         return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
-     }
-   }
+    // Get enriched data from database
+    final dbHelper = DatabaseHelper.instance;
+    final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data);
+    
+    // Operation type'a göre farklı PDF formatları
+    switch (operation.type) {
+      case PendingOperationType.goodsReceipt:
+        return _generateGoodsReceiptOperationPdf(operation, enrichedData, font, boldFont);
+      case PendingOperationType.inventoryTransfer:
+        return _generateInventoryTransferOperationPdf(operation, enrichedData, font, boldFont);
+      case PendingOperationType.forceCloseOrder:
+        return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
+    }
+  }
   
   /// Generates a detailed PDF for goods receipt operations
   static Future<Uint8List> _generateGoodsReceiptOperationPdf(
@@ -311,9 +339,48 @@ class PdfService {
   
 
   
-  /// Shows a share dialog with options for WhatsApp, Telegram, etc.
+  /// Shows PDF preview first, then allows user to save or share
+  static Future<void> showPdfPreviewDialog(
+    BuildContext context, 
+    Uint8List pdfData, 
+    String fileName,
+  ) async {
+    // First show preview
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('pdf_report.preview.title'.tr()),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: PdfPreview(
+            build: (format) => pdfData,
+            allowPrinting: false,
+            allowSharing: false,
+            canChangePageFormat: false,
+            canDebug: false,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('common_labels.close'.tr()),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              showShareDialog(context, pdfData, fileName);
+            },
+            child: Text('pdf_report.actions.save_share'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Shows a share dialog with options for saving and sharing
   static Future<void> showShareDialog(
-    context, 
+    BuildContext context, 
     Uint8List pdfData, 
     String fileName,
   ) async {
@@ -378,35 +445,7 @@ class PdfService {
     );
   }
   
-  static pw.Widget _buildInfoSection({
-    required bool isOrderBased,
-    PurchaseOrder? order,
-    String? invoiceNumber,
-    required String employeeName,
-    required DateTime date,
-    required pw.Font font,
-    required pw.Font boldFont,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _buildInfoRow('Employee', employeeName, font, boldFont),
-          _buildInfoRow('Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
-          if (isOrderBased && order != null) ...[
-            _buildInfoRow('Purchase Order', order.poId ?? 'N/A', font, boldFont),
-            if (invoiceNumber != null && invoiceNumber.isNotEmpty)
-              _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
-          ],
-        ],
-      ),
-    );
-  }
+  // This function has been replaced by more detailed sections above
   
   static pw.Widget _buildSummarySection({
     required int totalItems,
@@ -436,50 +475,7 @@ class PdfService {
     );
   }
   
-  static pw.Widget _buildItemsTable(List<ReceiptItemDraft> items, pw.Font font, pw.Font boldFont) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Items List',
-          style: pw.TextStyle(font: boldFont, fontSize: 14),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey400),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(3),
-            1: const pw.FlexColumnWidth(1),
-            2: const pw.FlexColumnWidth(2),
-          },
-          children: [
-            // Header
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-              children: [
-                _buildTableCell('Product', boldFont, isHeader: true),
-                _buildTableCell('Quantity', boldFont, isHeader: true),
-                _buildTableCell('Type', boldFont, isHeader: true),
-              ],
-            ),
-            // Data rows
-            ...items.map((item) => pw.TableRow(
-              children: [
-                _buildTableCell('${item.product.name} (${item.product.stockCode})', font),
-                _buildTableCell(item.quantity.toStringAsFixed(0), font),
-                _buildTableCell(
-                  item.palletBarcode != null 
-                      ? 'Pallet: ${item.palletBarcode}'
-                      : 'Box Mode',
-                  font,
-                ),
-              ],
-            )),
-          ],
-        ),
-      ],
-    );
-  }
+  // This function has been replaced by _buildDetailedItemsTable above
   
 
   
@@ -797,6 +793,167 @@ class PdfService {
       ],
     );
   }
+
+  static pw.Widget _buildEmployeeWarehouseInfoSection({
+    required String employeeName,
+    Map<String, dynamic>? employeeInfo,
+    Map<String, dynamic>? warehouseInfo,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Employee & Warehouse Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          _buildInfoRow('Employee Name', employeeName, font, boldFont),
+          if (employeeInfo != null) ...[
+            _buildInfoRow('Employee ID', employeeInfo['id']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Username', employeeInfo['username']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Role', employeeInfo['role']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Warehouse Name', employeeInfo['warehouse_name']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Warehouse Code', employeeInfo['warehouse_code']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Branch ID', employeeInfo['warehouse_branch_id']?.toString() ?? 'N/A', font, boldFont),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildOrderInfoSection({
+    PurchaseOrder? order,
+    Map<String, dynamic>? orderInfo,
+    String? invoiceNumber,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Order Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          if (order != null) ...[
+            _buildInfoRow('Purchase Order ID', order.poId ?? 'N/A', font, boldFont),
+            _buildInfoRow('Order Date', order.date != null ? DateFormat('dd/MM/yyyy').format(order.date!) : 'N/A', font, boldFont),
+            _buildInfoRow('Status', _getOrderStatusText(order.status), font, boldFont),
+          ],
+          if (orderInfo != null) ...[
+            _buildInfoRow('Order ID', orderInfo['id']?.toString() ?? 'N/A', font, boldFont),
+            _buildInfoRow('Purchase Order ID', orderInfo['po_id']?.toString() ?? 'N/A', font, boldFont),
+            if (orderInfo['tarih'] != null)
+              _buildInfoRow('Order Date', orderInfo['tarih'].toString(), font, boldFont),
+            _buildInfoRow('Status', _getOrderStatusText(orderInfo['status']), font, boldFont),
+            if (orderInfo['notlar'] != null && orderInfo['notlar'].toString().isNotEmpty)
+              _buildInfoRow('Notes', orderInfo['notlar'].toString(), font, boldFont),
+            _buildInfoRow('Branch ID', orderInfo['branch_id']?.toString() ?? 'N/A', font, boldFont),
+          ],
+          if (invoiceNumber != null && invoiceNumber.isNotEmpty)
+            _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildReceiptInfoSection({
+    required DateTime date,
+    String? invoiceNumber,
+    required bool isOrderBased,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Receipt Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          _buildInfoRow('Receipt Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
+          if (isOrderBased)
+            _buildInfoRow('Purchase Order', invoiceNumber ?? 'N/A', font, boldFont),
+          if (!isOrderBased)
+            _buildInfoRow('Invoice Number', invoiceNumber ?? 'N/A', font, boldFont),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildDetailedItemsTable(List<ReceiptItemDraft> items, pw.Font font, pw.Font boldFont) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Items List',
+          style: pw.TextStyle(font: boldFont, fontSize: 14),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1),
+            1: const pw.FlexColumnWidth(3),
+            2: const pw.FlexColumnWidth(1),
+            3: const pw.FlexColumnWidth(2),
+          },
+          children: [
+            // Header
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableCell('Code', boldFont, isHeader: true),
+                _buildTableCell('Product Name', boldFont, isHeader: true),
+                _buildTableCell('Quantity', boldFont, isHeader: true),
+                _buildTableCell('Container', boldFont, isHeader: true),
+              ],
+            ),
+            // Data rows
+            ...items.map((item) {
+              final productName = item.product.name;
+              final productCode = item.product.stockCode;
+              final quantity = item.quantity.toStringAsFixed(0);
+              final container = item.palletBarcode != null 
+                  ? 'Pallet: ${item.palletBarcode}'
+                  : 'Box Mode';
+              
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(productCode, font),
+                  _buildTableCell(productName, font),
+                  _buildTableCell(quantity, font),
+                  _buildTableCell(container, font),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _ShareBottomSheet extends StatelessWidget {
@@ -843,40 +1000,45 @@ class _ShareBottomSheet extends StatelessWidget {
                 const SizedBox(height: 20),
                 
                 // Share options grid
-                GridView.count(
-                  shrinkWrap: true,
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
+                                  Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _ShareOption(
-                      icon: Icons.preview,
-                      label: 'pdf_report.actions.preview'.tr(),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        await PdfService.previewPdf(pdfData);
-                      },
+                    Expanded(
+                      child: _ShareOption(
+                        icon: Icons.preview,
+                        label: 'pdf_report.actions.preview'.tr(),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await PdfService.previewPdf(pdfData);
+                        },
+                      ),
                     ),
-                    _ShareOption(
-                      icon: Icons.file_download,
-                      label: 'pdf_report.share_dialog.save_to_device'.tr(),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        await PdfService.savePdfToDevice(pdfData, fileName);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('pdf_report.actions.file_saved'.tr())),
-                          );
-                        }
-                      },
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _ShareOption(
+                        icon: Icons.file_download,
+                        label: 'pdf_report.share_dialog.save_to_device'.tr(),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await PdfService.savePdfToDevice(pdfData, fileName);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('pdf_report.actions.file_saved'.tr())),
+                            );
+                          }
+                        },
+                      ),
                     ),
-                    _ShareOption(
-                      icon: Icons.share,
-                      label: 'pdf_report.share_dialog.other'.tr(),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        await PdfService.savePdfToDevice(pdfData, fileName);
-                      },
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _ShareOption(
+                        icon: Icons.share,
+                        label: 'pdf_report.share_dialog.other'.tr(),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await PdfService.savePdfToDevice(pdfData, fileName);
+                        },
+                      ),
                     ),
                   ],
                 ),

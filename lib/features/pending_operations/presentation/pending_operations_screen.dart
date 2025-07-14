@@ -336,7 +336,6 @@ class _OperationCard extends StatelessWidget {
       // Generate PDF
       final pdfData = await PdfService.generatePendingOperationPdf(
         operation: operation,
-        enrichedData: enrichedData,
       );
 
       // Hide loading dialog

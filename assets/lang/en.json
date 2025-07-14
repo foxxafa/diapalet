@@ -949,12 +949,16 @@
       "error_details": "Error Details",
       "operation_data": "Operation Data"
     },
+    "preview": {
+      "title": "PDF Preview"
+    },
     "actions": {
       "generate": "Generate PDF Report",
       "generating": "Generating PDF...",
       "download": "Download PDF",
       "share": "Share PDF",
       "preview": "Preview PDF",
+      "save_share": "Save & Share",
       "error_generating": "Error generating PDF: {error}",
       "success_generated": "PDF report generated successfully",
       "file_saved": "PDF saved to Downloads folder"

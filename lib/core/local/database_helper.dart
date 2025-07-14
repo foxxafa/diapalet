@@ -6,6 +6,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert'; // Added for jsonDecode
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
@@ -229,7 +230,7 @@ class DatabaseHelper {
   }
 
   Future<void> _dropAllTables(Database db) async {
-    final tables = [
+    const tables = [
       'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
@@ -368,7 +369,7 @@ class DatabaseHelper {
     if (order.isEmpty) return null;
     
     // Sipariş satırlarının detayları
-    final sql = '''
+    const sql = '''
       SELECT 
         sol.id,
         sol.urun_id,
@@ -404,7 +405,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getReceiptItemsWithDetails(int receiptId) async {
     final db = await database;
     
-    final sql = '''
+    const sql = '''
       SELECT 
         gri.*,
         u.UrunAdi as product_name,
@@ -476,17 +477,149 @@ class DatabaseHelper {
         gr.*,
         emp.first_name || ' ' || emp.last_name as employee_name,
         emp.username as employee_username,
+        emp.warehouse_id as employee_warehouse_id,
+        emp.role as employee_role,
+        wh.name as warehouse_name,
+        wh.warehouse_code,
+        wh.branch_id as warehouse_branch_id,
         po.po_id,
         po.tarih as order_date,
-        po.notlar as order_notes
+        po.notlar as order_notes,
+        po.status as order_status,
+        po.branch_id as order_branch_id
       FROM goods_receipts gr
       LEFT JOIN employees emp ON emp.id = gr.employee_id
+      LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id
       LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
       WHERE gr.id = ?
     ''';
     
     final result = await db.rawQuery(sql, [receiptId]);
     return result.isNotEmpty ? result.first : null;
+  }
+
+  // Mal kabul kalemlerini sipariş detaylarıyla birlikte almak için
+  Future<List<Map<String, dynamic>>> getReceiptItemsWithOrderDetails(int receiptId) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT 
+        gri.*,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode,
+        u.Birim1 as product_unit,
+        u.qty as product_box_qty,
+        sol.miktar as ordered_quantity,
+        sol.birim as order_unit,
+        sol.notes as order_line_notes,
+        COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
+      FROM goods_receipt_items gri
+      LEFT JOIN urunler u ON u.id = gri.urun_id
+      LEFT JOIN goods_receipts gr ON gr.id = gri.receipt_id
+      LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
+      LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
+      WHERE gri.receipt_id = ?
+      ORDER BY gri.id
+    ''';
+    
+    return await db.rawQuery(sql, [receiptId]);
+  }
+
+  // Pending operation için enriched data oluşturmak
+  Future<Map<String, dynamic>> getEnrichedGoodsReceiptData(String operationData) async {
+    final db = await database;
+    
+    try {
+      final data = jsonDecode(operationData);
+      final header = data['header'] as Map<String, dynamic>? ?? {};
+      final items = data['items'] as List<dynamic>? ?? [];
+      
+      // Employee ve warehouse bilgilerini al
+      final employeeId = header['employee_id'];
+      Map<String, dynamic>? employeeInfo;
+      if (employeeId != null) {
+        const empSql = '''
+          SELECT 
+            emp.*,
+            wh.name as warehouse_name,
+            wh.warehouse_code,
+            wh.branch_id as warehouse_branch_id
+          FROM employees emp
+          LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id
+          WHERE emp.id = ?
+        ''';
+        final empResult = await db.rawQuery(empSql, [employeeId]);
+        employeeInfo = empResult.isNotEmpty ? empResult.first : null;
+      }
+      
+      // Sipariş bilgilerini al (eğer sipariş bazlıysa)
+      final siparisId = header['siparis_id'];
+      Map<String, dynamic>? orderInfo;
+      if (siparisId != null) {
+        final orderResult = await db.query(
+          'satin_alma_siparis_fis',
+          where: 'id = ?',
+          whereArgs: [siparisId],
+          limit: 1,
+        );
+        orderInfo = orderResult.isNotEmpty ? orderResult.first : null;
+      }
+      
+      // Ürün bilgilerini zenginleştir
+      final enrichedItems = <Map<String, dynamic>>[];
+      for (final item in items) {
+        final productId = item['urun_id'] ?? item['product_id'];
+        if (productId != null) {
+          final productResult = await db.query(
+            'urunler',
+            where: 'id = ?',
+            whereArgs: [productId],
+            limit: 1,
+          );
+          
+          final enrichedItem = Map<String, dynamic>.from(item);
+          if (productResult.isNotEmpty) {
+            final product = productResult.first;
+            enrichedItem['product_name'] = product['UrunAdi'];
+            enrichedItem['product_code'] = product['StokKodu'];
+            enrichedItem['product_barcode'] = product['Barcode1'];
+            enrichedItem['product_unit'] = product['Birim1'];
+            enrichedItem['product_box_qty'] = product['qty'];
+          }
+          
+          // Eğer sipariş bazlıysa, sipariş satırı bilgilerini de ekle
+          if (siparisId != null) {
+            final orderLineResult = await db.query(
+              'satin_alma_siparis_fis_satir',
+              where: 'siparis_id = ? AND urun_id = ?',
+              whereArgs: [siparisId, productId],
+              limit: 1,
+            );
+            if (orderLineResult.isNotEmpty) {
+              final orderLine = orderLineResult.first;
+              enrichedItem['ordered_quantity'] = orderLine['miktar'];
+              enrichedItem['order_unit'] = orderLine['birim'];
+              enrichedItem['order_line_notes'] = orderLine['notes'];
+            }
+          }
+          
+          enrichedItems.add(enrichedItem);
+        }
+      }
+      
+      return {
+        'header': {
+          ...header,
+          'employee_info': employeeInfo,
+          'order_info': orderInfo,
+        },
+        'items': enrichedItems,
+      };
+    } catch (e) {
+      debugPrint('Error enriching goods receipt data: $e');
+      return jsonDecode(operationData);
+    }
   }
 
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için

@@ -91,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: iconSize,
                   height: iconSize,
                   fit: BoxFit.contain,
-                  color: theme.colorScheme.primary.withOpacity(0.85),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.85),
                   colorBlendMode: BlendMode.modulate,
                 ),
                 const SizedBox(height: 4),

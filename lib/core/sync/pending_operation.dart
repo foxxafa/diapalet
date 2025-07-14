@@ -1,5 +1,6 @@
 // lib/core/sync/pending_operation.dart
 import 'dart:convert';
+import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -123,6 +124,45 @@ class PendingOperation {
     } catch (e) {
       return 'pending_operations.subtitles.parsing_error'.tr();
     }
+  }
+
+  /// Generates a PDF report for this pending operation
+  Future<Uint8List> generatePdf() async {
+    return await PdfService.generatePendingOperationPdf(operation: this);
+  }
+
+  /// Creates a filename for PDF export
+  String get pdfFileName {
+    final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(createdAt);
+    final typePrefix = type.apiName.toUpperCase();
+    
+    try {
+      final dataMap = jsonDecode(data);
+      switch (type) {
+        case PendingOperationType.goodsReceipt:
+          final poId = dataMap['header']?['po_id'];
+          if (poId != null && poId.toString().isNotEmpty) {
+            return '${typePrefix}_${poId}_$formattedDate.pdf';
+          }
+          break;
+        case PendingOperationType.inventoryTransfer:
+          final containerId = dataMap['header']?['container_id'];
+          if (containerId != null) {
+            return '${typePrefix}_${containerId}_$formattedDate.pdf';
+          }
+          break;
+        case PendingOperationType.forceCloseOrder:
+          final poId = dataMap['po_id'];
+          if (poId != null && poId.toString().isNotEmpty) {
+            return '${typePrefix}_${poId}_$formattedDate.pdf';
+          }
+          break;
+      }
+    } catch (e) {
+      debugPrint('Error creating PDF filename: $e');
+    }
+    
+    return '${typePrefix}_${uniqueId.substring(0, 8)}_$formattedDate.pdf';
   }
 
   factory PendingOperation.fromMap(Map<String, dynamic> map) {
