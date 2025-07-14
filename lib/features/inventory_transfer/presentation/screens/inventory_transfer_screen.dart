@@ -135,6 +135,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _selectedSourceLocationName = '000';
           _sourceLocationController.text = '000';
           _loadContainersForLocation();
+        } else {
+          // For free transfer, also default to "000" location
+          _selectedSourceLocationName = '000';
+          _sourceLocationController.text = '000';
+          _loadContainersForLocation();
         }
       });
       
@@ -143,8 +148,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           // For order-based transfer, focus on container selection
           FocusScope.of(context).requestFocus(_containerFocusNode);
         } else {
-          // For free transfer, focus on source location
-          FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+          // For free transfer, focus on container selection since source is already set
+          FocusScope.of(context).requestFocus(_containerFocusNode);
         }
       });
     } catch (e) {

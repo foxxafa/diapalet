@@ -351,11 +351,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                   if (!_isModeAvailable(_selectedMode))
                     _buildModeUnavailableMessage(),
                   
-                  // Palet Açma Seçeneği
-                  if (_selectedMode == AssignmentMode.pallet && _isModeAvailable(_selectedMode)) ...[
-                    _buildPalletOpeningSwitch(),
-                    const SizedBox(height: _gap),
-                  ],
+                  // Palet Açma Seçeneği - Commented out as requested
+                  // if (_selectedMode == AssignmentMode.pallet && _isModeAvailable(_selectedMode)) ...[
+                  //   _buildPalletOpeningSwitch(),
+                  //   const SizedBox(height: _gap),
+                  // ],
                   
                   // Kaynak Lokasyon (Disabled - Her zaman Mal Kabul Alanı)
                   TextFormField(
@@ -494,35 +494,35 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  Widget _buildPalletOpeningSwitch() {
-    return Material(
-      clipBehavior: Clip.antiAlias,
-      borderRadius: _borderRadius,
-      color: Theme.of(context).colorScheme.secondary.withAlpha(26),
-      child: SwitchListTile(
-        title: Text('order_transfer.label_break_pallet'.tr(), 
-                   style: const TextStyle(fontWeight: FontWeight.bold)),
-        value: _isPalletOpening,
-        onChanged: _productsInContainer.isNotEmpty ? (bool value) {
-          setState(() {
-            _isPalletOpening = value;
-            if (!value) {
-              for (var product in _productsInContainer) {
-                final initialQty = product.currentQuantity;
-                final initialQtyText = initialQty == initialQty.truncate()
-                    ? initialQty.toInt().toString()
-                    : initialQty.toString();
-                _productQuantityControllers[product.id]?.text = initialQtyText;
-              }
-            }
-          });
-        } : null,
-        secondary: const Icon(Icons.inventory_2_outlined),
-        activeThumbColor: Theme.of(context).colorScheme.primary,
-        shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-      ),
-    );
-  }
+  // Widget _buildPalletOpeningSwitch() {
+  //   return Material(
+  //     clipBehavior: Clip.antiAlias,
+  //     borderRadius: _borderRadius,
+  //     color: Theme.of(context).colorScheme.secondary.withAlpha(26),
+  //     child: SwitchListTile(
+  //       title: Text('order_transfer.label_break_pallet'.tr(), 
+  //                  style: const TextStyle(fontWeight: FontWeight.bold)),
+  //       value: _isPalletOpening,
+  //       onChanged: _productsInContainer.isNotEmpty ? (bool value) {
+  //         setState(() {
+  //           _isPalletOpening = value;
+  //           if (!value) {
+  //             for (var product in _productsInContainer) {
+  //               final initialQty = product.currentQuantity;
+  //               final initialQtyText = initialQty == initialQty.truncate()
+  //                   ? initialQty.toInt().toString()
+  //                   : initialQty.toString();
+  //               _productQuantityControllers[product.id]?.text = initialQtyText;
+  //             }
+  //           }
+  //         });
+  //       } : null,
+  //       secondary: const Icon(Icons.inventory_2_outlined),
+  //       activeThumbColor: Theme.of(context).colorScheme.primary,
+  //       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+  //     ),
+  //   );
+  // }
 
   Future<void> _onConfirmSave() async {
     FocusScope.of(context).unfocus();

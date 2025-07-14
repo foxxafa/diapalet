@@ -124,6 +124,7 @@
     "label_quantity_display": "x{quantity}",
     "button_save_and_confirm": "Save and Confirm",
     "dialog_confirmation_title": "Confirmation List",
+    "total_accepted_items": "Total Accepted Items: {count}",
     "dialog_list_empty": "Your list is empty. Add items to see them here.",
     "dialog_button_cancel": "Cancel",
     "dialog_button_save_receipt": "Save Receipt",

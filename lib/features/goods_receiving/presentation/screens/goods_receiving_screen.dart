@@ -669,9 +669,21 @@ class _FullscreenConfirmationPage extends StatelessWidget {
 
     final isCompletingOrder = viewModel.isReceiptCompletingOrder;
 
+    // Calculate total accepted items count
+    final totalAcceptedItems = viewModel.addedItems.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
+    
     return Scaffold(
       appBar: AppBar(
-        title: Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
+            Text(
+              'goods_receiving_screen.total_accepted_items'.tr(namedArgs: {'count': totalAcceptedItems.toString()}),
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+            ),
+          ],
+        ),
         backgroundColor: appBarTheme.backgroundColor,
         foregroundColor: appBarTheme.foregroundColor,
         leading: IconButton(

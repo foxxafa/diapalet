@@ -122,6 +122,7 @@
     "label_quantity_display": "x{quantity}",
     "button_save_and_confirm": "Kaydet ve Onayla",
     "dialog_confirmation_title": "Onay Listesi",
+    "total_accepted_items": "Toplam Kabul Edilen Kalem: {count}",
     "dialog_list_empty": "Liste boş.",
     "dialog_button_cancel": "İptal",
     "dialog_button_confirm_and_save": "Onayla ve Kaydet",
