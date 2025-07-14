@@ -921,5 +921,51 @@
     "invalid": "Invalid",
     "max_qty": "Cannot exceed available quantity",
     "negative": "Cannot be negative"
+  },
+  "pdf_report": {
+    "goods_receipt": {
+      "title": "Goods Receipt Report",
+      "order_based_title": "Order-based Goods Receipt",
+      "free_receipt_title": "Free Goods Receipt",
+      "employee": "Employee",
+      "date": "Date",
+      "purchase_order": "Purchase Order",
+      "invoice": "Invoice Number",
+      "total_items": "Total Items",
+      "items_list": "Items List",
+      "product": "Product",
+      "quantity": "Quantity",
+      "pallet_barcode": "Pallet Barcode",
+      "box_mode": "Box Mode",
+      "summary": "Summary",
+      "generated_at": "Generated at",
+      "company": "ROWHUB Warehouse Management"
+    },
+    "pending_operation": {
+      "title": "Operation Details Report",
+      "operation_type": "Operation Type",
+      "created_at": "Created at",
+      "status": "Status",
+      "error_details": "Error Details",
+      "operation_data": "Operation Data"
+    },
+    "actions": {
+      "generate": "Generate PDF Report",
+      "generating": "Generating PDF...",
+      "download": "Download PDF",
+      "share": "Share PDF",
+      "preview": "Preview PDF",
+      "error_generating": "Error generating PDF: {error}",
+      "success_generated": "PDF report generated successfully",
+      "file_saved": "PDF saved to Downloads folder"
+    },
+    "share_dialog": {
+      "title": "Share PDF Report",
+      "whatsapp": "WhatsApp",
+      "telegram": "Telegram",
+      "email": "Email",
+      "other": "Other Apps",
+      "save_to_device": "Save to Device"
+    }
   }
 }

@@ -374,5 +374,51 @@
     "confirm_dialog_body": "{sourceLocation} lokasyonundan aşağıdaki transferler yapılacak. Onaylıyor musunuz?",
     "confirm_button": "Onayla ve Kaydet",
     "scan_target_shelf": "Hedef Raf QR Tara"
+  },
+  "pdf_report": {
+    "goods_receipt": {
+      "title": "Mal Kabul Raporu",
+      "order_based_title": "Siparişe Dayalı Mal Kabul",
+      "free_receipt_title": "Serbest Mal Kabul",
+      "employee": "Çalışan",
+      "date": "Tarih",
+      "purchase_order": "Satınalma Siparişi",
+      "invoice": "İrsaliye Numarası",
+      "total_items": "Toplam Kalem",
+      "items_list": "Kalem Listesi",
+      "product": "Ürün",
+      "quantity": "Miktar",
+      "pallet_barcode": "Palet Barkodu",
+      "box_mode": "Kutu Modu",
+      "summary": "Özet",
+      "generated_at": "Oluşturulma",
+      "company": "ROWHUB Depo Yönetim Sistemi"
+    },
+    "pending_operation": {
+      "title": "İşlem Detayları Raporu",
+      "operation_type": "İşlem Tipi",
+      "created_at": "Oluşturulma",
+      "status": "Durum",
+      "error_details": "Hata Detayları",
+      "operation_data": "İşlem Verisi"
+    },
+    "actions": {
+      "generate": "PDF Raporu Oluştur",
+      "generating": "PDF Oluşturuluyor...",
+      "download": "PDF İndir",
+      "share": "PDF Paylaş",
+      "preview": "PDF Önizle",
+      "error_generating": "PDF oluşturulurken hata: {error}",
+      "success_generated": "PDF raporu başarıyla oluşturuldu",
+      "file_saved": "PDF İndirilenler klasörüne kaydedildi"
+    },
+    "share_dialog": {
+      "title": "PDF Raporu Paylaş",
+      "whatsapp": "WhatsApp",
+      "telegram": "Telegram",
+      "email": "E-posta",
+      "other": "Diğer Uygulamalar",
+      "save_to_device": "Cihaza Kaydet"
+    }
   }
 }

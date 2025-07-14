@@ -1,6 +1,7 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'dart:convert';
 
+import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
@@ -9,6 +10,7 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PendingOperationsScreen extends StatefulWidget {
   const PendingOperationsScreen({super.key});
@@ -287,12 +289,166 @@ class _OperationCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
+            onPressed: () => _generateOperationPdf(context, operation),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.picture_as_pdf, size: 18),
+                const SizedBox(width: 4),
+                Text('pdf_report.actions.generate'.tr()),
+              ],
+            ),
+          ),
+          TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text('common_labels.close'.tr()),
-          )
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _generateOperationPdf(BuildContext context, PendingOperation operation) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Text('pdf_report.actions.generating'.tr()),
+            ],
+          ),
+        ),
+      );
+
+      // Create enriched data for better PDF content
+      Map<String, dynamic>? enrichedData;
+      try {
+        final data = jsonDecode(operation.data) as Map<String, dynamic>;
+        enrichedData = await _createEnrichedOperationData(data, operation.type);
+      } catch (e) {
+        enrichedData = {'raw_data': operation.data};
+      }
+
+      // Generate PDF
+      final pdfData = await PdfService.generatePendingOperationPdf(
+        operation: operation,
+        enrichedData: enrichedData,
+      );
+
+      // Hide loading dialog
+      if (context.mounted) Navigator.pop(context);
+
+      // Generate filename
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(operation.createdAt);
+      final operationType = operation.type.toString().split('.').last;
+      final fileName = 'operation_${operationType}_$timestamp.pdf';
+
+      // Show share dialog
+      if (context.mounted) {
+        await PdfService.showShareDialog(context, pdfData, fileName);
+      }
+    } catch (e) {
+      // Hide loading dialog if still showing
+      if (context.mounted) Navigator.pop(context);
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('pdf_report.actions.error_generating'.tr(namedArgs: {'error': e.toString()})),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _createEnrichedOperationData(
+    Map<String, dynamic> data, 
+    PendingOperationType type,
+  ) async {
+    final db = DatabaseHelper.instance;
+    final enrichedData = Map<String, dynamic>.from(data);
+
+    try {
+      switch (type) {
+        case PendingOperationType.goodsReceipt:
+          final header = data['header'] as Map<String, dynamic>?;
+          final items = data['items'] as List?;
+          
+          if (header?['siparis_id'] != null) {
+            final poId = await db.getPoIdBySiparisId(header!['siparis_id']);
+            if (poId != null) {
+              enrichedData['header']['po_id'] = poId;
+            }
+          }
+          
+          if (items != null) {
+            for (int i = 0; i < items.length; i++) {
+              final item = items[i] as Map<String, dynamic>;
+              if (item['urun_id'] != null) {
+                final product = await db.getProductById(item['urun_id']);
+                if (product != null) {
+                  enrichedData['items'][i]['product_name'] = product['UrunAdi'];
+                  enrichedData['items'][i]['product_code'] = product['StokKodu'];
+                }
+              }
+            }
+          }
+          break;
+          
+        case PendingOperationType.inventoryTransfer:
+          final header = data['header'] as Map<String, dynamic>?;
+          final items = data['items'] as List?;
+          
+          if (header?['source_location_id'] != null) {
+            final sourceLoc = await db.getLocationById(header!['source_location_id']);
+            if (sourceLoc != null) {
+              enrichedData['header']['source_location_name'] = sourceLoc['name'];
+            }
+          }
+          
+          if (header?['target_location_id'] != null) {
+            final targetLoc = await db.getLocationById(header!['target_location_id']);
+            if (targetLoc != null) {
+              enrichedData['header']['target_location_name'] = targetLoc['name'];
+            }
+          }
+          
+          if (items != null) {
+            for (int i = 0; i < items.length; i++) {
+              final item = items[i] as Map<String, dynamic>;
+              final productId = item['product_id'] ?? item['urun_id'];
+              if (productId != null) {
+                final product = await db.getProductById(productId);
+                if (product != null) {
+                  enrichedData['items'][i]['product_name'] = product['UrunAdi'];
+                  enrichedData['items'][i]['product_code'] = product['StokKodu'];
+                }
+              }
+            }
+          }
+          break;
+          
+        case PendingOperationType.forceCloseOrder:
+          if (data['siparis_id'] != null) {
+            final poId = await db.getPoIdBySiparisId(data['siparis_id']);
+            if (poId != null) {
+              enrichedData['po_id'] = poId;
+            }
+          }
+          break;
+      }
+    } catch (e) {
+      debugPrint('Error enriching operation data: $e');
+    }
+
+    return enrichedData;
   }
 
   @override

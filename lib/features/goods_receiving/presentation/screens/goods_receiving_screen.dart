@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -13,6 +14,7 @@ import 'package:diapalet/features/goods_receiving/presentation/screens/goods_rec
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
 class GoodsReceivingScreen extends StatefulWidget {
@@ -661,6 +663,68 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     required this.onItemRemoved,
   });
 
+  Future<void> _generateAndSharePdf(BuildContext context, GoodsReceivingViewModel viewModel) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Text('pdf_report.actions.generating'.tr()),
+            ],
+          ),
+        ),
+      );
+
+      // Get employee name
+      final prefs = await SharedPreferences.getInstance();
+      final firstName = prefs.getString('first_name') ?? '';
+      final lastName = prefs.getString('last_name') ?? '';
+      final employeeName = '$firstName $lastName'.trim();
+
+      // Generate PDF
+      final pdfData = await PdfService.generateGoodsReceiptPdf(
+        items: viewModel.addedItems,
+        isOrderBased: viewModel.isOrderBased,
+        order: viewModel.selectedOrder,
+        invoiceNumber: viewModel.selectedOrder?.poId,
+        employeeName: employeeName.isNotEmpty ? employeeName : 'Unknown Employee',
+        date: DateTime.now(),
+      );
+
+      // Hide loading dialog
+      if (context.mounted) Navigator.pop(context);
+
+      // Generate filename
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = viewModel.isOrderBased 
+          ? 'goods_receipt_${viewModel.selectedOrder?.poId ?? 'order'}_$timestamp.pdf'
+          : 'free_receipt_$timestamp.pdf';
+
+      // Show share dialog
+      if (context.mounted) {
+        await PdfService.showShareDialog(context, pdfData, fileName);
+      }
+    } catch (e) {
+      // Hide loading dialog if still showing
+      if (context.mounted) Navigator.pop(context);
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('pdf_report.actions.error_generating'.tr(namedArgs: {'error': e.toString()})),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -690,6 +754,13 @@ class _FullscreenConfirmationPage extends StatelessWidget {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(null),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: () => _generateAndSharePdf(context, viewModel),
+            tooltip: 'pdf_report.actions.generate'.tr(),
+          ),
+        ],
       ),
       body: viewModel.isOrderBased
           ? _buildOrderBasedConfirmationList(context, theme)
