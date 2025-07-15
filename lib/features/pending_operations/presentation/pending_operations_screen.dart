@@ -538,72 +538,123 @@ class _OperationDetailsView extends StatelessWidget {
 
   Future<Widget> _buildInventoryTransferDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
     final db = DatabaseHelper.instance;
-    final header = (data['header'] as Map?)?.cast<String, dynamic>();
-    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
     
-    // Lokasyon isimlerini al
-    String source = 'N/A';
-    String target = 'N/A';
+    // Enriched data al
+    final enrichedData = await db.getEnrichedInventoryTransferData(jsonEncode(data));
+    final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+    final items = enrichedData['items'] as List<dynamic>? ?? [];
     
-    final sourceId = header?['source_location_id'];
-    final targetId = header?['target_location_id'];
+    // Bilgileri extract et
+    final sourceName = header['source_location_name'] ?? 'N/A';
+    final sourceCode = header['source_location_code'] ?? '';
+    final targetName = header['target_location_name'] ?? 'N/A'; 
+    final targetCode = header['target_location_code'] ?? '';
+    final employeeName = header['employee_name'] ?? 'Sistem Kullanıcısı';
+    final operationType = header['operation_type'] ?? 'transfer';
+    final containerId = header['container_id']?.toString();
+    final poId = header['po_id']?.toString();
     
-    if (sourceId != null) {
-      final sourceLoc = await db.getLocationById(sourceId);
-      if (sourceLoc != null) {
-        source = sourceLoc['name'] ?? sourceLoc['code'] ?? sourceId.toString();
-      }
+    // Operation type'a göre farklı başlıklar
+    String transferTitle;
+    String operationDescription;
+    
+    if (header['source_location_id'] == null || header['source_location_id'] == 0) {
+      transferTitle = 'Rafa Yerleştirme İşlemi';
+      operationDescription = 'Putaway Operation';
+    } else {
+      transferTitle = 'Stok Transfer İşlemi';
+      operationDescription = 'Stock Transfer';
     }
     
-    if (targetId != null) {
-      final targetLoc = await db.getLocationById(targetId);
-      if (targetLoc != null) {
-        target = targetLoc['name'] ?? targetLoc['code'] ?? targetId.toString();
-      }
-    }
-    
-    final containerId = header?['container_id']?.toString();
-
-    // Ürün bilgilerini zenginleştir
-    final enrichedItems = <Map<String, dynamic>>[];
-    if (items != null) {
-      for (final item in items) {
-        final enrichedItem = Map<String, dynamic>.from(item);
-        final productId = item['product_id'] ?? item['urun_id'];
-        if (productId != null) {
-          final product = await db.getProductById(productId);
-          if (product != null) {
-            enrichedItem['product_name'] = product['UrunAdi'];
-            enrichedItem['product_code'] = product['StokKodu'];
-          }
-        }
-        enrichedItems.add(enrichedItem);
-      }
-    }
+    // Lokasyon display'leri
+    final sourceDisplay = sourceCode.isNotEmpty ? '$sourceName ($sourceCode)' : sourceName;
+    final targetDisplay = targetCode.isNotEmpty ? '$targetName ($targetCode)' : targetName;
 
     if (!context.mounted) return const SizedBox.shrink();
 
     return _buildDetailSection(
       context: context,
-      title: 'pending_operations.titles.inventory_transfer'.tr(),
+      title: transferTitle,
       details: {
-        'dialog_labels.from'.tr(): source,
-        'dialog_labels.to'.tr(): target,
+        'dialog_labels.operation_type'.tr(): operationDescription,
+        'dialog_labels.employee'.tr(): employeeName,
+        'dialog_labels.from'.tr(): sourceDisplay,
+        'dialog_labels.to'.tr(): targetDisplay,
+        if (poId != null) 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
+        'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'Palet Transfer' : 'Kutu Transfer',
       },
-      items: enrichedItems,
+      items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
         final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
         final productCode = item['product_code'] ?? '';
+        final productBarcode = item['product_barcode'] ?? '';
         final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.inventory_2_outlined),
-          title: Text('$productName$productInfo'),
-          trailing: Text(
-            'x ${item['quantity_transferred'] ?? item['quantity']}',
-            style: Theme.of(context).textTheme.bodyLarge,
+        final quantity = item['quantity_transferred'] ?? item['quantity'] ?? 0;
+        final container = item['pallet_id'] ?? item['pallet_barcode'];
+        
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.inventory_2_outlined, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$productName$productInfo',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withAlpha(25),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'x $quantity',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (productBarcode.isNotEmpty || container != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (productBarcode.isNotEmpty) ...[
+                      Icon(Icons.qr_code, size: 16, color: Theme.of(context).hintColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        productBarcode,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                    if (container != null) ...[
+                      if (productBarcode.isNotEmpty) const SizedBox(width: 16),
+                      Icon(Icons.inventory, size: 16, color: Theme.of(context).hintColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Konteyner: $container',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ],
           ),
         );
       },

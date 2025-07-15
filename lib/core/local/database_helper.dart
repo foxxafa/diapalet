@@ -527,6 +527,95 @@ class DatabaseHelper {
     return await db.rawQuery(sql, [receiptId]);
   }
 
+  // Transfer işlemleri için enriched data oluşturmak
+  Future<Map<String, dynamic>> getEnrichedInventoryTransferData(String operationData) async {
+    final db = await database;
+    
+    try {
+      final data = jsonDecode(operationData);
+      final header = data['header'] as Map<String, dynamic>? ?? {};
+      final items = data['items'] as List<dynamic>? ?? [];
+      
+      // 1. SharedPreferences'tan warehouse bilgilerini al
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseName = prefs.getString('warehouse_name');
+      final warehouseCode = prefs.getString('warehouse_code');
+      final branchName = prefs.getString('branch_name');
+      
+      // 2. Employee bilgilerini al
+      if (header['employee_id'] != null) {
+        final employee = await getEmployeeById(header['employee_id']);
+        if (employee != null) {
+          header['employee_info'] = employee;
+          header['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
+        }
+      }
+      
+      // 3. Source location bilgilerini al (null ise Mal Kabul Alanı)
+      final sourceLocationId = header['source_location_id'];
+      if (sourceLocationId != null && sourceLocationId != 0) {
+        final sourceLoc = await getLocationById(sourceLocationId);
+        if (sourceLoc != null) {
+          header['source_location_name'] = sourceLoc['name'];
+          header['source_location_code'] = sourceLoc['code'];
+        }
+      } else {
+        header['source_location_name'] = 'Mal Kabul Alanı';
+        header['source_location_code'] = 'RECEIVING';
+      }
+      
+      // 4. Target location bilgilerini al
+      final targetLocationId = header['target_location_id'];
+      if (targetLocationId != null) {
+        final targetLoc = await getLocationById(targetLocationId);
+        if (targetLoc != null) {
+          header['target_location_name'] = targetLoc['name'];
+          header['target_location_code'] = targetLoc['code'];
+        }
+      }
+      
+      // 5. Sipariş bilgilerini al (putaway işlemi ise)
+      final siparisId = header['siparis_id'];
+      if (siparisId != null) {
+        final poId = await getPoIdBySiparisId(siparisId);
+        if (poId != null) {
+          header['po_id'] = poId;
+        }
+      }
+      
+      // 6. Warehouse bilgilerini ekle
+      header['warehouse_info'] = {
+        'name': warehouseName ?? 'N/A',
+        'warehouse_code': warehouseCode ?? 'N/A', 
+        'branch_name': branchName ?? 'N/A',
+      };
+      
+      // 7. Ürün bilgilerini zenginleştir
+      final enrichedItems = <Map<String, dynamic>>[];
+      for (final item in items) {
+        final enrichedItem = Map<String, dynamic>.from(item);
+        final productId = item['product_id'] ?? item['urun_id'];
+        if (productId != null) {
+          final product = await getProductById(productId);
+          if (product != null) {
+            enrichedItem['product_name'] = product['UrunAdi'];
+            enrichedItem['product_code'] = product['StokKodu'];
+            enrichedItem['product_barcode'] = product['Barcode1'];
+          }
+        }
+        enrichedItems.add(enrichedItem);
+      }
+      
+      data['header'] = header;
+      data['items'] = enrichedItems;
+      return data;
+
+    } catch (e, s) {
+      debugPrint('Error enriching inventory transfer data: $e\n$s');
+      return jsonDecode(operationData); // return original data on error
+    }
+  }
+
   // Pending operation için enriched data oluşturmak
   Future<Map<String, dynamic>> getEnrichedGoodsReceiptData(String operationData) async {
     final db = await database;

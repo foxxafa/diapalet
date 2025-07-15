@@ -687,7 +687,10 @@
     "to": "To",
     "container": "Container",
     "items_count": "Items ({count})",
-    "unknown_product": "Unknown Product"
+    "unknown_product": "Unknown Product",
+    "operation_type": "Operation Type",
+    "employee": "Employee",
+    "transfer_mode": "Transfer Mode"
   },
   "validation": {
     "field_required": "This field is required",

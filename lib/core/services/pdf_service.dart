@@ -129,8 +129,8 @@ class PdfService {
       case PendingOperationType.goodsReceipt:
         return _generateGoodsReceiptOperationPdf(operation, enrichedData, font, boldFont);
       case PendingOperationType.inventoryTransfer:
-        // Placeholder for future implementation
-        return _generateInventoryTransferOperationPdf(operation, enrichedData, font, boldFont);
+        final transferEnrichedData = await dbHelper.getEnrichedInventoryTransferData(operation.data);
+        return _generateInventoryTransferOperationPdf(operation, transferEnrichedData, font, boldFont);
       case PendingOperationType.forceCloseOrder:
         // Placeholder for future implementation
         return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
@@ -203,24 +203,34 @@ class PdfService {
   /// Generates a detailed PDF for inventory transfer operations
   static Future<Uint8List> _generateInventoryTransferOperationPdf(
     PendingOperation operation,
-    Map<String, dynamic>? enrichedData,
+    Map<String, dynamic> enrichedData,
     pw.Font font,
     pw.Font boldFont,
   ) async {
     final pdf = pw.Document();
     
-    // Parse operation data
-    final data = enrichedData ?? {};
-    final header = data['header'] as Map<String, dynamic>? ?? {};
-    final items = data['items'] as List<dynamic>? ?? [];
+    // Parse enriched data
+    final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+    final items = enrichedData['items'] as List<dynamic>? ?? [];
     
-         // Extract information
-     final sourceLocationName = header['source_location_name'] ?? 'Receiving Area';
-     final targetLocationName = header['target_location_name'] ?? 'Unknown Location';
-     final containerId = header['container_id']?.toString();
-     final operationType = header['operation_type'] ?? 'transfer';
-     final employeeName = header['employee_name'] ?? 'System User';
-     final poId = header['po_id'];
+    // Extract information from enriched data
+    final sourceName = header['source_location_name'] ?? 'N/A';
+    final sourceCode = header['source_location_code'] ?? '';
+    final targetName = header['target_location_name'] ?? 'N/A';
+    final targetCode = header['target_location_code'] ?? '';
+    final employeeName = header['employee_name'] ?? 'System User';
+    final operationType = header['operation_type'] ?? 'transfer';
+    final containerId = header['container_id']?.toString();
+    final poId = header['po_id']?.toString();
+    final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
+    
+    // Determine operation type
+    final isPutawayOperation = header['source_location_id'] == null || header['source_location_id'] == 0;
+    final operationTitle = isPutawayOperation ? 'Putaway Operation Report' : 'Inventory Transfer Report';
+    
+    // Location displays
+    final sourceDisplay = sourceCode.isNotEmpty ? '$sourceName ($sourceCode)' : sourceName;
+    final targetDisplay = targetCode.isNotEmpty ? '$targetName ($targetCode)' : targetName;
     
     // Calculate totals
     final totalItems = items.fold<int>(0, (sum, item) => sum + (item['quantity_transferred'] as num? ?? item['quantity'] as num? ?? 0).toInt());
@@ -233,22 +243,35 @@ class PdfService {
         build: (pw.Context context) {
           return [
             // Header
-            _buildHeader('Inventory Transfer Report', boldFont),
+            _buildHeader(operationTitle, boldFont),
             
             pw.SizedBox(height: 20),
             
-                         // Transfer Info Section
-             _buildTransferInfoSection(
-               operation: operation,
-               sourceLocation: sourceLocationName,
-               targetLocation: targetLocationName,
-               containerId: containerId,
-               operationType: operationType,
-               employeeName: employeeName,
-               poId: poId,
-               font: font,
-               boldFont: boldFont,
-             ),
+            // Employee and Warehouse Info Section
+            _buildEmployeeWarehouseInfoSection(
+              employeeName: employeeName,
+              warehouseName: warehouseInfo?['name'] as String?,
+              warehouseCode: warehouseInfo?['warehouse_code'] as String?,
+              branchName: warehouseInfo?['branch_name'] as String?,
+              font: font,
+              boldFont: boldFont,
+            ),
+            
+            pw.SizedBox(height: 15),
+            
+            // Transfer Info Section
+            _buildTransferInfoSection(
+              operation: operation,
+              sourceLocation: sourceDisplay,
+              targetLocation: targetDisplay,
+              containerId: containerId,
+              operationType: operationType,
+              employeeName: employeeName,
+              poId: poId,
+              isPutawayOperation: isPutawayOperation,
+              font: font,
+              boldFont: boldFont,
+            ),
             
             pw.SizedBox(height: 20),
             
@@ -540,9 +563,14 @@ class PdfService {
     required String operationType,
     required String employeeName,
     String? poId,
+    bool isPutawayOperation = false,
     required pw.Font font,
     required pw.Font boldFont,
   }) {
+    final infoTitle = isPutawayOperation ? 'Putaway Information' : 'Transfer Information';
+    final operationTypeText = isPutawayOperation ? 'Putaway Operation' : 'Stock Transfer';
+    final transferModeText = operationType == 'pallet_transfer' ? 'Pallet Transfer' : 'Box Transfer';
+    
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(
@@ -553,21 +581,20 @@ class PdfService {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Transfer Information',
+            infoTitle,
             style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
           ),
           pw.SizedBox(height: 8),
-                     _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
-           _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt), font, boldFont),
-           _buildInfoRow('Employee', employeeName, font, boldFont),
-           _buildInfoRow('From Location', sourceLocation, font, boldFont),
-           _buildInfoRow('To Location', targetLocation, font, boldFont),
-           if (containerId != null)
-             _buildInfoRow('Container ID', containerId, font, boldFont),
-           if (poId != null)
-             _buildInfoRow('Purchase Order', poId, font, boldFont),
-           _buildInfoRow('Transfer Type', operationType, font, boldFont),
-           _buildInfoRow('Status', operation.status, font, boldFont),
+          _buildInfoRow('Operation Type', operationTypeText, font, boldFont),
+          _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt), font, boldFont),
+          _buildInfoRow('From Location', sourceLocation, font, boldFont),
+          _buildInfoRow('To Location', targetLocation, font, boldFont),
+          if (poId != null)
+            _buildInfoRow('Purchase Order', poId, font, boldFont),
+          if (containerId != null)
+            _buildInfoRow('Container ID', containerId, font, boldFont),
+          _buildInfoRow('Transfer Mode', transferModeText, font, boldFont),
+          _buildInfoRow('Status', operation.status, font, boldFont),
         ],
       ),
     );
@@ -654,6 +681,8 @@ class PdfService {
 
   
   static pw.Widget _buildTransferItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
+    final totalQuantity = items.fold<double>(0.0, (sum, item) => sum + ((item['quantity_transferred'] as num? ?? item['quantity'] as num?)?.toDouble() ?? 0.0));
+    
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -664,11 +693,12 @@ class PdfService {
         pw.SizedBox(height: 10),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1),
-            1: const pw.FlexColumnWidth(3),
-            2: const pw.FlexColumnWidth(1),
-            3: const pw.FlexColumnWidth(2),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1),
+            1: pw.FlexColumnWidth(3),
+            2: pw.FlexColumnWidth(1),
+            3: pw.FlexColumnWidth(1.5),
+            4: pw.FlexColumnWidth(1.5),
           },
           children: [
             // Header
@@ -678,6 +708,7 @@ class PdfService {
                 _buildTableCell('Code', boldFont, isHeader: true),
                 _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Quantity', boldFont, isHeader: true),
+                _buildTableCell('Barcode', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
@@ -685,18 +716,31 @@ class PdfService {
             ...items.map((item) {
               final productName = item['product_name'] ?? 'Unknown Product';
               final productCode = item['product_code'] ?? 'N/A';
+              final productBarcode = item['product_barcode'] ?? '';
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
-              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box Mode';
+              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box';
               
               return pw.TableRow(
                 children: [
                   _buildTableCell(productCode, font),
-                  _buildTableCell(productName, font),
+                  _buildGroupedTableCell(productName, font),
                   _buildTableCell(quantity, font),
+                  _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
                   _buildTableCell(container, font),
                 ],
               );
             }),
+            // Total row
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blue50),
+              children: [
+                _buildTableCell('TOTAL', boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
+                _buildTableCell(totalQuantity.toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
+              ],
+            ),
           ],
         ),
       ],
