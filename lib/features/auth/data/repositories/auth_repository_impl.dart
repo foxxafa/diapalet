@@ -79,12 +79,16 @@ class AuthRepositoryImpl implements AuthRepository {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('user_id', user['id'] as int);
           await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+          await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
+          await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
+          await prefs.setInt('branch_id', user['branch_id'] as int? ?? 0);
+          await prefs.setString('branch_name', user['branch_name'] as String? ?? 'N/A');
           await prefs.setString('apikey', apiKey);
           await prefs.setString('first_name', user['first_name'] as String);
           await prefs.setString('last_name', user['last_name'] as String);
 
           await prefs.remove('last_sync_timestamp');
-          debugPrint("Kullanıcı bilgileri (user_id: ${user['id']}) SharedPreferences'a kaydedildi.");
+          debugPrint("Kullanıcı ve şube bilgileri SharedPreferences'a kaydedildi.");
 
           return {'warehouse_id': user['warehouse_id'] as int};
         } else {

@@ -293,7 +293,34 @@ CREATE TABLE `warehouses` (
   `branch_id` int DEFAULT NULL,
   `warehouse_code` varchar(45) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `branches`
+--
+
+DROP TABLE IF EXISTS `branches`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `branches` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE utf8mb4_turkish_ci NOT NULL,
+  `branch_code` varchar(15) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `post_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `is_active` int DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `address` varchar(255) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `description` text COLLATE utf8mb4_turkish_ci,
+  `latitude` decimal(10,8) DEFAULT NULL,
+  `longitude` decimal(11,8) DEFAULT NULL,
+  `parent_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `ap` char(1) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `_key` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `branch_code` (`branch_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

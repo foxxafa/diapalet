@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert'; // Added for jsonDecode
+import 'package:shared_preferences/shared_preferences.dart'; // Added for SharedPreferences
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
@@ -533,89 +534,59 @@ class DatabaseHelper {
     try {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
-      final items = data['items'] as List<dynamic>? ?? [];
       
-      // Employee ve warehouse bilgilerini al
-      final employeeId = header['employee_id'];
-      Map<String, dynamic>? employeeInfo;
-      if (employeeId != null) {
-        const empSql = '''
-          SELECT 
-            emp.*,
-            wh.name as warehouse_name,
-            wh.warehouse_code,
-            wh.branch_id as warehouse_branch_id
-          FROM employees emp
-          LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id
-          WHERE emp.id = ?
-        ''';
-        final empResult = await db.rawQuery(empSql, [employeeId]);
-        employeeInfo = empResult.isNotEmpty ? empResult.first : null;
+      // 1. Enrich with historical employee and warehouse info from DB
+      if (header['employee_id'] != null) {
+        final employee = await getEmployeeById(header['employee_id']);
+        if (employee != null) {
+          header['employee_info'] = employee; // Store the whole map
+          if (employee['warehouse_id'] != null) {
+            final warehouse = await getWarehouseById(employee['warehouse_id']);
+            if (warehouse != null) {
+              // Join warehouse with branch to get branch_name from local DB
+              // Assuming branches table is synced, which we removed.
+              // We will get branch_name from login credentials instead.
+              // For now, let's keep warehouse info.
+              header['warehouse_info'] = warehouse;
+            }
+          }
+        }
       }
-      
-      // Sipariş bilgilerini al (eğer sipariş bazlıysa)
+
+      // 2. Enrich items with ordered quantities
       final siparisId = header['siparis_id'];
-      Map<String, dynamic>? orderInfo;
       if (siparisId != null) {
         final orderSummary = await getOrderSummary(siparisId);
         if (orderSummary != null) {
-          orderInfo = orderSummary['order'];
+          header['order_info'] = orderSummary['order'];
+          final orderLines = orderSummary['lines'] as List<dynamic>;
+          
+          // Create a lookup map for safer and faster access
+          final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
+
+          final enrichedItems = (data['items'] as List<dynamic>).map((item) {
+            final mutableItem = Map<String, dynamic>.from(item);
+            final orderLine = orderLinesMap[mutableItem['urun_id']];
+            mutableItem['ordered_quantity'] = orderLine?['ordered_quantity'] ?? 0.0;
+            return mutableItem;
+          }).toList();
+          data['items'] = enrichedItems;
         }
       }
       
-      // Ürün bilgilerini zenginleştir
-      final enrichedItems = <Map<String, dynamic>>[];
-      for (final item in items) {
-        final productId = item['urun_id'] ?? item['product_id'];
-        if (productId != null) {
-          final productResult = await db.query(
-            'urunler',
-            where: 'id = ?',
-            whereArgs: [productId],
-            limit: 1,
-          );
-          
-          final enrichedItem = Map<String, dynamic>.from(item);
-          if (productResult.isNotEmpty) {
-            final product = productResult.first;
-            enrichedItem['product_name'] = product['UrunAdi'];
-            enrichedItem['product_code'] = product['StokKodu'];
-            enrichedItem['product_barcode'] = product['Barcode1'];
-            enrichedItem['product_unit'] = product['Birim1'];
-            enrichedItem['product_box_qty'] = product['qty'];
-          }
-          
-          // Eğer sipariş bazlıysa, sipariş satırı bilgilerini de ekle
-          if (siparisId != null) {
-            final orderLineResult = await db.query(
-              'satin_alma_siparis_fis_satir',
-              where: 'siparis_id = ? AND urun_id = ?',
-              whereArgs: [siparisId, productId],
-              limit: 1,
-            );
-            if (orderLineResult.isNotEmpty) {
-              final orderLine = orderLineResult.first;
-              enrichedItem['ordered_quantity'] = orderLine['miktar'];
-              enrichedItem['order_unit'] = orderLine['birim'];
-              enrichedItem['order_line_notes'] = orderLine['notes'];
-            }
-          }
-          
-          enrichedItems.add(enrichedItem);
-        }
+      // 3. Add branch name from SharedPreferences as a fallback/primary source
+      final prefs = await SharedPreferences.getInstance();
+      if (header['warehouse_info'] != null) {
+        header['warehouse_info']['branch_name'] = prefs.getString('branch_name') ?? 'N/A';
       }
-      
-      return {
-        'header': {
-          ...header,
-          'employee_info': employeeInfo,
-          'order_info': orderInfo,
-        },
-        'items': enrichedItems,
-      };
-    } catch (e) {
-      debugPrint('Error enriching goods receipt data: $e');
-      return jsonDecode(operationData);
+
+
+      data['header'] = header;
+      return data;
+
+    } catch (e, s) {
+      debugPrint('Error enriching goods receipt data: $e\n$s');
+      return jsonDecode(operationData); // return original data on error
     }
   }
 

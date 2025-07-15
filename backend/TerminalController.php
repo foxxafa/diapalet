@@ -64,10 +64,18 @@ class TerminalController extends Controller
         }
 
         try {
-            $user = (new Query())
-                ->from('employees')
-                ->where(['username' => $username, 'password' => $password, 'is_active' => 1])
-                ->one();
+            $userQuery = (new Query())
+                ->select([
+                    'e.id', 'e.first_name', 'e.last_name', 'e.username',
+                    'e.warehouse_id', 'w.warehouse_code', 'w.name as warehouse_name',
+                    'b.id as branch_id', 'b.name as branch_name'
+                ])
+                ->from(['e' => 'employees'])
+                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_id = w.id')
+                ->leftJoin(['b' => 'branches'], 'w.branch_id = b.id')
+                ->where(['e.username' => $username, 'e.password' => $password, 'e.is_active' => 1]);
+
+            $user = $userQuery->one();
 
             if ($user) {
                 $apiKey = Yii::$app->security->generateRandomString();
@@ -75,8 +83,12 @@ class TerminalController extends Controller
                     'id' => (int)$user['id'],
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
-                    'warehouse_id' => (int)($user['warehouse_id'] ?? 0),
                     'username' => $user['username'],
+                    'warehouse_id' => (int)($user['warehouse_id'] ?? 0),
+                    'warehouse_name' => $user['warehouse_name'],
+                    'warehouse_code' => $user['warehouse_code'],
+                    'branch_id' => (int)($user['branch_id'] ?? 0),
+                    'branch_name' => $user['branch_name'],
                 ];
                 return $this->asJson([
                     'status' => 200, 'message' => 'Giriş başarılı.',

@@ -58,6 +58,7 @@ class PdfService {
               employeeName: employeeName,
               warehouseName: warehouseInfo?['name'] as String?,
               warehouseCode: warehouseInfo?['warehouse_code'] as String?,
+              branchName: employeeInfo?['branch_name'] as String?, // Pass branch name
               font: font,
               boldFont: boldFont,
             ),
@@ -173,6 +174,7 @@ class PdfService {
               employeeName: employeeName,
               warehouseName: warehouseName,
               warehouseCode: warehouseCode,
+              branchName: employeeInfo?['branch_name'] as String?, // Pass branch name
               font: font,
               boldFont: boldFont,
             ),
@@ -704,6 +706,7 @@ class PdfService {
     required String employeeName,
     String? warehouseName,
     String? warehouseCode,
+    String? branchName, // Added branch name
     required pw.Font font,
     required pw.Font boldFont,
   }) {
@@ -727,6 +730,7 @@ class PdfService {
           pw.SizedBox(height: 8),
           _buildInfoRow('Employee Name', employeeName, font, boldFont),
           _buildInfoRow('Warehouse', warehouseDisplay, font, boldFont),
+          _buildInfoRow('Branch', branchName ?? 'N/A', font, boldFont), // Display branch name
         ],
       ),
     );
@@ -898,30 +902,9 @@ class PdfService {
     pw.Font font,
     pw.Font boldFont,
   ) {
-    // Group items by product to avoid duplicates
-    final Map<String, Map<String, dynamic>> groupedItems = {};
-    
-    for (final item in items) {
-      final productId = (item['urun_id'] ?? item['product_id'])?.toString() ?? '';
-      if (productId.isEmpty) continue;
-
-      final quantity = (item['quantity'] as num?)?.toDouble() ?? 0.0;
-      
-      if (groupedItems.containsKey(productId)) {
-        groupedItems[productId]!['received_quantity'] += quantity;
-      } else {
-        groupedItems[productId] = {
-          'product_name': item['product_name'] ?? 'Unknown Product',
-          'product_code': item['product_code'] ?? 'N/A',
-          'ordered_quantity': (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0,
-          'received_quantity': quantity,
-          'container': item['pallet_barcode'],
-        };
-      }
-    }
-
-    final totalReceived = groupedItems.values.fold<double>(0.0, (sum, item) => sum + item['received_quantity']);
-    final totalOrdered = groupedItems.values.fold<double>(0.0, (sum, item) => sum + item['ordered_quantity']);
+    // This logic is now simpler as enrichment is done beforehand
+    final totalReceived = items.fold<double>(0.0, (sum, item) => sum + ((item['quantity'] as num?)?.toDouble() ?? 0.0));
+    final totalOrdered = items.fold<double>(0.0, (sum, item) => sum + ((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0));
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -946,19 +929,18 @@ class PdfService {
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
-            ...groupedItems.entries.map((entry) {
-              final item = entry.value;
+            ...items.map((item) {
+              final containerDisplay = item['pallet_barcode'] != null ? item['pallet_barcode'] as String : 'Box';
               return pw.TableRow(
                 children: [
-                  _buildTableCell(item['product_code'], font),
-                  _buildGroupedTableCell(item['product_name'], font),
-                  _buildTableCell((item['ordered_quantity'] as double).toStringAsFixed(0), font),
-                  _buildTableCell((item['received_quantity'] as double).toStringAsFixed(0), font),
-                  _buildTableCell(item['container'] ?? 'Box', font),
+                  _buildTableCell(item['product_code'] ?? 'N/A', font),
+                  _buildGroupedTableCell(item['product_name'] ?? 'Unknown', font),
+                  _buildTableCell(((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
+                  _buildTableCell(((item['quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
+                  _buildTableCell(containerDisplay, font),
                 ],
               );
             }),
-            // Total row
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.blue50),
               children: [

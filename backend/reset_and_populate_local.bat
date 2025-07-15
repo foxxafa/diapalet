@@ -13,12 +13,13 @@ echo.
 echo [3/6] Veritabani sunucusunun ayaga kalkmasi bekleniyor...
 :check_db
 timeout /t 5 /nobreak > NUL
-docker compose exec db mysqladmin ping -h localhost -uroot -p123456 > NUL 2>&1
+docker compose exec db mysqladmin ping -h 127.0.0.1 -uroot -p123456 > NUL 2>&1
 if %errorlevel% neq 0 (
     echo Veritabani henuz hazir degil, 5 saniye sonra tekrar denenecek...
     goto check_db
 )
 echo ✅ Veritabani sunucusu hazir!
+timeout /t 2 /nobreak > NUL
 echo.
 
 echo [4/6] Web sunucusunun ayaga kalkmasi bekleniyor...
@@ -33,13 +34,13 @@ echo ✅ Web sunucusu hazir!
 echo.
 
 echo [5/6] Veritabani semasi olusturuluyor...
-docker compose exec db mysql -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS enzo CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-docker compose exec -T db mysql -uroot -p123456 enzo < dump.sql
+docker compose exec db mysql -h 127.0.0.1 -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS enzo CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+docker compose exec -T db mysql -h 127.0.0.1 -uroot -p123456 enzo < dump.sql
 echo ✅ Veritabani semasi olusturuldu.
 
 echo [6/6] Tum test verileri (depolar, raflar, urunler, calisanlar, siparisler) veritabanina ekleniyor...
 rem NOT: Bu adimda DIA senkronizasyonu atlanmistir. Tum veriler test_data.sql dosyasindan gelir.
-docker compose exec -T db mysql -uroot -p123456 enzo < test_data.sql
+docker compose exec -T db mysql -h 127.0.0.1 -uroot -p123456 enzo < test_data.sql
 echo ✅ Tum lokal test verileri eklendi.
 
 echo.
