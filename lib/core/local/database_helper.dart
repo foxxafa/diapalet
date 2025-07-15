@@ -423,7 +423,7 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getInventoryTransferDetails(int transferId) async {
     final db = await database;
     
-    final sql = '''
+    const sql = '''
       SELECT 
         it.*,
         u.UrunAdi as product_name,
@@ -450,7 +450,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getInventoryStockForOrder(int siparisId) async {
     final db = await database;
     
-    final sql = '''
+    const sql = '''
       SELECT 
         ints.*,
         u.UrunAdi as product_name,
@@ -472,7 +472,7 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getGoodsReceiptDetails(int receiptId) async {
     final db = await database;
     
-    final sql = '''
+    const sql = '''
       SELECT 
         gr.*,
         emp.first_name || ' ' || emp.last_name as employee_name,
@@ -557,13 +557,10 @@ class DatabaseHelper {
       final siparisId = header['siparis_id'];
       Map<String, dynamic>? orderInfo;
       if (siparisId != null) {
-        final orderResult = await db.query(
-          'satin_alma_siparis_fis',
-          where: 'id = ?',
-          whereArgs: [siparisId],
-          limit: 1,
-        );
-        orderInfo = orderResult.isNotEmpty ? orderResult.first : null;
+        final orderSummary = await getOrderSummary(siparisId);
+        if (orderSummary != null) {
+          orderInfo = orderSummary['order'];
+        }
       }
       
       // Ürün bilgilerini zenginleştir

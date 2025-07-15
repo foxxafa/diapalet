@@ -56,8 +56,8 @@ class PdfService {
             // Employee and Warehouse Info Section
             _buildEmployeeWarehouseInfoSection(
               employeeName: employeeName,
-              employeeInfo: employeeInfo,
-              warehouseInfo: warehouseInfo,
+              warehouseName: warehouseInfo?['name'] as String?,
+              warehouseCode: warehouseInfo?['warehouse_code'] as String?,
               font: font,
               boldFont: boldFont,
             ),
@@ -112,13 +112,13 @@ class PdfService {
     return pdf.save();
   }
 
-  /// Generates a PDF report from pending operation
+  /// Generates a PDF report from pending operation, enriching data internally.
   static Future<Uint8List> generatePendingOperationPdf({
     required PendingOperation operation,
   }) async {
     final font = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
-    
+
     // Get enriched data from database
     final dbHelper = DatabaseHelper.instance;
     final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data);
@@ -128,84 +128,73 @@ class PdfService {
       case PendingOperationType.goodsReceipt:
         return _generateGoodsReceiptOperationPdf(operation, enrichedData, font, boldFont);
       case PendingOperationType.inventoryTransfer:
+        // Placeholder for future implementation
         return _generateInventoryTransferOperationPdf(operation, enrichedData, font, boldFont);
       case PendingOperationType.forceCloseOrder:
+        // Placeholder for future implementation
         return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
     }
   }
-  
-  /// Generates a detailed PDF for goods receipt operations
+
+  /// Generates a detailed PDF for goods receipt operations using enriched data
   static Future<Uint8List> _generateGoodsReceiptOperationPdf(
     PendingOperation operation,
-    Map<String, dynamic>? enrichedData,
+    Map<String, dynamic> enrichedData,
     pw.Font font,
     pw.Font boldFont,
   ) async {
+    final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+    final items = enrichedData['items'] as List<dynamic>? ?? [];
     
-    // Parse operation data
-    final data = enrichedData ?? {};
-    final header = data['header'] as Map<String, dynamic>? ?? {};
-    final items = data['items'] as List<dynamic>? ?? [];
-    
-         // Extract information
-     final poId = header['po_id'] ?? 'N/A';
-     final invoiceNumber = header['invoice_number'] ?? 'N/A';
-     final employeeName = header['employee_name'] ?? 'System User';
-     final operationDate = operation.createdAt;
-    
-         // Calculate totals
-     final totalItems = items.fold<int>(0, (sum, item) => sum + (item['quantity'] as num? ?? 0).toInt());
-     final uniqueProducts = items.map((item) => item['product_id'] ?? item['urun_id']).toSet().length;
+    // Extract information from the enriched data
+    final employeeInfo = header['employee_info'] as Map<String, dynamic>?;
+    final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
+    final orderInfo = header['order_info'] as Map<String, dynamic>?;
+
+    final employeeName = (employeeInfo != null)
+        ? '${employeeInfo['first_name']} ${employeeInfo['last_name']}'
+        : 'System User';
+    final warehouseName = warehouseInfo?['name'] ?? 'N/A';
+    final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
+    final poId = orderInfo?['po_id'] ?? 'N/A';
+    final invoiceNumber = header['invoice_number'] ?? 'N/A';
      
-     final pdf = pw.Document();
+    final pdf = pw.Document();
      
-     pdf.addPage(
-       pw.MultiPage(
-         pageFormat: PdfPageFormat.a4,
-         margin: const pw.EdgeInsets.all(20),
-         build: (pw.Context context) {
-           return [
-             // Header
-             _buildHeader('Goods Receipt Report', boldFont),
-             
-             pw.SizedBox(height: 20),
-             
-             // Operation Info Section
-             _buildSpecializedOperationInfoSection(
-               operation: operation,
-               poId: poId,
-               invoiceNumber: invoiceNumber,
-               employeeName: employeeName,
-               date: operationDate,
-               font: font,
-               boldFont: boldFont,
-             ),
-             
-             pw.SizedBox(height: 20),
-             
-             // Summary Section
-             _buildSummarySection(
-               totalItems: totalItems,
-               uniqueProducts: uniqueProducts,
-               font: font,
-               boldFont: boldFont,
-             ),
-             
-             pw.SizedBox(height: 20),
-             
-             // Items Table
-             _buildGoodsReceiptItemsTable(items, font, boldFont),
-             
-             pw.SizedBox(height: 30),
-             
-             // Footer
-             _buildFooter(font),
-           ];
-         },
-       ),
-     );
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
+        build: (pw.Context context) {
+          return [
+            _buildHeader('Goods Receipt Report', boldFont),
+            pw.SizedBox(height: 20),
+            _buildEmployeeWarehouseInfoSection(
+              employeeName: employeeName,
+              warehouseName: warehouseName,
+              warehouseCode: warehouseCode,
+              font: font,
+              boldFont: boldFont,
+            ),
+            pw.SizedBox(height: 15),
+            _buildReceiptOperationInfoSection(
+              operation: operation,
+              poId: poId,
+              invoiceNumber: invoiceNumber,
+              date: operation.createdAt,
+              font: font,
+              boldFont: boldFont,
+            ),
+            pw.SizedBox(height: 20),
+            _buildDetailedGoodsReceiptItemsTable(items, font, boldFont),
+            pw.SizedBox(height: 30),
+            _buildFooter(font),
+          ];
+        },
+      ),
+    );
      
-     return pdf.save();
+    return pdf.save();
   }
   
   /// Generates a detailed PDF for inventory transfer operations
@@ -538,40 +527,7 @@ class PdfService {
 
   // New specialized info sections
   
-  static pw.Widget _buildSpecializedOperationInfoSection({
-    required PendingOperation operation,
-    required String poId,
-    required String invoiceNumber,
-    required String employeeName,
-    required DateTime date,
-    required pw.Font font,
-    required pw.Font boldFont,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Operation Information',
-            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
-          ),
-          pw.SizedBox(height: 8),
-          _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
-          _buildInfoRow('Created Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
-          _buildInfoRow('Employee', employeeName, font, boldFont),
-          _buildInfoRow('Purchase Order', poId, font, boldFont),
-          if (invoiceNumber != 'N/A' && invoiceNumber != poId)
-            _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
-          _buildInfoRow('Status', operation.status, font, boldFont),
-        ],
-      ),
-    );
-  }
+
   
   static pw.Widget _buildTransferInfoSection({
     required PendingOperation operation,
@@ -685,8 +641,6 @@ class PdfService {
         return 'Manually Closed';
       case 4:
         return 'Completed';
-      case 5:
-        return 'Cancelled';
       default:
         return 'Unknown';
     }
@@ -694,55 +648,7 @@ class PdfService {
   
   // New specialized item tables
   
-  static pw.Widget _buildGoodsReceiptItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Received Items',
-          style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey400),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1),
-            1: const pw.FlexColumnWidth(3),
-            2: const pw.FlexColumnWidth(1),
-            3: const pw.FlexColumnWidth(2),
-          },
-          children: [
-            // Header
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-              children: [
-                _buildTableCell('Code', boldFont, isHeader: true),
-                _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Quantity', boldFont, isHeader: true),
-                _buildTableCell('Container', boldFont, isHeader: true),
-              ],
-            ),
-            // Data rows
-            ...items.map((item) {
-              final productName = item['product_name'] ?? 'Unknown Product';
-              final productCode = item['product_code'] ?? 'N/A';
-              final quantity = item['quantity']?.toString() ?? '0';
-              final container = item['pallet_barcode'] ?? 'Box Mode';
-              
-              return pw.TableRow(
-                children: [
-                  _buildTableCell(productCode, font),
-                  _buildTableCell(productName, font),
-                  _buildTableCell(quantity, font),
-                  _buildTableCell(container, font),
-                ],
-              );
-            }),
-          ],
-        ),
-      ],
-    );
-  }
+
   
   static pw.Widget _buildTransferItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
     return pw.Column(
@@ -796,11 +702,15 @@ class PdfService {
 
   static pw.Widget _buildEmployeeWarehouseInfoSection({
     required String employeeName,
-    Map<String, dynamic>? employeeInfo,
-    Map<String, dynamic>? warehouseInfo,
+    String? warehouseName,
+    String? warehouseCode,
     required pw.Font font,
     required pw.Font boldFont,
   }) {
+    final warehouseDisplay = (warehouseName != null && warehouseName != 'N/A')
+        ? '$warehouseName ($warehouseCode)'
+        : 'N/A';
+
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(
@@ -816,14 +726,7 @@ class PdfService {
           ),
           pw.SizedBox(height: 8),
           _buildInfoRow('Employee Name', employeeName, font, boldFont),
-          if (employeeInfo != null) ...[
-            _buildInfoRow('Employee ID', employeeInfo['id']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Username', employeeInfo['username']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Role', employeeInfo['role']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Warehouse Name', employeeInfo['warehouse_name']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Warehouse Code', employeeInfo['warehouse_code']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Branch ID', employeeInfo['warehouse_branch_id']?.toString() ?? 'N/A', font, boldFont),
-          ],
+          _buildInfoRow('Warehouse', warehouseDisplay, font, boldFont),
         ],
       ),
     );
@@ -938,7 +841,7 @@ class PdfService {
               final quantity = item.quantity.toStringAsFixed(0);
               final container = item.palletBarcode != null 
                   ? 'Pallet: ${item.palletBarcode}'
-                  : 'Box Mode';
+                  : 'Box';
               
               return pw.TableRow(
                 children: [
@@ -952,6 +855,138 @@ class PdfService {
           ],
         ),
       ],
+    );
+  }
+
+  // New specialized helper functions for enhanced PDF reports
+
+  static pw.Widget _buildReceiptOperationInfoSection({
+    required PendingOperation operation,
+    required String poId,
+    required String invoiceNumber,
+    required DateTime date,
+    required pw.Font font,
+    required pw.Font boldFont,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Receipt Information',
+            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
+          ),
+          pw.SizedBox(height: 8),
+          _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
+          _buildInfoRow('Receipt Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
+          _buildInfoRow('Purchase Order', poId, font, boldFont),
+          if (invoiceNumber != 'N/A' && invoiceNumber != poId)
+            _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
+          _buildInfoRow('Status', operation.status, font, boldFont),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildDetailedGoodsReceiptItemsTable(
+    List<dynamic> items,
+    pw.Font font,
+    pw.Font boldFont,
+  ) {
+    // Group items by product to avoid duplicates
+    final Map<String, Map<String, dynamic>> groupedItems = {};
+    
+    for (final item in items) {
+      final productId = (item['urun_id'] ?? item['product_id'])?.toString() ?? '';
+      if (productId.isEmpty) continue;
+
+      final quantity = (item['quantity'] as num?)?.toDouble() ?? 0.0;
+      
+      if (groupedItems.containsKey(productId)) {
+        groupedItems[productId]!['received_quantity'] += quantity;
+      } else {
+        groupedItems[productId] = {
+          'product_name': item['product_name'] ?? 'Unknown Product',
+          'product_code': item['product_code'] ?? 'N/A',
+          'ordered_quantity': (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0,
+          'received_quantity': quantity,
+          'container': item['pallet_barcode'],
+        };
+      }
+    }
+
+    final totalReceived = groupedItems.values.fold<double>(0.0, (sum, item) => sum + item['received_quantity']);
+    final totalOrdered = groupedItems.values.fold<double>(0.0, (sum, item) => sum + item['ordered_quantity']);
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text('Received Items', style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700)),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey400),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1), 1: pw.FlexColumnWidth(3),
+            2: pw.FlexColumnWidth(1.2), 3: pw.FlexColumnWidth(1.2),
+            4: pw.FlexColumnWidth(1.5),
+          },
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableCell('Code', boldFont, isHeader: true),
+                _buildTableCell('Product Name', boldFont, isHeader: true),
+                _buildTableCell('Ordered', boldFont, isHeader: true),
+                _buildTableCell('Received', boldFont, isHeader: true),
+                _buildTableCell('Container', boldFont, isHeader: true),
+              ],
+            ),
+            ...groupedItems.entries.map((entry) {
+              final item = entry.value;
+              return pw.TableRow(
+                children: [
+                  _buildTableCell(item['product_code'], font),
+                  _buildGroupedTableCell(item['product_name'], font),
+                  _buildTableCell((item['ordered_quantity'] as double).toStringAsFixed(0), font),
+                  _buildTableCell((item['received_quantity'] as double).toStringAsFixed(0), font),
+                  _buildTableCell(item['container'] ?? 'Box', font),
+                ],
+              );
+            }),
+            // Total row
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blue50),
+              children: [
+                _buildTableCell('TOTAL', boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
+                _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell(totalReceived.toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildGroupedTableCell(String text, pw.Font font) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          left: pw.BorderSide(color: PdfColors.blue300, width: 3),
+        ),
+      ),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(font: font, fontSize: 10),
+      ),
     );
   }
 }

@@ -324,31 +324,15 @@ class _OperationCard extends StatelessWidget {
         ),
       );
 
-      // Create enriched data for better PDF content
-      Map<String, dynamic>? enrichedData;
-      try {
-        final data = jsonDecode(operation.data) as Map<String, dynamic>;
-        enrichedData = await _createEnrichedOperationData(data, operation.type);
-      } catch (e) {
-        enrichedData = {'raw_data': operation.data};
-      }
-
-      // Generate PDF
-      final pdfData = await PdfService.generatePendingOperationPdf(
-        operation: operation,
-      );
+      // Generate PDF. Enrichment is now handled inside the PDF Service.
+      final pdfData = await operation.generatePdf();
 
       // Hide loading dialog
       if (context.mounted) Navigator.pop(context);
 
-      // Generate filename
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(operation.createdAt);
-      final operationType = operation.type.toString().split('.').last;
-      final fileName = 'operation_${operationType}_$timestamp.pdf';
-
       // Show share dialog
       if (context.mounted) {
-        await PdfService.showShareDialog(context, pdfData, fileName);
+        await PdfService.showShareDialog(context, pdfData, operation.pdfFileName);
       }
     } catch (e) {
       // Hide loading dialog if still showing
@@ -366,6 +350,7 @@ class _OperationCard extends StatelessWidget {
     }
   }
 
+  // ignore: unused_element
   Future<Map<String, dynamic>> _createEnrichedOperationData(
     Map<String, dynamic> data, 
     PendingOperationType type,
@@ -391,6 +376,7 @@ class _OperationCard extends StatelessWidget {
               final orderSummary = await db.getOrderSummary(header['siparis_id']);
               if (orderSummary != null) {
                 enrichedData['header']['order_details'] = orderSummary['order'];
+                enrichedData['header']['order_lines'] = orderSummary['lines'];
               }
             }
             
@@ -400,6 +386,17 @@ class _OperationCard extends StatelessWidget {
               if (employee != null) {
                 enrichedData['header']['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
                 enrichedData['header']['employee_username'] = employee['username'];
+                enrichedData['header']['employee_warehouse_id'] = employee['warehouse_id'];
+                
+                // Warehouse bilgilerini al
+                if (employee['warehouse_id'] != null) {
+                  final warehouse = await db.getWarehouseById(employee['warehouse_id']);
+                  if (warehouse != null) {
+                    enrichedData['header']['warehouse_name'] = warehouse['name'];
+                    enrichedData['header']['warehouse_code'] = warehouse['warehouse_code'];
+                    enrichedData['header']['branch_id'] = warehouse['branch_id'];
+                  }
+                }
               }
             }
           }
@@ -452,6 +449,17 @@ class _OperationCard extends StatelessWidget {
               if (employee != null) {
                 enrichedData['header']['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
                 enrichedData['header']['employee_username'] = employee['username'];
+                enrichedData['header']['employee_warehouse_id'] = employee['warehouse_id'];
+                
+                // Warehouse bilgilerini al
+                if (employee['warehouse_id'] != null) {
+                  final warehouse = await db.getWarehouseById(employee['warehouse_id']);
+                  if (warehouse != null) {
+                    enrichedData['header']['warehouse_name'] = warehouse['name'];
+                    enrichedData['header']['warehouse_code'] = warehouse['warehouse_code'];
+                    enrichedData['header']['branch_id'] = warehouse['branch_id'];
+                  }
+                }
               }
             }
             
