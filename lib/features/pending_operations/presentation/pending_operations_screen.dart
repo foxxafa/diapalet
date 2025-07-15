@@ -476,60 +476,127 @@ class _OperationDetailsView extends StatelessWidget {
 
   Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
     final db = DatabaseHelper.instance;
-    final header = (data['header'] as Map?)?.cast<String, dynamic>();
-    final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
     
-    // Sipariş ID'sinden gerçek PO ID'yi al
-    String poId = 'N/A';
-    final siparisId = header?['siparis_id'];
-    if (siparisId != null) {
-      final realPoId = await db.getPoIdBySiparisId(siparisId);
-      if (realPoId != null) {
-        poId = realPoId;
-      }
-    }
+    // Enriched data al
+    final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data));
+    final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+    final items = enrichedData['items'] as List<dynamic>? ?? [];
     
-    final invoice = header?['invoice_number'] ?? 'N/A';
-
-    // Ürün bilgilerini zenginleştir
-    final enrichedItems = <Map<String, dynamic>>[];
-    if (items != null) {
-      for (final item in items) {
-        final enrichedItem = Map<String, dynamic>.from(item);
-        final productId = item['urun_id'];
-        if (productId != null) {
-          final product = await db.getProductById(productId);
-          if (product != null) {
-            enrichedItem['product_name'] = product['UrunAdi'];
-            enrichedItem['product_code'] = product['StokKodu'];
-          }
-        }
-        enrichedItems.add(enrichedItem);
-      }
-    }
-
+    // Bilgileri extract et
+    final poId = header['order_info']?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    final invoice = header['invoice_number']?.toString() ?? 'N/A';
+    final employeeName = header['employee_info'] != null 
+        ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
+        : 'Sistem Kullanıcısı';
+    final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
+    final warehouseName = warehouseInfo?['name'] ?? 'N/A';
+    final warehouseCode = warehouseInfo?['warehouse_code'] ?? '';
+    final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
+    
+    final warehouseDisplay = warehouseCode.isNotEmpty ? '$warehouseName ($warehouseCode)' : warehouseName;
+    
+    // Order tabanlı mı kontrol et
+    final isOrderBased = header['siparis_id'] != null;
+    
     if (!context.mounted) return const SizedBox.shrink();
 
     return _buildDetailSection(
       context: context,
-      title: 'pending_operations.titles.goods_receipt'.tr(),
+      title: isOrderBased ? 'Sipariş Tabanlı Mal Kabul' : 'Serbest Mal Kabul',
       details: {
+        'dialog_labels.operation_type'.tr(): isOrderBased ? 'Order-based Receipt' : 'Free Receipt',
+        'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.purchase_order'.tr(): poId,
-        if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice.toString(),
+        if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
+        'Warehouse': warehouseDisplay,
+        'Branch': branchName,
       },
-      items: enrichedItems,
+      items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
         final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
         final productCode = item['product_code'] ?? '';
+        final productBarcode = item['product_barcode'] ?? '';
         final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.inventory_2_outlined),
-          title: Text('$productName$productInfo'),
-          trailing: Text(
-            '${item['quantity']} ${item['unit'] ?? ''}',
-            style: Theme.of(context).textTheme.bodyLarge,
+        final quantity = item['quantity'] ?? 0;
+        final orderedQuantity = item['ordered_quantity'] ?? 0;
+        final unit = item['unit'] ?? '';
+        final palletBarcode = item['pallet_barcode'];
+        
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.move_to_inbox_outlined, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$productName$productInfo',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withAlpha(25),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$quantity $unit',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (isOrderBased && orderedQuantity > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.assignment_outlined, size: 16, color: Theme.of(context).hintColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Sipariş: $orderedQuantity $unit',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                    ),
+                  ],
+                ),
+              ],
+              if (productBarcode.isNotEmpty || palletBarcode != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (productBarcode.isNotEmpty) ...[
+                      Icon(Icons.qr_code, size: 16, color: Theme.of(context).hintColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        productBarcode,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                    if (palletBarcode != null) ...[
+                      if (productBarcode.isNotEmpty) const SizedBox(width: 16),
+                      Icon(Icons.inventory, size: 16, color: Theme.of(context).hintColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Palet: $palletBarcode',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ],
           ),
         );
       },

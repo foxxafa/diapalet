@@ -660,7 +660,26 @@ class DatabaseHelper {
       
       header['warehouse_info'] = warehouseInfo;
 
-      // 3. Enrich items with ordered quantities
+      // 3. Enrich items with product and order details
+      final enrichedItems = <Map<String, dynamic>>[];
+      for (final item in (data['items'] as List<dynamic>)) {
+        final mutableItem = Map<String, dynamic>.from(item);
+        final productId = item['urun_id'];
+        
+        // Product bilgilerini ekle
+        if (productId != null) {
+          final product = await getProductById(productId);
+          if (product != null) {
+            mutableItem['product_name'] = product['UrunAdi'];
+            mutableItem['product_code'] = product['StokKodu'];
+            mutableItem['product_barcode'] = product['Barcode1'];
+          }
+        }
+        
+        enrichedItems.add(mutableItem);
+      }
+      
+      // Sipariş detaylarını ekle
       final siparisId = header['siparis_id'];
       if (siparisId != null) {
         final orderSummary = await getOrderSummary(siparisId);
@@ -670,15 +689,14 @@ class DatabaseHelper {
           
           final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
 
-          final enrichedItems = (data['items'] as List<dynamic>).map((item) {
-            final mutableItem = Map<String, dynamic>.from(item);
-            final orderLine = orderLinesMap[mutableItem['urun_id']];
-            mutableItem['ordered_quantity'] = orderLine?['ordered_quantity'] ?? 0.0;
-            return mutableItem;
-          }).toList();
-          data['items'] = enrichedItems;
+          for (final item in enrichedItems) {
+            final orderLine = orderLinesMap[item['urun_id']];
+            item['ordered_quantity'] = orderLine?['ordered_quantity'] ?? 0.0;
+          }
         }
       }
+      
+      data['items'] = enrichedItems;
       
       data['header'] = header;
       return data;

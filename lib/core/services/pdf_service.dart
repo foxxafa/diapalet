@@ -275,16 +275,6 @@ class PdfService {
             
             pw.SizedBox(height: 20),
             
-            // Summary Section
-            _buildSummarySection(
-              totalItems: totalItems,
-              uniqueProducts: uniqueProducts,
-              font: font,
-              boldFont: boldFont,
-            ),
-            
-            pw.SizedBox(height: 20),
-            
             // Items Table
             _buildTransferItemsTable(items, font, boldFont),
             
@@ -960,7 +950,7 @@ class PdfService {
           columnWidths: const {
             0: pw.FlexColumnWidth(1), 1: pw.FlexColumnWidth(3),
             2: pw.FlexColumnWidth(1.2), 3: pw.FlexColumnWidth(1.2),
-            4: pw.FlexColumnWidth(1.5),
+            4: pw.FlexColumnWidth(1.5), 5: pw.FlexColumnWidth(1.5),
           },
           children: [
             pw.TableRow(
@@ -970,17 +960,20 @@ class PdfService {
                 _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Ordered', boldFont, isHeader: true),
                 _buildTableCell('Received', boldFont, isHeader: true),
+                _buildTableCell('Barcode', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
             ...items.map((item) {
               final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
+              final productBarcode = item['product_barcode'] ?? '';
               return pw.TableRow(
                 children: [
                   _buildTableCell(item['product_code'] ?? 'N/A', font),
                   _buildGroupedTableCell(item['product_name'] ?? 'Unknown', font),
                   _buildTableCell(((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
                   _buildTableCell(((item['quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
+                  _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
                   _buildTableCell(containerDisplay, font),
                 ],
               );
@@ -992,6 +985,7 @@ class PdfService {
                 _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell(totalReceived.toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
               ],
             ),
