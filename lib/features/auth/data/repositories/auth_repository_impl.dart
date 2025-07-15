@@ -39,6 +39,10 @@ class AuthRepositoryImpl implements AuthRepository {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_id');
     await prefs.remove('warehouse_id');
+    await prefs.remove('warehouse_name');
+    await prefs.remove('warehouse_code');
+    await prefs.remove('branch_id');
+    await prefs.remove('branch_name');
     await prefs.remove('apikey');
     await prefs.remove('first_name');
     await prefs.remove('last_name');
@@ -109,12 +113,17 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Map<String, dynamic>?> _loginOffline(String username, String password) async {
     try {
       final db = await dbHelper.database;
-      final List<Map<String, dynamic>> result = await db.query(
-        'employees',
-        where: 'username = ? AND password = ? AND is_active = 1',
-        whereArgs: [username, password],
-        limit: 1,
-      );
+      
+      // Employee bilgilerini warehouse bilgileriyle birlikte al
+      final sql = '''
+        SELECT e.*, w.name as warehouse_name, w.warehouse_code
+        FROM employees e
+        LEFT JOIN warehouses w ON e.warehouse_id = w.id
+        WHERE e.username = ? AND e.password = ? AND e.is_active = 1
+        LIMIT 1
+      ''';
+      
+      final List<Map<String, dynamic>> result = await db.rawQuery(sql, [username, password]);
 
       if (result.isNotEmpty) {
         debugPrint("Offline login başarılı: $username");
@@ -122,8 +131,15 @@ class AuthRepositoryImpl implements AuthRepository {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt('user_id', user['id'] as int);
         await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+        await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
+        await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
         await prefs.setString('first_name', user['first_name'] as String);
         await prefs.setString('last_name', user['last_name'] as String);
+        
+        // Offline durumda branch bilgisi genelde mevcut olmaz, N/A olarak ayarla
+        await prefs.setString('branch_name', 'N/A');
+        await prefs.setInt('branch_id', 0);
+        
         return {'warehouse_id': user['warehouse_id'] as int};
       } else {
         throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");

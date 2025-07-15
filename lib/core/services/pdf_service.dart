@@ -157,8 +157,9 @@ class PdfService {
         : 'System User';
     final warehouseName = warehouseInfo?['name'] ?? 'N/A';
     final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
-    final poId = orderInfo?['po_id'] ?? 'N/A';
-    final invoiceNumber = header['invoice_number'] ?? 'N/A';
+    final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
+    final poId = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    final invoiceNumber = header['invoice_number']?.toString() ?? 'N/A';
      
     final pdf = pw.Document();
      
@@ -174,7 +175,7 @@ class PdfService {
               employeeName: employeeName,
               warehouseName: warehouseName,
               warehouseCode: warehouseCode,
-              branchName: employeeInfo?['branch_name'] as String?, // Pass branch name
+              branchName: branchName,
               font: font,
               boldFont: boldFont,
             ),
@@ -706,7 +707,7 @@ class PdfService {
     required String employeeName,
     String? warehouseName,
     String? warehouseCode,
-    String? branchName, // Added branch name
+    String? branchName,
     required pw.Font font,
     required pw.Font boldFont,
   }) {
@@ -730,7 +731,7 @@ class PdfService {
           pw.SizedBox(height: 8),
           _buildInfoRow('Employee Name', employeeName, font, boldFont),
           _buildInfoRow('Warehouse', warehouseDisplay, font, boldFont),
-          _buildInfoRow('Branch', branchName ?? 'N/A', font, boldFont), // Display branch name
+          _buildInfoRow('Branch', branchName ?? 'N/A', font, boldFont),
         ],
       ),
     );
@@ -902,7 +903,6 @@ class PdfService {
     pw.Font font,
     pw.Font boldFont,
   ) {
-    // This logic is now simpler as enrichment is done beforehand
     final totalReceived = items.fold<double>(0.0, (sum, item) => sum + ((item['quantity'] as num?)?.toDouble() ?? 0.0));
     final totalOrdered = items.fold<double>(0.0, (sum, item) => sum + ((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0));
 
@@ -930,7 +930,7 @@ class PdfService {
               ],
             ),
             ...items.map((item) {
-              final containerDisplay = item['pallet_barcode'] != null ? item['pallet_barcode'] as String : 'Box';
+              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
               return pw.TableRow(
                 children: [
                   _buildTableCell(item['product_code'] ?? 'N/A', font),

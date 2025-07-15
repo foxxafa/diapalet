@@ -535,25 +535,43 @@ class DatabaseHelper {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
       
-      // 1. Enrich with historical employee and warehouse info from DB
+      // 1. SharedPreferences'tan warehouse bilgilerini al (login sırasında kaydediliyor)
+      final prefs = await SharedPreferences.getInstance();
+      final warehouseName = prefs.getString('warehouse_name');
+      final warehouseCode = prefs.getString('warehouse_code');
+      final branchName = prefs.getString('branch_name');
+      
+      // 2. Employee bilgilerini DB'den al
       if (header['employee_id'] != null) {
         final employee = await getEmployeeById(header['employee_id']);
         if (employee != null) {
-          header['employee_info'] = employee; // Store the whole map
-          if (employee['warehouse_id'] != null) {
-            final warehouse = await getWarehouseById(employee['warehouse_id']);
-            if (warehouse != null) {
-              // Join warehouse with branch to get branch_name from local DB
-              // Assuming branches table is synced, which we removed.
-              // We will get branch_name from login credentials instead.
-              // For now, let's keep warehouse info.
-              header['warehouse_info'] = warehouse;
-            }
-          }
+          header['employee_info'] = employee;
         }
       }
 
-      // 2. Enrich items with ordered quantities
+      // 3. Warehouse bilgilerini önce SharedPreferences'tan al, sonra DB'yi dene
+      Map<String, dynamic> warehouseInfo = {
+        'name': warehouseName ?? 'N/A',
+        'warehouse_code': warehouseCode ?? 'N/A', 
+        'branch_name': branchName ?? 'N/A',
+      };
+
+      // Eğer employee'dan warehouse_id varsa DB'den de kontrol et
+      if (header['employee_info'] != null) {
+        final employee = header['employee_info'] as Map<String, dynamic>;
+        if (employee['warehouse_id'] != null) {
+          final warehouse = await getWarehouseById(employee['warehouse_id']);
+          if (warehouse != null) {
+            // DB'den gelen bilgiler varsa SharedPreferences bilgilerini güncelle
+            warehouseInfo['name'] = warehouse['name'] ?? warehouseInfo['name'];
+            warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
+          }
+        }
+      }
+      
+      header['warehouse_info'] = warehouseInfo;
+
+      // 3. Enrich items with ordered quantities
       final siparisId = header['siparis_id'];
       if (siparisId != null) {
         final orderSummary = await getOrderSummary(siparisId);
@@ -561,7 +579,6 @@ class DatabaseHelper {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
           
-          // Create a lookup map for safer and faster access
           final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
 
           final enrichedItems = (data['items'] as List<dynamic>).map((item) {
@@ -574,13 +591,6 @@ class DatabaseHelper {
         }
       }
       
-      // 3. Add branch name from SharedPreferences as a fallback/primary source
-      final prefs = await SharedPreferences.getInstance();
-      if (header['warehouse_info'] != null) {
-        header['warehouse_info']['branch_name'] = prefs.getString('branch_name') ?? 'N/A';
-      }
-
-
       data['header'] = header;
       return data;
 
