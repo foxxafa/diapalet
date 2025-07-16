@@ -120,9 +120,9 @@ class PdfService {
     final font = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
 
-    // Get enriched data from database
+    // Get enriched data from database with operation date for historical accuracy
     final dbHelper = DatabaseHelper.instance;
-    final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data);
+    final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data, operationDate: operation.createdAt);
     
     // Operation type'a göre farklı PDF formatları
     switch (operation.type) {
@@ -948,12 +948,12 @@ class PdfService {
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: const {
-            0: pw.FlexColumnWidth(1.5), // Barcode
-            1: pw.FlexColumnWidth(3.5),   // Product Name + Code  
-            2: pw.FlexColumnWidth(1.2),   // Ordered
-            3: pw.FlexColumnWidth(2),     // Total Received (prev + current)
-            4: pw.FlexColumnWidth(1.2),   // Current Received
-            5: pw.FlexColumnWidth(1.5),   // Container
+            0: pw.FlexColumnWidth(1.8), // Barcode (genişletildi)
+            1: pw.FlexColumnWidth(2.5),   // Product Name + Code (daraltıldı)
+            2: pw.FlexColumnWidth(1),   // Ordered
+            3: pw.FlexColumnWidth(1),     // Total Received (prev + current)
+            4: pw.FlexColumnWidth(1),   // Current Received
+            5: pw.FlexColumnWidth(1.8),   // Container
           },
           children: [
             pw.TableRow(

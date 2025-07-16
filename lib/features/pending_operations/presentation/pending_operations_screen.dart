@@ -463,7 +463,7 @@ class _OperationDetailsView extends StatelessWidget {
       final data = jsonDecode(operation.data) as Map<String, dynamic>;
       switch (operation.type) {
         case PendingOperationType.goodsReceipt:
-          return await _buildGoodsReceiptDetailsAsync(context, data);
+          return await _buildGoodsReceiptDetailsAsync(context, data, operation);
         case PendingOperationType.inventoryTransfer:
           return await _buildInventoryTransferDetailsAsync(context, data);
         case PendingOperationType.forceCloseOrder:
@@ -474,11 +474,11 @@ class _OperationDetailsView extends StatelessWidget {
     }
   }
 
-  Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
+  Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data, PendingOperation operation) async {
     final db = DatabaseHelper.instance;
     
-    // Enriched data al
-    final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data));
+    // Enriched data al - operation tarihiyle birlikte historical accuracy için
+    final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data), operationDate: operation.createdAt);
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
     

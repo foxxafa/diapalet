@@ -664,12 +664,23 @@ class DatabaseHelper {
   }
 
   // Pending operation için enriched data oluşturmak
-  Future<Map<String, dynamic>> getEnrichedGoodsReceiptData(String operationData) async {
+  Future<Map<String, dynamic>> getEnrichedGoodsReceiptData(String operationData, {DateTime? operationDate}) async {
     final db = await database;
     
     try {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
+      
+      // Actual receipt date'ini header'dan al, yoksa operationDate kullan
+      DateTime? actualReceiptDate = operationDate;
+      final headerReceiptDate = header['receipt_date'];
+      if (headerReceiptDate != null) {
+        try {
+          actualReceiptDate = DateTime.parse(headerReceiptDate.toString());
+        } catch (e) {
+          // Parse hatası, operationDate kullan
+        }
+      }
       
       // 1. SharedPreferences'tan warehouse bilgilerini al (login sırasında kaydediliyor)
       final prefs = await SharedPreferences.getInstance();
@@ -728,12 +739,73 @@ class DatabaseHelper {
         // Bu ürün için önceden kabul edilen toplam miktarı hesapla
         if (siparisId != null && productId != null) {
           final currentReceivedInThisOp = (item['quantity'] as num?)?.toDouble() ?? 0;
-          final totalReceivedNow = await _getPreviousReceivedQuantity(siparisId, productId);
-          final previousReceived = totalReceivedNow - currentReceivedInThisOp;
           
-          mutableItem['previous_received'] = previousReceived > 0 ? previousReceived : 0;
-          mutableItem['current_received'] = currentReceivedInThisOp;
-          mutableItem['total_received'] = totalReceivedNow;
+          if (actualReceiptDate != null) {
+            // Historical operation: Bu tarihteki receipt'i bul ve hariç tut
+            int? currentReceiptId;
+            try {
+              // Date'i sadece saniye seviyesine truncate et ve .000 kısmını kaldır
+              final dateOnly = DateTime(
+                actualReceiptDate.year,
+                actualReceiptDate.month,
+                actualReceiptDate.day,
+                actualReceiptDate.hour,
+                actualReceiptDate.minute,
+                actualReceiptDate.second,
+              );
+              var receiptDateStr = dateOnly.toUtc().toIso8601String().replaceAll('T', ' ').replaceAll('Z', '');
+              // .000 kısmını kaldır
+              if (receiptDateStr.endsWith('.000')) {
+                receiptDateStr = receiptDateStr.substring(0, receiptDateStr.length - 4);
+              }
+              
+              debugPrint('DEBUG - Looking for receipt with date: $receiptDateStr (truncated from ${actualReceiptDate.toUtc().toIso8601String()})');
+              
+              final currentReceiptQuery = await db.rawQuery(
+                'SELECT id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
+                [siparisId, receiptDateStr]
+              );
+              if (currentReceiptQuery.isNotEmpty) {
+                currentReceiptId = currentReceiptQuery.first['id'] as int?;
+                debugPrint('DEBUG - Found current receipt ID to exclude: $currentReceiptId for date: $receiptDateStr');
+              } else {
+                // Eğer exact match bulamazsa, LIKE ile dene
+                final likeQuery = await db.rawQuery(
+                  'SELECT id FROM goods_receipts WHERE siparis_id = ? AND receipt_date LIKE ?',
+                  [siparisId, '$receiptDateStr%']
+                );
+                if (likeQuery.isNotEmpty) {
+                  currentReceiptId = likeQuery.first['id'] as int?;
+                  debugPrint('DEBUG - Found current receipt ID via LIKE: $currentReceiptId for date pattern: $receiptDateStr%');
+                } else {
+                  debugPrint('DEBUG - No receipt found to exclude for date: $receiptDateStr (tried exact and LIKE)');
+                }
+              }
+            } catch (e) {
+              debugPrint('Error finding current receipt ID: $e');
+            }
+            
+            // Bu işlemden ÖNCEKI kabuller + bu receipt'i hariç tut
+            final previousReceived = await _getPreviousReceivedQuantity(
+              siparisId, 
+              productId, 
+              beforeDate: actualReceiptDate,
+              excludeReceiptId: currentReceiptId
+            );
+            final totalReceived = previousReceived + currentReceivedInThisOp;
+            
+            mutableItem['previous_received'] = previousReceived;
+            mutableItem['current_received'] = currentReceivedInThisOp;
+            mutableItem['total_received'] = totalReceived;
+          } else {
+            // Real-time operation: şu anki toplam durumu
+            final totalReceivedNow = await _getPreviousReceivedQuantity(siparisId, productId);
+            final previousReceived = totalReceivedNow - currentReceivedInThisOp;
+            
+            mutableItem['previous_received'] = previousReceived > 0 ? previousReceived : 0;
+            mutableItem['current_received'] = currentReceivedInThisOp;
+            mutableItem['total_received'] = totalReceivedNow;
+          }
         }
         
         enrichedItems.add(mutableItem);
@@ -766,19 +838,74 @@ class DatabaseHelper {
     }
   }
 
-  // Sipariş için bir ürünün şimdiye kadar kabul edilen toplam miktarını hesaplar
-  Future<double> _getPreviousReceivedQuantity(int siparisId, int productId) async {
+  // Sipariş için bir ürünün belirli bir tarihe kadar kabul edilen toplam miktarını hesaplar
+  Future<double> _getPreviousReceivedQuantity(int siparisId, int productId, {DateTime? beforeDate, int? excludeReceiptId}) async {
     final db = await database;
     
-    const sql = '''
-      SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
-      FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.id = gri.receipt_id
-      WHERE gr.siparis_id = ? AND gri.urun_id = ?
-    ''';
+    String sql;
+    List<dynamic> params;
     
-    final result = await db.rawQuery(sql, [siparisId, productId]);
-    return (result.first['total_received'] as num?)?.toDouble() ?? 0.0;
+    if (beforeDate != null || excludeReceiptId != null) {
+      // Historical operation veya specific receipt hariç tutma
+      List<String> conditions = ['gr.siparis_id = ?', 'gri.urun_id = ?'];
+      params = [siparisId, productId];
+      
+      if (beforeDate != null) {
+        conditions.add('gr.receipt_date < ?');
+        params.add(beforeDate.toUtc().toIso8601String().replaceAll('T', ' ').replaceAll('Z', ''));
+      }
+      
+      if (excludeReceiptId != null) {
+        conditions.add('gr.id != ?');
+        params.add(excludeReceiptId);
+      }
+      
+      sql = '''
+        SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE ${conditions.join(' AND ')}
+      ''';
+      
+      // Debug: Hangi kabuller sayılıyor görelim
+      final debugSql = '''
+        SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY gr.receipt_date
+      ''';
+      final debugResult = await db.rawQuery(debugSql, params);
+      debugPrint('DEBUG - Receipts being counted: $debugResult');
+      
+      // Debug: Bu sipariş ve ürün için TÜM kabulleri görelim
+      final allReceiptsSql = '''
+        SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id, 'ALL' as note
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE gr.siparis_id = ? AND gri.urun_id = ?
+        ORDER BY gr.receipt_date
+      ''';
+      final allReceipts = await db.rawQuery(allReceiptsSql, [siparisId, productId]);
+      debugPrint('DEBUG - ALL receipts for order $siparisId, product $productId: $allReceipts');
+    } else {
+      // Normal durum: tüm kabuller
+      sql = '''
+        SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        WHERE gr.siparis_id = ? AND gri.urun_id = ?
+      ''';
+      params = [siparisId, productId];
+    }
+    
+    final result = await db.rawQuery(sql, params);
+    final totalReceived = (result.first['total_received'] as num?)?.toDouble() ?? 0.0;
+    
+    // Debug log
+    debugPrint('_getPreviousReceivedQuantity: siparisId=$siparisId, productId=$productId, beforeDate=${beforeDate?.toString() ?? 'null'}, excludeReceiptId=${excludeReceiptId?.toString() ?? 'null'}, result=$totalReceived');
+    
+    return totalReceived;
   }
 
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
