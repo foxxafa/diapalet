@@ -508,8 +508,6 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.purchase_order'.tr(): poId,
         if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
-        'Warehouse': warehouseDisplay,
-        'Branch': branchName,
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
@@ -517,8 +515,12 @@ class _OperationDetailsView extends StatelessWidget {
         final productCode = item['product_code'] ?? '';
         final productBarcode = item['product_barcode'] ?? '';
         final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
-        final quantity = item['quantity'] ?? 0;
-        final orderedQuantity = item['ordered_quantity'] ?? 0;
+        
+        // Miktarlar - yeni enriched data'dan gelir
+        final currentReceived = item['current_received']?.toDouble() ?? item['quantity']?.toDouble() ?? 0;
+        final previousReceived = item['previous_received']?.toDouble() ?? 0;
+        final totalReceived = item['total_received']?.toDouble() ?? currentReceived;
+        final orderedQuantity = item['ordered_quantity']?.toDouble() ?? 0;
         final unit = item['unit'] ?? '';
         final palletBarcode = item['pallet_barcode'];
         
@@ -550,7 +552,7 @@ class _OperationDetailsView extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '$quantity $unit',
+                      '${currentReceived.toStringAsFixed(0)} $unit',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
@@ -566,7 +568,20 @@ class _OperationDetailsView extends StatelessWidget {
                     Icon(Icons.assignment_outlined, size: 16, color: Theme.of(context).hintColor),
                     const SizedBox(width: 4),
                     Text(
-                      'Sipariş: $orderedQuantity $unit',
+                      'Sipariş: ${orderedQuantity.toStringAsFixed(0)} $unit',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                    ),
+                  ],
+                ),
+              ],
+              if (isOrderBased && previousReceived > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.history, size: 16, color: Theme.of(context).hintColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Toplam Kabul: ${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)} = ${totalReceived.toStringAsFixed(0)} $unit',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                     ),
                   ],

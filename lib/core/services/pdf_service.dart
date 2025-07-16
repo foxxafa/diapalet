@@ -948,32 +948,53 @@ class PdfService {
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: const {
-            0: pw.FlexColumnWidth(1), 1: pw.FlexColumnWidth(3),
-            2: pw.FlexColumnWidth(1.2), 3: pw.FlexColumnWidth(1.2),
-            4: pw.FlexColumnWidth(1.5), 5: pw.FlexColumnWidth(1.5),
+            0: pw.FlexColumnWidth(1.5), // Barcode
+            1: pw.FlexColumnWidth(3.5),   // Product Name + Code  
+            2: pw.FlexColumnWidth(1.2),   // Ordered
+            3: pw.FlexColumnWidth(2),     // Total Received (prev + current)
+            4: pw.FlexColumnWidth(1.2),   // Current Received
+            5: pw.FlexColumnWidth(1.5),   // Container
           },
           children: [
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
-                _buildTableCell('Code', boldFont, isHeader: true),
-                _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Ordered', boldFont, isHeader: true),
-                _buildTableCell('Received', boldFont, isHeader: true),
                 _buildTableCell('Barcode', boldFont, isHeader: true),
+                _buildTableCell('Product Name & Code', boldFont, isHeader: true),
+                _buildTableCell('Ordered', boldFont, isHeader: true),
+                _buildTableCell('Total Received', boldFont, isHeader: true),
+                _buildTableCell('This Receipt', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
             ...items.map((item) {
-              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
               final productBarcode = item['product_barcode'] ?? '';
+              final productName = item['product_name'] ?? 'Unknown';
+              final productCode = item['product_code'] ?? 'N/A';
+              final productNameAndCode = '$productName ($productCode)';
+              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
+              
+              // Miktarlar
+              final orderedQty = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
+              final currentReceived = (item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0;
+              final previousReceived = (item['previous_received'] as num?)?.toDouble() ?? 0.0;
+              final totalReceived = (item['total_received'] as num?)?.toDouble() ?? currentReceived;
+              
+              // Total received display: "60 + 12" formatında
+              String totalReceivedDisplay;
+              if (previousReceived > 0) {
+                totalReceivedDisplay = '${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)}';
+              } else {
+                totalReceivedDisplay = currentReceived.toStringAsFixed(0);
+              }
+              
               return pw.TableRow(
                 children: [
-                  _buildTableCell(item['product_code'] ?? 'N/A', font),
-                  _buildGroupedTableCell(item['product_name'] ?? 'Unknown', font),
-                  _buildTableCell(((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
-                  _buildTableCell(((item['quantity'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0), font),
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
+                  _buildGroupedTableCell(productNameAndCode, font),
+                  _buildTableCell(orderedQty.toStringAsFixed(0), font),
+                  _buildTableCell(totalReceivedDisplay, font),
+                  _buildTableCell(currentReceived.toStringAsFixed(0), font),
                   _buildTableCell(containerDisplay, font),
                 ],
               );
@@ -981,11 +1002,11 @@ class PdfService {
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.blue50),
               children: [
-                _buildTableCell('TOTAL', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
+                _buildTableCell('TOTAL', boldFont, isHeader: true),
                 _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell(totalReceived.toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell('', boldFont, isHeader: true),
+                _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
               ],
             ),

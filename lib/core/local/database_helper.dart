@@ -403,6 +403,53 @@ class DatabaseHelper {
     };
   }
 
+  // Bir sipariş için özel bir receipt'ın ürünlerini ve önceki kabullerini detaylarıyla döndürür
+  Future<List<Map<String, dynamic>>> getReceiptItemsWithPreviousReceipts(int receiptId) async {
+    final db = await database;
+    
+    // Önce bu receipt'ın sipariş ID'sini alalım
+    final receipt = await db.query('goods_receipts', where: 'id = ?', whereArgs: [receiptId], limit: 1);
+    if (receipt.isEmpty) return [];
+    
+    final siparisId = receipt.first['siparis_id'];
+    if (siparisId == null) return [];
+    
+    const sql = '''
+      SELECT 
+        gri.id,
+        gri.urun_id,
+        gri.quantity_received as current_received,
+        gri.pallet_barcode,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode,
+        sol.miktar as ordered_quantity,
+        sol.birim as unit,
+        -- Bu receipt'tan önceki tüm kabuller
+        COALESCE(previous.previous_received, 0) as previous_received,
+        -- Bu receipt'tan önceki + bu receipt'taki = toplam
+        COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
+      FROM goods_receipt_items gri
+      LEFT JOIN urunler u ON u.id = gri.urun_id
+      LEFT JOIN goods_receipts gr ON gr.id = gri.receipt_id
+      LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
+      LEFT JOIN (
+        SELECT 
+          gri2.urun_id,
+          SUM(gri2.quantity_received) as previous_received
+        FROM goods_receipt_items gri2
+        JOIN goods_receipts gr2 ON gr2.id = gri2.receipt_id
+        WHERE gr2.siparis_id = ? 
+          AND gr2.id < ?  -- Bu receipt'tan önceki receipt'lar
+        GROUP BY gri2.urun_id
+      ) previous ON previous.urun_id = gri.urun_id
+      WHERE gri.receipt_id = ?
+      ORDER BY gri.id
+    ''';
+    
+    return await db.rawQuery(sql, [siparisId, receiptId, receiptId]);
+  }
+
   Future<List<Map<String, dynamic>>> getReceiptItemsWithDetails(int receiptId) async {
     final db = await database;
     
@@ -660,8 +707,10 @@ class DatabaseHelper {
       
       header['warehouse_info'] = warehouseInfo;
 
-      // 3. Enrich items with product and order details
+      // 3. Enrich items with product, order details and previous receipts
       final enrichedItems = <Map<String, dynamic>>[];
+      final siparisId = header['siparis_id'];
+      
       for (final item in (data['items'] as List<dynamic>)) {
         final mutableItem = Map<String, dynamic>.from(item);
         final productId = item['urun_id'];
@@ -676,11 +725,21 @@ class DatabaseHelper {
           }
         }
         
+        // Bu ürün için önceden kabul edilen toplam miktarı hesapla
+        if (siparisId != null && productId != null) {
+          final currentReceivedInThisOp = (item['quantity'] as num?)?.toDouble() ?? 0;
+          final totalReceivedNow = await _getPreviousReceivedQuantity(siparisId, productId);
+          final previousReceived = totalReceivedNow - currentReceivedInThisOp;
+          
+          mutableItem['previous_received'] = previousReceived > 0 ? previousReceived : 0;
+          mutableItem['current_received'] = currentReceivedInThisOp;
+          mutableItem['total_received'] = totalReceivedNow;
+        }
+        
         enrichedItems.add(mutableItem);
       }
       
       // Sipariş detaylarını ekle
-      final siparisId = header['siparis_id'];
       if (siparisId != null) {
         final orderSummary = await getOrderSummary(siparisId);
         if (orderSummary != null) {
@@ -705,6 +764,21 @@ class DatabaseHelper {
       debugPrint('Error enriching goods receipt data: $e\n$s');
       return jsonDecode(operationData); // return original data on error
     }
+  }
+
+  // Sipariş için bir ürünün şimdiye kadar kabul edilen toplam miktarını hesaplar
+  Future<double> _getPreviousReceivedQuantity(int siparisId, int productId) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.id = gri.receipt_id
+      WHERE gr.siparis_id = ? AND gri.urun_id = ?
+    ''';
+    
+    final result = await db.rawQuery(sql, [siparisId, productId]);
+    return (result.first['total_received'] as num?)?.toDouble() ?? 0.0;
   }
 
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
@@ -765,7 +839,11 @@ class DatabaseHelper {
 
   Future<List<PendingOperation>> getSyncedOperations() async {
     final db = await database;
-    final maps = await db.query('pending_operation', where: "status = ?", whereArgs: ['synced'], orderBy: 'synced_at DESC', limit: 100);
+    final maps = await db.query('pending_operation', 
+        where: "status = ? AND type != ?", 
+        whereArgs: ['synced', 'forceCloseOrder'], 
+        orderBy: 'synced_at DESC', 
+        limit: 100);
     return maps.map((map) => PendingOperation.fromMap(map)).toList();
   }
 

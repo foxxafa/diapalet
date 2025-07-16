@@ -70,6 +70,11 @@ class PendingOperation {
     }
   }
 
+  /// Force close order işlemleri history'de gösterilmeyecek
+  bool get shouldShowInHistory {
+    return type != PendingOperationType.forceCloseOrder;
+  }
+
   String get displaySubtitle {
     try {
       final dataMap = jsonDecode(data);
