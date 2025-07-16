@@ -270,7 +270,7 @@ class DatabaseHelper {
           }
         } else {
           // Diğer tüm tablolar için tam yenileme yap
-          final fullRefreshTables = ['employees', 'urunler', 'warehouses', 'shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
+          const fullRefreshTables = ['employees', 'urunler', 'warehouses', 'shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
           if(fullRefreshTables.contains(table)) {
             await txn.delete(table);
           }
@@ -576,8 +576,6 @@ class DatabaseHelper {
 
   // Transfer işlemleri için enriched data oluşturmak
   Future<Map<String, dynamic>> getEnrichedInventoryTransferData(String operationData) async {
-    final db = await database;
-    
     try {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
@@ -852,7 +850,7 @@ class DatabaseHelper {
       
       if (beforeDate != null) {
         conditions.add('gr.receipt_date < ?');
-        params.add(beforeDate.toUtc().toIso8601String().replaceAll('T', ' ').replaceAll('Z', ''));
+        params.add(beforeDate.toUtc().toIso8601String());
       }
       
       if (excludeReceiptId != null) {
@@ -879,7 +877,7 @@ class DatabaseHelper {
       debugPrint('DEBUG - Receipts being counted: $debugResult');
       
       // Debug: Bu sipariş ve ürün için TÜM kabulleri görelim
-      final allReceiptsSql = '''
+      const allReceiptsSql = '''
         SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id, 'ALL' as note
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.id = gri.receipt_id
@@ -908,20 +906,156 @@ class DatabaseHelper {
     return totalReceived;
   }
 
-  // Sipariş için force close operation var mı kontrol eder
-  Future<bool> hasForceCloseOperationForOrder(int siparisId, DateTime afterDate) async {
+  // Sipariş için belirli bir tarihten sonra force close operation var mı kontrol eder
+  Future<bool> hasForceCloseOperationForOrder(int siparisId, DateTime? afterDate) async {
+    final db = await database;
+    
+    // afterDate olmadan bu fonksiyon anlamsız, hep false döndür
+    if (afterDate == null) {
+      debugPrint('hasForceCloseOperationForOrder: afterDate null, false döndürülüyor');
+      return false;
+    }
+    
+    // Force close operation'ların data içindeki tarihlerine bak
+    try {
+      final forceCloseOps = await db.rawQuery('''
+        SELECT po.data, po.created_at
+        FROM pending_operation po
+        WHERE po.type = 'forceCloseOrder' 
+          AND JSON_EXTRACT(po.data, '\$.siparis_id') = ?
+      ''', [siparisId]);
+      
+      debugPrint('DEBUG hasForceClose: Found ${forceCloseOps.length} force close operations for order $siparisId');
+      
+      // Her force close operation için tarih kontrolü yap
+      for (final row in forceCloseOps) {
+        try {
+          final dataStr = row['data'] as String;
+          final data = jsonDecode(dataStr) as Map<String, dynamic>;
+          
+          DateTime forceCloseDate;
+          if (data.containsKey('receipt_date') && data['receipt_date'] != null) {
+            forceCloseDate = DateTime.parse(data['receipt_date'].toString());
+            debugPrint('DEBUG hasForceClose: Using receipt_date from data: $forceCloseDate');
+          } else {
+            forceCloseDate = DateTime.parse(row['created_at'].toString());
+            debugPrint('DEBUG hasForceClose: Using created_at: $forceCloseDate');
+          }
+          
+          debugPrint('DEBUG hasForceClose: Comparing dates - afterDate: $afterDate, forceCloseDate: $forceCloseDate');
+          
+          // 1. Bu force close, mevcut mal kabulden sonra mı?
+          if (forceCloseDate.isAfter(afterDate)) {
+            
+            debugPrint('DEBUG hasForceClose: Force close is after receipt, checking intermediate receipts...');
+            
+            // 2. Arada başka mal kabul var mı? (Hem synced hem pending operations kontrol et)
+            
+            // DÜZELTME: Tarihleri MySQL datetime formatına çevir (YYYY-MM-DD HH:MM:SS)
+            String formatDateForMysql(DateTime date) {
+              return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
+            }
+            
+            final afterDateStr = formatDateForMysql(afterDate);
+            // DÜZELTME: Force close tarihine 1 saniye ekle ki aynı saniyedeki receipts dahil edilsin
+            final forceCloseDatePlusOne = forceCloseDate.add(const Duration(seconds: 1));
+            final forceCloseDateStr = formatDateForMysql(forceCloseDatePlusOne);
+            
+            debugPrint('DEBUG hasForceClose: Date range for intermediate check (MySQL format): $afterDateStr to $forceCloseDateStr (force close +1 sec)');
+            
+            // Synced receipts from goods_receipts table
+            final syncedReceipts = await db.rawQuery('''
+              SELECT COUNT(*) as count
+              FROM goods_receipts
+              WHERE siparis_id = ? AND receipt_date > ? AND receipt_date < ?
+            ''', [siparisId, afterDateStr, forceCloseDateStr]);
+            
+            final syncedCount = Sqflite.firstIntValue(syncedReceipts) ?? 0;
+            
+            debugPrint('DEBUG hasForceClose: Synced receipts in range: $syncedCount');
+            
+            // Debug: Show all receipts in this range
+            final debugSyncedReceipts = await db.rawQuery('''
+              SELECT receipt_date, id
+              FROM goods_receipts
+              WHERE siparis_id = ? AND receipt_date > ? AND receipt_date < ?
+            ''', [siparisId, afterDateStr, forceCloseDateStr]);
+            
+            debugPrint('DEBUG hasForceClose: Synced receipts found in range: $debugSyncedReceipts');
+            
+            // Pending receipts from pending_operation table
+            final pendingReceipts = await db.rawQuery('''
+              SELECT po.data
+              FROM pending_operation po
+              WHERE po.type = 'goodsReceipt' 
+                AND po.status = 'pending'
+                AND JSON_EXTRACT(po.data, '\$.header.siparis_id') = ?
+            ''', [siparisId]);
+            
+            int pendingCount = 0;
+            debugPrint('DEBUG hasForceClose: Found ${pendingReceipts.length} pending receipts to check');
+            
+            for (final pendingRow in pendingReceipts) {
+              try {
+                final pendingDataStr = pendingRow['data'] as String;
+                final pendingData = jsonDecode(pendingDataStr) as Map<String, dynamic>;
+                final header = pendingData['header'] as Map<String, dynamic>?;
+                
+                if (header != null && header['receipt_date'] != null) {
+                  final receiptDate = DateTime.parse(header['receipt_date'].toString());
+                  debugPrint('DEBUG hasForceClose: Checking pending receipt date: $receiptDate');
+                  // DÜZELTME: Burada da +1 saniye eklenmiş force close tarih ile karşılaştır
+                  if (receiptDate.isAfter(afterDate) && receiptDate.isBefore(forceCloseDatePlusOne)) {
+                    pendingCount++;
+                    debugPrint('DEBUG hasForceClose: Pending receipt in range found: $receiptDate');
+                  }
+                }
+              } catch (e) {
+                debugPrint('Error parsing pending goods receipt data: $e');
+                continue;
+              }
+            }
+            
+            final totalIntermediateCount = syncedCount + pendingCount;
+            
+            debugPrint('DEBUG hasForceClose: Total intermediate receipts: synced=$syncedCount, pending=$pendingCount, total=$totalIntermediateCount');
+            
+            // Eğer arada başka mal kabul yoksa, bu işlem siparişi kapatandır.
+            if (totalIntermediateCount == 0) {
+              debugPrint('hasForceCloseOperationForOrder: siparisId=$siparisId, FOUND closing receipt at $afterDate (synced: $syncedCount, pending: $pendingCount)');
+              return true;
+            } else {
+              debugPrint('hasForceCloseOperationForOrder: siparisId=$siparisId, intermediate receipts found: synced=$syncedCount, pending=$pendingCount, total=$totalIntermediateCount');
+            }
+          } else {
+            debugPrint('DEBUG hasForceClose: Force close is NOT after receipt, skipping');
+          }
+        } catch (e) {
+          debugPrint('Error parsing force close data: $e');
+          continue;
+        }
+      }
+      
+      debugPrint('hasForceCloseOperationForOrder: siparisId=$siparisId, NO suitable force close found for receipt at $afterDate');
+      return false;
+    } catch (e) {
+      debugPrint('hasForceCloseOperationForOrder error: $e');
+      return false;
+    }
+  }
+  
+  // Sipariş status'unu döndürür
+  Future<int?> getOrderStatus(int siparisId) async {
     final db = await database;
     
     final result = await db.rawQuery('''
-      SELECT COUNT(*) as count
-      FROM pending_operation
-      WHERE type = 'forceCloseOrder' 
-        AND JSON_EXTRACT(data, '\$.siparis_id') = ?
-        AND created_at >= ?
-    ''', [siparisId, afterDate.toIso8601String()]);
+      SELECT status
+      FROM satin_alma_siparis_fis
+      WHERE id = ?
+    ''', [siparisId]);
     
-    final count = (result.first['count'] as int?) ?? 0;
-    return count > 0;
+    if (result.isEmpty) return null;
+    return (result.first['status'] as int?);
   }
 
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
@@ -1018,11 +1152,11 @@ class DatabaseHelper {
     final cutoffDate = DateTime.now().subtract(Duration(days: days));
     final count = await db.delete(
       'pending_operation',
-      where: "status = ? AND synced_at < ?",
-      whereArgs: ['synced', cutoffDate.toIso8601String()],
+      where: "status = ? AND synced_at < ? AND type != ?",
+      whereArgs: ['synced', cutoffDate.toIso8601String(), 'forceCloseOrder'],
     );
     if (count > 0) {
-      debugPrint("$count adet eski senkronize edilmiş işlem temizlendi.");
+      debugPrint("$count adet eski senkronize edilmiş işlem temizlendi. (Force close işlemleri korundu)");
     }
   }
 

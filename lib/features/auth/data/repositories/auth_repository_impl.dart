@@ -115,7 +115,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final db = await dbHelper.database;
       
       // Employee bilgilerini warehouse bilgileriyle birlikte al
-      final sql = '''
+      const sql = '''
         SELECT e.*, w.name as warehouse_name, w.warehouse_code
         FROM employees e
         LEFT JOIN warehouses w ON e.warehouse_id = w.id

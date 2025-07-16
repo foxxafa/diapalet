@@ -1,4 +1,5 @@
 // lib/core/services/pdf_service.dart
+import 'dart:convert';
 import 'dart:io';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
@@ -122,7 +123,20 @@ class PdfService {
 
     // Get enriched data from database with operation date for historical accuracy
     final dbHelper = DatabaseHelper.instance;
-    final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data, operationDate: operation.createdAt);
+    
+    // Data içindeki receipt_date'i kullan, created_at değil (server timing farkı için)
+    DateTime operationDate = operation.createdAt;
+    try {
+      final data = jsonDecode(operation.data) as Map<String, dynamic>;
+      final header = data['header'] as Map<String, dynamic>?;
+      if (header != null && header['receipt_date'] != null) {
+        operationDate = DateTime.parse(header['receipt_date'].toString());
+      }
+    } catch (e) {
+      // Parse hatası durumunda created_at kullan
+    }
+    
+    final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data, operationDate: operationDate);
     
     // Operation type'a göre farklı PDF formatları
     switch (operation.type) {
@@ -160,6 +174,31 @@ class PdfService {
     final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
     final poId = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
     final invoiceNumber = header['invoice_number']?.toString() ?? 'N/A';
+    
+    // Force close kontrolü - sipariş eksiklerle kapatıldı mı?
+    bool isForceClosed = false;
+    final siparisId = header['siparis_id'] as int?;
+    if (siparisId != null) {
+      try {
+        // Data içindeki receipt_date'i kullan, created_at değil (server timing farkı için)
+        DateTime operationDate = operation.createdAt;
+        try {
+          final data = jsonDecode(operation.data) as Map<String, dynamic>;
+          final dataHeader = data['header'] as Map<String, dynamic>?;
+          if (dataHeader != null && dataHeader['receipt_date'] != null) {
+            operationDate = DateTime.parse(dataHeader['receipt_date'].toString());
+          }
+        } catch (e) {
+          // Parse hatası durumunda created_at kullan
+        }
+        
+        final db = DatabaseHelper.instance;
+        // Bu mal kabul işleminden SONRA force close yapıldı mı kontrol et
+        isForceClosed = await db.hasForceCloseOperationForOrder(siparisId, operationDate);
+      } catch (e) {
+        // Hata durumunda force close bilgisini false olarak bırak
+      }
+    }
      
     final pdf = pw.Document();
      
@@ -185,6 +224,7 @@ class PdfService {
               poId: poId,
               invoiceNumber: invoiceNumber,
               date: operation.createdAt,
+              isForceClosed: isForceClosed,
               font: font,
               boldFont: boldFont,
             ),
@@ -232,9 +272,7 @@ class PdfService {
     final sourceDisplay = sourceCode.isNotEmpty ? '$sourceName ($sourceCode)' : sourceName;
     final targetDisplay = targetCode.isNotEmpty ? '$targetName ($targetCode)' : targetName;
     
-    // Calculate totals
-    final totalItems = items.fold<int>(0, (sum, item) => sum + (item['quantity_transferred'] as num? ?? item['quantity'] as num? ?? 0).toInt());
-    final uniqueProducts = items.map((item) => item['product_id'] ?? item['urun_id']).toSet().length;
+    // Calculate totals - not used in transfer report
     
     pdf.addPage(
       pw.MultiPage(
@@ -903,6 +941,7 @@ class PdfService {
     required String poId,
     required String invoiceNumber,
     required DateTime date,
+    bool isForceClosed = false,
     required pw.Font font,
     required pw.Font boldFont,
   }) {
@@ -926,6 +965,8 @@ class PdfService {
           if (invoiceNumber != 'N/A' && invoiceNumber != poId)
             _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
           _buildInfoRow('Status', operation.status, font, boldFont),
+          if (isForceClosed)
+            _buildInfoRow('Order Status', 'Closed with remainings', font, boldFont),
         ],
       ),
     );
@@ -936,7 +977,6 @@ class PdfService {
     pw.Font font,
     pw.Font boldFont,
   ) {
-    final totalReceived = items.fold<double>(0.0, (sum, item) => sum + ((item['quantity'] as num?)?.toDouble() ?? 0.0));
     final totalOrdered = items.fold<double>(0.0, (sum, item) => sum + ((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0));
 
     return pw.Column(
@@ -977,7 +1017,6 @@ class PdfService {
               final orderedQty = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
               final currentReceived = (item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0;
               final previousReceived = (item['previous_received'] as num?)?.toDouble() ?? 0.0;
-              final totalReceived = (item['total_received'] as num?)?.toDouble() ?? currentReceived;
               
               // Total received display: "60 + 12" formatında
               String totalReceivedDisplay;
@@ -1004,7 +1043,7 @@ class PdfService {
                 _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell('TOTAL', boldFont, isHeader: true),
                 _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell(totalReceived.toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
               ],

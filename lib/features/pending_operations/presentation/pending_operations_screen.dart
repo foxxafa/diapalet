@@ -477,8 +477,19 @@ class _OperationDetailsView extends StatelessWidget {
   Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data, PendingOperation operation) async {
     final db = DatabaseHelper.instance;
     
+    // Data içindeki receipt_date'i kullan, created_at değil (server timing farkı için)
+    DateTime operationDate = operation.createdAt;
+    final originalHeader = data['header'] as Map<String, dynamic>?;
+    if (originalHeader != null && originalHeader['receipt_date'] != null) {
+      try {
+        operationDate = DateTime.parse(originalHeader['receipt_date'].toString());
+      } catch (e) {
+        // Parse hatası durumunda created_at kullan
+      }
+    }
+    
     // Enriched data al - operation tarihiyle birlikte historical accuracy için
-    final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data), operationDate: operation.createdAt);
+    final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data), operationDate: operationDate);
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
     
@@ -489,11 +500,7 @@ class _OperationDetailsView extends StatelessWidget {
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
         : 'Sistem Kullanıcısı';
     final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
-    final warehouseName = warehouseInfo?['name'] ?? 'N/A';
-    final warehouseCode = warehouseInfo?['warehouse_code'] ?? '';
-    final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
-    
-    final warehouseDisplay = warehouseCode.isNotEmpty ? '$warehouseName ($warehouseCode)' : warehouseName;
+    // Warehouse info not used in this context
     
     // Order tabanlı mı kontrol et
     final isOrderBased = header['siparis_id'] != null;
@@ -502,9 +509,10 @@ class _OperationDetailsView extends StatelessWidget {
     bool isForceClosed = false;
     if (isOrderBased && header['siparis_id'] != null) {
       try {
+        // Bu mal kabul işleminden SONRA force close yapıldı mı kontrol et
         isForceClosed = await db.hasForceCloseOperationForOrder(
-          header['siparis_id'] as int, 
-          operation.createdAt
+          header['siparis_id'] as int,
+          operationDate
         );
       } catch (e) {
         debugPrint('Error checking force close: $e');
@@ -521,7 +529,7 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.purchase_order'.tr(): poId,
         if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
-        if (isForceClosed) 'Order Status': 'Order closed with remaining items',
+        if (isForceClosed) 'Order Status': 'Closed with remainings',
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
