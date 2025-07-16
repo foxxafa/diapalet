@@ -850,7 +850,8 @@ class DatabaseHelper {
       
       if (beforeDate != null) {
         conditions.add('gr.receipt_date < ?');
-        params.add(beforeDate.toUtc().toIso8601String());
+        // DÜZELTME: Tarih formatını SQLite'ın metin karşılaştırması için veritabanında saklanan formata (YYYY-MM-DD HH:MM:SS) uygun hale getir.
+        params.add(beforeDate.toUtc().toIso8601String().substring(0, 19).replaceFirst('T', ' '));
       }
       
       if (excludeReceiptId != null) {
