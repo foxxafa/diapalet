@@ -908,6 +908,22 @@ class DatabaseHelper {
     return totalReceived;
   }
 
+  // Sipariş için force close operation var mı kontrol eder
+  Future<bool> hasForceCloseOperationForOrder(int siparisId, DateTime afterDate) async {
+    final db = await database;
+    
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count
+      FROM pending_operation
+      WHERE type = 'forceCloseOrder' 
+        AND JSON_EXTRACT(data, '\$.siparis_id') = ?
+        AND created_at >= ?
+    ''', [siparisId, afterDate.toIso8601String()]);
+    
+    final count = (result.first['count'] as int?) ?? 0;
+    return count > 0;
+  }
+
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
   Future<Map<String, dynamic>?> getSystemInfo(int warehouseId) async {
     final db = await database;

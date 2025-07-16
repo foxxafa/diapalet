@@ -498,6 +498,19 @@ class _OperationDetailsView extends StatelessWidget {
     // Order tabanlı mı kontrol et
     final isOrderBased = header['siparis_id'] != null;
     
+    // Force close kontrolü - sipariş eksiklerle kapatıldı mı?
+    bool isForceClosed = false;
+    if (isOrderBased && header['siparis_id'] != null) {
+      try {
+        isForceClosed = await db.hasForceCloseOperationForOrder(
+          header['siparis_id'] as int, 
+          operation.createdAt
+        );
+      } catch (e) {
+        debugPrint('Error checking force close: $e');
+      }
+    }
+    
     if (!context.mounted) return const SizedBox.shrink();
 
     return _buildDetailSection(
@@ -508,6 +521,7 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.purchase_order'.tr(): poId,
         if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
+        if (isForceClosed) 'Order Status': 'Order closed with remaining items',
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {

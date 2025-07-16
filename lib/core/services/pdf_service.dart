@@ -684,21 +684,19 @@ class PdfService {
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: const {
-            0: pw.FlexColumnWidth(1),
-            1: pw.FlexColumnWidth(3),
-            2: pw.FlexColumnWidth(1),
-            3: pw.FlexColumnWidth(1.5),
-            4: pw.FlexColumnWidth(1.5),
+            0: pw.FlexColumnWidth(2.5), // Barcode
+            1: pw.FlexColumnWidth(3.5), // Product Name + Code
+            2: pw.FlexColumnWidth(1.5), // Quantity
+            3: pw.FlexColumnWidth(2.5), // Container
           },
           children: [
             // Header
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
-                _buildTableCell('Code', boldFont, isHeader: true),
-                _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Quantity', boldFont, isHeader: true),
                 _buildTableCell('Barcode', boldFont, isHeader: true),
+                _buildTableCell('Product Name + Code', boldFont, isHeader: true),
+                _buildTableCell('Quantity', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
@@ -710,12 +708,14 @@ class PdfService {
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
               final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box';
               
+              // Product Name + Code birleştirme
+              final productNameAndCode = productCode != 'N/A' ? '$productName ($productCode)' : productName;
+              
               return pw.TableRow(
                 children: [
-                  _buildTableCell(productCode, font),
-                  _buildGroupedTableCell(productName, font),
-                  _buildTableCell(quantity, font),
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
+                  _buildGroupedTableCell(productNameAndCode, font),
+                  _buildTableCell(quantity, font),
                   _buildTableCell(container, font),
                 ],
               );
@@ -727,7 +727,6 @@ class PdfService {
                 _buildTableCell('TOTAL', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell(totalQuantity.toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
               ],
             ),
