@@ -228,12 +228,13 @@ class TerminalController extends Controller
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId, 'urun_id' => $item['urun_id'],
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                'expiry_date' => $item['expiry_date'] ?? null,
             ])->execute();
 
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
             $stockStatus = $siparisId ? 'receiving' : 'available';
-            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId);
+            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null);
         }
 
         if ($siparisId) {
@@ -264,10 +265,12 @@ class TerminalController extends Controller
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
+            $expiryDate = $item['expiry_date'] ?? null;
+            
             // Kaynaktan düş
-            $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available', $isPutawayOperation ? $siparisId : null);
+            $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available', $isPutawayOperation ? $siparisId : null, $expiryDate);
             // Hedefe ekle (hedef her zaman 'available' ve siparişsizdir)
-            $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available');
+            $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available', null, $expiryDate);
 
             $transferData = [
                 'urun_id' => $productId, 'from_location_id' => $sourceLocationId,
@@ -297,7 +300,7 @@ class TerminalController extends Controller
         return ['status' => 'success'];
     }
 
-    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null) {
+    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null) {
         $query = new Query();
         $query->from('inventory_stock')
             ->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
@@ -320,6 +323,12 @@ class TerminalController extends Controller
             $query->andWhere(['siparis_id' => $siparisId]);
         }
 
+        if ($expiryDate === null) {
+            $query->andWhere(['is', 'expiry_date', new \yii\db\Expression('NULL')]);
+        } else {
+            $query->andWhere(['expiry_date' => $expiryDate]);
+        }
+
         $stock = $query->one($db);
 
 
@@ -337,7 +346,8 @@ class TerminalController extends Controller
                 'siparis_id' => $siparisId,
                 'quantity' => (float)$qtyChange,
                 'pallet_barcode' => $palletBarcode, 
-                'stock_status' => $stockStatus
+                'stock_status' => $stockStatus,
+                'expiry_date' => $expiryDate,
             ])->execute();
         } else {
             // Stok düşürme işlemi sırasında negatif miktar gelirse ve stok bulunamazsa hata ver.

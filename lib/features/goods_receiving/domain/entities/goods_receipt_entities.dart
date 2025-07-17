@@ -45,17 +45,20 @@ class GoodsReceiptItemPayload {
   final int urunId;
   final double quantity;
   final String? palletBarcode;
+  final DateTime? expiryDate;
 
   const GoodsReceiptItemPayload({
     required this.urunId,
     required this.quantity,
     this.palletBarcode,
+    this.expiryDate,
   });
 
   Map<String, dynamic> toJson() => {
     'urun_id': urunId,
     'quantity': quantity,
     'pallet_barcode': palletBarcode,
+    'expiry_date': expiryDate?.toIso8601String(),
   };
 }
 
@@ -71,10 +74,12 @@ class ReceiptItemDraft {
   final ProductInfo product;
   final double quantity;
   final String? palletBarcode;
+  final DateTime? expiryDate;
 
   const ReceiptItemDraft({
     required this.product,
     required this.quantity,
     this.palletBarcode,
+    this.expiryDate,
   });
 }

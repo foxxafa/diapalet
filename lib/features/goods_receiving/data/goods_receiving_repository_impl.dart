@@ -56,8 +56,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await txn.insert('goods_receipt_items', {
             'receipt_id': receiptId, 'urun_id': item.urunId,
             'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
+            'expiry_date': item.expiryDate?.toIso8601String(),
           });
-          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, stockStatus, payload.header.siparisId);
+          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, stockStatus, payload.header.siparisId, item.expiryDate?.toIso8601String());
         }
 
         if (payload.header.siparisId != null) {
@@ -123,18 +124,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId]) async {
+  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate]) async {
     String locationWhereClause = locationId == null ? 'location_id IS NULL' : 'location_id = ?';
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
+    String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
     
     List<dynamic> whereArgs = [urunId, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
     if (palletBarcode != null) whereArgs.add(palletBarcode);
     if (siparisId != null) whereArgs.add(siparisId);
+    if (expiryDate != null) whereArgs.add(expiryDate);
     
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause',
+        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause',
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
@@ -151,7 +154,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
         'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
         'stock_status': stockStatus,
-        'siparis_id': siparisId
+        'siparis_id': siparisId,
+        'expiry_date': expiryDate
       });
     }
   }

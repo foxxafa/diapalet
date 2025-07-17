@@ -498,9 +498,7 @@ class _OperationDetailsView extends StatelessWidget {
     final invoice = header['invoice_number']?.toString() ?? 'N/A';
     final employeeName = header['employee_info'] != null 
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
-        : 'Sistem Kullanıcısı';
-    final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
-    // Warehouse info not used in this context
+        : 'System User';
     
     // Order tabanlı mı kontrol et
     final isOrderBased = header['siparis_id'] != null;
@@ -523,9 +521,9 @@ class _OperationDetailsView extends StatelessWidget {
 
     return _buildDetailSection(
       context: context,
-      title: isOrderBased ? 'Sipariş Tabanlı Mal Kabul' : 'Serbest Mal Kabul',
+      title: isOrderBased ? 'pending_operations.operation_types.order_based_receipt'.tr() : 'pending_operations.operation_types.free_receipt'.tr(),
       details: {
-        'dialog_labels.operation_type'.tr(): isOrderBased ? 'Order-based Receipt' : 'Free Receipt',
+        'dialog_labels.operation_type'.tr(): isOrderBased ? 'pending_operations.operation_types.order_based_receipt'.tr() : 'pending_operations.operation_types.free_receipt'.tr(),
         'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.purchase_order'.tr(): poId,
         if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
@@ -545,6 +543,18 @@ class _OperationDetailsView extends StatelessWidget {
         final orderedQuantity = item['ordered_quantity']?.toDouble() ?? 0;
         final unit = item['unit'] ?? '';
         final palletBarcode = item['pallet_barcode'];
+        
+        // Get expiry date from the item
+        final expiryDate = item['expiry_date'];
+        String expiryDisplay = '';
+        if (expiryDate != null && expiryDate.toString().isNotEmpty) {
+          try {
+            final parsedDate = DateTime.parse(expiryDate.toString());
+            expiryDisplay = DateFormat('dd/MM/yyyy').format(parsedDate);
+          } catch (e) {
+            expiryDisplay = expiryDate.toString();
+          }
+        }
         
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 2),
@@ -590,7 +600,7 @@ class _OperationDetailsView extends StatelessWidget {
                     Icon(Icons.assignment_outlined, size: 16, color: Theme.of(context).hintColor),
                     const SizedBox(width: 4),
                     Text(
-                      'Sipariş: ${orderedQuantity.toStringAsFixed(0)} $unit',
+                      '${'pending_operations.operation_labels.order'.tr()}: ${orderedQuantity.toStringAsFixed(0)} $unit',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                     ),
                   ],
@@ -603,7 +613,20 @@ class _OperationDetailsView extends StatelessWidget {
                     Icon(Icons.history, size: 16, color: Theme.of(context).hintColor),
                     const SizedBox(width: 4),
                     Text(
-                      'Toplam Kabul: ${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)} = ${totalReceived.toStringAsFixed(0)} $unit',
+                      '${'pending_operations.operation_labels.total_acceptance'.tr()}: ${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)} = ${totalReceived.toStringAsFixed(0)} $unit',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                    ),
+                  ],
+                ),
+              ],
+              if (expiryDisplay.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today_outlined, size: 16, color: Theme.of(context).hintColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Expiry: $expiryDisplay',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                     ),
                   ],
@@ -626,7 +649,7 @@ class _OperationDetailsView extends StatelessWidget {
                       Icon(Icons.inventory, size: 16, color: Theme.of(context).hintColor),
                       const SizedBox(width: 4),
                       Text(
-                        'Palet: $palletBarcode',
+                        '${'pending_operations.operation_labels.pallet'.tr()}: $palletBarcode',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                       ),
                     ],
@@ -653,7 +676,7 @@ class _OperationDetailsView extends StatelessWidget {
     final sourceCode = header['source_location_code'] ?? '';
     final targetName = header['target_location_name'] ?? 'N/A'; 
     final targetCode = header['target_location_code'] ?? '';
-    final employeeName = header['employee_name'] ?? 'Sistem Kullanıcısı';
+    final employeeName = header['employee_name'] ?? 'System User';
     final operationType = header['operation_type'] ?? 'transfer';
     final containerId = header['container_id']?.toString();
     final poId = header['po_id']?.toString();
@@ -663,11 +686,11 @@ class _OperationDetailsView extends StatelessWidget {
     String operationDescription;
     
     if (header['source_location_id'] == null || header['source_location_id'] == 0) {
-      transferTitle = 'Rafa Yerleştirme İşlemi';
-      operationDescription = 'Putaway Operation';
+      transferTitle = 'pending_operations.operation_types.putaway_operation'.tr();
+      operationDescription = 'pending_operations.operation_types.putaway_operation'.tr();
     } else {
-      transferTitle = 'Stok Transfer İşlemi';
-      operationDescription = 'Stock Transfer';
+      transferTitle = 'pending_operations.operation_types.stock_transfer'.tr();
+      operationDescription = 'pending_operations.operation_types.stock_transfer'.tr();
     }
     
     // Lokasyon display'leri
@@ -686,7 +709,7 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.to'.tr(): targetDisplay,
         if (poId != null) 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
-        'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'Palet Transfer' : 'Kutu Transfer',
+        'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
@@ -751,7 +774,7 @@ class _OperationDetailsView extends StatelessWidget {
                       Icon(Icons.inventory, size: 16, color: Theme.of(context).hintColor),
                       const SizedBox(width: 4),
                       Text(
-                        'Konteyner: $container',
+                        '${'pending_operations.operation_labels.container'.tr()}: $container',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                       ),
                     ],

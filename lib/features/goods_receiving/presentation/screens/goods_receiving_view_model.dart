@@ -21,11 +21,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   final palletIdController = TextEditingController();
   final productController = TextEditingController();
   final quantityController = TextEditingController();
+  final expiryDateController = TextEditingController();
 
   // Focus nodes
   final palletIdFocusNode = FocusNode();
   final productFocusNode = FocusNode();
   final quantityFocusNode = FocusNode();
+  final expiryDateFocusNode = FocusNode();
 
   // State variables
   bool _isLoading = true;
@@ -55,6 +57,10 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   bool get isOrderDetailsLoading => _isOrderDetailsLoading;
   bool get isOrderBased => _selectedOrder != null;
   bool get areFieldsEnabled => !_isOrderDetailsLoading && !_isSaving;
+
+  // New getters for field-specific enabling
+  bool get isExpiryDateEnabled => _selectedProduct != null && areFieldsEnabled;
+  bool get isQuantityEnabled => _selectedProduct != null && expiryDateController.text.isNotEmpty && areFieldsEnabled;
 
   ReceivingMode get receivingMode => _receivingMode;
   PurchaseOrder? get selectedOrder => _selectedOrder;
@@ -126,9 +132,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     palletIdController.dispose();
     productController.dispose();
     quantityController.dispose();
+    expiryDateController.dispose();
     palletIdFocusNode.dispose();
     productFocusNode.dispose();
     quantityFocusNode.dispose();
+    expiryDateFocusNode.dispose();
     super.dispose();
   }
 
@@ -301,14 +309,30 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     productController.text = "${product.name} (${product.stockCode})";
     notifyListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      quantityFocusNode.requestFocus();
+      expiryDateFocusNode.requestFocus();
     });
+  }
+
+  void onExpiryDateEntered() {
+    if (expiryDateController.text.isNotEmpty && _selectedProduct != null) {
+      notifyListeners(); // Refresh to enable quantity field
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        quantityFocusNode.requestFocus();
+      });
+    }
   }
 
   void addItemToList() {
     final quantity = double.tryParse(quantityController.text);
     if (_selectedProduct == null || quantity == null || quantity <= 0) {
       _error = 'goods_receiving_screen.error_select_product_and_quantity'.tr();
+      notifyListeners();
+      return;
+    }
+
+    // Check expiry date is provided (now mandatory)
+    if (expiryDateController.text.isEmpty) {
+      _error = 'goods_receiving_screen.error_expiry_date_required'.tr();
       notifyListeners();
       return;
     }
@@ -331,10 +355,33 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       }
     }
 
+    // Parse expiry date (now mandatory)
+    DateTime? expiryDate;
+    try {
+      final parts = expiryDateController.text.split('/');
+      if (parts.length == 3) {
+        final day = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final year = int.parse(parts[2]);
+        expiryDate = DateTime(year, month, day);
+      }
+    } catch (e) {
+      _error = 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      notifyListeners();
+      return;
+    }
+
+    if (expiryDate == null) {
+      _error = 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      notifyListeners();
+      return;
+    }
+
     _addedItems.insert(0, ReceiptItemDraft(
       product: _selectedProduct!,
       quantity: quantity,
       palletBarcode: _receivingMode == ReceivingMode.palet && palletIdController.text.isNotEmpty ? palletIdController.text : null,
+      expiryDate: expiryDate,
     ));
     _successMessage = 'goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': _selectedProduct!.name});
     
@@ -419,6 +466,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         urunId: draft.product.id,
         quantity: draft.quantity,
         palletBarcode: draft.palletBarcode,
+        expiryDate: draft.expiryDate, // Now always has a value
       )).toList(),
     );
     await _repository.saveGoodsReceipt(payload);
@@ -448,6 +496,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   void _clearEntryFields({required bool clearPallet}) {
     productController.clear();
     quantityController.clear();
+    expiryDateController.clear();
     _selectedProduct = null;
     if (clearPallet) {
       palletIdController.clear();
@@ -475,6 +524,38 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       return 'goods_receiving_screen.validator_pallet_barcode'.tr();
     }
     return null;
+  }
+  
+  String? validateExpiryDate(String? value) {
+    if (!areFieldsEnabled) return null;
+    
+    // Expiry date is now mandatory
+    if (value == null || value.isEmpty) {
+      return 'goods_receiving_screen.validator_expiry_date_required'.tr();
+    }
+    
+    try {
+      final parts = value.split('/');
+      if (parts.length != 3) {
+        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      }
+      
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+      
+      final date = DateTime(year, month, day);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      if (date.isBefore(today)) {
+        return 'goods_receiving_screen.validator_expiry_date_future'.tr();
+      }
+      
+      return null;
+    } catch (e) {
+      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
+    }
   }
   
   void clearError() {

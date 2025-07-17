@@ -144,6 +144,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                           validator: viewModel.validateProduct,
                         ),
                         const SizedBox(height: _gap),
+                        _buildExpiryDateField(viewModel),
+                        const SizedBox(height: _gap),
                         if (viewModel.selectedProduct != null) ...[
                           _buildQuantityAndStatusRow(viewModel),
                           const SizedBox(height: _gap),
@@ -311,8 +313,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             focusNode: viewModel.quantityFocusNode,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
-            enabled: viewModel.areFieldsEnabled,
-            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.areFieldsEnabled),
+            enabled: viewModel.isQuantityEnabled,
+            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.isQuantityEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) {
                 if (_formKey.currentState?.validate() ?? false) {
@@ -356,6 +358,46 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
+  Widget _buildExpiryDateField(GoodsReceivingViewModel viewModel) {
+    return TextFormField(
+      controller: viewModel.expiryDateController,
+      focusNode: viewModel.expiryDateFocusNode,
+      enabled: viewModel.isExpiryDateEnabled,
+      keyboardType: TextInputType.datetime,
+      decoration: _inputDecoration(
+        'goods_receiving_screen.label_expiry_date'.tr(),
+        enabled: viewModel.isExpiryDateEnabled,
+        suffixIcon: const Icon(Icons.calendar_today_outlined),
+      ),
+      validator: viewModel.validateExpiryDate,
+      onFieldSubmitted: (value) {
+        viewModel.onExpiryDateEntered();
+      },
+      onChanged: (value) {
+        viewModel.onExpiryDateEntered();
+      },
+      onTap: () => _showDatePicker(viewModel),
+    );
+  }
+
+  Future<void> _showDatePicker(GoodsReceivingViewModel viewModel) async {
+    if (!viewModel.isExpiryDateEnabled) return; // Don't show picker if disabled
+    
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 30)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 3650)), // 10 years from now
+      helpText: 'goods_receiving_screen.label_expiry_date'.tr(),
+    );
+    
+    if (selectedDate != null) {
+      final formattedDate = DateFormat('dd/MM/yyyy').format(selectedDate);
+      viewModel.expiryDateController.text = formattedDate;
+      viewModel.onExpiryDateEntered(); // Trigger the next field enable
+    }
+  }
+
   Widget _buildAddedItemsSection(GoodsReceivingViewModel viewModel, TextTheme textTheme, ColorScheme colorScheme) {
     if (viewModel.addedItems.isEmpty) {
       return Center(
@@ -381,6 +423,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       }
     }
 
+    // Format expiry date
+    String expiryText = '';
+    if (item.expiryDate != null) {
+      expiryText = DateFormat('dd/MM/yyyy').format(item.expiryDate!);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -403,11 +451,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text(
-              item.palletBarcode != null
-                  ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                  : 'goods_receiving_screen.mode_box'.tr(),
-              style: textTheme.bodySmall,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.palletBarcode != null
+                      ? 'goods_receiving_screen.label_pallet_barcode_display'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                      : 'goods_receiving_screen.mode_box'.tr(),
+                  style: textTheme.bodySmall,
+                ),
+                if (expiryText.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Expires: $expiryText',
+                    style: textTheme.bodySmall?.copyWith(color: colorScheme.primary),
+                  ),
+                ],
+              ],
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -728,39 +788,71 @@ class _FullscreenConfirmationPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final appBarTheme = theme.appBarTheme;
     final viewModel = context.watch<GoodsReceivingViewModel>();
 
     final isCompletingOrder = viewModel.isReceiptCompletingOrder;
-
+    
     // Calculate total accepted items count
     final totalAcceptedItems = viewModel.addedItems.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
     
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('goods_receiving_screen.dialog_confirmation_title'.tr()),
-            Text(
-              'goods_receiving_screen.total_accepted_items'.tr(namedArgs: {'count': totalAcceptedItems.toString()}),
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(80),
+        child: AppBar(
+          backgroundColor: theme.colorScheme.primaryContainer,
+          foregroundColor: theme.colorScheme.onPrimaryContainer,
+          elevation: 2,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(null),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'goods_receiving_screen.dialog_confirmation_title'.tr(),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      totalAcceptedItems.toString(),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'items to receive',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf),
+              onPressed: () => _generateAndSharePdf(context, viewModel),
+              tooltip: 'pdf_report.actions.generate'.tr(),
             ),
           ],
         ),
-        backgroundColor: appBarTheme.backgroundColor,
-        foregroundColor: appBarTheme.foregroundColor,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(null),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            onPressed: () => _generateAndSharePdf(context, viewModel),
-            tooltip: 'pdf_report.actions.generate'.tr(),
-          ),
-        ],
       ),
       body: viewModel.isOrderBased
           ? _buildOrderBasedConfirmationList(context, theme)
@@ -868,12 +960,24 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                         children: [
                           Expanded(
                             flex: 3,
-                            child: Text(
-                              item.palletBarcode != null
-                                  ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                                  : 'goods_receiving_screen.mode_box'.tr(),
-                              style: theme.textTheme.bodyMedium,
-                              overflow: TextOverflow.ellipsis,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.palletBarcode != null
+                                      ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                                      : 'goods_receiving_screen.mode_box'.tr(),
+                                  style: theme.textTheme.bodyMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (item.expiryDate != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Exp: ${DateFormat('dd/MM/yyyy').format(item.expiryDate!)}',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1002,11 +1106,23 @@ class _OrderProductConfirmationCard extends StatelessWidget {
                       const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          item.palletBarcode != null
-                              ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                              : 'goods_receiving_screen.mode_box'.tr(),
-                          style: textTheme.bodyMedium,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.palletBarcode != null
+                                  ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
+                                  : 'goods_receiving_screen.mode_box'.tr(),
+                              style: textTheme.bodyMedium,
+                            ),
+                            if (item.expiryDate != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                'Expires: ${DateFormat('dd/MM/yyyy').format(item.expiryDate!)}',
+                                style: textTheme.bodySmall?.copyWith(color: colorScheme.primary),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       Text('${item.quantity.toStringAsFixed(0)} $unit', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),

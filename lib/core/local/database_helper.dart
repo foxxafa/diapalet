@@ -11,8 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: Tablo adı tutarlılığı için versiyon artırıldı ve veritabanı yeniden oluşturulacak.
-  static const _databaseVersion = 29;
+  // ANA GÜNCELLEME: Expiry date desteği için veritabanı versiyonu artırıldı.
+  static const _databaseVersion = 30;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -177,7 +177,8 @@ class DatabaseHelper {
           receipt_id INTEGER,
           urun_id INTEGER,
           quantity_received REAL,
-          pallet_barcode TEXT
+          pallet_barcode TEXT,
+          expiry_date TEXT
         )
       ''');
 
@@ -194,9 +195,10 @@ class DatabaseHelper {
           siparis_id INTEGER,
           quantity REAL NOT NULL,
           pallet_barcode TEXT,
+          expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
           updated_at TEXT, 
-          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id)
+          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date)
         )
       ''');
 

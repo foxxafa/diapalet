@@ -117,14 +117,20 @@
     "label_quantity": "Quantity",
     "validator_enter_quantity": "Please enter quantity.",
     "validator_valid_quantity": "Please enter a valid quantity.",
+    "label_expiry_date": "Expiry Date",
+    "label_expiry_date_optional": "Expiry Date (Optional)",
+    "validator_expiry_date_format": "Please enter a valid date (DD/MM/YYYY)",
+    "validator_expiry_date_future": "Expiry date cannot be in the past",
+    "validator_expiry_date_required": "Expiry date is required",
+    "error_expiry_date_required": "Please enter the expiry date before adding quantity",
     "header_last_added_item": "Last Added Item",
     "no_items": "No items added yet.",
     "label_pallet_barcode_display": "Pallet: {barcode}",
     "label_pallet_barcode_none": "Pallet: N/A",
     "label_quantity_display": "x{quantity}",
     "button_save_and_confirm": "Save and Confirm",
-    "dialog_confirmation_title": "Confirmation List",
-    "total_accepted_items": "Total Accepted Items: {count}",
+    "dialog_confirmation_title": "Review Items",
+    "total_accepted_items": "Total items to receive: {count}",
     "dialog_list_empty": "Your list is empty. Add items to see them here.",
     "dialog_button_cancel": "Cancel",
     "dialog_button_save_receipt": "Save Receipt",
@@ -665,7 +671,21 @@
     "no_history": "No sync history available",
     "no_pending": "All operations are synced",
     "sync_now": "Sync Now",
-    "warehouse_id_missing": "Warehouse ID not found. Please login again."
+    "warehouse_id_missing": "Warehouse ID not found. Please login again.",
+    "operation_types": {
+      "order_based_receipt": "Order-based Receipt",
+      "free_receipt": "Free Receipt",
+      "putaway_operation": "Putaway Operation",
+      "stock_transfer": "Stock Transfer",
+      "pallet_transfer": "Pallet Transfer",
+      "box_transfer": "Box Transfer"
+    },
+    "operation_labels": {
+      "order": "Order",
+      "total_acceptance": "Total Acceptance",
+      "pallet": "Pallet",
+      "container": "Container"
+    }
   },
   "dialog": {
     "cancel": "Cancel",
@@ -939,6 +959,7 @@
       "product": "Product",
       "quantity": "Quantity",
       "pallet_barcode": "Pallet Barcode",
+      "expiry_date": "Expiry Date",
       "box_mode": "Box Mode",
       "summary": "Summary",
       "generated_at": "Generated at",

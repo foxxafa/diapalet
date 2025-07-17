@@ -895,9 +895,10 @@ class PdfService {
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: {
             0: const pw.FlexColumnWidth(1),
-            1: const pw.FlexColumnWidth(3),
+            1: const pw.FlexColumnWidth(2.5),
             2: const pw.FlexColumnWidth(1),
-            3: const pw.FlexColumnWidth(2),
+            3: const pw.FlexColumnWidth(1.5),
+            4: const pw.FlexColumnWidth(2),
           },
           children: [
             // Header
@@ -907,6 +908,7 @@ class PdfService {
                 _buildTableCell('Code', boldFont, isHeader: true),
                 _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Quantity', boldFont, isHeader: true),
+                _buildTableCell('Expiry Date', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
@@ -919,11 +921,18 @@ class PdfService {
                   ? 'Pallet: ${item.palletBarcode}'
                   : 'Box';
               
+              // Format expiry date
+              String expiryDisplay = '-';
+              if (item.expiryDate != null) {
+                expiryDisplay = DateFormat('dd/MM/yyyy').format(item.expiryDate!);
+              }
+              
               return pw.TableRow(
                 children: [
                   _buildTableCell(productCode, font),
                   _buildTableCell(productName, font),
                   _buildTableCell(quantity, font),
+                  _buildTableCell(expiryDisplay, font),
                   _buildTableCell(container, font),
                 ],
               );
@@ -987,12 +996,13 @@ class PdfService {
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: const {
-            0: pw.FlexColumnWidth(1.8), // Barcode (genişletildi)
-            1: pw.FlexColumnWidth(2.5),   // Product Name + Code (daraltıldı)
-            2: pw.FlexColumnWidth(1),   // Ordered
-            3: pw.FlexColumnWidth(1),     // Total Received (prev + current)
-            4: pw.FlexColumnWidth(1),   // Current Received
-            5: pw.FlexColumnWidth(1.8),   // Container
+            0: pw.FlexColumnWidth(1.5), // Barcode
+            1: pw.FlexColumnWidth(2.2), // Product Name + Code
+            2: pw.FlexColumnWidth(0.8), // Ordered
+            3: pw.FlexColumnWidth(1),   // Total Received
+            4: pw.FlexColumnWidth(0.8), // Current Received
+            5: pw.FlexColumnWidth(1.2), // Expiry Date
+            6: pw.FlexColumnWidth(1.5), // Container
           },
           children: [
             pw.TableRow(
@@ -1003,6 +1013,7 @@ class PdfService {
                 _buildTableCell('Ordered', boldFont, isHeader: true),
                 _buildTableCell('Total Received', boldFont, isHeader: true),
                 _buildTableCell('This Receipt', boldFont, isHeader: true),
+                _buildTableCell('Expiry Date', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
             ),
@@ -1026,6 +1037,18 @@ class PdfService {
                 totalReceivedDisplay = currentReceived.toStringAsFixed(0);
               }
               
+              // Get expiry date
+              final expiryDate = item['expiry_date'];
+              String expiryDisplay = '-';
+              if (expiryDate != null && expiryDate.toString().isNotEmpty) {
+                try {
+                  final parsedDate = DateTime.parse(expiryDate.toString());
+                  expiryDisplay = DateFormat('dd/MM/yyyy').format(parsedDate);
+                } catch (e) {
+                  expiryDisplay = expiryDate.toString();
+                }
+              }
+              
               return pw.TableRow(
                 children: [
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
@@ -1033,6 +1056,7 @@ class PdfService {
                   _buildTableCell(orderedQty.toStringAsFixed(0), font),
                   _buildTableCell(totalReceivedDisplay, font),
                   _buildTableCell(currentReceived.toStringAsFixed(0), font),
+                  _buildTableCell(expiryDisplay, font),
                   _buildTableCell(containerDisplay, font),
                 ],
               );
@@ -1045,6 +1069,7 @@ class PdfService {
                 _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
               ],
             ),
