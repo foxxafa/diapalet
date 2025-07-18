@@ -31,9 +31,12 @@ class TransferableItem {
   /// Ürünün kaynak paleti (eğer bir paletten geliyorsa).
   final String? sourcePalletBarcode;
 
+  final DateTime? expiryDate;
+
   TransferableItem({
     required this.product,
     required this.quantity,
     this.sourcePalletBarcode,
+    this.expiryDate,
   });
 }

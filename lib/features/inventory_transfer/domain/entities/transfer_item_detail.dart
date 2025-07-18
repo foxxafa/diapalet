@@ -11,6 +11,7 @@ class TransferItemDetail {
   // Bu alan hem serbest transferde hem de sipariş bazlı transferde
   // kaynak paleti belirtmek için kullanılır.
   final String? palletId;
+  final DateTime? expiryDate;
   // --- GÜNCELLEME SONU ---
 
   // Arayüzde (sepet) kullanılacak ve işlem sırasında gruplama için gerekli bilgiler
@@ -23,6 +24,7 @@ class TransferItemDetail {
     required this.productCode,
     required this.quantity,
     this.palletId,
+    this.expiryDate,
     this.targetLocationId,
     this.targetLocationName,
   });
@@ -33,6 +35,7 @@ class TransferItemDetail {
       'product_id': productId,
       'quantity': quantity,
       'pallet_id': palletId,
+      'expiry_date': expiryDate?.toIso8601String(),
     };
   }
 }

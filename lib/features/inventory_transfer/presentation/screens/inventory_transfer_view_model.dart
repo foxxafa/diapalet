@@ -325,6 +325,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         name: item.product.name,
         productCode: item.product.stockCode,
         currentQuantity: item.quantity,
+        expiryDate: item.expiryDate,
       );
     }).toList();
 
@@ -554,6 +555,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
           productCode: product.productCode,
           quantity: qty,
           palletId: _selectedMode == AssignmentMode.pallet ? _selectedContainer?.id : null,
+          expiryDate: product.expiryDate,
           targetLocationId: _availableTargetLocationsMap[_selectedTargetLocationName],
           targetLocationName: _selectedTargetLocationName!,
         ));

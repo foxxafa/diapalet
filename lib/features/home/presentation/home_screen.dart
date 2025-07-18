@@ -4,6 +4,7 @@ import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_options_screen.dart';
+import 'package:diapalet/features/inventory_inquiry/presentation/screens/inventory_inquiry_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/transfer_type_selection_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
 import 'package:flutter/material.dart';
@@ -159,6 +160,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => const TransferTypeSelectionScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _HomeButton(
+                    icon: Icons.search_outlined,
+                    label: 'home.inventory_inquiry'.tr(),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const InventoryInquiryScreen(),
                         ),
                       );
                     },

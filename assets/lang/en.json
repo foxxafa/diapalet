@@ -32,6 +32,7 @@
       "pending_message": "There are unsynced operations. Please sync them before logging out.",
       "button": "Logout"
     },
+    "inventory_inquiry": "Inventory Inquiry",
     "status": {
       "partially_received": "Partially Received"
     }
@@ -145,6 +146,7 @@
     "label_pallet_barcode_display_short": "Pallet: {barcode}",
     "dialog_list_empty": "List is empty, nothing to save.",
     "dialog_button_confirm_and_save": "Confirm & Save",
+    "validator_enter_valid_quantity": "Please enter a valid quantity.",
     "confirmation": {
       "ordered": "Ordered",
       "previously_received": "Prev. Received",
@@ -995,5 +997,17 @@
       "other": "Other Apps",
       "save_to_device": "Save to Device"
     }
+  },
+  "inventory_inquiry": {
+    "title": "Inventory Inquiry",
+    "barcode_label": "Product Barcode",
+    "search_button": "Search",
+    "prompt": "Scan or enter a product barcode to see stock locations.",
+    "no_results": "No stock found for barcode: {barcode}",
+    "error_searching": "Error while searching: {error}",
+    "quantity": "Quantity",
+    "location": "Location",
+    "pallet_barcode": "Pallet Barcode",
+    "expiry_date": "Expiry Date"
   }
 }

@@ -287,6 +287,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           name: item.product.name,
           productCode: item.product.stockCode,
           currentQuantity: item.quantity,
+          expiryDate: item.expiryDate,
         );
       }).toList();
 
@@ -545,6 +546,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           palletId: _selectedMode == AssignmentMode.pallet ? _selectedContainer?.id : null,
           targetLocationId: _availableTargetLocations[_selectedTargetLocationName!],
           targetLocationName: _selectedTargetLocationName!,
+          expiryDate: product.expiryDate,
         ));
       }
     }

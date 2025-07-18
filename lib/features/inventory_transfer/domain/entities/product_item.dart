@@ -9,6 +9,7 @@ class ProductItem {
   final String productCode;
   final String? barcode1;
   final double currentQuantity;
+  final DateTime? expiryDate;
 
   const ProductItem({
     required this.id,
@@ -16,6 +17,7 @@ class ProductItem {
     required this.productCode,
     this.barcode1,
     required this.currentQuantity,
+    this.expiryDate,
   });
 
   factory ProductItem.fromBoxItem(BoxItem box) {
@@ -25,6 +27,8 @@ class ProductItem {
       productCode: box.productCode,
       barcode1: box.barcode1,
       currentQuantity: box.quantity,
+      // expiryDate will be null here, as BoxItem doesn't carry it directly.
+      // It's mainly for pallet contents.
     );
   }
 
@@ -34,6 +38,7 @@ class ProductItem {
     final dynamic codeValue = json['productCode'] ?? json['code'];
     final dynamic barcodeValue = json['barcode1'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
+    final dynamic expiryValue = json['expiryDate'];
 
     num parseToNum(dynamic val) {
       if (val == null) return 0;
@@ -48,6 +53,7 @@ class ProductItem {
       productCode: codeValue?.toString() ?? '',
       barcode1: barcodeValue?.toString(),
       currentQuantity: parseToNum(qtyValue).toDouble(),
+      expiryDate: expiryValue != null ? DateTime.tryParse(expiryValue.toString()) : null,
     );
   }
 
@@ -58,6 +64,7 @@ class ProductItem {
       productCode: (map['code'] ?? '').toString(),
       barcode1: map['barcode1']?.toString(),
       currentQuantity: (map['currentQuantity'] as num?)?.toDouble() ?? 0.0,
+      expiryDate: map['expiryDate'] != null ? DateTime.tryParse(map['expiryDate'].toString()) : null,
     );
   }
 
@@ -69,6 +76,7 @@ class ProductItem {
       'productCode': productCode,
       'barcode1': barcode1,
       'currentQuantity': currentQuantity,
+      'expiryDate': expiryDate?.toIso8601String(),
     };
   }
 
@@ -77,8 +85,9 @@ class ProductItem {
       identical(this, other) ||
           other is ProductItem &&
               runtimeType == other.runtimeType &&
-              id == other.id;
+              id == other.id &&
+              expiryDate == other.expiryDate;
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => id.hashCode ^ expiryDate.hashCode;
 }

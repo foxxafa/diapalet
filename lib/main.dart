@@ -12,7 +12,8 @@ import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart'
 import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/features/goods_receiving/data/goods_receiving_repository_impl.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
-import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
+import 'package:diapalet/features/inventory_inquiry/data/repositories/inventory_inquiry_repository_impl.dart';
+import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
 import 'package:diapalet/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 // DÜZELTME: InventoryTransferViewModel artık global olarak sağlanmıyor.
@@ -97,17 +98,16 @@ void main() async {
               dio: context.read<Dio>(),
             ),
           ),
-
-          // View modeller (Artık sadece ihtiyaç duyulanlar global)
-          ChangeNotifierProvider(
-            create: (context) => GoodsReceivingViewModel(
-              repository: context.read<GoodsReceivingRepository>(),
-              syncService: context.read<SyncService>(),
-              barcodeService: context.read<BarcodeIntentService>(),
+          Provider<InventoryInquiryRepository>(
+            create: (context) => InventoryInquiryRepositoryImpl(
+              dbHelper: context.read<DatabaseHelper>(),
             ),
           ),
-          // DÜZELTME: InventoryTransferViewModel buradan kaldırıldı.
-          // İlgili ekran kendi Provider'ını oluşturacak.
+
+          // View modeller (Artık sadece ihtiyaç duyulanlar global)
+          ChangeNotifierProvider<ThemeProvider>(
+            create: (context) => ThemeProvider(),
+          ),
         ],
         child: const MyApp(),
       ),

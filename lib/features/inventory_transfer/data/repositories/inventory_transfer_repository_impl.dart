@@ -188,6 +188,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             item.palletId,
             (sourceLocationId == null && header.siparisId != null) ? 'receiving' : 'available',
             (sourceLocationId == null && header.siparisId != null) ? header.siparisId : null,
+            item.expiryDate,
           );
 
           // 2. Hedefteki palet durumunu belirle
@@ -202,6 +203,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             targetPalletId,
             'available',
             null,
+            item.expiryDate,
           );
 
           // 4. Transfer işlemini logla
@@ -325,6 +327,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         product: productInfo,
         quantity: (stock['quantity'] as num).toDouble(),
         sourcePalletBarcode: pallet,
+        expiryDate: stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date']) : null,
       ));
     }
 
@@ -467,6 +470,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     String? palletId,
     String status,
     int? siparisId,
+    DateTime? expiryDate,
   ) async {
     final whereParts = <String>[];
     final whereArgs = <dynamic>[];
@@ -496,6 +500,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } else {
       whereParts.add('siparis_id = ?');
       whereArgs.add(siparisId);
+    }
+
+    if (expiryDate == null) {
+      whereParts.add('expiry_date IS NULL');
+    } else {
+      whereParts.add('expiry_date = ?');
+      whereArgs.add(expiryDate.toIso8601String());
     }
 
     final existing = await txn.query(
@@ -528,10 +539,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'stock_status': status,
         'siparis_id': siparisId,
         'updated_at': DateTime.now().toIso8601String(),
+        'expiry_date': expiryDate?.toIso8601String(),
       });
     } else {
-      debugPrint("ERROR: Kaynakta stok bulunamadı - urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId");
-      throw Exception('Kaynakta stok bulunamadı veya düşülecek miktar yetersiz. Aranan: {urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId}');
+      debugPrint("ERROR: Kaynakta stok bulunamadı - urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}");
+      throw Exception('Kaynakta stok bulunamadı veya düşülecek miktar yetersiz. Aranan: {urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}}');
     }
   }
 }

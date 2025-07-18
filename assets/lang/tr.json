@@ -15,19 +15,20 @@
     "system": "Sistem Varsayılanı"
   },
   "home": {
-    "title": "DiaPallet WMS",
+    "title": "Ana Sayfa",
     "reset_db": "Veritabanını Sıfırla",
     "db_reset_complete": "Veritabanı sıfırlandı",
     "populate_test": "Test Verisi Yükle",
     "test_data_populated": "Test verisi yüklendi",
     "goods_receiving": "Mal Kabul",
-    "pallet_transfer": "Palet/Kutu Transfer",
+    "pallet_transfer": "Palet Transferi",
     "pending_operations": "Bekleyen İşlemler",
+    "inventory_inquiry": "Stok Sorgulama",
     "welcome": "Hoş Geldiniz",
     "logout": {
       "title": "Çıkış Yap",
       "confirmation": "Çıkış yapmak istediğinizden emin misiniz?",
-      "pending_title": "Bekleyen İşlem Bulundu",
+      "pending_title": "Uyarı",
       "pending_message": "Sunucuya gönderilmemiş işlemleriniz var. Lütfen çıkış yapmadan önce senkronize edin.",
       "button": "Çıkış Yap"
     }
@@ -420,5 +421,17 @@
       "other": "Diğer Uygulamalar",
       "save_to_device": "Cihaza Kaydet"
     }
+  },
+  "inventory_inquiry": {
+    "title": "Stok Sorgulama",
+    "barcode_label": "Ürün Barkodu",
+    "search_button": "Ara",
+    "prompt": "Stok konumlarını görmek için bir ürün barkodu okutun veya girin.",
+    "no_results": "Barkod için stok bulunamadı: {barcode}",
+    "error_searching": "Arama sırasında hata: {error}",
+    "quantity": "Miktar",
+    "location": "Konum",
+    "pallet_barcode": "Palet Barkodu",
+    "expiry_date": "Son Kullanma T."
   }
 }
