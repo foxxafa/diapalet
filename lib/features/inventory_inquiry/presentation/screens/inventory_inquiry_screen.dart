@@ -236,7 +236,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                   _buildInfoRow(
                       Icons.date_range,
                       'inventory_inquiry.expiry_date'.tr(),
-                      DateFormat.yMd().format(location.expiryDate!)),
+                      DateFormat('dd.MM.yyyy').format(location.expiryDate!)),
                 ],
               ],
             ),

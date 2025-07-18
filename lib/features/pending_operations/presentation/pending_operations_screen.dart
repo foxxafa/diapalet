@@ -705,11 +705,11 @@ class _OperationDetailsView extends StatelessWidget {
       details: {
         'dialog_labels.operation_type'.tr(): operationDescription,
         'dialog_labels.employee'.tr(): employeeName,
-        'dialog_labels.from'.tr(): sourceDisplay,
+        'dialog_labels.from'.tr(): sourceDisplay == "Mal Kabul Alanı" ? "dialog_labels.receiving_area".tr() : sourceDisplay,
         'dialog_labels.to'.tr(): targetDisplay,
         if (poId != null) 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
-        'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
+        //'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {

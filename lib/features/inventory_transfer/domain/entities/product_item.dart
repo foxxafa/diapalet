@@ -89,5 +89,5 @@ class ProductItem {
               expiryDate == other.expiryDate;
 
   @override
-  int get hashCode => id.hashCode ^ expiryDate.hashCode;
+  int get hashCode => id.hashCode;
 }

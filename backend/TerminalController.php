@@ -251,49 +251,90 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
         }
 
-        // DÜZELTME: kaynak lokasyon ID'si 0 ise, bunu NULL olarak yorumla. Bu, sanal 'Mal Kabul Alanı'nı temsil eder.
         $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
+        $targetLocationId = $header['target_location_id'];
         $operationType = $header['operation_type'] ?? 'box_transfer';
         $siparisId = $header['siparis_id'] ?? null;
-        
-        // DÜZELTME: Rafa yerleştirme işlemi, kaynak lokasyonun NULL olması ve sipariş ID'sinin var olmasıyla belirlenir.
         $isPutawayOperation = ($sourceLocationId === null && $siparisId != null);
+        $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
         foreach ($items as $item) {
             $productId = $item['product_id'];
-            $quantity = (float)$item['quantity'];
+            $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
-            $expiryDate = $item['expiry_date'] ?? null;
-            
-            // Kaynaktan düş
-            $this->upsertStock($db, $productId, $sourceLocationId, -$quantity, $sourcePallet, $isPutawayOperation ? 'receiving' : 'available', $isPutawayOperation ? $siparisId : null, $expiryDate);
-            // Hedefe ekle (hedef her zaman 'available' ve siparişsizdir)
-            $this->upsertStock($db, $productId, $header['target_location_id'], $quantity, $targetPallet, 'available', null, $expiryDate);
+            // 1. Kaynak stokları FIFO'ya göre bul
+            $sourceStocksQuery = new Query();
+            $sourceStocksQuery->from('inventory_stock')
+                ->where(['urun_id' => $productId, 'stock_status' => $sourceStatus]);
+            $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
+            $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
+            $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
+            $sourceStocksQuery->orderBy(['expiry_date' => SORT_ASC]);
+            $sourceStocks = $sourceStocksQuery->all($db);
 
-            $transferData = [
-                'urun_id' => $productId, 'from_location_id' => $sourceLocationId,
-                'to_location_id' => $header['target_location_id'], 'quantity' => $quantity,
-                'from_pallet_barcode' => $sourcePallet, 'pallet_barcode' => $targetPallet,
-                'employee_id' => $header['employee_id'], 'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
-            ];
-
-            if ($isPutawayOperation) {
-                $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
-                if ($orderLine) {
-                    $orderLineId = $orderLine['id'];
-                    // $transferData['satin_alma_siparis_fis_satir_id'] = $orderLineId; // Bu tabloya bu veri yazılmamalı.
-
-                    // wms_putaway_status tablosuna ekleme/güncelleme yap
-                    $sql = "INSERT INTO wms_putaway_status (satinalmasiparisfissatir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
-                    $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $quantity])->execute();
-                }
+            $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
+            if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
+                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$productId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}"];
             }
-            $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
+
+            // 2. Transfer edilecek porsiyonları ve yapılacak DB işlemlerini belirle
+            $quantityLeft = $totalQuantityToTransfer;
+            $portionsToTransfer = []; // {qty, expiry}
+            $dbOps = ['delete' => [], 'update' => []]; // {id: new_qty}
+
+            foreach ($sourceStocks as $stock) {
+                if ($quantityLeft <= 0.001) break;
+
+                $stockId = $stock['id'];
+                $stockQty = (float)$stock['quantity'];
+                $qtyThisCycle = min($stockQty, $quantityLeft);
+
+                $portionsToTransfer[] = ['qty' => $qtyThisCycle, 'expiry' => $stock['expiry_date']];
+
+                if ($stockQty - $qtyThisCycle > 0.001) {
+                    $dbOps['update'][$stockId] = $stockQty - $qtyThisCycle;
+                } else {
+                    $dbOps['delete'][] = $stockId;
+                }
+                $quantityLeft -= $qtyThisCycle;
+            }
+            
+            // 3. Belirlenen DB işlemlerini gerçekleştir (Kaynak Düşürme)
+            if (!empty($dbOps['delete'])) {
+                $db->createCommand()->delete('inventory_stock', ['in', 'id', $dbOps['delete']])->execute();
+            }
+            foreach ($dbOps['update'] as $id => $newQty) {
+                $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $id])->execute();
+            }
+
+            // 4. Porsiyonları hedefe ekle (SKT'leri koruyarak)
+            foreach($portionsToTransfer as $portion) {
+                // Not: upsertStock'un ekleme kısmı burada yeniden kullanılıyor.
+                $this->upsertStock($db, $productId, $targetLocationId, $portion['qty'], $targetPallet, 'available', null, $portion['expiry']);
+                
+                // 5. Her porsiyon için ayrı transfer kaydı oluştur.
+                 $db->createCommand()->insert('inventory_transfers', [
+                    'urun_id' => $productId, 'from_location_id' => $sourceLocationId,
+                    'to_location_id' => $targetLocationId, 'quantity' => $portion['qty'],
+                    'from_pallet_barcode' => $sourcePallet, 'pallet_barcode' => $targetPallet,
+                    'employee_id' => $header['employee_id'], 'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                ])->execute();
+            }
+            
+            // 6. Rafa yerleştirme durumunu toplam miktar üzerinden güncelle
+            if ($isPutawayOperation) {
+                 $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
+                 if ($orderLine) {
+                     $orderLineId = $orderLine['id'];
+                     $sql = "INSERT INTO wms_putaway_status (satinalmasiparisfissatir_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
+                     $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
+                 }
+            }
         }
 
-        if ($isPutawayOperation) {
+        if ($isPutawayOperation && $siparisId) {
             $this->checkAndFinalizePoStatus($db, $siparisId);
         }
 
@@ -301,58 +342,86 @@ class TerminalController extends Controller
     }
 
     private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null) {
-        $query = new Query();
-        $query->from('inventory_stock')
-            ->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+        $isDecrement = (float)$qtyChange < 0;
 
-        if ($locationId === null) {
-            $query->andWhere(['is', 'location_id', new \yii\db\Expression('NULL')]);
-        } else {
-            $query->andWhere(['location_id' => $locationId]);
-        }
+        if ($isDecrement) {
+            // Bu fonksiyon artık _createInventoryTransfer'da kullanılmıyor,
+            // ama diğer yerlerde kullanılma ihtimaline karşı bırakıldı.
+            // Mantığı önceki adımdaki gibi (while döngüsü) kalabilir.
+            $toDecrement = abs((float)$qtyChange);
 
-        if ($palletBarcode === null) {
-            $query->andWhere(['is', 'pallet_barcode', new \yii\db\Expression('NULL')]);
-        } else {
-            $query->andWhere(['pallet_barcode' => $palletBarcode]);
-        }
+            $availabilityQuery = new Query();
+            $availabilityQuery->from('inventory_stock')->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+            $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
+            $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
+            $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
+            $totalAvailable = (float)$availabilityQuery->sum('quantity', $db);
 
-        if ($siparisId === null) {
-            $query->andWhere(['is', 'siparis_id', new \yii\db\Expression('NULL')]);
-        } else {
-            $query->andWhere(['siparis_id' => $siparisId]);
-        }
-
-        if ($expiryDate === null) {
-            $query->andWhere(['is', 'expiry_date', new \yii\db\Expression('NULL')]);
-        } else {
-            $query->andWhere(['expiry_date' => $expiryDate]);
-        }
-
-        $stock = $query->one($db);
-
-
-        if ($stock) {
-            $newQty = (float)($stock['quantity']) + (float)$qtyChange;
-            if ($newQty > 0.001) {
-                $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stock['id']])->execute();
-            } else {
-                $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
+            if ($totalAvailable < $toDecrement - 0.001) {
+                 throw new \Exception("Stok düşürme hatası: Kaynakta yeterli stok yok. Mevcut: {$totalAvailable}, İstenen: {$toDecrement}");
             }
-        } elseif ($qtyChange > 0) {
-            $db->createCommand()->insert('inventory_stock', [
-                'urun_id' => $urunId, 
-                'location_id' => $locationId, 
-                'siparis_id' => $siparisId,
-                'quantity' => (float)$qtyChange,
-                'pallet_barcode' => $palletBarcode, 
-                'stock_status' => $stockStatus,
-                'expiry_date' => $expiryDate,
-            ])->execute();
+
+            while ($toDecrement > 0.001) {
+                $query = new Query();
+                $query->from('inventory_stock')->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+                $this->addNullSafeWhere($query, 'location_id', $locationId);
+                $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
+                $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
+                
+                $stock = $query->one($db);
+
+                if (!$stock) {
+                    throw new \Exception("Stok düşürme sırasında tutarsızlık tespit edildi. Kalan: {$toDecrement}");
+                }
+
+                $stockId = $stock['id'];
+                $currentQty = (float)$stock['quantity'];
+
+                if ($currentQty > $toDecrement) {
+                    $newQty = $currentQty - $toDecrement;
+                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stockId])->execute();
+                    $toDecrement = 0;
+                } else {
+                    $db->createCommand()->delete('inventory_stock', ['id' => $stockId])->execute();
+                    $toDecrement -= $currentQty;
+                }
+            }
         } else {
-            // Stok düşürme işlemi sırasında negatif miktar gelirse ve stok bulunamazsa hata ver.
-            Yii::warning("Stok düşürme hatası: Kaynakta stok bulunamadı. urun_id: {$urunId}, location_id: {$locationId}, pallet: {$palletBarcode}, status: {$stockStatus}, siparis_id: {$siparisId}", __METHOD__);
-            throw new \Exception("Stok düşürme hatası: Kaynakta yeterli veya uygun statüde ürün bulunamadı.");
+            // --- Stok Ekleme Mantığı ---
+            $query = new Query();
+            $query->from('inventory_stock')
+                  ->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+
+            $this->addNullSafeWhere($query, 'location_id', $locationId);
+            $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
+            $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+            $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
+            
+            $stock = $query->one($db);
+
+            if ($stock) {
+                $newQty = (float)($stock['quantity']) + (float)$qtyChange;
+                if ($newQty > 0.001) {
+                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stock['id']])->execute();
+                } else {
+                    $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
+                }
+            } elseif ($qtyChange > 0) {
+                $db->createCommand()->insert('inventory_stock', [
+                    'urun_id' => $urunId, 'location_id' => $locationId, 'siparis_id' => $siparisId,
+                    'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode, 
+                    'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
+                ])->execute();
+            }
+        }
+    }
+
+    private function addNullSafeWhere(Query $query, string $column, $value) {
+        if ($value === null) {
+            $query->andWhere(['is', $column, new \yii\db\Expression('NULL')]);
+        } else {
+            $query->andWhere([$column => $value]);
         }
     }
 

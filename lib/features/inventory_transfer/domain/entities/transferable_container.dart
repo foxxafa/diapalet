@@ -31,10 +31,8 @@ class TransferableContainer {
       // Paletsiz ürünler için daha açıklayıcı bir isim oluştur.
       if (items.isNotEmpty) {
         final firstItem = items.first;
-        final expiryStr = firstItem.expiryDate != null
-            ? ' - SKT: ${DateFormat('dd.MM.yyyy').format(firstItem.expiryDate!)}'
-            : '';
-        return '${firstItem.product.name}$expiryStr';
+        // GÜNCELLEME: SKT bilgisi artık başlıkta gösterilmiyor.
+        return firstItem.product.name;
       }
       return id; // Fallback
     }

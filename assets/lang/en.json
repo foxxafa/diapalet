@@ -703,6 +703,7 @@
     "error_invalid_location_for_operation": "Location ''{location}'' is not a valid {field} for this operation."
   },
   "dialog_labels": {
+    "receiving_area": "Receiving Area",
     "purchase_order": "Purchase Order",
     "invoice": "Invoice",
     "from": "From",

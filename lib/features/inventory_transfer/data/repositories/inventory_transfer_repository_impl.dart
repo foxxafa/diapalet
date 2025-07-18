@@ -180,30 +180,30 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
         for (final item in items) {
           // 1. Kaynak stoktan düşür
-          await _updateStock(
+          await _updateStockSmart(
             txn,
-            item.productId,
-            sourceLocationId,
-            -item.quantity,
-            item.palletId,
-            (sourceLocationId == null && header.siparisId != null) ? 'receiving' : 'available',
-            (sourceLocationId == null && header.siparisId != null) ? header.siparisId : null,
-            item.expiryDate,
+            productId: item.productId,
+            locationId: sourceLocationId,
+            quantityChange: -item.quantity,
+            palletId: item.palletId,
+            status: (sourceLocationId == null && header.siparisId != null) ? 'receiving' : 'available',
+            siparisId: (sourceLocationId == null && header.siparisId != null) ? header.siparisId : null,
+            expiryDateForAddition: item.expiryDate,
           );
 
           // 2. Hedefteki palet durumunu belirle
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
 
           // 3. Hedefe ekle
-          await _updateStock(
+          await _updateStockSmart(
             txn,
-            item.productId,
-            targetLocationId,
-            item.quantity,
-            targetPalletId,
-            'available',
-            null,
-            item.expiryDate,
+            productId: item.productId,
+            locationId: targetLocationId,
+            quantityChange: item.quantity,
+            palletId: targetPalletId,
+            status: 'available',
+            siparisId: null,
+            expiryDateForAddition: item.expiryDate,
           );
 
           // 4. Transfer işlemini logla
@@ -310,6 +310,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final productDetails = {for (var p in productsQuery) p['id'] as int: ProductInfo.fromDbMap(p)};
     
     final Map<String, List<TransferableItem>> groupedByContainer = {};
+    // GÜNCELLEME: Aynı ürünü (farklı SKT'lerle) tek kalemde toplamak için yeni bir map.
+    final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
+
 
     for (final stock in stockMaps) {
       final productId = stock['urun_id'] as int;
@@ -317,28 +320,48 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (productInfo == null) continue;
 
       final pallet = stock['pallet_barcode'] as String?;
-      final expiryDateStr = stock['expiry_date'] as String? ?? 'NO_EXPIRY';
-      // Paletsiz ürünler için `urun_id` ve `expiry_date`'i birleştirerek benzersiz bir ID oluştur.
-      final containerId = pallet ?? 'box_${productId}_$expiryDateStr';
+      final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date']) : null;
+      // Paletsiz ürünler için `urun_id`'yi anahtar olarak kullan.
+      final containerId = pallet ?? 'box_$productId';
 
-      groupedByContainer.putIfAbsent(containerId, () => []);
-      groupedByContainer[containerId]!.add(TransferableItem(
-        product: productInfo,
-        quantity: (stock['quantity'] as num).toDouble(),
-        sourcePalletBarcode: pallet,
-        expiryDate: stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date']) : null,
-      ));
+      // Gruplama için anahtar: Palet veya Kutu ID'si
+      final groupingKey = containerId;
+
+      // Toplama map'ini hazırla
+      aggregatedItems.putIfAbsent(groupingKey, () => {});
+
+      if (aggregatedItems[groupingKey]!.containsKey(productId)) {
+        // Eğer ürün bu konteynerde zaten varsa, miktarını artır.
+        final existingItem = aggregatedItems[groupingKey]![productId]!;
+        aggregatedItems[groupingKey]![productId] = TransferableItem(
+          product: existingItem.product,
+          quantity: existingItem.quantity + (stock['quantity'] as num).toDouble(),
+          sourcePalletBarcode: pallet,
+          // Not: SKT'ler farklı olabileceğinden, burada ilk bulunanı koruyoruz.
+          // Arayüzde SKT'ye göre ayırmadığımız için bu kabul edilebilir.
+          expiryDate: existingItem.expiryDate,
+        );
+      } else {
+        // Eğer ürün bu konteynerde ilk kez ekleniyorsa, yeni bir kalem oluştur.
+        aggregatedItems[groupingKey]![productId] = TransferableItem(
+          product: productInfo,
+          quantity: (stock['quantity'] as num).toDouble(),
+          sourcePalletBarcode: pallet,
+          expiryDate: expiryDate,
+        );
+      }
     }
 
-    final result = groupedByContainer.entries.map((entry) {
+    // Toplanmış verileri `TransferableContainer` listesine dönüştür.
+    final result = aggregatedItems.entries.map((entry) {
       final containerId = entry.key;
-      final items = entry.value;
-      final isPallet = items.first.sourcePalletBarcode != null;
+      final itemsMap = entry.value;
+      final isPallet = itemsMap.values.first.sourcePalletBarcode != null;
 
       return TransferableContainer(
         id: containerId,
         isPallet: isPallet,
-        items: items,
+        items: itemsMap.values.toList(),
       );
     }).toList();
 
@@ -464,6 +487,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return null;
   }
 
+  /// GÜNCELLEME: Bu metod artık kullanılmıyor ve yerini _updateStockSmart'a bıraktı.
+  /*
   Future<void> _updateStock(
     DatabaseExecutor txn,
     int productId,
@@ -546,6 +571,113 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } else {
       debugPrint("ERROR: Kaynakta stok bulunamadı - urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}");
       throw Exception('Kaynakta stok bulunamadı veya düşülecek miktar yetersiz. Aranan: {urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}}');
+    }
+  }
+  */
+  
+  // ANA GÜNCELLEME: Akıllı Stok Güncelleme Fonksiyonu
+  // Bu fonksiyon, bir ürün için miktar değişikliğini (artırma/azaltma) FIFO'ya
+  // (İlk Giren İlk Çıkar) göre yönetir. Miktar düşüşlerinde en eski son kullanma
+  // tarihli stoktan başlar.
+  Future<void> _updateStockSmart(
+    DatabaseExecutor txn, {
+    required int productId,
+    required int? locationId,
+    required double quantityChange,
+    required String? palletId,
+    required String status,
+    required int? siparisId,
+    // Düşürme işlemi için SKT'ye gerek yok, FIFO uygulanacak.
+    // Ekleme işlemi için ise SKT zorunludur.
+    DateTime? expiryDateForAddition,
+  }) async {
+    if (quantityChange == 0) return;
+
+    final isDecrement = quantityChange < 0;
+
+    if (isDecrement) {
+      // --- Stok Düşürme Mantığı (FIFO) ---
+      double remainingToDecrement = quantityChange.abs();
+
+      // İlgili stokları SKT'ye göre (NULL'lar en sona) artan sırada çek.
+      final stockEntries = await txn.query(
+        'inventory_stock',
+        where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL))',
+        whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisId, siparisId],
+        orderBy: 'expiry_date ASC', // NULLS LAST by default in SQLite
+      );
+
+      if (stockEntries.isEmpty) {
+        debugPrint("HATA: _updateStockSmart - Düşürme için kaynak stok bulunamadı.");
+        throw Exception('Kaynakta stok bulunamadı. Ürün ID: $productId');
+      }
+
+      for (final stock in stockEntries) {
+        final stockId = stock['id'] as int;
+        final currentQty = (stock['quantity'] as num).toDouble();
+
+        if (currentQty >= remainingToDecrement) {
+          // Bu stok kalemi yeterli, miktarını azalt ve döngüyü bitir.
+          final newQty = currentQty - remainingToDecrement;
+          if (newQty > 0.001) {
+            await txn.update('inventory_stock', {'quantity': newQty}, where: 'id = ?', whereArgs: [stockId]);
+          } else {
+            await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stockId]);
+          }
+          remainingToDecrement = 0;
+          break;
+        } else {
+          // Bu stok kalemi yeterli değil, tamamını sil ve kalanı bir sonrakinden düş.
+          remainingToDecrement -= currentQty;
+          await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stockId]);
+        }
+      }
+
+      if (remainingToDecrement > 0.001) {
+        // Döngü bitti ama hala düşülecek miktar kaldıysa, stok yetersizdir.
+        debugPrint("HATA: _updateStockSmart - Yetersiz stok. Kalan: $remainingToDecrement");
+        throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
+      }
+    } else {
+      // --- Stok Ekleme Mantığı ---
+      if (expiryDateForAddition == null) {
+        // Not: SKT'siz ürünler de olabilir, bu yüzden hata fırlatmak yerine null kabul edelim.
+        // throw Exception('Stok ekleme işlemi için son kullanma tarihi (expiryDateForAddition) gereklidir.');
+      }
+
+      final expiryDateStr = expiryDateForAddition?.toIso8601String();
+
+      // Tam olarak aynı özelliklere sahip bir stok kalemi var mı kontrol et.
+      final existing = await txn.query(
+        'inventory_stock',
+        where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
+        whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisId, siparisId, expiryDateStr, expiryDateStr],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        // Varsa, miktarını artır.
+        final currentQty = (existing.first['quantity'] as num).toDouble();
+        final newQty = currentQty + quantityChange;
+        await txn.update(
+          'inventory_stock',
+          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+      } else {
+        // Yoksa, yeni bir stok kalemi oluştur.
+        await txn.insert('inventory_stock', {
+          'urun_id': productId,
+          'location_id': locationId,
+          'quantity': quantityChange,
+          'pallet_barcode': palletId,
+          'stock_status': status,
+          'siparis_id': siparisId,
+          'updated_at': DateTime.now().toIso8601String(),
+          'expiry_date': expiryDateStr,
+        });
+      }
     }
   }
 }
