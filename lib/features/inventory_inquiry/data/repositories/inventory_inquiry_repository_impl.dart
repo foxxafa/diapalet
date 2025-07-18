@@ -12,11 +12,11 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
   Future<List<ProductLocation>> findProductLocationsByBarcode(String barcode) async {
     final db = await dbHelper.database;
     
-    // 1. Barkoda göre ürünü bul
+    // 1. Barkoda, ürün adına veya stok koduna göre ürünü bul
     final productQuery = await db.query(
       'urunler',
-      where: 'Barcode1 = ?',
-      whereArgs: [barcode],
+      where: 'Barcode1 = ? OR UrunAdi LIKE ? OR StokKodu LIKE ?',
+      whereArgs: [barcode, '%$barcode%', '%$barcode%'],
       limit: 1,
     );
 

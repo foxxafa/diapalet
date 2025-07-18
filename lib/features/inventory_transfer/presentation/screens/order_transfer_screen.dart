@@ -186,8 +186,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   // GÜNCELLEME: Mod durumlarını güncelle
   void _updateModeAvailability() {
-    _hasPalletContainers = _allContainers.any((container) => !container.id.startsWith('PALETSIZ_'));
-    _hasBoxContainers = _allContainers.any((container) => container.id.startsWith('PALETSIZ_'));
+    _hasPalletContainers = _allContainers.any((container) => container.isPallet);
+    _hasBoxContainers = _allContainers.any((container) => !container.isPallet);
   }
 
   // GÜNCELLEME: Modun mevcut olup olmadığını kontrol et
@@ -205,11 +205,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   void _filterContainersByMode() {
     if (_selectedMode == AssignmentMode.pallet) {
       _availableContainers = _allContainers.where((container) => 
-        !container.id.startsWith('PALETSIZ_')
+        container.isPallet
       ).toList();
     } else {
       _availableContainers = _allContainers.where((container) => 
-        container.id.startsWith('PALETSIZ_')
+        !container.isPallet
       ).toList();
     }
   }
@@ -319,6 +319,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _clearProductControllers();
   }
 
+  // GÜNCELLEME: Bu metod artık doğrudan konteynerin kendi displayName'ini kullanıyor
+  String _getContainerDisplayName(TransferableContainer container) {
+    return container.displayName;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
@@ -376,12 +381,18 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                           : 'order_transfer.label_product'.tr(),
                       fieldIdentifier: 'container',
                       items: _availableContainers,
-                      itemToString: (item) => item.displayName,
+                      itemToString: _getContainerDisplayName,
                       onItemSelected: _handleContainerSelection,
-                      filterCondition: (item, query) {
+                      filterCondition: (container, query) {
                         final lowerQuery = query.toLowerCase();
-                        return item.displayName.toLowerCase().contains(lowerQuery) ||
-                               item.id.toLowerCase().contains(lowerQuery);
+                        if (container.isPallet) {
+                          return container.id.toLowerCase().contains(lowerQuery);
+                        } else {
+                          // Paletsiz ürünler için ürün adı veya koduna göre filtrele
+                          final product = container.items.first.product;
+                          return product.name.toLowerCase().contains(lowerQuery) ||
+                                 product.stockCode.toLowerCase().contains(lowerQuery);
+                        }
                       },
                       validator: (val) => (val == null || val.isEmpty) 
                           ? 'order_transfer.validator_required_field'.tr() 

@@ -314,13 +314,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     for (final stock in stockMaps) {
       final productId = stock['urun_id'] as int;
       final productInfo = productDetails[productId];
-      if (productInfo == null) {
-        debugPrint("UYARI: productId $productId için ürün bilgisi bulunamadı!");
-        continue;
-      }
+      if (productInfo == null) continue;
 
       final pallet = stock['pallet_barcode'] as String?;
-      final containerId = pallet ?? 'PALETSIZ_$productId';
+      final expiryDateStr = stock['expiry_date'] as String? ?? 'NO_EXPIRY';
+      // Paletsiz ürünler için `urun_id` ve `expiry_date`'i birleştirerek benzersiz bir ID oluştur.
+      final containerId = pallet ?? 'box_${productId}_$expiryDateStr';
 
       groupedByContainer.putIfAbsent(containerId, () => []);
       groupedByContainer[containerId]!.add(TransferableItem(
@@ -332,12 +331,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final result = groupedByContainer.entries.map((entry) {
-      final id = entry.key;
+      final containerId = entry.key;
       final items = entry.value;
-      final displayName = id.startsWith('PALETSIZ_')
-          ? items.first.product.name // Paletsiz ise ürün adını göster
-          : 'Palet: $id';
-      return TransferableContainer(id: id, displayName: displayName, items: items);
+      final isPallet = items.first.sourcePalletBarcode != null;
+
+      return TransferableContainer(
+        id: containerId,
+        isPallet: isPallet,
+        items: items,
+      );
     }).toList();
 
     debugPrint("Sonuç konteyner sayısı: ${result.length}");
