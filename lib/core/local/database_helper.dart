@@ -63,7 +63,7 @@ class DatabaseHelper {
           created_at TEXT NOT NULL,
           status TEXT NOT NULL,
           error_message TEXT,
-          synced_at TEXT 
+          synced_at TEXT
         )
       ''');
 
@@ -191,13 +191,13 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           urun_id INTEGER NOT NULL,
-          location_id INTEGER, 
+          location_id INTEGER,
           siparis_id INTEGER,
           quantity REAL NOT NULL,
           pallet_barcode TEXT,
           expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
-          updated_at TEXT, 
+          updated_at TEXT,
           UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date)
         )
       ''');
@@ -213,15 +213,15 @@ class DatabaseHelper {
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
-          id INTEGER PRIMARY KEY, 
-          urun_id INTEGER, 
-          from_location_id INTEGER, 
+          id INTEGER PRIMARY KEY,
+          urun_id INTEGER,
+          from_location_id INTEGER,
           to_location_id INTEGER,
-          quantity REAL, 
+          quantity REAL,
           from_pallet_barcode TEXT,
           pallet_barcode TEXT,
-          employee_id INTEGER, 
-          transfer_date TEXT, 
+          employee_id INTEGER,
+          transfer_date TEXT,
           created_at TEXT
         )
       ''');
@@ -262,7 +262,7 @@ class DatabaseHelper {
           // Sunucudan gelen 'available' stoklar için temizlik yap.
           // 'receiving' durumundakilere dokunma.
           await txn.delete('inventory_stock', where: 'stock_status = ?', whereArgs: ['available']);
-          
+
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             // Sadece 'available' stokları ekle, çünkü 'receiving' olanlar sunucudan gelmemeli.
@@ -313,6 +313,8 @@ class DatabaseHelper {
     return result.isNotEmpty ? result.first['po_id'] as String? : null;
   }
 
+
+
   Future<Map<String, dynamic>?> getProductById(int productId) async {
     final db = await database;
     final result = await db.query(
@@ -360,7 +362,7 @@ class DatabaseHelper {
   // Sipariş detayları için yeni fonksiyonlar
   Future<Map<String, dynamic>?> getOrderSummary(int siparisId) async {
     final db = await database;
-    
+
     // Siparişin temel bilgileri
     final order = await db.query(
       'satin_alma_siparis_fis',
@@ -368,12 +370,12 @@ class DatabaseHelper {
       whereArgs: [siparisId],
       limit: 1,
     );
-    
+
     if (order.isEmpty) return null;
-    
+
     // Sipariş satırlarının detayları
     const sql = '''
-      SELECT 
+      SELECT
         sol.id,
         sol.urun_id,
         sol.miktar as ordered_quantity,
@@ -385,7 +387,7 @@ class DatabaseHelper {
       FROM satin_alma_siparis_fis_satir sol
       LEFT JOIN urunler u ON u.id = sol.urun_id
       LEFT JOIN (
-        SELECT 
+        SELECT
           gri.urun_id,
           SUM(gri.quantity_received) as total_received
         FROM goods_receipt_items gri
@@ -396,9 +398,9 @@ class DatabaseHelper {
       LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
       WHERE sol.siparis_id = ?
     ''';
-    
+
     final lines = await db.rawQuery(sql, [siparisId, siparisId]);
-    
+
     return {
       'order': order.first,
       'lines': lines,
@@ -408,16 +410,16 @@ class DatabaseHelper {
   // Bir sipariş için özel bir receipt'ın ürünlerini ve önceki kabullerini detaylarıyla döndürür
   Future<List<Map<String, dynamic>>> getReceiptItemsWithPreviousReceipts(int receiptId) async {
     final db = await database;
-    
+
     // Önce bu receipt'ın sipariş ID'sini alalım
     final receipt = await db.query('goods_receipts', where: 'id = ?', whereArgs: [receiptId], limit: 1);
     if (receipt.isEmpty) return [];
-    
+
     final siparisId = receipt.first['siparis_id'];
     if (siparisId == null) return [];
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         gri.id,
         gri.urun_id,
         gri.quantity_received as current_received,
@@ -436,27 +438,27 @@ class DatabaseHelper {
       LEFT JOIN goods_receipts gr ON gr.id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
       LEFT JOIN (
-        SELECT 
+        SELECT
           gri2.urun_id,
           SUM(gri2.quantity_received) as previous_received
         FROM goods_receipt_items gri2
         JOIN goods_receipts gr2 ON gr2.id = gri2.receipt_id
-        WHERE gr2.siparis_id = ? 
+        WHERE gr2.siparis_id = ?
           AND gr2.id < ?  -- Bu receipt'tan önceki receipt'lar
         GROUP BY gri2.urun_id
       ) previous ON previous.urun_id = gri.urun_id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
-    
+
     return await db.rawQuery(sql, [siparisId, receiptId, receiptId]);
   }
 
   Future<List<Map<String, dynamic>>> getReceiptItemsWithDetails(int receiptId) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         gri.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
@@ -466,15 +468,15 @@ class DatabaseHelper {
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
-    
+
     return await db.rawQuery(sql, [receiptId]);
   }
 
   Future<Map<String, dynamic>?> getInventoryTransferDetails(int transferId) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         it.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
@@ -492,16 +494,16 @@ class DatabaseHelper {
       LEFT JOIN employees emp ON emp.id = it.employee_id
       WHERE it.id = ?
     ''';
-    
+
     final result = await db.rawQuery(sql, [transferId]);
     return result.isNotEmpty ? result.first : null;
   }
 
   Future<List<Map<String, dynamic>>> getInventoryStockForOrder(int siparisId) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         ints.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
@@ -514,16 +516,16 @@ class DatabaseHelper {
       WHERE ints.siparis_id = ? AND ints.stock_status = 'receiving'
       ORDER BY ints.urun_id
     ''';
-    
+
     return await db.rawQuery(sql, [siparisId]);
   }
 
   // Detaylı goods receipt bilgilerini almak için yeni fonksiyon
   Future<Map<String, dynamic>?> getGoodsReceiptDetails(int receiptId) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         gr.*,
         emp.first_name || ' ' || emp.last_name as employee_name,
         emp.username as employee_username,
@@ -543,7 +545,7 @@ class DatabaseHelper {
       LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
       WHERE gr.id = ?
     ''';
-    
+
     final result = await db.rawQuery(sql, [receiptId]);
     return result.isNotEmpty ? result.first : null;
   }
@@ -551,9 +553,9 @@ class DatabaseHelper {
   // Mal kabul kalemlerini sipariş detaylarıyla birlikte almak için
   Future<List<Map<String, dynamic>>> getReceiptItemsWithOrderDetails(int receiptId) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         gri.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
@@ -572,7 +574,7 @@ class DatabaseHelper {
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
-    
+
     return await db.rawQuery(sql, [receiptId]);
   }
 
@@ -582,13 +584,13 @@ class DatabaseHelper {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
       final items = data['items'] as List<dynamic>? ?? [];
-      
+
       // 1. SharedPreferences'tan warehouse bilgilerini al
       final prefs = await SharedPreferences.getInstance();
       final warehouseName = prefs.getString('warehouse_name');
       final warehouseCode = prefs.getString('warehouse_code');
       final branchName = prefs.getString('branch_name');
-      
+
       // 2. Employee bilgilerini al
       if (header['employee_id'] != null) {
         final employee = await getEmployeeById(header['employee_id']);
@@ -597,8 +599,8 @@ class DatabaseHelper {
           header['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
         }
       }
-      
-      // 3. Source location bilgilerini al (null ise Mal Kabul Alanı)
+
+      // 3. Source location bilgilerini al (null ise 000 noktası)
       final sourceLocationId = header['source_location_id'];
       if (sourceLocationId != null && sourceLocationId != 0) {
         final sourceLoc = await getLocationById(sourceLocationId);
@@ -607,10 +609,10 @@ class DatabaseHelper {
           header['source_location_code'] = sourceLoc['code'];
         }
       } else {
-        header['source_location_name'] = 'Mal Kabul Alanı';
-        header['source_location_code'] = 'RECEIVING';
+        header['source_location_name'] = '000';
+        header['source_location_code'] = '000';
       }
-      
+
       // 4. Target location bilgilerini al
       final targetLocationId = header['target_location_id'];
       if (targetLocationId != null) {
@@ -620,7 +622,7 @@ class DatabaseHelper {
           header['target_location_code'] = targetLoc['code'];
         }
       }
-      
+
       // 5. Sipariş bilgilerini al (putaway işlemi ise)
       final siparisId = header['siparis_id'];
       if (siparisId != null) {
@@ -629,14 +631,14 @@ class DatabaseHelper {
           header['po_id'] = poId;
         }
       }
-      
+
       // 6. Warehouse bilgilerini ekle
       header['warehouse_info'] = {
         'name': warehouseName ?? 'N/A',
-        'warehouse_code': warehouseCode ?? 'N/A', 
+        'warehouse_code': warehouseCode ?? 'N/A',
         'branch_name': branchName ?? 'N/A',
       };
-      
+
       // 7. Ürün bilgilerini zenginleştir
       final enrichedItems = <Map<String, dynamic>>[];
       for (final item in items) {
@@ -652,7 +654,7 @@ class DatabaseHelper {
         }
         enrichedItems.add(enrichedItem);
       }
-      
+
       data['header'] = header;
       data['items'] = enrichedItems;
       return data;
@@ -666,11 +668,11 @@ class DatabaseHelper {
   // Pending operation için enriched data oluşturmak
   Future<Map<String, dynamic>> getEnrichedGoodsReceiptData(String operationData, {DateTime? operationDate}) async {
     final db = await database;
-    
+
     try {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
-      
+
       // Actual receipt date'ini header'dan al, yoksa operationDate kullan
       DateTime? actualReceiptDate = operationDate;
       final headerReceiptDate = header['receipt_date'];
@@ -681,13 +683,13 @@ class DatabaseHelper {
           // Parse hatası, operationDate kullan
         }
       }
-      
+
       // 1. SharedPreferences'tan warehouse bilgilerini al (login sırasında kaydediliyor)
       final prefs = await SharedPreferences.getInstance();
       final warehouseName = prefs.getString('warehouse_name');
       final warehouseCode = prefs.getString('warehouse_code');
       final branchName = prefs.getString('branch_name');
-      
+
       // 2. Employee bilgilerini DB'den al
       if (header['employee_id'] != null) {
         final employee = await getEmployeeById(header['employee_id']);
@@ -699,7 +701,7 @@ class DatabaseHelper {
       // 3. Warehouse bilgilerini önce SharedPreferences'tan al, sonra DB'yi dene
       Map<String, dynamic> warehouseInfo = {
         'name': warehouseName ?? 'N/A',
-        'warehouse_code': warehouseCode ?? 'N/A', 
+        'warehouse_code': warehouseCode ?? 'N/A',
         'branch_name': branchName ?? 'N/A',
       };
 
@@ -715,17 +717,17 @@ class DatabaseHelper {
           }
         }
       }
-      
+
       header['warehouse_info'] = warehouseInfo;
 
       // 3. Enrich items with product, order details and previous receipts
       final enrichedItems = <Map<String, dynamic>>[];
       final siparisId = header['siparis_id'];
-      
+
       for (final item in (data['items'] as List<dynamic>)) {
         final mutableItem = Map<String, dynamic>.from(item);
         final productId = item['urun_id'];
-        
+
         // Product bilgilerini ekle
         if (productId != null) {
           final product = await getProductById(productId);
@@ -735,11 +737,11 @@ class DatabaseHelper {
             mutableItem['product_barcode'] = product['Barcode1'];
           }
         }
-        
+
         // Bu ürün için önceden kabul edilen toplam miktarı hesapla
         if (siparisId != null && productId != null) {
           final currentReceivedInThisOp = (item['quantity'] as num?)?.toDouble() ?? 0;
-          
+
           if (actualReceiptDate != null) {
             // Historical operation: Bu tarihteki receipt'i bul ve hariç tut
             int? currentReceiptId;
@@ -758,9 +760,9 @@ class DatabaseHelper {
               if (receiptDateStr.endsWith('.000')) {
                 receiptDateStr = receiptDateStr.substring(0, receiptDateStr.length - 4);
               }
-              
+
               debugPrint('DEBUG - Looking for receipt with date: $receiptDateStr (truncated from ${actualReceiptDate.toUtc().toIso8601String()})');
-              
+
               final currentReceiptQuery = await db.rawQuery(
                 'SELECT id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
                 [siparisId, receiptDateStr]
@@ -784,16 +786,16 @@ class DatabaseHelper {
             } catch (e) {
               debugPrint('Error finding current receipt ID: $e');
             }
-            
+
             // Bu işlemden ÖNCEKI kabuller + bu receipt'i hariç tut
             final previousReceived = await _getPreviousReceivedQuantity(
-              siparisId, 
-              productId, 
+              siparisId,
+              productId,
               beforeDate: actualReceiptDate,
               excludeReceiptId: currentReceiptId
             );
             final totalReceived = previousReceived + currentReceivedInThisOp;
-            
+
             mutableItem['previous_received'] = previousReceived;
             mutableItem['current_received'] = currentReceivedInThisOp;
             mutableItem['total_received'] = totalReceived;
@@ -801,23 +803,23 @@ class DatabaseHelper {
             // Real-time operation: şu anki toplam durumu
             final totalReceivedNow = await _getPreviousReceivedQuantity(siparisId, productId);
             final previousReceived = totalReceivedNow - currentReceivedInThisOp;
-            
+
             mutableItem['previous_received'] = previousReceived > 0 ? previousReceived : 0;
             mutableItem['current_received'] = currentReceivedInThisOp;
             mutableItem['total_received'] = totalReceivedNow;
           }
         }
-        
+
         enrichedItems.add(mutableItem);
       }
-      
+
       // Sipariş detaylarını ekle
       if (siparisId != null) {
         final orderSummary = await getOrderSummary(siparisId);
         if (orderSummary != null) {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
-          
+
           final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
 
           for (final item in enrichedItems) {
@@ -826,9 +828,9 @@ class DatabaseHelper {
           }
         }
       }
-      
+
       data['items'] = enrichedItems;
-      
+
       data['header'] = header;
       return data;
 
@@ -841,33 +843,33 @@ class DatabaseHelper {
   // Sipariş için bir ürünün belirli bir tarihe kadar kabul edilen toplam miktarını hesaplar
   Future<double> _getPreviousReceivedQuantity(int siparisId, int productId, {DateTime? beforeDate, int? excludeReceiptId}) async {
     final db = await database;
-    
+
     String sql;
     List<dynamic> params;
-    
+
     if (beforeDate != null || excludeReceiptId != null) {
       // Historical operation veya specific receipt hariç tutma
       List<String> conditions = ['gr.siparis_id = ?', 'gri.urun_id = ?'];
       params = [siparisId, productId];
-      
+
       if (beforeDate != null) {
         conditions.add('gr.receipt_date < ?');
         // DÜZELTME: Tarih formatını SQLite'ın metin karşılaştırması için veritabanında saklanan formata (YYYY-MM-DD HH:MM:SS) uygun hale getir.
         params.add(beforeDate.toUtc().toIso8601String().substring(0, 19).replaceFirst('T', ' '));
       }
-      
+
       if (excludeReceiptId != null) {
         conditions.add('gr.id != ?');
         params.add(excludeReceiptId);
       }
-      
+
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.id = gri.receipt_id
         WHERE ${conditions.join(' AND ')}
       ''';
-      
+
       // Debug: Hangi kabuller sayılıyor görelim
       final debugSql = '''
         SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id
@@ -878,7 +880,7 @@ class DatabaseHelper {
       ''';
       final debugResult = await db.rawQuery(debugSql, params);
       debugPrint('DEBUG - Receipts being counted: $debugResult');
-      
+
       // Debug: Bu sipariş ve ürün için TÜM kabulleri görelim
       const allReceiptsSql = '''
         SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id, 'ALL' as note
@@ -899,43 +901,43 @@ class DatabaseHelper {
       ''';
       params = [siparisId, productId];
     }
-    
+
     final result = await db.rawQuery(sql, params);
     final totalReceived = (result.first['total_received'] as num?)?.toDouble() ?? 0.0;
-    
+
     // Debug log
     debugPrint('_getPreviousReceivedQuantity: siparisId=$siparisId, productId=$productId, beforeDate=${beforeDate?.toString() ?? 'null'}, excludeReceiptId=${excludeReceiptId?.toString() ?? 'null'}, result=$totalReceived');
-    
+
     return totalReceived;
   }
 
   // Sipariş için belirli bir tarihten sonra force close operation var mı kontrol eder
   Future<bool> hasForceCloseOperationForOrder(int siparisId, DateTime? afterDate) async {
     final db = await database;
-    
+
     // afterDate olmadan bu fonksiyon anlamsız, hep false döndür
     if (afterDate == null) {
       debugPrint('hasForceCloseOperationForOrder: afterDate null, false döndürülüyor');
       return false;
     }
-    
+
     // Force close operation'ların data içindeki tarihlerine bak
     try {
       final forceCloseOps = await db.rawQuery('''
         SELECT po.data, po.created_at
         FROM pending_operation po
-        WHERE po.type = 'forceCloseOrder' 
+        WHERE po.type = 'forceCloseOrder'
           AND JSON_EXTRACT(po.data, '\$.siparis_id') = ?
       ''', [siparisId]);
-      
+
       debugPrint('DEBUG hasForceClose: Found ${forceCloseOps.length} force close operations for order $siparisId');
-      
+
       // Her force close operation için tarih kontrolü yap
       for (final row in forceCloseOps) {
         try {
           final dataStr = row['data'] as String;
           final data = jsonDecode(dataStr) as Map<String, dynamic>;
-          
+
           DateTime forceCloseDate;
           if (data.containsKey('receipt_date') && data['receipt_date'] != null) {
             forceCloseDate = DateTime.parse(data['receipt_date'].toString());
@@ -944,66 +946,66 @@ class DatabaseHelper {
             forceCloseDate = DateTime.parse(row['created_at'].toString());
             debugPrint('DEBUG hasForceClose: Using created_at: $forceCloseDate');
           }
-          
+
           debugPrint('DEBUG hasForceClose: Comparing dates - afterDate: $afterDate, forceCloseDate: $forceCloseDate');
-          
+
           // 1. Bu force close, mevcut mal kabulden sonra mı?
           if (forceCloseDate.isAfter(afterDate)) {
-            
+
             debugPrint('DEBUG hasForceClose: Force close is after receipt, checking intermediate receipts...');
-            
+
             // 2. Arada başka mal kabul var mı? (Hem synced hem pending operations kontrol et)
-            
+
             // DÜZELTME: Tarihleri MySQL datetime formatına çevir (YYYY-MM-DD HH:MM:SS)
             String formatDateForMysql(DateTime date) {
               return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
             }
-            
+
             final afterDateStr = formatDateForMysql(afterDate);
             // DÜZELTME: Force close tarihine 1 saniye ekle ki aynı saniyedeki receipts dahil edilsin
             final forceCloseDatePlusOne = forceCloseDate.add(const Duration(seconds: 1));
             final forceCloseDateStr = formatDateForMysql(forceCloseDatePlusOne);
-            
+
             debugPrint('DEBUG hasForceClose: Date range for intermediate check (MySQL format): $afterDateStr to $forceCloseDateStr (force close +1 sec)');
-            
+
             // Synced receipts from goods_receipts table
             final syncedReceipts = await db.rawQuery('''
               SELECT COUNT(*) as count
               FROM goods_receipts
               WHERE siparis_id = ? AND receipt_date > ? AND receipt_date < ?
             ''', [siparisId, afterDateStr, forceCloseDateStr]);
-            
+
             final syncedCount = Sqflite.firstIntValue(syncedReceipts) ?? 0;
-            
+
             debugPrint('DEBUG hasForceClose: Synced receipts in range: $syncedCount');
-            
+
             // Debug: Show all receipts in this range
             final debugSyncedReceipts = await db.rawQuery('''
               SELECT receipt_date, id
               FROM goods_receipts
               WHERE siparis_id = ? AND receipt_date > ? AND receipt_date < ?
             ''', [siparisId, afterDateStr, forceCloseDateStr]);
-            
+
             debugPrint('DEBUG hasForceClose: Synced receipts found in range: $debugSyncedReceipts');
-            
+
             // Pending receipts from pending_operation table
             final pendingReceipts = await db.rawQuery('''
               SELECT po.data
               FROM pending_operation po
-              WHERE po.type = 'goodsReceipt' 
+              WHERE po.type = 'goodsReceipt'
                 AND po.status = 'pending'
                 AND JSON_EXTRACT(po.data, '\$.header.siparis_id') = ?
             ''', [siparisId]);
-            
+
             int pendingCount = 0;
             debugPrint('DEBUG hasForceClose: Found ${pendingReceipts.length} pending receipts to check');
-            
+
             for (final pendingRow in pendingReceipts) {
               try {
                 final pendingDataStr = pendingRow['data'] as String;
                 final pendingData = jsonDecode(pendingDataStr) as Map<String, dynamic>;
                 final header = pendingData['header'] as Map<String, dynamic>?;
-                
+
                 if (header != null && header['receipt_date'] != null) {
                   final receiptDate = DateTime.parse(header['receipt_date'].toString());
                   debugPrint('DEBUG hasForceClose: Checking pending receipt date: $receiptDate');
@@ -1018,11 +1020,11 @@ class DatabaseHelper {
                 continue;
               }
             }
-            
+
             final totalIntermediateCount = syncedCount + pendingCount;
-            
+
             debugPrint('DEBUG hasForceClose: Total intermediate receipts: synced=$syncedCount, pending=$pendingCount, total=$totalIntermediateCount');
-            
+
             // Eğer arada başka mal kabul yoksa, bu işlem siparişi kapatandır.
             if (totalIntermediateCount == 0) {
               debugPrint('hasForceCloseOperationForOrder: siparisId=$siparisId, FOUND closing receipt at $afterDate (synced: $syncedCount, pending: $pendingCount)');
@@ -1038,7 +1040,7 @@ class DatabaseHelper {
           continue;
         }
       }
-      
+
       debugPrint('hasForceCloseOperationForOrder: siparisId=$siparisId, NO suitable force close found for receipt at $afterDate');
       return false;
     } catch (e) {
@@ -1046,17 +1048,17 @@ class DatabaseHelper {
       return false;
     }
   }
-  
+
   // Sipariş status'unu döndürür
   Future<int?> getOrderStatus(int siparisId) async {
     final db = await database;
-    
+
     final result = await db.rawQuery('''
       SELECT status
       FROM satin_alma_siparis_fis
       WHERE id = ?
     ''', [siparisId]);
-    
+
     if (result.isEmpty) return null;
     return (result.first['status'] as int?);
   }
@@ -1064,20 +1066,20 @@ class DatabaseHelper {
   // Warehouse ve employee bilgileri ile birlikte sistem bilgilerini almak için
   Future<Map<String, dynamic>?> getSystemInfo(int warehouseId) async {
     final db = await database;
-    
+
     final warehouse = await getWarehouseById(warehouseId);
     if (warehouse == null) return null;
-    
+
     final employeeCount = await db.rawQuery(
       'SELECT COUNT(*) as count FROM employees WHERE warehouse_id = ? AND is_active = 1',
       [warehouseId]
     );
-    
+
     final locationCount = await db.rawQuery(
       'SELECT COUNT(*) as count FROM shelfs WHERE warehouse_id = ? AND is_active = 1',
       [warehouseId]
     );
-    
+
     return {
       'warehouse': warehouse,
       'employee_count': employeeCount.first['count'],
@@ -1088,16 +1090,16 @@ class DatabaseHelper {
   // Pending operation'ların detaylarını almak için
   Future<Map<String, dynamic>?> getPendingOperationDetails(String uniqueId) async {
     final db = await database;
-    
+
     final operation = await db.query(
       'pending_operation',
       where: 'unique_id = ?',
       whereArgs: [uniqueId],
       limit: 1,
     );
-    
+
     if (operation.isEmpty) return null;
-    
+
     return operation.first;
   }
 
@@ -1114,17 +1116,86 @@ class DatabaseHelper {
         where: "status = ?",
         whereArgs: ['pending'],
         orderBy: 'created_at ASC');
-    return maps.map((map) => PendingOperation.fromMap(map)).toList();
+
+    // Enrich the operations with location names for better display
+    final enrichedMaps = <Map<String, dynamic>>[];
+    for (final map in maps) {
+      final enrichedMap = Map<String, dynamic>.from(map);
+      enrichedMap['data'] = await _enrichOperationDataForDisplay(map['data'] as String, map['type'] as String);
+      enrichedMaps.add(enrichedMap);
+    }
+
+    return enrichedMaps.map((map) => PendingOperation.fromMap(map)).toList();
   }
 
   Future<List<PendingOperation>> getSyncedOperations() async {
     final db = await database;
-    final maps = await db.query('pending_operation', 
-        where: "status = ? AND type != ?", 
-        whereArgs: ['synced', 'forceCloseOrder'], 
-        orderBy: 'synced_at DESC', 
+    final maps = await db.query('pending_operation',
+        where: "status = ? AND type != ?",
+        whereArgs: ['synced', 'forceCloseOrder'],
+        orderBy: 'synced_at DESC',
         limit: 100);
-    return maps.map((map) => PendingOperation.fromMap(map)).toList();
+
+    // Enrich the operations with location names for better display
+    final enrichedMaps = <Map<String, dynamic>>[];
+    for (final map in maps) {
+      final enrichedMap = Map<String, dynamic>.from(map);
+      enrichedMap['data'] = await _enrichOperationDataForDisplay(map['data'] as String, map['type'] as String);
+      enrichedMaps.add(enrichedMap);
+    }
+
+    return enrichedMaps.map((map) => PendingOperation.fromMap(map)).toList();
+  }
+
+  /// Enriches operation data with location names for better display in cards
+  Future<String> _enrichOperationDataForDisplay(String operationData, String operationType) async {
+    try {
+      final data = jsonDecode(operationData) as Map<String, dynamic>;
+
+      if (operationType == 'inventoryTransfer') {
+        final header = data['header'] as Map<String, dynamic>? ?? {};
+
+        // Enrich source location name
+        final sourceLocationId = header['source_location_id'];
+        if (sourceLocationId != null && sourceLocationId != 0) {
+          final sourceLoc = await getLocationById(sourceLocationId);
+          if (sourceLoc != null) {
+            header['source_location_name'] = sourceLoc['name'];
+          }
+        } else {
+          header['source_location_name'] = '000';
+        }
+
+        // Enrich target location name
+        final targetLocationId = header['target_location_id'];
+        if (targetLocationId != null) {
+          final targetLoc = await getLocationById(targetLocationId);
+          if (targetLoc != null) {
+            header['target_location_name'] = targetLoc['name'];
+          }
+        }
+
+        data['header'] = header;
+      } else if (operationType == 'goodsReceipt') {
+        final header = data['header'] as Map<String, dynamic>? ?? {};
+
+        // Enrich PO ID if available
+        final siparisId = header['siparis_id'];
+        if (siparisId != null) {
+          final poId = await getPoIdBySiparisId(siparisId);
+          if (poId != null) {
+            header['po_id'] = poId;
+          }
+        }
+
+        data['header'] = header;
+      }
+
+      return jsonEncode(data);
+    } catch (e) {
+      debugPrint('Error enriching operation data for display: $e');
+      return operationData; // Return original data on error
+    }
   }
 
   Future<void> markOperationAsSynced(int id) async {

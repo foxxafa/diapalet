@@ -82,7 +82,7 @@ class PendingOperation {
         case PendingOperationType.goodsReceipt:
           final poId = dataMap['header']?['po_id'];
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
-          
+
           if (poId != null && poId.toString().isNotEmpty) {
             return 'pending_operations.subtitles.goods_receipt_with_po'
                 .tr(namedArgs: {'poId': poId.toString(), 'count': itemCount.toString()});
@@ -94,22 +94,22 @@ class PendingOperation {
           // Önce isimleri dene, yoksa "Kaynak" ve "Hedef" gibi anlamlı ifadeler kullan
           var source = dataMap['header']?['source_location_name'];
           var target = dataMap['header']?['target_location_name'];
-          
+
           // Eğer isim yoksa ID'den anlamlı çeviri yap
           if (source == null) {
             final sourceId = dataMap['header']?['source_location_id'];
             if (sourceId == null || sourceId == 0) {
-              source = 'Mal Kabul Alanı';
+              source = '000';
             } else {
-              source = 'Raf $sourceId';
+              source = 'Shelf $sourceId';
             }
           }
-          
+
           if (target == null) {
             final targetId = dataMap['header']?['target_location_id'];
-            target = targetId != null ? 'Raf $targetId' : 'Bilinmeyen Hedef';
+            target = targetId != null ? 'Shelf $targetId' : 'Unknown Target';
           }
-          
+
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
           return 'pending_operations.subtitles.inventory_transfer'.tr(namedArgs: {
             'source': source.toString(),
@@ -118,7 +118,7 @@ class PendingOperation {
           });
         case PendingOperationType.forceCloseOrder:
           final poId = dataMap['po_id'];
-          
+
           if (poId != null && poId.toString().isNotEmpty) {
             return 'pending_operations.subtitles.force_close_order_with_po'
                 .tr(namedArgs: {'poId': poId.toString()});
@@ -140,7 +140,7 @@ class PendingOperation {
   String get pdfFileName {
     final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(createdAt);
     final typePrefix = type.apiName.toUpperCase();
-    
+
     try {
       final dataMap = jsonDecode(data);
       switch (type) {
@@ -166,7 +166,7 @@ class PendingOperation {
     } catch (e) {
       debugPrint('Error creating PDF filename: $e');
     }
-    
+
     return '${typePrefix}_${uniqueId.substring(0, 8)}_$formattedDate.pdf';
   }
 

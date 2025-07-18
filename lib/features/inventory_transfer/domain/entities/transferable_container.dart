@@ -2,7 +2,7 @@
 
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
+// import 'package:intl/intl.dart';
 
 /// Farklı türdeki (palet veya kutu grubu) transfer edilebilir birimleri temsil eden genel bir sınıf.
 @immutable

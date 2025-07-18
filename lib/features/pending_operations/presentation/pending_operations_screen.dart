@@ -337,7 +337,7 @@ class _OperationCard extends StatelessWidget {
     } catch (e) {
       // Hide loading dialog if still showing
       if (context.mounted) Navigator.pop(context);
-      
+
       // Show error
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -476,7 +476,7 @@ class _OperationDetailsView extends StatelessWidget {
 
   Future<Widget> _buildGoodsReceiptDetailsAsync(BuildContext context, Map<String, dynamic> data, PendingOperation operation) async {
     final db = DatabaseHelper.instance;
-    
+
     // Data içindeki receipt_date'i kullan, created_at değil (server timing farkı için)
     DateTime operationDate = operation.createdAt;
     final originalHeader = data['header'] as Map<String, dynamic>?;
@@ -487,22 +487,22 @@ class _OperationDetailsView extends StatelessWidget {
         // Parse hatası durumunda created_at kullan
       }
     }
-    
+
     // Enriched data al - operation tarihiyle birlikte historical accuracy için
     final enrichedData = await db.getEnrichedGoodsReceiptData(jsonEncode(data), operationDate: operationDate);
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
-    
+
     // Bilgileri extract et
     final poId = header['order_info']?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
     final invoice = header['invoice_number']?.toString() ?? 'N/A';
-    final employeeName = header['employee_info'] != null 
+    final employeeName = header['employee_info'] != null
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
         : 'System User';
-    
+
     // Order tabanlı mı kontrol et
     final isOrderBased = header['siparis_id'] != null;
-    
+
     // Force close kontrolü - sipariş eksiklerle kapatıldı mı?
     bool isForceClosed = false;
     if (isOrderBased && header['siparis_id'] != null) {
@@ -516,7 +516,7 @@ class _OperationDetailsView extends StatelessWidget {
         debugPrint('Error checking force close: $e');
       }
     }
-    
+
     if (!context.mounted) return const SizedBox.shrink();
 
     return _buildDetailSection(
@@ -535,7 +535,7 @@ class _OperationDetailsView extends StatelessWidget {
         final productCode = item['product_code'] ?? '';
         final productBarcode = item['product_barcode'] ?? '';
         final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
-        
+
         // Miktarlar - yeni enriched data'dan gelir
         final currentReceived = item['current_received']?.toDouble() ?? item['quantity']?.toDouble() ?? 0;
         final previousReceived = item['previous_received']?.toDouble() ?? 0;
@@ -543,7 +543,7 @@ class _OperationDetailsView extends StatelessWidget {
         final orderedQuantity = item['ordered_quantity']?.toDouble() ?? 0;
         final unit = item['unit'] ?? '';
         final palletBarcode = item['pallet_barcode'];
-        
+
         // Get expiry date from the item
         final expiryDate = item['expiry_date'];
         String expiryDisplay = '';
@@ -555,7 +555,7 @@ class _OperationDetailsView extends StatelessWidget {
             expiryDisplay = expiryDate.toString();
           }
         }
-        
+
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.all(8),
@@ -665,26 +665,26 @@ class _OperationDetailsView extends StatelessWidget {
 
   Future<Widget> _buildInventoryTransferDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
     final db = DatabaseHelper.instance;
-    
+
     // Enriched data al
     final enrichedData = await db.getEnrichedInventoryTransferData(jsonEncode(data));
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
-    
+
     // Bilgileri extract et
     final sourceName = header['source_location_name'] ?? 'N/A';
     final sourceCode = header['source_location_code'] ?? '';
-    final targetName = header['target_location_name'] ?? 'N/A'; 
+    final targetName = header['target_location_name'] ?? 'N/A';
     final targetCode = header['target_location_code'] ?? '';
     final employeeName = header['employee_name'] ?? 'System User';
-    final operationType = header['operation_type'] ?? 'transfer';
+    // final operationType = header['operation_type'] ?? 'transfer';
     final containerId = header['container_id']?.toString();
     final poId = header['po_id']?.toString();
-    
+
     // Operation type'a göre farklı başlıklar
     String transferTitle;
     String operationDescription;
-    
+
     if (header['source_location_id'] == null || header['source_location_id'] == 0) {
       transferTitle = 'pending_operations.operation_types.putaway_operation'.tr();
       operationDescription = 'pending_operations.operation_types.putaway_operation'.tr();
@@ -692,7 +692,7 @@ class _OperationDetailsView extends StatelessWidget {
       transferTitle = 'pending_operations.operation_types.stock_transfer'.tr();
       operationDescription = 'pending_operations.operation_types.stock_transfer'.tr();
     }
-    
+
     // Lokasyon display'leri
     final sourceDisplay = sourceCode.isNotEmpty ? '$sourceName ($sourceCode)' : sourceName;
     final targetDisplay = targetCode.isNotEmpty ? '$targetName ($targetCode)' : targetName;
@@ -705,11 +705,11 @@ class _OperationDetailsView extends StatelessWidget {
       details: {
         'dialog_labels.operation_type'.tr(): operationDescription,
         'dialog_labels.employee'.tr(): employeeName,
-        'dialog_labels.from'.tr(): sourceDisplay == "Mal Kabul Alanı" ? "dialog_labels.receiving_area".tr() : sourceDisplay,
+        'dialog_labels.from'.tr(): sourceDisplay == "000" ? "common_labels.goods_receiving_area".tr() : sourceDisplay,
         'dialog_labels.to'.tr(): targetDisplay,
         if (poId != null) 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
-        //'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
+        // 'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
@@ -719,7 +719,7 @@ class _OperationDetailsView extends StatelessWidget {
         final productInfo = productCode.isNotEmpty ? ' ($productCode)' : '';
         final quantity = item['quantity_transferred'] ?? item['quantity'] ?? 0;
         final container = item['pallet_id'] ?? item['pallet_barcode'];
-        
+
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.all(8),
@@ -790,7 +790,7 @@ class _OperationDetailsView extends StatelessWidget {
 
   Future<Widget> _buildForceCloseOrderDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
     final db = DatabaseHelper.instance;
-    
+
     // Sipariş ID'sinden gerçek PO ID'yi al
     String poId = 'N/A';
     final siparisId = data['siparis_id'];
@@ -800,7 +800,7 @@ class _OperationDetailsView extends StatelessWidget {
         poId = realPoId;
       }
     }
-    
+
     if (!context.mounted) return const SizedBox.shrink();
 
     return _buildDetailSection(
