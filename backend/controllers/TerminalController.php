@@ -630,4 +630,76 @@ class TerminalController extends Controller
         $result = DepoComponent::syncWarehousesAndShelfs();
         return $this->asJson($result);
     }
+
+    /**
+     * 🔧 DEVELOPMENT ONLY: Database'i temizleyip test verileriyle yeniden yükler
+     * ⚠️ SADECE DEVELOPMENT/TEST ORTAMLARINDA KULLANILMALIDIR!
+     */
+    public function actionDevReset()
+    {
+        // Production'da bu endpoint'i devre dışı bırak
+        if (YII_ENV_PROD) {
+            throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
+        }
+
+        $db = Yii::$app->db;
+        $transaction = $db->beginTransaction();
+
+        try {
+            // complete_setup.sql dosyasını oku
+            $sqlFilePath = Yii::getAlias('@app/complete_setup.sql');
+            if (!file_exists($sqlFilePath)) {
+                throw new \Exception('complete_setup.sql dosyası bulunamadı.');
+            }
+
+            $sqlContent = file_get_contents($sqlFilePath);
+            if (empty($sqlContent)) {
+                throw new \Exception('complete_setup.sql dosyası boş.');
+            }
+
+            // SQL dosyasını ; ile ayırarak komutlara böl
+            $statements = array_filter(
+                array_map('trim', explode(';', $sqlContent)),
+                function($stmt) {
+                    return !empty($stmt) && 
+                           !preg_match('/^\s*--/', $stmt) && 
+                           !preg_match('/^\s*SET\s+/', $stmt);
+                }
+            );
+
+            $executedCount = 0;
+            $errors = [];
+
+            foreach ($statements as $statement) {
+                try {
+                    $db->createCommand($statement)->execute();
+                    $executedCount++;
+                } catch (\Exception $e) {
+                    // SET komutları ve yorumları hariç, diğer hataları logla
+                    if (!preg_match('/^\s*(SET|USE|--)/i', $statement)) {
+                        $errors[] = "SQL: " . substr($statement, 0, 100) . "... - Hata: " . $e->getMessage();
+                    }
+                }
+            }
+
+            $transaction->commit();
+
+            return $this->asJson([
+                'status' => 'success',
+                'message' => 'Database başarıyla reset edildi ve test verileri yüklendi.',
+                'details' => [
+                    'executed_statements' => $executedCount,
+                    'errors' => $errors,
+                    'timestamp' => date('c')
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $transaction->rollBack();
+            return $this->asJson([
+                'status' => 'error',
+                'message' => 'Database reset işlemi başarısız: ' . $e->getMessage()
+            ]);
+        }
+    }
 }

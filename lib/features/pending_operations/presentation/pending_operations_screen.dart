@@ -1,5 +1,6 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
@@ -7,6 +8,8 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/network/api_config.dart';
+import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -74,6 +77,166 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     await _loadData();
   }
 
+  /// 🔧 Development Tools Dialog - sadece debug mode'da kullanılır
+  void _showDevelopmentTools(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.build, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('🔧 Development Tools'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '⚠️ Bu araçlar sadece development/test amaçlıdır!\n\nTüm veri silinecek ve test verileri yüklenecek.',
+              style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red),
+            ),
+            const SizedBox(height: 16),
+            const Text('🗂️ Sıfırlanacak:'),
+            const SizedBox(height: 8),
+            const Text('• Local SQLite Database'),
+            const Text('• Server MySQL Database (sadece dev)'),
+            const Text('• Pending Operations'),
+            const Text('• Sync History'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _performDevelopmentReset();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Database Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Development database reset işlemi
+  Future<void> _performDevelopmentReset() async {
+    // Loading göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('🔄 Database reset ediliyor...'),
+            SizedBox(height: 8),
+            Text('Bu işlem biraz sürebilir.'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // 1. Local database'i reset et (version artırarak)
+      await _resetLocalDatabase();
+      
+      // 2. Server database'i reset et (sadece development'ta)
+      await _resetServerDatabase();
+
+      // 3. Sync service'i reset et
+      await _syncService.performFullSync(force: true);
+
+      // Loading'i kapat
+      if (mounted) Navigator.of(context).pop();
+
+      // Success mesajı
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Database başarıyla reset edildi ve test verileri yüklendi!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Data'yı yenile
+      await _loadData();
+
+    } catch (e) {
+      // Loading'i kapat
+      if (mounted) Navigator.of(context).pop();
+      
+      // Error mesajı
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Reset işlemi başarısız: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Local SQLite database'i reset eder
+  Future<void> _resetLocalDatabase() async {
+    final db = DatabaseHelper.instance;
+    final database = await db.database;
+    
+    // Database version'ını artırarak force upgrade tetikle
+    await database.close();
+    
+    // Database file'ı sil ki tamamen yeniden oluşturulsun
+    final dbPath = database.path;
+    final file = File(dbPath);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    
+    // Yeni database'i tetikle
+    await db.database;
+  }
+
+  /// Server database'i reset eder (sadece development)
+  Future<void> _resetServerDatabase() async {
+    final dio = Dio();
+    
+    // API config'den base URL'i al
+    final apiConfig = context.read<ApiConfig>();
+    final baseUrl = apiConfig.baseUrl;
+    
+    final response = await dio.post(
+      '$baseUrl/api/terminal/dev-reset',
+      options: Options(
+        headers: {'Content-Type': 'application/json'},
+        validateStatus: (status) => status! < 500, // 400'ler de kabul et
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server reset başarısız: ${response.statusMessage}');
+    }
+
+    final data = response.data;
+    if (data['status'] != 'success') {
+      throw Exception('Server reset başarısız: ${data['message']}');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,26 +286,44 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
           ),
         ],
       ),
-      floatingActionButton: StreamBuilder<SyncStatus>(
-        // DÜZELTME: Bu StreamBuilder'a da başlangıç değeri ekleniyor.
-        initialData: _syncService.currentStatus,
-        stream: _syncService.syncStatusStream,
-        builder: (context, statusSnapshot) {
-          final isSyncing = statusSnapshot.data == SyncStatus.syncing;
-          return FloatingActionButton.extended(
-            onPressed: isSyncing ? null : _handleRefresh,
-            label: Text(isSyncing
-                ? 'pending_operations.status.syncing'.tr()
-                : 'pending_operations.sync_now'.tr()),
-            icon: isSyncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.sync),
-          );
-        },
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 🔧 Development Tools Button (sadece debug mode'da görünür)
+          if (!const bool.fromEnvironment('dart.vm.product')) ...[
+            FloatingActionButton(
+              heroTag: "dev_tools",
+              mini: true,
+              backgroundColor: Colors.orange,
+              onPressed: () => _showDevelopmentTools(context),
+              child: const Icon(Icons.build, color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Ana sync butonu
+          StreamBuilder<SyncStatus>(
+            // DÜZELTME: Bu StreamBuilder'a da başlangıç değeri ekleniyor.
+            initialData: _syncService.currentStatus,
+            stream: _syncService.syncStatusStream,
+            builder: (context, statusSnapshot) {
+              final isSyncing = statusSnapshot.data == SyncStatus.syncing;
+              return FloatingActionButton.extended(
+                heroTag: "sync_main",
+                onPressed: isSyncing ? null : _handleRefresh,
+                label: Text(isSyncing
+                    ? 'pending_operations.status.syncing'.tr()
+                    : 'pending_operations.sync_now'.tr()),
+                icon: isSyncing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.sync),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
