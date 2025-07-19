@@ -11,8 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: Expiry date desteği için veritabanı versiyonu artırıldı.
-  static const _databaseVersion = 30;
+  // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
+  static const _databaseVersion = 31;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -86,6 +86,7 @@ class DatabaseHelper {
           warehouse_id INTEGER,
           name TEXT,
           code TEXT,
+          dia_key TEXT,
           is_active INTEGER DEFAULT 1
         )
       ''');
