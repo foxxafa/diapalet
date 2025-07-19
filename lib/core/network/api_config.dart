@@ -30,8 +30,12 @@ class ApiConfig {
   static final Dio dio = _createDio();
   
   static Dio _createDio() {
+    // 1. Get the config directly.
+    final config = ApiEnvironments.getEnv(currentEnvironment);
+
+    // 2. Use it to initialize BaseOptions.
     final dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
+      baseUrl: config.baseUrl, // Use the directly fetched base URL
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(minutes: 1),
       headers: {
