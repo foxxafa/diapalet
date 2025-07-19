@@ -20,6 +20,13 @@ class ApiConfig {
   static String get environmentName => _config.name;
   static bool get isProduction => currentEnvironment == ApiEnvironment.production;
 
+  // API Endpoint yolları
+  static const String login = '/api/terminal/login';
+  static const String syncUpload = '/api/terminal/sync-upload';
+  static const String syncDownload = '/api/terminal/sync-download';
+  static const String devReset = '/api/terminal/dev-reset';
+  static const String healthCheck = '/api/terminal/health-check';
+
   static final Dio dio = _createDio();
   
   static Dio _createDio() {

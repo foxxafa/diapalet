@@ -164,6 +164,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
 
     if (confirmed != true) return;
 
+    // BuildContext'i asenkron işlemler öncesi sakla
+    if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     bool serverResetSuccess = false;
 
@@ -182,6 +184,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     } catch (e) {
       serverResetSuccess = false;
       // Hata mesajını göster
+      if (!mounted) return;
       await showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -198,6 +201,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     }
 
     // 2. Sunucu sıfırlama başarılı olsa da olmasa da yerel sıfırlama seçeneği sun
+    if (!mounted) return;
     final confirmedLocalReset = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -223,6 +227,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     );
 
     if (confirmedLocalReset == true) {
+      if (!mounted) return;
       await _resetLocalDatabase();
     }
   }
@@ -265,11 +270,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   Future<void> _resetServerDatabase() async {
     final dio = Dio();
 
-    // DÜZELTME: Statik erişim hatası düzeltildi
-    const baseUrl = ApiConfig.baseUrl;
-
     final response = await dio.post(
-      '$baseUrl/api/terminal/dev-reset',
+      '${ApiConfig.baseUrl}${ApiConfig.devReset}',
       options: Options(
         headers: {'Content-Type': 'application/json'},
         validateStatus: (status) => status != null && status < 500,

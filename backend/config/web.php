@@ -1,8 +1,8 @@
 <?php
 
 // Load environment variables from .env file
-require_once __DIR__ . '/../../vendor/autoload.php';
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+require_once __DIR__ . '/../vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
 $dotenv->load();
 
 $params = require __DIR__ . '/params.php';
@@ -56,9 +56,9 @@ $config = [
                 'POST api/terminal/login' => 'terminal/login',
                 'POST api/terminal/sync-upload' => 'terminal/sync-upload',
                 'POST api/terminal/sync-download' => 'terminal/sync-download',
-                'GET api/terminal/health-check' => 'terminal/health-check',
                 'POST api/terminal/sync-shelfs' => 'terminal/sync-shelfs',
                 'POST api/terminal/dev-reset' => 'terminal/dev-reset',
+                'GET api/terminal/health-check' => 'terminal/health-check',
             ],
         ],
     ],
