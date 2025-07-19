@@ -16,7 +16,8 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
-        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') {
+        // DÜZELTME: 'dev-reset' endpoint'i API anahtarı kontrolünden muaf tutuldu.
+        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset') {
             $this->checkApiKey();
         }
 
@@ -34,9 +35,9 @@ class TerminalController extends Controller
     {
         $authHeader = Yii::$app->request->headers->get('Authorization');
         if ($authHeader === null || !preg_match('/^Bearer\s+(.+)$/', $authHeader, $matches)) {
-            Yii::$app->response->statusCode = 401;
-            echo json_encode(['success' => false, 'error' => 'Yetkisiz erişim: API anahtarı eksik veya geçersiz.']);
-            Yii::$app->end();
+            // DÜZELTME: echo yerine Yii2'nin standart exception'ı kullanıldı.
+            // Bu, 'Headers already sent' hatasını önler.
+            throw new \yii\web\UnauthorizedHttpException('Yetkisiz erişim: API anahtarı eksik veya geçersiz.');
         }
     }
 
