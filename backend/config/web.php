@@ -3,6 +3,7 @@ return [
     'id' => 'diapalet-backend',
     'basePath' => dirname(__DIR__),
     'bootstrap' => ['log'],
+    'controllerNamespace' => 'app\\controllers',
     'aliases' => [
         '@bower' => '@vendor/bower-asset',
         '@npm'   => '@vendor/npm-asset',
@@ -54,6 +55,7 @@ return [
                 'api/terminal/<action>' => 'terminal/<action>',
                 'api/<controller>/<action>' => '<controller>/<action>',
                 '<controller>/<action>' => '<controller>/<action>',
+                '' => 'site/index',
             ],
         ],
     ],

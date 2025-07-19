@@ -32,10 +32,6 @@ RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloade
 # Copy the entire backend directory
 COPY backend/ ./
 
-# Copy additional backend files if they exist separately
-COPY backend/*.php ./
-COPY backend/*.sql ./
-
 # Create necessary directories
 RUN mkdir -p runtime assets web/assets \
     && chown -R www-data:www-data runtime assets web/assets \
