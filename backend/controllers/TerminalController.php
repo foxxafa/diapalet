@@ -638,10 +638,12 @@ class TerminalController extends Controller
      */
     public function actionDevReset()
     {
-        // Production'da bu endpoint'i devre dışı bırak
-        if (YII_ENV_PROD) {
+        // UYARI: Bu endpoint, veritabanını tamamen siler ve yeniden oluşturur.
+        // Yanlışlıkla production veritabanında çalıştırılmaması kritik öneme sahiptir.
+        // YII_ENV kontrolü, geliştiricinin isteği üzerine kaldırılmıştır.
+        /* if (YII_ENV_PROD) {
             throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
-        }
+        } */
 
         $db = Yii::$app->db;
         $transaction = $db->beginTransaction();

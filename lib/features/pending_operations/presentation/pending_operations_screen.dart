@@ -88,7 +88,14 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
           children: [
             Icon(Icons.build, color: Colors.orange),
             SizedBox(width: 8),
-            Text('🔧 Development Tools'),
+            // DÜZELTME: Diyalog başlığındaki taşma sorununu çözmek için Expanded eklendi.
+            Expanded(
+              child: Text(
+                'Development Tools',
+                style: TextStyle(fontSize: 18), // Yazı boyutunu biraz ayarlayalım
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         content: const Column(
@@ -123,7 +130,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
               foregroundColor: Colors.white,
             ),
             icon: const Icon(Icons.refresh),
-            label: const Text('Database Reset'),
+            // DÜZELTME: Butonun yazısı da taşma potansiyeline sahip, kısaltıldı.
+            label: const Text('Reset'),
           ),
         ],
       ),
