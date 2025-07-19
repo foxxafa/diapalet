@@ -23,23 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
-Dio createDioClient() {
-  final dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 60),
-      headers: { 'Accept': 'application/json', },
-    ),
-  );
-  if (kDebugMode) {
-    dio.interceptors.add(LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      logPrint: (object) => debugPrint(object.toString()),
-    ));
-  }
-  return dio;
-}
+import 'package:diapalet/core/network/api_config.dart'; // ApiConfig'i import et
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,7 +32,8 @@ void main() async {
   final dbHelper = DatabaseHelper.instance;
   await dbHelper.database;
 
-  final dio = createDioClient();
+  // Yapılandırılmış Dio istemcisini doğrudan ApiConfig'ten al
+  final dio = ApiConfig.dio;
   final connectivity = Connectivity();
   final networkInfo = NetworkInfoImpl(connectivity);
 
