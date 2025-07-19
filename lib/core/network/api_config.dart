@@ -4,42 +4,45 @@ import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:diapalet/core/network/dio_logger.dart';
 
 class ApiConfig {
+  // Railway Production Server (Canlı Sunucu)
+  static const String baseUrl = 'https://diapalet-production.up.railway.app';
+  
   // Docker yerel sunucu (geliştirme için)
   // Emülatör için: 10.0.2.2 (Android emülatör host erişimi)
   // Fiziksel cihaz için: 192.168.10.133 (yerel ağ IP'si)
-  static const String baseUrl = 'http://10.0.2.2:5000';
+  // static const String baseUrl = 'http://10.0.2.2:5000';
   
-  // Fiziksel cihaz için (yorum kaldırarak kullanın)
+  // Fiziksel cihaz için (yerel test)
   // static const String baseUrl = 'http://192.168.10.133:5000';
+
+  // Kimlik Doğrulama (Railway Yii2 API)
+  static const String login = '$baseUrl/api/terminal/login';
+
+  // Senkronizasyon (Railway Yii2 API)
+  static const String syncUpload = '$baseUrl/api/terminal/sync-upload';
+  static const String syncDownload = '$baseUrl/api/terminal/sync-download';
+
+  // Sunucu Sağlık Kontrolü
+  static const String healthCheck = '$baseUrl/health-check';
   
-  // Canlı sunucu (ileride kullanmak için)
-  // static const String baseUrl = 'https://enzo.rowhub.net';
+  // Depo/Raf Senkronizasyonu
+  static const String syncShelfs = '$baseUrl/api/terminal/sync-shelfs';
 
-  // Kimlik Doğrulama
-  static const String login = '$baseUrl/v1/login';
-
-  // Senkronizasyon
-  static const String syncUpload = '$baseUrl/api/sync/upload';
-  static const String syncDownload = '$baseUrl/api/sync/download';
-
-  // Ana Veri
+  // Ana Veri (Eski endpoint'ler - gerekirse yeni API endpoint'leri eklenecek)
   static const String locations = '$baseUrl/locations';
   static const String productsDropdown = '$baseUrl/products-dropdown';
   static const String purchaseOrders = '$baseUrl/purchase-orders';
   // Parametreler query string olarak gönderiliyor
   static String purchaseOrderItems(int orderId) => '$baseUrl/purchase-order-items?order_id=$orderId';
 
-  // İşlemler
+  // İşlemler (Eski endpoint'ler - gerekirse yeni API endpoint'leri eklenecek)
   static const String goodsReceipts = '$baseUrl/goods-receipts';
   static const String transfers = '$baseUrl/transfers';
 
-  // Sorgular
+  // Sorgular (Eski endpoint'ler - gerekirse yeni API endpoint'leri eklenecek)
   // Parametreler query string olarak gönderiliyor
   static String containerIds(int locationId) => '$baseUrl/container-ids?location_id=$locationId';
   static String containerContents(String palletBarcode) => '$baseUrl/container-contents?pallet_barcode=$palletBarcode';
-
-  // Sunucu Sağlık Kontrolü
-  static const String healthCheck = '$baseUrl/health';
 
   static final Dio dio = _createDio();
 
@@ -66,7 +69,8 @@ class ApiConfig {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        if (options.path != '/v1/login') {
+        // Login endpoint'leri için token kontrolü yapma
+        if (!options.path.contains('/login')) {
           final prefs = await SharedPreferences.getInstance();
           final apiKey = prefs.getString('api_key');
           if (apiKey != null) {
