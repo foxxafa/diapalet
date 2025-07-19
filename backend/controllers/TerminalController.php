@@ -630,7 +630,7 @@ class TerminalController extends Controller
         $result = DepoComponent::syncWarehousesAndShelfs();
         return $this->asJson($result);
     }
-
+    
     /**
      * 🔧 DEVELOPMENT ONLY: Database'i temizleyip test verileriyle yeniden yükler
      * ⚠️ SADECE DEVELOPMENT/TEST ORTAMLARINDA KULLANILMALIDIR!
