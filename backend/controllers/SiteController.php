@@ -20,4 +20,14 @@ class SiteController extends Controller
     {
         return $this->render('index');
     }
+
+    public function actionHealthCheck()
+    {
+        Yii::$app->response->format = \yii\web\Response::FORMAT_JSON;
+        return [
+            'status' => 'ok',
+            'timestamp' => date('c'),
+            'version' => '1.0.0'
+        ];
+    }
 } 
