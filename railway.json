@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "buildCommand": "composer install --no-dev --optimize-autoloader"
+  },
+  "deploy": {
+    "startCommand": "apache2-ctl -D FOREGROUND",
+    "healthcheckPath": "/health-check",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+} 
