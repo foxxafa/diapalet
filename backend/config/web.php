@@ -1,22 +1,30 @@
 <?php
-return [
-    'id' => 'diapalet-backend',
+
+// Load environment variables from .env file
+require_once __DIR__ . '/../../vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv->load();
+
+$params = require __DIR__ . '/params.php';
+$db = require __DIR__ . '/db.php';
+
+$config = [
+    'id' => 'basic',
     'basePath' => dirname(__DIR__),
     'bootstrap' => ['log'],
-    'controllerNamespace' => 'app\\controllers',
     'aliases' => [
         '@bower' => '@vendor/bower-asset',
         '@npm'   => '@vendor/npm-asset',
     ],
     'components' => [
         'request' => [
-            'cookieValidationKey' => getenv('COOKIE_VALIDATION_KEY') ?: 'default-key-change-this',
+            'cookieValidationKey' => '... some secret key ...',
             'parsers' => [
-                'application/json' => 'yii\\web\\JsonParser',
+                'application/json' => 'yii\web\JsonParser',
             ]
         ],
         'cache' => [
-            'class' => 'yii\\caching\\FileCache',
+            'class' => 'yii\caching\FileCache',
         ],
         'user' => [
             'identityClass' => 'app\models\User',
@@ -25,46 +33,53 @@ return [
         'errorHandler' => [
             'errorAction' => 'site/error',
         ],
-        'mailer' => [
-            'class' => 'yii\\swiftmailer\\Mailer',
-            'useFileTransport' => true,
-        ],
         'log' => [
             'traceLevel' => YII_DEBUG ? 3 : 0,
             'targets' => [
                 [
-                    'class' => 'yii\\log\\FileTarget',
+                    'class' => 'yii\log\FileTarget',
                     'levels' => ['error', 'warning'],
                 ],
             ],
         ],
         'db' => [
-            'class' => 'yii\\db\\Connection',
-            'dsn' => 'mysql:host=' . (getenv('DB_HOST') ?: 'localhost') . ';port=' . (getenv('DB_PORT') ?: '3306') . ';dbname=' . (getenv('DB_NAME') ?: 'railway'),
-            'username' => getenv('DB_USER') ?: 'root',
-            'password' => getenv('DB_PASSWORD') ?: '',
-            'charset' => 'utf8mb4',
-            'enableSchemaCache' => !YII_DEBUG,
-            'schemaCacheDuration' => 3600,
+            'class' => 'yii\db\Connection',
+            'dsn' => 'mysql:host=' . $_ENV['DB_HOST'] . ';dbname=' . $_ENV['DB_NAME'],
+            'username' => $_ENV['DB_USER'],
+            'password' => $_ENV['DB_PASSWORD'],
+            'charset' => 'utf8',
         ],
         'urlManager' => [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
             'rules' => [
-                'health-check' => 'terminal/health-check',
-                'api/terminal/<action>' => 'terminal/<action>',
-                'api/<controller>/<action>' => '<controller>/<action>',
-                '<controller>/<action>' => '<controller>/<action>',
-                '' => 'site/index',
+                'POST api/terminal/login' => 'terminal/login',
+                'POST api/terminal/sync-upload' => 'terminal/sync-upload',
+                'POST api/terminal/sync-download' => 'terminal/sync-download',
+                'GET api/terminal/health-check' => 'terminal/health-check',
+                'POST api/terminal/sync-shelfs' => 'terminal/sync-shelfs',
+                'POST api/terminal/dev-reset' => 'terminal/dev-reset',
             ],
         ],
     ],
-    'params' => [
-        'dia' => [
-            'api_url' => getenv('DIA_API_URL') ?: 'https://aytacfoods.ws.dia.com.tr/api/v3/sis/json',
-            'username' => getenv('DIA_USERNAME') ?: 'Ws-03',
-            'password' => getenv('DIA_PASSWORD') ?: 'Ws123456.',
-            'api_key' => getenv('DIA_API_KEY') ?: 'dbbd8cb8-846f-4379-8d77-505e845db4a2',
-        ],
-    ],
-]; 
+    'params' => $params,
+];
+
+if (YII_ENV_DEV) {
+    // configuration adjustments for 'dev' environment
+    $config['bootstrap'][] = 'debug';
+    $config['modules']['debug'] = [
+        'class' => 'yii\debug\Module',
+        // uncomment the following to add your IP if you are not connecting from localhost.
+        //'allowedIPs' => ['127.0.0.1', '::1'],
+    ];
+
+    $config['bootstrap'][] = 'gii';
+    $config['modules']['gii'] = [
+        'class' => 'yii\gii\Module',
+        // uncomment the following to add your IP if you are not connecting from localhost.
+        //'allowedIPs' => ['127.0.0.1', '::1'],
+    ];
+}
+
+return $config; 

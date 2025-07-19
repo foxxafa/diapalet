@@ -1,9 +1,44 @@
 version: '3.8'
+
 services:
-  adminer:
-    image: adminer:latest
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: diapalet-app
     ports:
-      - "8080:8080"
+      - "8080:80"  # Map host port 8080 to container port 80
+    volumes:
+      - ./backend:/var/www/html
+    depends_on:
+      - db
     environment:
-      ADMINER_DEFAULT_SERVER: crossover.proxy.rlwy.net:45605
-      ADMINER_DESIGN: pepa-linha 
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    networks:
+      - diapalet-network
+
+  db:
+    image: mysql:8.0
+    container_name: diapalet-db
+    ports:
+      - "3307:3306" # Map host port 3307 to container port 3306 (to avoid conflict with local mysql)
+    environment:
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - diapalet-network
+
+networks:
+  diapalet-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local 

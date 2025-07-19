@@ -162,16 +162,75 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       },
     );
 
-    if (confirmed == true) {
-      // Önce sunucuyu sıfırla
+    if (confirmed != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    bool serverResetSuccess = false;
+
+    // 1. Sunucuyu sıfırla (try-catch içinde)
+    try {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Sunucu veritabanı sıfırlanıyor...'),
+        backgroundColor: Colors.blue,
+      ));
       await _resetServerDatabase();
-      // Sonra yerel veritabanını sıfırla (bu işlem zaten login'e yönlendirecek)
+      serverResetSuccess = true;
+      messenger.showSnackBar(const SnackBar(
+        content: Text('✅ Sunucu başarıyla sıfırlandı!'),
+        backgroundColor: Colors.green,
+      ));
+    } catch (e) {
+      serverResetSuccess = false;
+      // Hata mesajını göster
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Sunucu Sıfırlama Hatası'),
+          content: Text('Sunucu sıfırlanırken bir hata oluştu:\n\n$e'),
+          actions: [
+            TextButton(
+              child: const Text('Tamam'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. Sunucu sıfırlama başarılı olsa da olmasa da yerel sıfırlama seçeneği sun
+    final confirmedLocalReset = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(serverResetSuccess
+              ? 'Yerel Veriyi Sıfırla?'
+              : 'Yine de Yerel Veriyi Sıfırla?'),
+          content: Text(serverResetSuccess
+              ? 'Sunucu sıfırlandı. Şimdi yerel verileri temizleyip çıkış yapmak ister misiniz?'
+              : 'Sunucu sıfırlanamadı. Yine de yerel verileri temizleyip çıkış yapmak ister misiniz? Bu, senkronizasyon sorunlarını çözebilir.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Hayır, Kalsın'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: Text('Evet, Yerel Veriyi Sil', style: TextStyle(color: serverResetSuccess ? Colors.blue : Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmedLocalReset == true) {
       await _resetLocalDatabase();
     }
   }
 
   /// Local SQLite database'i ve SharedPreferences'ı temizler ve kullanıcıyı login ekranına yönlendirir.
   Future<void> _resetLocalDatabase() async {
+    // DÜZELTME: Bu metodun başına context kontrolü eklendi, çünkü asenkron işlemler sonrası widget tree'den kalkmış olabilir.
+    if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
@@ -221,7 +280,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       final errorDetails = (response.data is Map<String, dynamic>)
           ? response.data['message'] ?? response.statusMessage
           : response.statusMessage;
-      throw Exception('Server reset başarısız: $errorDetails');
+      // DÜZELTME: Exception mesajı daha okunaklı hale getirildi.
+      throw Exception('Server reset başarısız (HTTP ${response.statusCode}): $errorDetails');
     }
 
     final data = response.data;

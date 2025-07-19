@@ -638,8 +638,6 @@ class TerminalController extends Controller
      */
     public function actionDevReset()
     {
-        // UYARI: Bu endpoint, veritabanını tamamen siler ve yeniden oluşturur.
-        // Yanlışlıkla production veritabanında çalıştırılmaması kritik öneme sahiptir.
         // YII_ENV kontrolü, geliştiricinin isteği üzerine kaldırılmıştır.
         /* if (YII_ENV_PROD) {
             throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
@@ -649,69 +647,48 @@ class TerminalController extends Controller
         $transaction = $db->beginTransaction();
 
         try {
-            $sqlFilePath = Yii::getAlias('@app/complete_setup.sql');
-            if (!file_exists($sqlFilePath)) {
-                throw new \Exception('complete_setup.sql dosyası bulunamadı.');
+            // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
+            // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
+            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+            if (!file_exists($sqlFile)) {
+                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı.');
             }
-            $sqlContent = file_get_contents($sqlFilePath);
-            if (empty($sqlContent)) {
-                throw new \Exception('complete_setup.sql dosyası boş.');
-            }
+            
+            $sqlContent = file_get_contents($sqlFile);
+            
+            // Yorumları ve boş satırları temizle
+            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Remove multi-line comments
+            $sqlContent = preg_replace('/--.*/', '', $sqlContent);    // Remove single-line comments
+            $sqlContent = preg_replace('/^\s*$/m', '', $sqlContent);  // Remove empty lines
 
-            // SQL dosyasını ; ile ayırarak komutlara böl
-            $statements = array_filter(array_map('trim', explode(';', $sqlContent)));
-
-            $executedCount = 0;
-            $errors = [];
-
-            // Foreign key kontrollerini manuel olarak yönet
-            $db->createCommand('SET FOREIGN_KEY_CHECKS=0;')->execute();
-
-            foreach ($statements as $statement) {
-                if (empty($statement) || strpos(trim($statement), '--') === 0) {
-                    continue; // Yorumları veya boş satırları atla
+            // Komutları ';' karakterine göre ayır
+            $sqlCommands = explode(';', $sqlContent);
+            
+            foreach ($sqlCommands as $command) {
+                $command = trim($command);
+                if (!empty($command)) {
+                    // SET komutları ve diğerleri için direkt execute kullan
+                    $db->createCommand($command)->execute();
                 }
-                // Dosya içindeki FOREIGN_KEY_CHECKS komutlarını atla, çünkü manuel yönetiyoruz
-                if (stripos(trim($statement), 'SET FOREIGN_KEY_CHECKS') === 0) {
-                    continue;
-                }
-
-                try {
-                    $db->createCommand($statement)->execute();
-                    $executedCount++;
-                } catch (\yii\db\Exception $e) {
-                    $errors[] = "SQL Hatası: " . $e->getMessage() . " (Sorgu: " . substr($statement, 0, 150) . "...)";
-                }
-            }
-
-            // Foreign key kontrollerini tekrar aktif et
-            $db->createCommand('SET FOREIGN_KEY_CHECKS=1;')->execute();
-
-            if (!empty($errors)) {
-                // Herhangi bir hata varsa, tüm işlemi geri al ve hatayı bildir
-                throw new \Exception(implode("\n", $errors));
             }
 
             $transaction->commit();
-
-            return $this->asJson([
-                'status' => 'success',
-                'message' => 'Database başarıyla reset edildi ve test verileri yüklendi.',
-                'details' => [
-                    'executed_statements' => $executedCount,
-                    'timestamp' => date('c')
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            $transaction->rollBack();
-            // Hata sonrası anahtarların kapalı kalmaması için tekrar açmayı dene
-            try { $db->createCommand('SET FOREIGN_KEY_CHECKS=1;')->execute(); } catch(\Exception $ex) {}
             
             return $this->asJson([
-                'status' => 'error',
-                'message' => 'Database reset işlemi başarısız: ' . $e->getMessage()
+                'status' => 'success',
+                'message' => 'Veritabanı başarıyla sıfırlandı ve test verileri yüklendi.'
             ]);
+
+        } catch (\yii\db\Exception $e) {
+            $transaction->rollBack();
+            Yii::error("Database reset failed: " . $e->getMessage(), 'app');
+            // DÜZELTME: Hata mesajını daha anlaşılır hale getir
+            $errorMessage = "Database reset işlemi başarısız: " . $e->getMessage() . " (Sorgu: " . mb_substr($e->getPrevious()->queryString ?? '', 0, 200) . '...)';
+            throw new \yii\web\ServerErrorHttpException($errorMessage, 0, $e);
+        } catch (\Exception $e) {
+            $transaction->rollBack();
+            Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), 'app');
+            throw new \yii\web\ServerErrorHttpException('Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage(), 0, $e);
         }
     }
 }
