@@ -11,11 +11,11 @@ return [
         'request' => [
             'cookieValidationKey' => getenv('COOKIE_VALIDATION_KEY') ?: 'default-key-change-this',
             'parsers' => [
-                'application/json' => 'yii\web\JsonParser',
+                'application/json' => 'yii\\web\\JsonParser',
             ]
         ],
         'cache' => [
-            'class' => 'yii\caching\FileCache',
+            'class' => 'yii\\caching\\FileCache',
         ],
         'user' => [
             'identityClass' => 'app\models\User',
@@ -25,20 +25,20 @@ return [
             'errorAction' => 'site/error',
         ],
         'mailer' => [
-            'class' => 'yii\swiftmailer\Mailer',
+            'class' => 'yii\\swiftmailer\\Mailer',
             'useFileTransport' => true,
         ],
         'log' => [
             'traceLevel' => YII_DEBUG ? 3 : 0,
             'targets' => [
                 [
-                    'class' => 'yii\log\FileTarget',
+                    'class' => 'yii\\log\\FileTarget',
                     'levels' => ['error', 'warning'],
                 ],
             ],
         ],
         'db' => [
-            'class' => 'yii\db\Connection',
+            'class' => 'yii\\db\\Connection',
             'dsn' => 'mysql:host=' . (getenv('DB_HOST') ?: 'localhost') . ';port=' . (getenv('DB_PORT') ?: '3306') . ';dbname=' . (getenv('DB_NAME') ?: 'railway'),
             'username' => getenv('DB_USER') ?: 'root',
             'password' => getenv('DB_PASSWORD') ?: '',
