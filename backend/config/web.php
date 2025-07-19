@@ -42,13 +42,7 @@ $config = [
                 ],
             ],
         ],
-        'db' => [
-            'class' => 'yii\db\Connection',
-            'dsn' => 'mysql:host=' . $_ENV['DB_HOST'] . ';dbname=' . $_ENV['DB_NAME'],
-            'username' => $_ENV['DB_USER'],
-            'password' => $_ENV['DB_PASSWORD'],
-            'charset' => 'utf8',
-        ],
+        'db' => $db, // DEĞİŞİKLİK: db.php dosyasından veritabanı yapılandırmasını al
         'urlManager' => [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
