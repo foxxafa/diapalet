@@ -89,21 +89,21 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
             Text('🔧 Development Tools'),
           ],
         ),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '⚠️ Bu araçlar sadece development/test amaçlıdır!\n\nTüm veri silinecek ve test verileri yüklenecek.',
               style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red),
             ),
-            const SizedBox(height: 16),
-            const Text('🗂️ Sıfırlanacak:'),
-            const SizedBox(height: 8),
-            const Text('• Local SQLite Database'),
-            const Text('• Server MySQL Database (sadece dev)'),
-            const Text('• Pending Operations'),
-            const Text('• Sync History'),
+            SizedBox(height: 16),
+            Text('🗂️ Sıfırlanacak:'),
+            SizedBox(height: 8),
+            Text('• Local SQLite Database'),
+            Text('• Server MySQL Database (sadece dev)'),
+            Text('• Pending Operations'),
+            Text('• Sync History'),
           ],
         ),
         actions: [
@@ -214,25 +214,27 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
   /// Server database'i reset eder (sadece development)
   Future<void> _resetServerDatabase() async {
     final dio = Dio();
-    
-    // API config'den base URL'i al
-    final apiConfig = context.read<ApiConfig>();
-    final baseUrl = apiConfig.baseUrl;
-    
+
+    // DÜZELTME: Statik erişim hatası düzeltildi
+    const baseUrl = ApiConfig.baseUrl;
+
     final response = await dio.post(
       '$baseUrl/api/terminal/dev-reset',
       options: Options(
         headers: {'Content-Type': 'application/json'},
-        validateStatus: (status) => status! < 500, // 400'ler de kabul et
+        validateStatus: (status) => status != null && status < 500,
       ),
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Server reset başarısız: ${response.statusMessage}');
+      final errorDetails = (response.data is Map<String, dynamic>)
+          ? response.data['message'] ?? response.statusMessage
+          : response.statusMessage;
+      throw Exception('Server reset başarısız: $errorDetails');
     }
 
     final data = response.data;
-    if (data['status'] != 'success') {
+    if (data is Map<String, dynamic> && data['status'] != 'success') {
       throw Exception('Server reset başarısız: ${data['message']}');
     }
   }
