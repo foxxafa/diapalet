@@ -26,11 +26,11 @@ WORKDIR /var/www/html
 # Copy composer files first for better caching
 COPY backend/composer.* ./
 
-# Install PHP dependencies (if composer.json exists)
-RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader; fi
+# Install dependencies
+RUN composer install --no-interaction --no-plugins --no-scripts --prefer-dist
 
-# Copy the entire backend directory
-COPY backend/ ./
+# Copy the rest of the backend application code
+COPY backend/ .
 
 # Create necessary directories
 RUN mkdir -p runtime assets web/assets \
