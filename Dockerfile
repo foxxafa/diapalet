@@ -26,8 +26,8 @@ WORKDIR /var/www/html
 # Copy composer files first for better caching
 COPY backend/composer.* ./
 
-# Install dependencies
-RUN composer install --no-interaction --no-plugins --no-scripts --prefer-dist
+# Install dependencies for production, without dev packages
+RUN composer install --no-dev --optimize-autoloader
 
 # Copy the rest of the backend application code
 COPY backend/ .
