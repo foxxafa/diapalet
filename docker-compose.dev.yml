@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: diapalet_mysql_dev
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: diapalet_dev
+      MYSQL_USER: diapalet
+      MYSQL_PASSWORD: diapalet123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/complete_setup.sql:/docker-entrypoint-initdb.d/01-init.sql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # PHP Yii2 Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: diapalet_backend_dev
+    environment:
+      - YII_DEBUG=true
+      - YII_ENV=dev
+      - COOKIE_VALIDATION_KEY=dev-cookie-key-32-characters-long
+      - DB_HOST=mysql
+      - DB_NAME=diapalet_dev
+      - DB_USER=diapalet
+      - DB_PASSWORD=diapalet123
+      - DB_PORT=3306
+      - DIA_API_URL=https://aytacfoods.ws.dia.com.tr/api/v3/sis/json
+      - DIA_USERNAME=Ws-03
+      - DIA_PASSWORD=Ws123456.
+      - DIA_API_KEY=dbbd8cb8-846f-4379-8d77-505e845db4a2
+    ports:
+      - "5000:80"
+    depends_on:
+      - mysql
+    volumes:
+      - ./backend:/var/www/html
+      - ./logs:/var/log/apache2
+
+  # Adminer (Database yönetimi için)
+  adminer:
+    image: adminer:latest
+    container_name: diapalet_adminer_dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_data: 
