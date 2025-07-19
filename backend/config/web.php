@@ -3,7 +3,7 @@
 // Load environment variables from .env file
 require_once __DIR__ . '/../vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
-$dotenv->load();
+$dotenv->safeLoad(); // DEĞİŞİKLİK: .env dosyası yoksa hata verme
 
 $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/db.php';
