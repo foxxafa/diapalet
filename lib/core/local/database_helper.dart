@@ -1,4 +1,4 @@
-// lib/core/local/database_helper.dart
+ // lib/core/local/database_helper.dart
 import 'dart:io';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
@@ -924,12 +924,17 @@ class DatabaseHelper {
 
     // Force close operation'ların data içindeki tarihlerine bak
     try {
+      // DÜZELTME: JSON_EXTRACT, bazı SQLite versiyonlarında bulunmadığı için LIKE ile değiştirildi.
+      // Bu sorgu, JSON verisi içinde "siparis_id":<id>, veya "siparis_id":<id>} kalıplarını arar.
       final forceCloseOps = await db.rawQuery('''
         SELECT po.data, po.created_at
         FROM pending_operation po
         WHERE po.type = 'forceCloseOrder'
-          AND JSON_EXTRACT(po.data, '\$.siparis_id') = ?
-      ''', [siparisId]);
+          AND (
+            po.data LIKE '%"siparis_id":' || ? || ',%' OR 
+            po.data LIKE '%"siparis_id":' || ? || '}%'
+          )
+      ''', [siparisId, siparisId]);
 
       debugPrint('DEBUG hasForceClose: Found ${forceCloseOps.length} force close operations for order $siparisId');
 
@@ -990,13 +995,17 @@ class DatabaseHelper {
             debugPrint('DEBUG hasForceClose: Synced receipts found in range: $debugSyncedReceipts');
 
             // Pending receipts from pending_operation table
+            // DÜZELTME: JSON_EXTRACT burada da kaldırıldı.
             final pendingReceipts = await db.rawQuery('''
               SELECT po.data
               FROM pending_operation po
               WHERE po.type = 'goodsReceipt'
                 AND po.status = 'pending'
-                AND JSON_EXTRACT(po.data, '\$.header.siparis_id') = ?
-            ''', [siparisId]);
+                AND (
+                  po.data LIKE '%"header":{"siparis_id":' || ? || ',%' OR
+                  po.data LIKE '%"header":{"siparis_id":' || ? || '}}%'
+                )
+            ''', [siparisId, siparisId]);
 
             int pendingCount = 0;
             debugPrint('DEBUG hasForceClose: Found ${pendingReceipts.length} pending receipts to check');
@@ -1249,5 +1258,28 @@ class DatabaseHelper {
     final db = await database;
     final maps = await db.query('sync_log', orderBy: 'timestamp DESC', limit: 100);
     return maps.map((map) => SyncLog.fromMap(map)).toList();
+  }
+
+  // --- DEVELOPMENT TOOLS ---
+
+  /// ⚠️ DEVELOPMENT ONLY: Deletes the entire database file and resets the singleton instance.
+  Future<void> resetDatabase() async {
+    // Ensure the database is closed before deleting the file
+    if (_database != null && _database!.isOpen) {
+      await _database!.close();
+    }
+    
+    // Get the path and delete the database file using the official sqflite helper
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    String path = join(documentsDirectory.path, _databaseName);
+    try {
+      await deleteDatabase(path);
+      debugPrint("✅ Local database file deleted successfully at path: $path");
+    } catch (e) {
+      debugPrint("❌ Error deleting local database file: $e");
+    }
+
+    // Reset the singleton instance to force re-initialization on next access
+    _database = null;
   }
 }

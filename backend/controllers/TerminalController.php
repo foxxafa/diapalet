@@ -646,40 +646,47 @@ class TerminalController extends Controller
         $transaction = $db->beginTransaction();
 
         try {
-            // complete_setup.sql dosyasını oku
             $sqlFilePath = Yii::getAlias('@app/complete_setup.sql');
             if (!file_exists($sqlFilePath)) {
                 throw new \Exception('complete_setup.sql dosyası bulunamadı.');
             }
-
             $sqlContent = file_get_contents($sqlFilePath);
             if (empty($sqlContent)) {
                 throw new \Exception('complete_setup.sql dosyası boş.');
             }
 
             // SQL dosyasını ; ile ayırarak komutlara böl
-            $statements = array_filter(
-                array_map('trim', explode(';', $sqlContent)),
-                function($stmt) {
-                    return !empty($stmt) && 
-                           !preg_match('/^\s*--/', $stmt) && 
-                           !preg_match('/^\s*SET\s+/', $stmt);
-                }
-            );
+            $statements = array_filter(array_map('trim', explode(';', $sqlContent)));
 
             $executedCount = 0;
             $errors = [];
 
+            // Foreign key kontrollerini manuel olarak yönet
+            $db->createCommand('SET FOREIGN_KEY_CHECKS=0;')->execute();
+
             foreach ($statements as $statement) {
+                if (empty($statement) || strpos(trim($statement), '--') === 0) {
+                    continue; // Yorumları veya boş satırları atla
+                }
+                // Dosya içindeki FOREIGN_KEY_CHECKS komutlarını atla, çünkü manuel yönetiyoruz
+                if (stripos(trim($statement), 'SET FOREIGN_KEY_CHECKS') === 0) {
+                    continue;
+                }
+
                 try {
                     $db->createCommand($statement)->execute();
                     $executedCount++;
-                } catch (\Exception $e) {
-                    // SET komutları ve yorumları hariç, diğer hataları logla
-                    if (!preg_match('/^\s*(SET|USE|--)/i', $statement)) {
-                        $errors[] = "SQL: " . substr($statement, 0, 100) . "... - Hata: " . $e->getMessage();
-                    }
+                } catch (\yii\db\Exception $e) {
+                    $errors[] = "SQL Hatası: " . $e->getMessage() . " (Sorgu: " . substr($statement, 0, 150) . "...)";
                 }
+            }
+
+            // Foreign key kontrollerini tekrar aktif et
+            $db->createCommand('SET FOREIGN_KEY_CHECKS=1;')->execute();
+
+            if (!empty($errors)) {
+                // Herhangi bir hata varsa, tüm işlemi geri al ve hatayı bildir
+                throw new \Exception(implode("\n", $errors));
             }
 
             $transaction->commit();
@@ -689,13 +696,15 @@ class TerminalController extends Controller
                 'message' => 'Database başarıyla reset edildi ve test verileri yüklendi.',
                 'details' => [
                     'executed_statements' => $executedCount,
-                    'errors' => $errors,
                     'timestamp' => date('c')
                 ]
             ]);
 
         } catch (\Exception $e) {
             $transaction->rollBack();
+            // Hata sonrası anahtarların kapalı kalmaması için tekrar açmayı dene
+            try { $db->createCommand('SET FOREIGN_KEY_CHECKS=1;')->execute(); } catch(\Exception $ex) {}
+            
             return $this->asJson([
                 'status' => 'error',
                 'message' => 'Database reset işlemi başarısız: ' . $e->getMessage()

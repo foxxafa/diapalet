@@ -1,6 +1,5 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
@@ -13,6 +12,9 @@ import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:diapalet/features/auth/presentation/login_screen.dart';
+
 
 class PendingOperationsScreen extends StatefulWidget {
   const PendingOperationsScreen({super.key});
@@ -130,88 +132,69 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
 
   /// Development database reset işlemi
   Future<void> _performDevelopmentReset() async {
-    // Loading göster
-    showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('🔄 Database reset ediliyor...'),
-            SizedBox(height: 8),
-            Text('Bu işlem biraz sürebilir.'),
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Tüm Veriyi Sıfırla?'),
+          content: const Text(
+              'Bu işlem sunucudaki ve bu cihazdaki TÜM verileri silip test verilerini yeniden yükleyecektir. Emin misiniz?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('İptal'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: const Text('Evet, Sıfırla',
+                  style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
           ],
-        ),
-      ),
+        );
+      },
     );
 
-    try {
-      // 1. Local database'i reset et (version artırarak)
-      await _resetLocalDatabase();
-      
-      // 2. Server database'i reset et (sadece development'ta)
+    if (confirmed == true) {
+      // Önce sunucuyu sıfırla
       await _resetServerDatabase();
+      // Sonra yerel veritabanını sıfırla (bu işlem zaten login'e yönlendirecek)
+      await _resetLocalDatabase();
+    }
+  }
 
-      // 3. Sync service'i reset et
-      await _syncService.performFullSync(force: true);
+  /// Local SQLite database'i ve SharedPreferences'ı temizler ve kullanıcıyı login ekranına yönlendirir.
+  Future<void> _resetLocalDatabase() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
-      // Loading'i kapat
-      if (mounted) Navigator.of(context).pop();
+    try {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Yerel veritabanı siliniyor ve çıkış yapılıyor...'),
+        backgroundColor: Colors.orange,
+      ));
 
-      // Success mesajı
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Database başarıyla reset edildi ve test verileri yüklendi!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      // Database'i güvenli bir şekilde kapat ve dosyasını sil.
+      await DatabaseHelper.instance.resetDatabase();
 
-      // Data'yı yenile
-      await _loadData();
+      // SharedPreferences'ı temizle
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      
+      // Tüm sayfalardan çıkıp login ekranına yönlendir.
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
 
     } catch (e) {
-      // Loading'i kapat
-      if (mounted) Navigator.of(context).pop();
-      
-      // Error mesajı
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Reset işlemi başarısız: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+      messenger.showSnackBar(SnackBar(
+        content: Text('Yerel veritabanı sıfırlanırken hata oluştu: $e'),
+        backgroundColor: Colors.red,
+      ));
     }
   }
 
-  /// Local SQLite database'i reset eder
-  Future<void> _resetLocalDatabase() async {
-    final db = DatabaseHelper.instance;
-    final database = await db.database;
-    
-    // Database version'ını artırarak force upgrade tetikle
-    await database.close();
-    
-    // Database file'ı sil ki tamamen yeniden oluşturulsun
-    final dbPath = database.path;
-    final file = File(dbPath);
-    if (await file.exists()) {
-      await file.delete();
-    }
-    
-    // Yeni database'i tetikle
-    await db.database;
-  }
-
-  /// Server database'i reset eder (sadece development)
+  /// Sunucu veritabanını test verileriyle sıfırlar.
   Future<void> _resetServerDatabase() async {
     final dio = Dio();
 
@@ -387,22 +370,17 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (status == SyncStatus.syncing)
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2.5, color: bannerStyle.content),
-            )
-          else
-            Icon(bannerStyle.icon, color: bannerStyle.content),
-          const SizedBox(width: 12),
+          Icon(bannerStyle.icon, color: bannerStyle.content, size: 20),
+          const SizedBox(width: 8),
+          // DÜZELTME: RenderFlex taşmasını önlemek için Flexible yerine Expanded kullanıldı.
           Expanded(
             child: Text(
               bannerStyle.message,
               style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.bold, color: bannerStyle.content),
+              overflow: TextOverflow.ellipsis, // Ekstra güvenlik için
             ),
           ),
         ],
@@ -1109,13 +1087,23 @@ class _OperationDetailsView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         ...details.entries.map((entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 4.0),
+              padding: const EdgeInsets.only(bottom: 8.0), // Spacing artırıldı
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${entry.key}: ', style: theme.textTheme.labelLarge),
+                  // DÜZELTME: Taşmayı önlemek için etiket dar bir alana sabitlendi
+                  SizedBox(
+                    width: 100, // Etiket için sabit genişlik
+                    child: Text('${entry.key}:',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.bold, // Etiketi kalın yap
+                        )),
+                  ),
+                  const SizedBox(width: 8),
+                  // DÜZELTME: Değerin kalan alanı doldurması için Expanded eklendi
                   Expanded(
-                      child: Text(entry.value, style: theme.textTheme.bodyMedium)),
+                    child: Text(entry.value, style: theme.textTheme.bodyMedium),
+                  ),
                 ],
               ),
             )),
@@ -1123,7 +1111,7 @@ class _OperationDetailsView extends StatelessWidget {
           const Divider(height: 24),
           Text(
             'dialog_labels.items_count'.tr(namedArgs: {'count': items.length.toString()}),
-            style: theme.textTheme.titleSmall,
+            style: theme.textTheme.titleMedium, // Fontu biraz büyüt
           ),
           const SizedBox(height: 8),
           ...items.map(itemBuilder),
