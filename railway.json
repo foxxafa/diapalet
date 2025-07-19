@@ -5,7 +5,7 @@
     "buildCommand": "composer install --no-dev --optimize-autoloader"
   },
   "deploy": {
-    "startCommand": "apache2-ctl -D FOREGROUND",
+    "startCommand": "/start.sh",
     "healthcheckPath": "/health-check",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",

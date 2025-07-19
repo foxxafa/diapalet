@@ -144,5 +144,15 @@ RUN chown -R www-data:www-data /var/www/html \
 # Expose port 80
 EXPOSE 80
 
+# Create startup script
+RUN echo '#!/bin/bash\n\
+# Set PORT if not provided\n\
+export PORT=${PORT:-80}\n\
+# Update Apache configuration with correct port\n\
+sed -i "s/:80/:$PORT/g" /etc/apache2/sites-available/000-default.conf\n\
+sed -i "s/Listen 80/Listen $PORT/g" /etc/apache2/ports.conf\n\
+# Start Apache\n\
+exec apache2ctl -D FOREGROUND' > /start.sh && chmod +x /start.sh
+
 # Start Apache
-CMD ["apache2-ctl", "-D", "FOREGROUND"] 
+CMD ["/start.sh"] 
