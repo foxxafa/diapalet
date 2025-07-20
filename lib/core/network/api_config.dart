@@ -8,17 +8,21 @@ class ApiConfig {
   // ******************************************************************
   // UYGULAMANIN HANGİ SUNUCUYA BAĞLANACAĞINI BURADAN DEĞİŞTİR
   // ApiEnvironment.local -> Bilgisayarındaki Docker sunucusu (Geliştirme için)
-  // ApiEnvironment.production -> Railway'deki sunucu (Demo/Canlı için)
+  // ApiEnvironment.staging -> Railway staging ortamı (Test için)
+  // ApiEnvironment.production -> Railway production ortamı (Canlı)
   // ******************************************************************
-  static const ApiEnvironment currentEnvironment = ApiEnvironment.production;
-  
+  static const ApiEnvironment currentEnvironment = ApiEnvironment.staging;
+
   // Seçili ortama göre konfigürasyonu al
   static final ApiEnvConfig _config = ApiEnvironments.getEnv(currentEnvironment);
 
   // Dışarıdan erişilecek URL ve isim
   static String get baseUrl => _config.baseUrl;
   static String get environmentName => _config.name;
+  static String get environmentDescription => _config.description;
   static bool get isProduction => currentEnvironment == ApiEnvironment.production;
+  static bool get isStaging => currentEnvironment == ApiEnvironment.staging;
+  static bool get isLocal => currentEnvironment == ApiEnvironment.local;
 
   // API Endpoint yolları
   static const String login = '/api/terminal/login';
@@ -28,7 +32,7 @@ class ApiConfig {
   static const String healthCheck = '/api/terminal/health-check';
 
   static final Dio dio = _createDio();
-  
+
   static Dio _createDio() {
     // 1. Get the config directly.
     final config = ApiEnvironments.getEnv(currentEnvironment);
@@ -68,7 +72,7 @@ class ApiConfig {
         return handler.next(options);
       },
     ));
-    
+
     return dio;
   }
 }

@@ -121,3 +121,63 @@ Projeye katkıda bulunmak isterseniz, lütfen issue açın veya pull request gö
 ## 📜 Lisans
 
 Bu proje [MIT Lisansı](https://opensource.org/licenses/MIT) ile lisanslanmıştır. Detaylar için `LICENSE` dosyasına bakınız.
+
+## 🌍 Ortam Yönetimi
+
+### Mevcut Ortamlar
+- **Local**: Docker container (localhost:8080) - Geliştirme
+- **Staging**: Railway staging ortamı - Test ortamı
+- **Production**: Railway production ortamı - Canlı sistem
+
+### Hızlı Başlangıç
+
+#### Geliştirme Ortamı
+```bash
+# Local Docker ortamını başlat
+scripts\dev_start.bat
+
+# Flutter uygulamasını çalıştır
+flutter run
+```
+
+#### Staging Build
+```bash
+# Staging APK build et
+scripts\build_staging.bat
+```
+
+#### Production Build
+```bash
+# Production APK build et (dikkatli!)
+scripts\build_production.bat
+```
+
+### Ortam Değiştirme
+```bash
+# Manuel ortam değiştirme
+dart scripts/switch_environment.dart [local|staging|production]
+
+# Örnek:
+dart scripts/switch_environment.dart staging
+```
+
+### Deployment
+```bash
+# Staging'e deploy
+scripts\deploy_staging.bat
+
+# Production'a deploy (dikkatli!)
+scripts\deploy_production.bat
+```
+
+### Ortam Durumu Kontrol
+```bash
+# Tüm ortamların durumunu kontrol et
+dart scripts/check_environments.dart
+```
+
+### API Endpoint'leri
+- **Staging**: https://staging-api.diapalet.com
+- **Production**: https://api.diapalet.com
+
+> **Not**: Custom domain'ler Railway'de ayarlandıktan sonra aktif olacaktır. Geçici olarak Railway URL'leri kullanılabilir.
