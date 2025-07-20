@@ -106,20 +106,26 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               title: 'goods_receiving_screen.title'.tr(),
               showBackButton: true,
             ),
-            resizeToAvoidBottomInset: true,
+            resizeToAvoidBottomInset: false, // Klavye animasyon problemini çözmek için
             bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(viewModel),
             body: SafeArea(
               child: viewModel.isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : GestureDetector(
                 onTap: () => FocusScope.of(context).unfocus(),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+                child: AnimatedPadding(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  padding: EdgeInsets.only(
+                    bottom: isKeyboardVisible ? MediaQuery.of(context).viewInsets.bottom : 0,
+                  ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                         if (viewModel.isOrderBased) ...[
                           OrderInfoCard(order: viewModel.selectedOrder!),
                           const SizedBox(height: _gap),
@@ -163,7 +169,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                           const SizedBox(height: _gap),
                         ],
                         _buildAddedItemsSection(viewModel, textTheme, colorScheme),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -375,19 +382,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       controller: viewModel.expiryDateController,
       focusNode: viewModel.expiryDateFocusNode,
       enabled: viewModel.isExpiryDateEnabled,
-      keyboardType: TextInputType.datetime,
+      readOnly: true, // Klavyeyi engelle, sadece tarih seçicisi açılsın
       decoration: _inputDecoration(
         'goods_receiving_screen.label_expiry_date'.tr(),
         enabled: viewModel.isExpiryDateEnabled,
         suffixIcon: const Icon(Icons.calendar_today_outlined),
       ),
       validator: viewModel.validateExpiryDate,
-      onFieldSubmitted: (value) {
-        viewModel.onExpiryDateEntered();
-      },
-      onChanged: (value) {
-        viewModel.onExpiryDateEntered();
-      },
       onTap: () => _showDatePicker(viewModel),
     );
   }

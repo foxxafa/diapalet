@@ -309,7 +309,9 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     productController.text = "${product.name} (${product.stockCode})";
     notifyListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      expiryDateFocusNode.requestFocus();
+      if (!_isDisposed) {
+        expiryDateFocusNode.requestFocus();
+      }
     });
   }
 

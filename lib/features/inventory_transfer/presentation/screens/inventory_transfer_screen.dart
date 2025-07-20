@@ -444,88 +444,95 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     return Scaffold(
       appBar: SharedAppBar(title: 'inventory_transfer.title'.tr()),
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false, // Klavye animasyon problemini çözmek için
       bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
       body: SafeArea(
         child: _isLoadingInitialData
             ? const Center(child: CircularProgressIndicator())
             : GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
-          child: Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.disabled,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildModeSelector(),
-                  const SizedBox(height: _gap),
-                  if (_selectedMode == AssignmentMode.pallet) ...[
-                    _buildPalletOpeningSwitch(),
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            padding: EdgeInsets.only(
+              bottom: isKeyboardVisible ? MediaQuery.of(context).viewInsets.bottom : 0,
+            ),
+            child: Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.disabled,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildModeSelector(),
+                    const SizedBox(height: _gap),
+                    if (_selectedMode == AssignmentMode.pallet) ...[
+                      _buildPalletOpeningSwitch(),
+                      const SizedBox(height: _gap),
+                    ],
+                    _buildHybridDropdownWithQr<String>(
+                      controller: _sourceLocationController,
+                      focusNode: _sourceLocationFocusNode,
+                      label: 'inventory_transfer.label_source_location'.tr(),
+                      fieldIdentifier: 'source',
+                      items: _availableSourceLocations.keys.toList(),
+                      itemToString: (item) => item,
+                      onItemSelected: _handleSourceSelection,
+                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                      validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                    ),
+                    const SizedBox(height: _gap),
+                    _buildHybridDropdownWithQr<dynamic>(
+                      controller: _scannedContainerIdController,
+                      focusNode: _containerFocusNode,
+                      label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
+                      fieldIdentifier: 'container',
+                      items: _availableContainers,
+                      itemToString: (item) {
+                        if (item is String) return item;
+                        if (item is BoxItem) return '${item.productName} (${item.productCode})';
+                        return '';
+                      },
+                      onItemSelected: _handleContainerSelection,
+                      filterCondition: (item, query) {
+                        final lowerQuery = query.toLowerCase();
+                        if (item is String) return item.toLowerCase().contains(lowerQuery);
+                        if (item is BoxItem) {
+                          return item.productName.toLowerCase().contains(lowerQuery) ||
+                              item.productCode.toLowerCase().contains(lowerQuery) ||
+                              (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                        }
+                        return false;
+                      },
+                      validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                    ),
+                    const SizedBox(height: _gap),
+                    if (_isLoadingContainerContents)
+                      const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
+                    else if (_productsInContainer.isNotEmpty)
+                      _buildProductsList(),
+                    const SizedBox(height: _gap),
+                    _buildHybridDropdownWithQr<String>(
+                      controller: _targetLocationController,
+                      focusNode: _targetLocationFocusNode,
+                      label: 'inventory_transfer.label_target_location'.tr(),
+                      fieldIdentifier: 'target',
+                      items: _availableTargetLocations.keys.toList(),
+                      itemToString: (item) => item,
+                      onItemSelected: _handleTargetSelection,
+                      filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
+                      validator: (val) {
+                        if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
+                        if (val == _sourceLocationController.text) {
+                          return 'inventory_transfer.validator_target_cannot_be_source'.tr();
+                        }
+                        return null;
+                      },
+                    ),
                     const SizedBox(height: _gap),
                   ],
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _sourceLocationController,
-                    focusNode: _sourceLocationFocusNode,
-                    label: 'inventory_transfer.label_source_location'.tr(),
-                    fieldIdentifier: 'source',
-                    items: _availableSourceLocations.keys.toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleSourceSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                  ),
-                  const SizedBox(height: _gap),
-                  _buildHybridDropdownWithQr<dynamic>(
-                    controller: _scannedContainerIdController,
-                    focusNode: _containerFocusNode,
-                    label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
-                    fieldIdentifier: 'container',
-                    items: _availableContainers,
-                    itemToString: (item) {
-                      if (item is String) return item;
-                      if (item is BoxItem) return '${item.productName} (${item.productCode})';
-                      return '';
-                    },
-                    onItemSelected: _handleContainerSelection,
-                    filterCondition: (item, query) {
-                      final lowerQuery = query.toLowerCase();
-                      if (item is String) return item.toLowerCase().contains(lowerQuery);
-                      if (item is BoxItem) {
-                        return item.productName.toLowerCase().contains(lowerQuery) ||
-                            item.productCode.toLowerCase().contains(lowerQuery) ||
-                            (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                      }
-                      return false;
-                    },
-                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                  ),
-                  const SizedBox(height: _gap),
-                  if (_isLoadingContainerContents)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
-                  else if (_productsInContainer.isNotEmpty)
-                    _buildProductsList(),
-                  const SizedBox(height: _gap),
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _targetLocationController,
-                    focusNode: _targetLocationFocusNode,
-                    label: 'inventory_transfer.label_target_location'.tr(),
-                    fieldIdentifier: 'target',
-                    items: _availableTargetLocations.keys.toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleTargetSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
-                      if (val == _sourceLocationController.text) {
-                        return 'inventory_transfer.validator_target_cannot_be_source'.tr();
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: _gap),
-                ],
+                ),
               ),
             ),
           ),
