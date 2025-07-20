@@ -170,14 +170,26 @@ scripts\deploy_staging.bat
 scripts\deploy_production.bat
 ```
 
+### Veritabanı Kurulumu
+```bash
+# Staging veritabanını kur
+scripts\setup_staging_db.bat
+
+# Production veritabanını kur (dikkatli!)
+scripts\setup_production_db.bat
+
+# Veritabanı durumunu kontrol et
+scripts\check_db_status.bat
+```
+
 ### Ortam Durumu Kontrol
 ```bash
 # Tüm ortamların durumunu kontrol et
 dart scripts/check_environments.dart
 ```
 
-### API Endpoint'leri
-- **Staging**: https://staging-api.diapalet.com
-- **Production**: https://api.diapalet.com
+### Railway Ortam URL'leri
+- **Staging**: https://diapalet-staging.up.railway.app
+- **Production**: https://diapalet-production.up.railway.app
 
-> **Not**: Custom domain'ler Railway'de ayarlandıktan sonra aktif olacaktır. Geçici olarak Railway URL'leri kullanılabilir.
+> **Not**: Railway'in default domain'lerini kullanıyoruz. Custom domain gerekirse daha sonra ayarlanabilir.

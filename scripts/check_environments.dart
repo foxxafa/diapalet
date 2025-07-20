@@ -13,8 +13,8 @@ void main() async {
 
   final environments = {
     'Local (Docker)': 'http://localhost:8080/health-check',
-    'Staging API': 'https://staging-api.diapalet.com/health-check',
-    'Production API': 'https://api.diapalet.com/health-check',
+    'Staging Railway': 'https://diapalet-staging.up.railway.app/health-check',
+    'Production Railway': 'https://diapalet-production.up.railway.app/health-check',
   };
 
   for (final env in environments.entries) {
