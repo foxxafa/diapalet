@@ -1005,7 +1005,7 @@ class _OperationDetailsView extends StatelessWidget {
                       Icon(Icons.inventory, size: 16, color: Theme.of(context).hintColor),
                       const SizedBox(width: 4),
                       Text(
-                        '${'pending_operations.operation_labels.container'.tr()}: $container',
+                        '$container',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
                       ),
                     ],

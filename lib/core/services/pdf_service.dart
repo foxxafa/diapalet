@@ -752,7 +752,7 @@ class PdfService {
               return pw.TableRow(
                 children: [
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                  _buildGroupedTableCell(productNameAndCode, font),
+                  _buildTableCell(productNameAndCode, font),
                   _buildTableCell(quantity, font),
                   _buildTableCell(container, font),
                 ],
@@ -1052,7 +1052,7 @@ class PdfService {
               return pw.TableRow(
                 children: [
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                  _buildGroupedTableCell(productNameAndCode, font),
+                  _buildTableCell(productNameAndCode, font),
                   _buildTableCell(orderedQty.toStringAsFixed(0), font),
                   _buildTableCell(totalReceivedDisplay, font),
                   _buildTableCell(currentReceived.toStringAsFixed(0), font),

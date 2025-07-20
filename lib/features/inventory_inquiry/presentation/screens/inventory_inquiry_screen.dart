@@ -94,27 +94,17 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-    
     return Scaffold(
       appBar: SharedAppBar(
         title: 'inventory_inquiry.title'.tr(),
       ),
-      resizeToAvoidBottomInset: false, // Klavye animasyon problemini çözmek için
-      body: AnimatedPadding(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        padding: EdgeInsets.only(
-          bottom: isKeyboardVisible ? MediaQuery.of(context).viewInsets.bottom : 0,
-        ),
-        child: Column(
-          children: [
-            _buildSearchBar(),
-            Expanded(
-              child: _buildResults(),
-            ),
-          ],
-        ),
+      body: Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: _buildResults(),
+          ),
+        ],
       ),
     );
   }

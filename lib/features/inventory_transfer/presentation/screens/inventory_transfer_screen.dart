@@ -20,7 +20,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
-  
+
   const InventoryTransferScreen({super.key, this.selectedOrder});
 
   @override
@@ -130,7 +130,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       setState(() {
         _availableSourceLocations = results[0];
         _availableTargetLocations = results[1];
-        
+
         // If this is order-based transfer, automatically set source to goods receiving area
         if (widget.selectedOrder != null) {
           _selectedSourceLocationName = '000';
@@ -143,7 +143,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _loadContainersForLocation();
         }
       });
-      
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (widget.selectedOrder != null) {
           // For order-based transfer, focus on container selection
@@ -252,7 +252,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       final repo = _repo as dynamic; // Cast to access helper methods
       final bool isReceivingArea = locationId == 0;
-      
+
       List<String> statusesToQuery;
       if (widget.selectedOrder != null) {
         // Rafa Kaldırma Modu: Sadece 'receiving' statüsündeki ürünler.
@@ -261,15 +261,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         // Serbest Transfer Modu: Sadece 'available' statüsündeki ürünler gösterilir
         statusesToQuery = ['available'];
       }
-      
+
       if (_selectedMode == AssignmentMode.pallet) {
         _availableContainers = await repo.getPalletIdsAtLocation(
-          isReceivingArea ? null : locationId, 
+          isReceivingArea ? null : locationId,
           stockStatuses: statusesToQuery
         );
       } else {
         _availableContainers = await repo.getBoxesAtLocation(
-          isReceivingArea ? null : locationId, 
+          isReceivingArea ? null : locationId,
           stockStatuses: statusesToQuery
         );
       }
@@ -299,11 +299,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       List<ProductItem> contents = [];
       final stockStatus = widget.selectedOrder != null ? 'receiving' : 'available';
-      
+
       if (_selectedMode == AssignmentMode.pallet && container is String) {
         contents = await _repo.getPalletContents(
-          container, 
-          locationId == 0 ? null : locationId, 
+          container,
+          locationId == 0 ? null : locationId,
           stockStatus: stockStatus,
           siparisId: widget.selectedOrder?.id,
         );
@@ -390,12 +390,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as BoxItem?)?.productCode,
         transferDate: DateTime.now(),
       );
-      
+
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
 
       if (mounted) {
         context.read<SyncService>().uploadPendingOperations();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('inventory_transfer.success_transfer_saved'.tr()),
@@ -440,24 +440,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
-
     return Scaffold(
       appBar: SharedAppBar(title: 'inventory_transfer.title'.tr()),
-      resizeToAvoidBottomInset: false, // Klavye animasyon problemini çözmek için
-      bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
+      bottomNavigationBar: _buildBottomBar(),
       body: SafeArea(
         child: _isLoadingInitialData
             ? const Center(child: CircularProgressIndicator())
             : GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
-          child: AnimatedPadding(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-            padding: EdgeInsets.only(
-              bottom: isKeyboardVisible ? MediaQuery.of(context).viewInsets.bottom : 0,
-            ),
-            child: Form(
+          child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.disabled,
               child: SingleChildScrollView(
@@ -537,8 +528,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildModeSelector() {
@@ -560,8 +550,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             _selectedMode = newSelection.first;
             _isPalletOpening = false;
             // Keep source location, but reset container and target.
-            _resetForm(resetAll: false); 
-            
+            _resetForm(resetAll: false);
+
             // Reload containers for the new mode if a source location is selected.
             if (_selectedSourceLocationName != null) {
               _loadContainersForLocation();
@@ -1054,4 +1044,4 @@ class _InventoryConfirmationPage extends StatelessWidget {
       ),
     );
   }
-} 
+}

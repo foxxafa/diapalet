@@ -95,7 +95,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final colorScheme = theme.colorScheme;
-    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return ChangeNotifierProvider.value(
       value: _viewModel,
@@ -106,75 +105,72 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               title: 'goods_receiving_screen.title'.tr(),
               showBackButton: true,
             ),
-            resizeToAvoidBottomInset: false, // Klavye animasyon problemini çözmek için
-            bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(viewModel),
+            bottomNavigationBar: _buildBottomBar(viewModel),
             body: SafeArea(
               child: viewModel.isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : GestureDetector(
-                onTap: () => FocusScope.of(context).unfocus(),
-                child: AnimatedPadding(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  padding: EdgeInsets.only(
-                    bottom: isKeyboardVisible ? MediaQuery.of(context).viewInsets.bottom : 0,
-                  ),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                        if (viewModel.isOrderBased) ...[
-                          OrderInfoCard(order: viewModel.selectedOrder!),
-                          const SizedBox(height: _gap),
-                        ],
-                        _buildModeSelector(viewModel),
-                        const SizedBox(height: _gap),
-                        if (viewModel.receivingMode == ReceivingMode.palet) ...[
-                          _buildPalletIdField(viewModel),
-                          const SizedBox(height: _gap),
-                        ],
-                        _buildHybridDropdownWithQr<ProductInfo>(
-                          controller: viewModel.productController,
-                          focusNode: viewModel.productFocusNode,
-                          label: viewModel.isOrderBased
-                              ? 'goods_receiving_screen.label_select_product_in_order'.tr()
-                              : 'goods_receiving_screen.label_select_product'.tr(),
-                          fieldIdentifier: 'product',
-                          isEnabled: viewModel.areFieldsEnabled,
-                          items: viewModel.isOrderBased
-                              ? viewModel.orderItems.map((orderItem) => orderItem.product).whereType<ProductInfo>().toList()
-                              : viewModel.availableProducts,
-                          itemToString: (product) => "${product.name} (${product.stockCode})",
-                          onItemSelected: (product) {
-                            if (product != null) {
-                              viewModel.selectProduct(product);
-                            }
-                          },
-                          filterCondition: (product, query) {
-                            final lowerQuery = query.toLowerCase();
-                            return product.name.toLowerCase().contains(lowerQuery) ||
-                                product.stockCode.toLowerCase().contains(lowerQuery) ||
-                                (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                          },
-                          validator: viewModel.validateProduct,
+                      onTap: () => FocusScope.of(context).unfocus(),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                            if (viewModel.isOrderBased) ...[
+                              OrderInfoCard(order: viewModel.selectedOrder!),
+                              const SizedBox(height: _gap),
+                            ],
+                            _buildModeSelector(viewModel),
+                            const SizedBox(height: _gap),
+                            if (viewModel.receivingMode == ReceivingMode.palet) ...[
+                              _buildPalletIdField(viewModel),
+                              const SizedBox(height: _gap),
+                            ],
+                            _buildHybridDropdownWithQr<ProductInfo>(
+                              controller: viewModel.productController,
+                              focusNode: viewModel.productFocusNode,
+                              label: viewModel.isOrderBased
+                                  ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                                  : 'goods_receiving_screen.label_select_product'.tr(),
+                              fieldIdentifier: 'product',
+                              isEnabled: viewModel.areFieldsEnabled,
+                              items: viewModel.isOrderBased
+                                  ? viewModel.orderItems.map((orderItem) => orderItem.product).whereType<ProductInfo>().toList()
+                                  : viewModel.availableProducts,
+                              itemToString: (product) => "${product.name} (${product.stockCode})",
+                              onItemSelected: (product) {
+                                if (product != null) {
+                                  viewModel.selectProduct(product);
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      _showDatePicker(viewModel);
+                                    }
+                                  });
+                                }
+                              },
+                              filterCondition: (product, query) {
+                                final lowerQuery = query.toLowerCase();
+                                return product.name.toLowerCase().contains(lowerQuery) ||
+                                    product.stockCode.toLowerCase().contains(lowerQuery) ||
+                                    (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                              },
+                              validator: viewModel.validateProduct,
+                            ),
+                            const SizedBox(height: _gap),
+                            _buildExpiryDateField(viewModel),
+                            const SizedBox(height: _gap),
+                            if (viewModel.selectedProduct != null) ...[
+                              _buildQuantityAndStatusRow(viewModel),
+                              const SizedBox(height: _gap),
+                            ],
+                            _buildAddedItemsSection(viewModel, textTheme, colorScheme),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: _gap),
-                        _buildExpiryDateField(viewModel),
-                        const SizedBox(height: _gap),
-                        if (viewModel.selectedProduct != null) ...[
-                          _buildQuantityAndStatusRow(viewModel),
-                          const SizedBox(height: _gap),
-                        ],
-                        _buildAddedItemsSection(viewModel, textTheme, colorScheme),
-                        ],
                       ),
                     ),
-                  ),
-                ),
-              ),
             ),
           );
         },
