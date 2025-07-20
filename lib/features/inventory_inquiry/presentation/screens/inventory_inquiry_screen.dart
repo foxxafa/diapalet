@@ -32,6 +32,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   @override
   void initState() {
     super.initState();
+    _barcodeService = BarcodeIntentService();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_barcodeFocusNode);
       _initBarcode();
@@ -48,7 +49,6 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   Future<void> _initBarcode() async {
     if (kIsWeb || !Platform.isAndroid) return;
-    _barcodeService = BarcodeIntentService();
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
         onError: (e) => _showErrorSnackBar(
             'common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()})));

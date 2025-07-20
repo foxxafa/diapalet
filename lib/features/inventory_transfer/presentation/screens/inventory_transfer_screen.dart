@@ -74,6 +74,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _sourceLocationFocusNode.addListener(_onFocusChange);
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
+    _barcodeService = BarcodeIntentService();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
@@ -838,8 +839,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   // --- Barcode Handling ---
   Future<void> _initBarcode() async {
     if (kIsWeb || !Platform.isAndroid) return;
-
-    _barcodeService = BarcodeIntentService();
 
     try {
       final first = await _barcodeService.getInitialBarcode();

@@ -11,11 +11,15 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
+
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'dart:io';
 
 class GoodsReceivingScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -35,6 +39,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // --- State ve Controller'lar ---
   late final GoodsReceivingViewModel _viewModel;
   final _formKey = GlobalKey<FormState>();
+  
+  // --- Barcode Service ---
+  late BarcodeIntentService _barcodeService;
+  StreamSubscription<String>? _intentSub;
 
   @override
   void initState() {
@@ -42,6 +50,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
     final syncService = Provider.of<SyncService>(context, listen: false);
     final barcodeService = Provider.of<BarcodeIntentService>(context, listen: false);
+    
+    _barcodeService = barcodeService;
     
     _viewModel = GoodsReceivingViewModel(
       repository: repository,
@@ -52,6 +62,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     
     _viewModel.init();
     _viewModel.addListener(_onViewModelUpdate);
+    _initBarcode();
   }
 
   void _onViewModelUpdate() {
@@ -73,6 +84,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   @override
   void dispose() {
+    _intentSub?.cancel();
     _viewModel.removeListener(_onViewModelUpdate);
     _viewModel.dispose();
     super.dispose();
@@ -598,6 +610,46 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
   }
+
+  // Barcode service setup
+  Future<void> _initBarcode() async {
+    if (kIsWeb) return;
+    if (!Platform.isAndroid) return;
+    try {
+      _barcodeService = BarcodeIntentService();
+      _intentSub = _barcodeService.stream.listen((code) {
+        _handleBarcode(code);
+      }, onError: (error) {
+        _showErrorSnackBar(
+            'common_labels.barcode_reading_error'.tr(namedArgs: {'error': error.toString()}));
+      });
+    } catch (e) {
+      _showErrorSnackBar(
+          'common_labels.barcode_reading_error'.tr(namedArgs: {'error': e.toString()}));
+    }
+  }
+
+  // Barcode data handler
+  void _handleBarcode(String code) {
+    if (!mounted) return;
+    final viewModel = context.read<GoodsReceivingViewModel>();
+
+    if (viewModel.palletIdFocusNode.hasFocus) {
+      viewModel.processScannedData('pallet', code);
+    } else if (viewModel.productFocusNode.hasFocus) {
+      viewModel.processScannedData('product', code);
+    } else {
+      if (viewModel.receivingMode == ReceivingMode.palet &&
+          viewModel.palletIdController.text.isEmpty) {
+        viewModel.processScannedData('pallet', code);
+      } else {
+        viewModel.productFocusNode.requestFocus();
+        viewModel.processScannedData('product', code);
+      }
+    }
+  }
+
+
 }
 
 class _QrButton extends StatelessWidget {

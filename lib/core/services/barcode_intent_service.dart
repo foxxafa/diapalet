@@ -8,6 +8,17 @@ import 'dart:io';
 /// Barkod Intent Servisi
 /// *************************
 class BarcodeIntentService {
+  BarcodeIntentService._privateConstructor();
+  static final BarcodeIntentService _instance = BarcodeIntentService._privateConstructor();
+
+  factory BarcodeIntentService() {
+    return _instance;
+  }
+
+  StreamController<String>? _controller;
+  StreamSubscription<Intent?>? _intentSubscription;
+  bool _isListening = false;
+
   static const _supportedActions = {
     'unitech.scanservice.data', // Unitech
     'com.symbol.datawedge.data.ACTION', // Zebra
@@ -29,13 +40,54 @@ class BarcodeIntentService {
     'android.intent.extra.TEXT',
   ];
 
-  /// Sürekli dinleyen yayın.
-  Stream<String> get stream => ReceiveIntent.receivedIntentStream
-      .where((intent) =>
-          intent != null && _supportedActions.contains(intent.action) && !_isFromPayShare(intent))
-      .map(_extractBarcode)
-      .where((code) => code != null)
-      .cast<String>();
+  Stream<String> get stream {
+    if (_controller == null || _controller!.isClosed) {
+      _controller = StreamController<String>.broadcast();
+      _startListening();
+    }
+    return _controller!.stream;
+  }
+
+  void _startListening() {
+    if (_isListening || kIsWeb || !Platform.isAndroid) return;
+
+    _isListening = true;
+    _intentSubscription = ReceiveIntent.receivedIntentStream
+        .where((intent) =>
+            intent != null &&
+            _supportedActions.contains(intent.action) &&
+            !_isFromPayShare(intent))
+        .listen(
+      (intent) {
+        final code = _extractBarcode(intent);
+        if (code != null && code.isNotEmpty) {
+          if (_controller != null && !_controller!.isClosed) {
+            _controller!.add(code);
+          }
+        }
+      },
+      onError: (e) {
+        if (_controller != null && !_controller!.isClosed) {
+          _controller!.addError(e);
+        }
+      },
+      onDone: () {
+        _stopListening();
+      },
+    );
+  }
+
+  void dispose() {
+    _stopListening();
+  }
+
+  void _stopListening() {
+    _intentSubscription?.cancel();
+    _intentSubscription = null;
+    _controller?.close();
+    _controller = null;
+    _isListening = false;
+  }
 
   /// Uygulama ilk açılırken gelen Intent'i getirir.
   Future<String?> getInitialBarcode() async {

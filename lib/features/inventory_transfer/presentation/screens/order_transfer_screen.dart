@@ -77,6 +77,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     super.initState();
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
+    _barcodeService = BarcodeIntentService();
     
     // Kaynak lokasyon her zaman "Mal Kabul Alanı"
     _sourceLocationController.text = '000';
@@ -526,7 +527,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   //                   : initialQty.toString();
   //               _productQuantityControllers[product.id]?.text = initialQtyText;
   //             }
-  //           }
   //         });
   //       } : null,
   //       secondary: const Icon(Icons.inventory_2_outlined),
@@ -885,8 +885,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   // --- Barcode Handling ---
   Future<void> _initBarcode() async {
     if (kIsWeb || !Platform.isAndroid) return;
-
-    _barcodeService = BarcodeIntentService();
 
     try {
       final first = await _barcodeService.getInitialBarcode();
