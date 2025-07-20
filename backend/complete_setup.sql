@@ -299,7 +299,7 @@ INSERT INTO `shelfs` (`warehouse_id`, `name`, `code`, `is_active`) VALUES
 -- 4. Çalışanları ekle (warehouse_id ile depolara atanır)
 INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `branch_id`) VALUES
 (1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 1),
-(2, 'Mehmet', 'Kaya', 'mehmet', '123', 1, 1),
+(2, 'test', 'test', 'test', '123', 1, 1),
 (3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 2);
 
 -- 5. Ürünleri ekle

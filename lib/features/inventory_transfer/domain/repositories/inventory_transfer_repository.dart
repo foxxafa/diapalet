@@ -34,6 +34,9 @@ abstract class InventoryTransferRepository {
     /// `orderId` null ise, bu bir serbest transferdir ve belirtilen `locationId`'den veri çeker.
     Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId});
 
+    /// Verilen sipariş ID'leri listesinden hangilerinin transfer edilebilir stoğu olduğunu kontrol eder.
+    Future<Set<int>> getOrderIdsWithTransferableItems(List<int> orderIds);
+
     Future<MapEntry<String, int>?> findLocationByCode(String code);
 
     Future<void> checkAndCompletePutaway(int orderId);

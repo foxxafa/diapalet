@@ -46,16 +46,20 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
     try {
       // # GÜNCELLEME: Bu metod artık sadece durumu 2 (Kısmi Kabul) olanları getirecek.
       final orders = await _repo.getOpenPurchaseOrdersForTransfer();
-      List<PurchaseOrder> transferableOrders = [];
-
-      // # GÜNCELLEME: Her sipariş için mal kabulde bekleyen stoğu var mı diye kontrol et.
-      // Eğer hiç yerleştirilecek ürünü kalmadıysa listede gösterme.
-      for (final order in orders) {
-        final containers = await _repo.getTransferableContainers(null, orderId: order.id);
-        if (containers.isNotEmpty) {
-          transferableOrders.add(order);
+      if (orders.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _allOrders = [];
+            _filteredOrders = [];
+          });
         }
+        return [];
       }
+
+      final orderIds = orders.map((o) => o.id).toList();
+      final transferableOrderIds = await _repo.getOrderIdsWithTransferableItems(orderIds);
+
+      final transferableOrders = orders.where((order) => transferableOrderIds.contains(order.id)).toList();
 
       // UI'ı anında güncellemek için setState içinde ata
       if (mounted) {
@@ -65,7 +69,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
         });
       }
       return transferableOrders;
-    } catch(e) {
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('order_selection.error_loading'.tr(namedArgs: {'error': e.toString()}))),

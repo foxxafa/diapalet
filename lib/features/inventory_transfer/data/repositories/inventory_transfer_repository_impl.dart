@@ -371,6 +371,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
+  Future<Set<int>> getOrderIdsWithTransferableItems(List<int> orderIds) async {
+    if (orderIds.isEmpty) {
+      return {};
+    }
+    final db = await dbHelper.database;
+    final idList = orderIds.map((id) => '?').join(',');
+    final query = '''
+      SELECT DISTINCT siparis_id
+      FROM inventory_stock
+      WHERE siparis_id IN ($idList)
+      AND stock_status = 'receiving'
+      AND quantity > 0
+    ''';
+    final result = await db.rawQuery(query, orderIds);
+    return result.map((row) => row['siparis_id'] as int).toSet();
+  }
+
+  @override
   Future<MapEntry<String, int>?> findLocationByCode(String code) async {
     final db = await dbHelper.database;
     final cleanCode = code.toLowerCase().trim();
