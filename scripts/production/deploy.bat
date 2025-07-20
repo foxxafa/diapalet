@@ -26,4 +26,7 @@ echo.
 echo ✅ Production deployment tamamlandı!
 echo 🌐 URL: https://diapalet-production.up.railway.app
 echo.
-pause
+echo ⏸️  Devam etmek için herhangi bir tuşa basın...
+pause > nul
+echo.
+echo 🎉 İşlem tamamlandı!

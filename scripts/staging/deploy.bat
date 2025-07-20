@@ -14,4 +14,7 @@ echo.
 echo ✅ Staging deployment tamamlandı!
 echo 🌐 URL: https://diapalet-staging.up.railway.app
 echo.
-pause
+echo ⏸️  Devam etmek için herhangi bir tuşa basın...
+pause > nul
+echo.
+echo 🎉 İşlem tamamlandı!
