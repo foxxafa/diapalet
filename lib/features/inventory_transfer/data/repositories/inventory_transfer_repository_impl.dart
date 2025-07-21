@@ -242,11 +242,30 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           itemsForJson.add(item.toApiJson());
         }
 
+        String? poId;
+        if (header.siparisId != null) {
+          final maps = await txn.query(
+            'satin_alma_siparis_fis',
+            columns: ['po_id'],
+            where: 'id = ?',
+            whereArgs: [header.siparisId],
+            limit: 1,
+          );
+          if (maps.isNotEmpty) {
+            poId = maps.first['po_id'] as String?;
+          }
+        }
+
+        final headerJson = header.toApiJson(sourceLocationId ?? 0, targetLocationId);
+        if (poId != null) {
+          headerJson['po_id'] = poId;
+        }
+
         final pendingOp = PendingOperation(
           uniqueId: opId,
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode({
-            'header': header.toApiJson(sourceLocationId ?? 0, targetLocationId),
+            'header': headerJson,
             'items': itemsForJson,
           }),
           createdAt: DateTime.now(),

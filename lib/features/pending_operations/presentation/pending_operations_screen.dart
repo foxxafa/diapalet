@@ -938,7 +938,7 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.employee'.tr(): employeeName,
         'dialog_labels.from'.tr(): sourceDisplay == "000" ? "common_labels.goods_receiving_area".tr() : sourceDisplay,
         'dialog_labels.to'.tr(): targetDisplay,
-        if (poId != null) 'dialog_labels.purchase_order'.tr(): poId,
+        if (poId != null && poId.isNotEmpty && poId != 'null') 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
         // 'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
       },

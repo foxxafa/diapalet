@@ -411,7 +411,11 @@
       "preview": "PDF Önizle",
       "error_generating": "PDF oluşturulurken hata: {error}",
       "success_generated": "PDF raporu başarıyla oluşturuldu",
-      "file_saved": "PDF İndirilenler klasörüne kaydedildi"
+      "file_saved": "Dosya kaydedildi.",
+      "file_saved_to_downloads": "Dosya şuraya kaydedildi: {path}",
+      "file_save_failed": "Dosya kaydedilemedi.",
+      "preview": "Önizleme",
+      "please_select_folder": "Lütfen kaydetmek için bir klasör seçin"
     },
     "share_dialog": {
       "title": "PDF Raporu Paylaş",

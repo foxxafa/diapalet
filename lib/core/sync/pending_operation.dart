@@ -138,36 +138,33 @@ class PendingOperation {
 
   /// Creates a filename for PDF export
   String get pdfFileName {
-    final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(createdAt);
-    final typePrefix = type.apiName.toUpperCase();
-
+    final effectiveDate = syncedAt ?? createdAt;
+    final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(effectiveDate);
+    final typeName = displayTitle.replaceAll(' ', '');
+    
+    String identifier = '';
     try {
       final dataMap = jsonDecode(data);
       switch (type) {
         case PendingOperationType.goodsReceipt:
-          final poId = dataMap['header']?['po_id'];
-          if (poId != null && poId.toString().isNotEmpty) {
-            return '${typePrefix}_${poId}_$formattedDate.pdf';
-          }
+          identifier = dataMap['header']?['po_id']?.toString() ?? '';
           break;
         case PendingOperationType.inventoryTransfer:
-          final containerId = dataMap['header']?['container_id'];
-          if (containerId != null) {
-            return '${typePrefix}_${containerId}_$formattedDate.pdf';
-          }
+          identifier = dataMap['header']?['po_id']?.toString() ?? dataMap['header']?['container_id']?.toString() ?? '';
           break;
         case PendingOperationType.forceCloseOrder:
-          final poId = dataMap['po_id'];
-          if (poId != null && poId.toString().isNotEmpty) {
-            return '${typePrefix}_${poId}_$formattedDate.pdf';
-          }
+          identifier = dataMap['po_id']?.toString() ?? '';
           break;
       }
     } catch (e) {
-      debugPrint('Error creating PDF filename: $e');
+      // Parsing error, ignore identifier
     }
 
-    return '${typePrefix}_${uniqueId.substring(0, 8)}_$formattedDate.pdf';
+    if (identifier.isNotEmpty) {
+      return '${typeName}_${identifier}_$formattedDate.pdf';
+    }
+    
+    return '${typeName}_$formattedDate.pdf';
   }
 
   factory PendingOperation.fromMap(Map<String, dynamic> map) {

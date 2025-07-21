@@ -609,7 +609,11 @@
       "save_share": "Save & Share",
       "error_generating": "Error generating PDF: {error}",
       "success_generated": "PDF report generated successfully",
-      "file_saved": "PDF saved to Downloads folder"
+      "file_saved": "PDF saved to Downloads folder",
+      "file_saved_to_downloads": "File saved to {path} folder.",
+      "file_save_failed": "Failed to save file.",
+      "preview": "Preview",
+      "please_select_folder": "Please select a folder to save"
     },
     "share_dialog": {
       "title": "Share PDF Report",

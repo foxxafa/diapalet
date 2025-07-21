@@ -6,6 +6,7 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -439,28 +440,37 @@ class PdfService {
     );
   }
   
-  /// Saves PDF to device and optionally shares
-  static Future<void> savePdfToDevice(Uint8List pdfData, String fileName) async {
+  /// Saves PDF to a user-selected directory.
+  static Future<String?> savePdfWithPicker(Uint8List pdfData, String fileName) async {
     try {
-      final output = await getApplicationDocumentsDirectory();
-      final file = File('${output.path}/$fileName');
-      await file.writeAsBytes(pdfData);
-      
-      // Share the file
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: 'Share PDF Report',
+      final String? path = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Please select a folder to save'.tr(),
       );
+
+      if (path != null) {
+        final file = File('$path/$fileName');
+        await file.writeAsBytes(pdfData);
+        return file.path;
+      }
+      return null;
     } catch (e) {
-      throw Exception('Error saving PDF: $e');
+      debugPrint("Error saving PDF with picker: $e");
+      rethrow;
     }
   }
-  
+
   /// Previews PDF using printing package
   static Future<void> previewPdf(Uint8List pdfData) async {
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdfData,
     );
+  }
+
+  static Future<void> _sharePdf(Uint8List pdfData, String fileName) async {
+    final tempDir = await getTemporaryDirectory();
+    final file = await File('${tempDir.path}/$fileName').create();
+    await file.writeAsBytes(pdfData);
+    await Share.shareXFiles([XFile(file.path)], text: 'PDF Report');
   }
   
   // Private helper methods
@@ -1079,20 +1089,6 @@ class PdfService {
     );
   }
 
-  static pw.Widget _buildGroupedTableCell(String text, pw.Font font) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(8),
-      decoration: const pw.BoxDecoration(
-        border: pw.Border(
-          left: pw.BorderSide(color: PdfColors.blue300, width: 3),
-        ),
-      ),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(font: font, fontSize: 10),
-      ),
-    );
-  }
 }
 
 class _ShareBottomSheet extends StatelessWidget {
@@ -1159,11 +1155,21 @@ class _ShareBottomSheet extends StatelessWidget {
                         label: 'pdf_report.share_dialog.save_to_device'.tr(),
                         onTap: () async {
                           Navigator.pop(context);
-                          await PdfService.savePdfToDevice(pdfData, fileName);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('pdf_report.actions.file_saved'.tr())),
-                            );
+                          try {
+                            final savedPath = await PdfService.savePdfWithPicker(pdfData, fileName);
+                            if (context.mounted && savedPath != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'pdf_report.actions.file_saved_to_downloads'.tr(namedArgs: {'path': savedPath}))),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('pdf_report.actions.file_save_failed'.tr())),
+                              );
+                            }
                           }
                         },
                       ),
@@ -1175,7 +1181,7 @@ class _ShareBottomSheet extends StatelessWidget {
                         label: 'pdf_report.share_dialog.other'.tr(),
                         onTap: () async {
                           Navigator.pop(context);
-                          await PdfService.savePdfToDevice(pdfData, fileName);
+                          await PdfService._sharePdf(pdfData, fileName);
                         },
                       ),
                     ),
