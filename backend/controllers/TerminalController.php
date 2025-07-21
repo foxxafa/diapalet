@@ -649,9 +649,13 @@ class TerminalController extends Controller
         try {
             // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
             // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
-            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+            $sqlFile = Yii::getAlias('@app/../complete_setup.sql');
             if (!file_exists($sqlFile)) {
-                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı.');
+                // Alternatif konum dene
+                $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+                if (!file_exists($sqlFile)) {
+                    throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konumlar: @app/../complete_setup.sql, @app/complete_setup.sql');
+                }
             }
             
             $sqlContent = file_get_contents($sqlFile);
