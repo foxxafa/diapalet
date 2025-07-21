@@ -821,11 +821,18 @@ class DatabaseHelper {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
 
+          // DÜZELTME: Sipariş satırlarını bir haritaya dönüştürerek her bir ürüne
+          // O(1) karmaşıklığında erişim sağlıyoruz. Bu, döngü içindeki verimliliği artırır.
           final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
 
           for (final item in enrichedItems) {
             final orderLine = orderLinesMap[item['urun_id']];
-            item['ordered_quantity'] = orderLine?['ordered_quantity'] ?? 0.0;
+            if (orderLine != null) {
+              item['ordered_quantity'] = orderLine['ordered_quantity'] ?? 0.0;
+              item['unit'] = orderLine['unit'] ?? item['unit'];
+            } else {
+              item['ordered_quantity'] = 0.0;
+            }
           }
         }
       }

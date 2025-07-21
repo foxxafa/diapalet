@@ -833,9 +833,13 @@ class _OperationDetailsView extends StatelessWidget {
                   children: [
                     Icon(Icons.assignment_outlined, size: 16, color: Theme.of(context).hintColor),
                     const SizedBox(width: 4),
-                    Text(
-                      '${'pending_operations.operation_labels.order'.tr()}: ${orderedQuantity.toStringAsFixed(0)} $unit',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                    SizedBox(
+                      width: 150, // Genişliği artırdık
+                      child: Text(
+                        '${'pending_operations.operation_labels.order'.tr()}: ${orderedQuantity.toStringAsFixed(0)} $unit',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),

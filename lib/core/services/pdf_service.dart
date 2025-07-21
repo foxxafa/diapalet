@@ -1038,7 +1038,16 @@ class PdfService {
     pw.Font font,
     pw.Font boldFont,
   ) {
-    final totalOrdered = items.fold<double>(0.0, (sum, item) => sum + ((item['ordered_quantity'] as num?)?.toDouble() ?? 0.0));
+    // DÜZELTME: "Sipariş Edilen" toplamını hesaplarken, her ürünün yalnızca bir kez sayılmasını sağlıyoruz.
+    // Yinelenen ürün girişlerinden kaynaklanan mükerrer toplamayı önlemek için ürünleri ID'lerine göre grupluyoruz.
+    final Map<dynamic, double> uniqueOrderedQuantities = {};
+    for (final item in items) {
+      final productId = item['urun_id']; // Benzersiz ürün kimliğini kullanıyoruz
+      if (productId != null) {
+        uniqueOrderedQuantities[productId] = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+    final totalOrdered = uniqueOrderedQuantities.values.fold(0.0, (sum, qty) => sum + qty);
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1047,12 +1056,14 @@ class PdfService {
         pw.SizedBox(height: 10),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
+          // DÜZELTME: Sütun genişlikleri isteğe göre ayarlandı.
+          // 'Container' daraltıldı, 'Ordered' ve 'This Receipt' genişletildi.
           columnWidths: const {
             0: pw.FlexColumnWidth(1.5), // Barcode
-            1: pw.FlexColumnWidth(2.2), // Product Name + Code
-            2: pw.FlexColumnWidth(0.8), // Ordered
-            3: pw.FlexColumnWidth(1),   // Total Received
-            4: pw.FlexColumnWidth(0.8), // Current Received
+            1: pw.FlexColumnWidth(2), // Product Name
+            2: pw.FlexColumnWidth(1.0), // Ordered
+            3: pw.FlexColumnWidth(1.1), // Total Received
+            4: pw.FlexColumnWidth(1.0), // This Receipt
             5: pw.FlexColumnWidth(1.2), // Expiry Date
             6: pw.FlexColumnWidth(1.5), // Container
           },
@@ -1061,7 +1072,8 @@ class PdfService {
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
                 _buildTableCell('Barcode', boldFont, isHeader: true),
-                _buildTableCell('Product Name & Code', boldFont, isHeader: true),
+                // DÜZELTME: Sütun başlığı "Product Name" olarak değiştirildi.
+                _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Ordered', boldFont, isHeader: true),
                 _buildTableCell('Total Received', boldFont, isHeader: true),
                 _buildTableCell('This Receipt', boldFont, isHeader: true),
