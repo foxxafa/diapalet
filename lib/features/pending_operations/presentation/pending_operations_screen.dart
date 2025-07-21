@@ -557,13 +557,16 @@ class _OperationCard extends StatelessWidget {
 
       // Generate PDF. Enrichment is now handled inside the PDF Service.
       final pdfData = await operation.generatePdf();
+      
+      // Generate enriched filename with order information
+      final enrichedFileName = await PdfService.generateEnrichedPdfFileName(operation);
 
       // Hide loading dialog
       if (context.mounted) Navigator.pop(context);
 
-      // Show share dialog
+      // Show share dialog with enriched filename
       if (context.mounted) {
-        await PdfService.showShareDialog(context, pdfData, operation.pdfFileName);
+        await PdfService.showShareDialog(context, pdfData, enrichedFileName);
       }
     } catch (e) {
       // Hide loading dialog if still showing

@@ -18,6 +18,48 @@ import 'package:share_plus/share_plus.dart';
 class PdfService {
   static const String _companyName = 'ROWHUB Warehouse Management';
   
+  /// Generates an enriched filename for PDF export using enriched data
+  static Future<String> generateEnrichedPdfFileName(PendingOperation operation) async {
+    final effectiveDate = operation.syncedAt ?? operation.createdAt;
+    final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(effectiveDate);
+    final typeName = operation.displayTitle.replaceAll(' ', '');
+    
+    String identifier = '';
+    
+    try {
+      switch (operation.type) {
+        case PendingOperationType.goodsReceipt:
+          final enrichedData = await DatabaseHelper.instance.getEnrichedGoodsReceiptData(
+            operation.data, 
+            operationDate: operation.createdAt,
+          );
+          final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+          final orderInfo = header['order_info'] as Map<String, dynamic>?;
+          identifier = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? '';
+          break;
+        case PendingOperationType.inventoryTransfer:
+          final enrichedData = await DatabaseHelper.instance.getEnrichedInventoryTransferData(operation.data);
+          final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
+          identifier = header['po_id']?.toString() ?? header['container_id']?.toString() ?? '';
+          break;
+        case PendingOperationType.forceCloseOrder:
+          final dataMap = jsonDecode(operation.data);
+          identifier = dataMap['po_id']?.toString() ?? '';
+          break;
+      }
+    } catch (e) {
+      debugPrint('Error generating enriched PDF filename: $e');
+      // Fallback to original method
+      return operation.pdfFileName;
+    }
+
+    if (identifier.isNotEmpty) {
+      return '${typeName}_${identifier}_$formattedDate.pdf';
+    }
+    
+    return '${typeName}_$formattedDate.pdf';
+  }
+
   /// Generates a comprehensive PDF report for goods receipt operation
   static Future<Uint8List> generateGoodsReceiptPdf({
     required List<ReceiptItemDraft> items,

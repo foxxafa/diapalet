@@ -150,7 +150,9 @@ class PendingOperation {
           identifier = dataMap['header']?['po_id']?.toString() ?? '';
           break;
         case PendingOperationType.inventoryTransfer:
-          identifier = dataMap['header']?['po_id']?.toString() ?? dataMap['header']?['container_id']?.toString() ?? '';
+          // Try to get po_id from enriched data first, then fallback to original data
+          identifier = dataMap['header']?['po_id']?.toString() ?? 
+                      dataMap['header']?['container_id']?.toString() ?? '';
           break;
         case PendingOperationType.forceCloseOrder:
           identifier = dataMap['po_id']?.toString() ?? '';
