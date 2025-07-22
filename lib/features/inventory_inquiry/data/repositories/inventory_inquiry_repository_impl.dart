@@ -1,5 +1,6 @@
 
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
 
@@ -11,12 +12,35 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
   @override
   Future<List<ProductLocation>> findProductLocationsByBarcode(String barcode) async {
     final db = await dbHelper.database;
+    final parsedData = GS1Parser.parse(barcode);
+
+    // Aranacak potansiyel kodları bir listeye topla
+    final searchTerms = <String>{}; // Benzersizliği korumak için Set kullan
     
-    // 1. Barkoda, ürün adına veya stok koduna göre ürünü bul
+    // 1. Sadece GS1 GTIN (01) kodunu ara
+    if (parsedData.containsKey('01')) {
+      final gtin = parsedData['01']!;
+      searchTerms.add(gtin);
+      // Eğer GTIN-14 ise ve '0' ile başlıyorsa, baştaki '0'ı atıp GTIN-13 olarak da ekle
+      if (gtin.length == 14 && gtin.startsWith('0')) {
+        searchTerms.add(gtin.substring(1));
+      }
+    } else {
+      // Ayrıştırılmış bir GTIN yoksa, manuel girilen barkodu kullan
+      searchTerms.add(barcode.trim());
+    }
+
+    if (searchTerms.isEmpty) return [];
+    
+    // Sorgu için parametre listesi ve yer tutucuları oluştur
+    final placeholders = ('?' * searchTerms.length).split('').join(',');
+    final whereArgs = searchTerms.toList();
+
+    // 1. Barkod, ürün adı veya stok koduna göre ürünü bul
     final productQuery = await db.query(
       'urunler',
-      where: 'Barcode1 = ? OR UrunAdi LIKE ? OR StokKodu LIKE ?',
-      whereArgs: [barcode, '%$barcode%', '%$barcode%'],
+      where: 'Barcode1 IN ($placeholders) OR UrunAdi IN ($placeholders) OR StokKodu IN ($placeholders)',
+      whereArgs: [...whereArgs, ...whereArgs, ...whereArgs],
       limit: 1,
     );
 

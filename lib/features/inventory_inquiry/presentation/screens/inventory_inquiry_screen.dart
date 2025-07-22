@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
@@ -25,6 +26,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   bool _isLoading = false;
   List<ProductLocation>? _locations;
   String? _lastSearchedBarcode;
+  String? _fullScannedBarcode;
 
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -56,25 +58,44 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   void _handleBarcode(String code) {
     if (!mounted) return;
-    _barcodeController.text = code;
+    _fullScannedBarcode = code; // Store the full raw code
+
+    final parsedData = GS1Parser.parse(code);
+    String displayCode = code;
+
+    // GTIN (01) varsa, onu kullan. Eğer 14 haneliyse ve '0' ile başlıyorsa, kısalt.
+    if (parsedData.containsKey('01')) {
+      String gtin = parsedData['01']!;
+      if (gtin.length == 14 && gtin.startsWith('0')) {
+        displayCode = gtin.substring(1); // Baştaki '0'ı at
+      } else {
+        displayCode = gtin;
+      }
+    }
+    _barcodeController.text = displayCode;
     _search();
   }
 
   Future<void> _search() async {
-    final barcode = _barcodeController.text.trim();
-    if (barcode.isEmpty) {
+    final displayBarcode = _barcodeController.text.trim();
+    if (displayBarcode.isEmpty) {
       return;
     }
+
+    // For the actual backend search, use the complete barcode if it came from a scan.
+    final barcodeToSearch = _fullScannedBarcode ?? displayBarcode;
+    _fullScannedBarcode = null; // Consume the value so it's not used again for manual search
+
     _barcodeFocusNode.unfocus();
     setState(() {
       _isLoading = true;
       _locations = null;
-      _lastSearchedBarcode = barcode;
+      _lastSearchedBarcode = displayBarcode; // Use the display barcode for UI messages
     });
 
     try {
       final repo = context.read<InventoryInquiryRepository>();
-      final results = await repo.findProductLocationsByBarcode(barcode);
+      final results = await repo.findProductLocationsByBarcode(barcodeToSearch);
       if (!mounted) return;
       setState(() {
         _locations = results;

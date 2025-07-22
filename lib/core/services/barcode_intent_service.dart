@@ -113,7 +113,13 @@ class BarcodeIntentService {
     for (final key in _payloadKeys) {
       final value = intent.extra?[key];
       if (value is String && value.trim().isNotEmpty) {
-        return value.replaceAll(RegExp(r'[\r\n\t]'), '').trim();
+        // GS1 verilerini ayrıştırmadan önce temizle.
+        // Parantezleri, yaygın boşluk karakterlerini kaldır ve FNC1 ayırıcı
+        // temsillerini standartlaştır (\x1d).
+        return value
+            .replaceAll(RegExp(r'[\r\n\t\(\)]'), '') // Parantezleri ve diğerlerini kaldır
+            .replaceAll('[GS]', '\x1d') // Bazı tarayıcılar FNC1'i metin olarak gönderir
+            .trim();
       }
     }
     return null;

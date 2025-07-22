@@ -308,13 +308,16 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 (2, 'SUT-001', 'Sut 1 LT', '8690002123457', 1),
 (3, 'SU-001', 'Su 5 LT', '8690003123458', 1),
 (4, 'CKL-007', 'Cikolata 100g', '8690004123459', 1),
-(5, 'MKN-001', 'Makarna 500g', '8690005123450', 1);
+(5, 'MKN-001', 'Makarna 500g', '8690005123450', 1),
+(6, 'SPRKSB','SUPERKINGS SKY BLUE', '5000143997248', 1),
+(7, 'SKYBLUE','SKY BLUE', '5000143975956', 1);
 
 -- 6. Satın Alma Siparişlerini ekle
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
 (101, '2025-06-22', 'PO-25B001', 1, 1), -- Depo 1'in (branch_id=1) siparişi
 (102, '2025-06-23', 'PO-25B002', 1, 1), -- Depo 1'in (branch_id=1) siparişi
-(201, '2025-06-22', 'PO-25I001', 1, 2); -- Depo 2'nin (branch_id=2) siparişi
+(201, '2025-06-22', 'PO-25I001', 1, 2), -- Depo 2'nin (branch_id=2) siparişi
+(203, '2025-06-22', 'PO-25I00S', 1, 1); -- Depo 1'in (branch_id=1) siparişi
 
 -- 7. Sipariş Satırlarını ekle
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
@@ -322,7 +325,10 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 (2, 101, 2, 100.00, 'BOX'),
 (3, 102, 5, 250.00, 'BOX'),
 (4, 201, 3, 300.00, 'BOX'),
-(5, 201, 4, 150.00, 'BOX');
+(5, 201, 4, 150.00, 'BOX'),
+(6, 203, 6, 75.00, 'BOX'),
+(7, 203, 7, 95.00, 'BOX');
+
 
 -- Re-enable foreign key checks
 SET FOREIGN_KEY_CHECKS = 1; 
