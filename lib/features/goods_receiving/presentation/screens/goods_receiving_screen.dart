@@ -790,42 +790,22 @@ class _FullscreenConfirmationPage extends StatelessWidget {
           'goods_receiving_screen.dialog_confirmation_title'.tr(),
         ),
       ),
-      body: viewModel.isOrderBased
-          ? _buildOrderBasedConfirmationList(context, theme)
-          : _buildFreeReceiveConfirmationList(context, theme),
+      body: Column(
+        children: [
+          _buildTotalItemsSummary(context, totalAcceptedItems),
+          Expanded(
+            child: viewModel.isOrderBased
+                ? _buildOrderBasedConfirmationList(context, theme)
+                : _buildFreeReceiveConfirmationList(context, theme),
+          ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      totalAcceptedItems.toString(),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'goods_receiving_screen.items_to_receive'.tr(),
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
             if (isCompletingOrder)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -864,6 +844,55 @@ class _FullscreenConfirmationPage extends StatelessWidget {
             ]
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTotalItemsSummary(BuildContext context, int totalAcceptedItems) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.primaryContainer),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              '${'goods_receiving_screen.dialog_confirmation_title'.tr()}:',
+              style:
+                  theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.right,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              totalAcceptedItems.toString(),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'goods_receiving_screen.items_to_receive'.tr(),
+              style: theme.textTheme.bodyMedium,
+              textAlign: TextAlign.left,
+            ),
+          ),
+        ],
       ),
     );
   }
