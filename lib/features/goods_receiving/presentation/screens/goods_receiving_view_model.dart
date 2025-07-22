@@ -417,7 +417,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       switch (action) {
         case ConfirmationAction.saveAndContinue:
           _successMessage = 'goods_receiving_screen.success_saved'.tr();
-          _handleSuccessfulSave(shouldNavigateBack: false);
+          _handleSuccessfulSave(shouldNavigateBack: true);
           break;
         case ConfirmationAction.saveAndComplete:
            _successMessage = 'goods_receiving_screen.success_receipt_saved'.tr();
