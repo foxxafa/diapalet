@@ -731,7 +731,7 @@ class _OperationDetailsView extends StatelessWidget {
     final invoice = header['invoice_number']?.toString() ?? 'N/A';
     final employeeName = header['employee_info'] != null
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
-        : 'System User';
+        : header['employee_name'] ?? 'System User';
 
     // Order tabanlı mı kontrol et
     final isOrderBased = header['siparis_id'] != null;

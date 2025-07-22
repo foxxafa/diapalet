@@ -586,20 +586,33 @@ class DatabaseHelper {
       final header = data['header'] as Map<String, dynamic>? ?? {};
       final items = data['items'] as List<dynamic>? ?? [];
 
-      // 1. SharedPreferences'tan warehouse bilgilerini al
-      final prefs = await SharedPreferences.getInstance();
-      final warehouseName = prefs.getString('warehouse_name');
-      final warehouseCode = prefs.getString('warehouse_code');
-      final branchName = prefs.getString('branch_name');
-
-      // 2. Employee bilgilerini al
+      // 1. Employee bilgilerini al (operasyon verisindeki employee_id'yi kullanarak)
+      Map<String, dynamic>? employeeInfo;
       if (header['employee_id'] != null) {
-        final employee = await getEmployeeById(header['employee_id']);
-        if (employee != null) {
-          header['employee_info'] = employee;
-          header['employee_name'] = '${employee['first_name']} ${employee['last_name']}';
+        employeeInfo = await getEmployeeById(header['employee_id']);
+        if (employeeInfo != null) {
+          header['employee_info'] = employeeInfo;
+          header['employee_name'] = '${employeeInfo['first_name']} ${employeeInfo['last_name']}';
         }
       }
+
+      // 2. Warehouse bilgilerini al
+      final prefs = await SharedPreferences.getInstance();
+      Map<String, dynamic> warehouseInfo = {
+        'name': prefs.getString('warehouse_name') ?? 'N/A',
+        'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
+        'branch_name': prefs.getString('branch_name') ?? 'N/A',
+      };
+
+      if (employeeInfo != null && employeeInfo['warehouse_id'] != null) {
+        final warehouse = await getWarehouseById(employeeInfo['warehouse_id']);
+        if (warehouse != null) {
+          warehouseInfo['name'] = warehouse['name'] ?? warehouseInfo['name'];
+          warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
+        }
+      }
+      
+      header['warehouse_info'] = warehouseInfo;
 
       // 3. Source location bilgilerini al (null ise 000 noktası)
       final sourceLocationId = header['source_location_id'];
@@ -633,14 +646,7 @@ class DatabaseHelper {
         }
       }
 
-      // 6. Warehouse bilgilerini ekle
-      header['warehouse_info'] = {
-        'name': warehouseName ?? 'N/A',
-        'warehouse_code': warehouseCode ?? 'N/A',
-        'branch_name': branchName ?? 'N/A',
-      };
-
-      // 7. Ürün bilgilerini zenginleştir
+      // 6. Ürün bilgilerini zenginleştir
       final enrichedItems = <Map<String, dynamic>>[];
       for (final item in items) {
         final enrichedItem = Map<String, dynamic>.from(item);
@@ -673,6 +679,7 @@ class DatabaseHelper {
     try {
       final data = jsonDecode(operationData);
       final header = data['header'] as Map<String, dynamic>? ?? {};
+      final items = (data['items'] as List<dynamic>?) ?? [];
 
       // Actual receipt date'ini header'dan al, yoksa operationDate kullan
       DateTime? actualReceiptDate = operationDate;
@@ -685,47 +692,44 @@ class DatabaseHelper {
         }
       }
 
-      // 1. SharedPreferences'tan warehouse bilgilerini al (login sırasında kaydediliyor)
-      final prefs = await SharedPreferences.getInstance();
-      final warehouseName = prefs.getString('warehouse_name');
-      final warehouseCode = prefs.getString('warehouse_code');
-      final branchName = prefs.getString('branch_name');
-
-      // 2. Employee bilgilerini DB'den al
+      // 1. Employee bilgilerini DB'den al (operasyon verisindeki employee_id'yi kullanarak)
+      Map<String, dynamic>? employeeInfo;
       if (header['employee_id'] != null) {
-        final employee = await getEmployeeById(header['employee_id']);
-        if (employee != null) {
-          header['employee_info'] = employee;
+        employeeInfo = await getEmployeeById(header['employee_id']);
+        if (employeeInfo != null) {
+          header['employee_info'] = employeeInfo;
         }
       }
 
-      // 3. Warehouse bilgilerini önce SharedPreferences'tan al, sonra DB'yi dene
+      // 2. Warehouse bilgilerini al
+      // Önce SharedPreferences'tan genel bilgiyi al, sonra employee'dan gelen spesifik bilgiyle üzerine yaz
+      final prefs = await SharedPreferences.getInstance();
       Map<String, dynamic> warehouseInfo = {
-        'name': warehouseName ?? 'N/A',
-        'warehouse_code': warehouseCode ?? 'N/A',
-        'branch_name': branchName ?? 'N/A',
+        'name': prefs.getString('warehouse_name') ?? 'N/A',
+        'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
+        'branch_name': prefs.getString('branch_name') ?? 'N/A',
       };
 
       // Eğer employee'dan warehouse_id varsa DB'den de kontrol et
-      if (header['employee_info'] != null) {
-        final employee = header['employee_info'] as Map<String, dynamic>;
-        if (employee['warehouse_id'] != null) {
-          final warehouse = await getWarehouseById(employee['warehouse_id']);
+      if (employeeInfo != null) {
+        if (employeeInfo['warehouse_id'] != null) {
+          final warehouse = await getWarehouseById(employeeInfo['warehouse_id']);
           if (warehouse != null) {
             // DB'den gelen bilgiler varsa SharedPreferences bilgilerini güncelle
             warehouseInfo['name'] = warehouse['name'] ?? warehouseInfo['name'];
             warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
+            // branch_name'i de alabiliriz, eğer warehouses tablosunda varsa
+            // warehouseInfo['branch_name'] = warehouse['branch_name'] ?? warehouseInfo['branch_name'];
           }
         }
       }
-
       header['warehouse_info'] = warehouseInfo;
 
       // 3. Enrich items with product, order details and previous receipts
       final enrichedItems = <Map<String, dynamic>>[];
       final siparisId = header['siparis_id'];
 
-      for (final item in (data['items'] as List<dynamic>)) {
+      for (final item in items) {
         final mutableItem = Map<String, dynamic>.from(item);
         final productId = item['urun_id'];
 
