@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -58,103 +56,6 @@ class PdfService {
     }
     
     return '${typeName}_$formattedDate.pdf';
-  }
-
-  /// Generates a comprehensive PDF report for goods receipt operation
-  static Future<Uint8List> generateGoodsReceiptPdf({
-    required List<ReceiptItemDraft> items,
-    required bool isOrderBased,
-    PurchaseOrder? order,
-    String? invoiceNumber,
-    required String employeeName,
-    required DateTime date,
-    Map<String, dynamic>? employeeInfo,
-    Map<String, dynamic>? orderInfo,
-    Map<String, dynamic>? warehouseInfo,
-  }) async {
-    final pdf = pw.Document();
-    
-    // Load font for better text rendering
-    final font = await PdfGoogleFonts.robotoRegular();
-    final boldFont = await PdfGoogleFonts.robotoBold();
-    
-    final title = isOrderBased 
-        ? 'Order-based Goods Receipt Report'
-        : 'Free Goods Receipt Report';
-    
-    // Calculate totals
-    final totalItems = items.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
-    final uniqueProducts = items.map((item) => item.product.id).toSet().length;
-    
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(20),
-        build: (pw.Context context) {
-          return [
-            // Header
-            _buildHeader(title, boldFont),
-            
-            pw.SizedBox(height: 20),
-            
-            // Employee and Warehouse Info Section
-            _buildEmployeeWarehouseInfoSection(
-              employeeName: employeeName,
-              warehouseName: warehouseInfo?['name'] as String?,
-              warehouseCode: warehouseInfo?['warehouse_code'] as String?,
-              branchName: employeeInfo?['branch_name'] as String?, // Pass branch name
-              font: font,
-              boldFont: boldFont,
-            ),
-            
-            pw.SizedBox(height: 15),
-            
-            // Order Info Section (if order-based)
-            if (isOrderBased && (order != null || orderInfo != null))
-              _buildOrderInfoSection(
-                order: order,
-                orderInfo: orderInfo,
-                invoiceNumber: invoiceNumber,
-                font: font,
-                boldFont: boldFont,
-              ),
-            
-            if (isOrderBased) pw.SizedBox(height: 15),
-            
-            // Receipt Info Section
-            _buildReceiptInfoSection(
-              date: date,
-              invoiceNumber: invoiceNumber,
-              isOrderBased: isOrderBased,
-              font: font,
-              boldFont: boldFont,
-            ),
-            
-            pw.SizedBox(height: 20),
-            
-            // Summary Section
-            _buildSummarySection(
-              totalItems: totalItems,
-              uniqueProducts: uniqueProducts,
-              font: font,
-              boldFont: boldFont,
-            ),
-            
-            pw.SizedBox(height: 20),
-            
-            // Items Table
-            _buildDetailedItemsTable(items, font, boldFont),
-            
-            pw.SizedBox(height: 30),
-            
-            // Footer
-            _buildFooter(font),
-          ];
-        },
-      ),
-    );
-    
-    return pdf.save();
   }
 
   /// Generates a PDF report from pending operation, enriching data internally.
@@ -425,45 +326,6 @@ class PdfService {
   
 
   
-  /// Shows PDF preview first, then allows user to save or share
-  static Future<void> showPdfPreviewDialog(
-    BuildContext context, 
-    Uint8List pdfData, 
-    String fileName,
-  ) async {
-    // First show preview
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('pdf_report.preview.title'.tr()),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: PdfPreview(
-            build: (format) => pdfData,
-            allowPrinting: false,
-            allowSharing: false,
-            canChangePageFormat: false,
-            canDebug: false,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('common_labels.close'.tr()),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              showShareDialog(context, pdfData, fileName);
-            },
-            child: Text('pdf_report.actions.save_share'.tr()),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Shows a share dialog with options for saving and sharing
   static Future<void> showShareDialog(
     BuildContext context, 
@@ -541,38 +403,6 @@ class PdfService {
   }
   
   // This function has been replaced by more detailed sections above
-  
-  static pw.Widget _buildSummarySection({
-    required int totalItems,
-    required int uniqueProducts,
-    required pw.Font font,
-    required pw.Font boldFont,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blue50,
-        border: pw.Border.all(color: PdfColors.blue200),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Summary',
-            style: pw.TextStyle(font: boldFont, fontSize: 14),
-          ),
-          pw.SizedBox(height: 8),
-          _buildInfoRow('Total Items', totalItems.toString(), font, boldFont),
-          _buildInfoRow('Unique Products', uniqueProducts.toString(), font, boldFont),
-        ],
-      ),
-    );
-  }
-  
-  // This function has been replaced by _buildDetailedItemsTable above
-  
-
   
   static pw.Widget _buildInfoRow(String label, String value, pw.Font font, pw.Font boldFont) {
     return pw.Padding(
@@ -859,143 +689,6 @@ class PdfService {
       ),
     );
   }
-
-  static pw.Widget _buildOrderInfoSection({
-    PurchaseOrder? order,
-    Map<String, dynamic>? orderInfo,
-    String? invoiceNumber,
-    required pw.Font font,
-    required pw.Font boldFont,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Order Information',
-            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
-          ),
-          pw.SizedBox(height: 8),
-          if (order != null) ...[
-            _buildInfoRow('Purchase Order ID', order.poId ?? 'N/A', font, boldFont),
-            _buildInfoRow('Order Date', order.date != null ? DateFormat('dd/MM/yyyy').format(order.date!) : 'N/A', font, boldFont),
-            _buildInfoRow('Status', _getOrderStatusText(order.status), font, boldFont),
-          ],
-          if (orderInfo != null) ...[
-            _buildInfoRow('Order ID', orderInfo['id']?.toString() ?? 'N/A', font, boldFont),
-            _buildInfoRow('Purchase Order ID', orderInfo['po_id']?.toString() ?? 'N/A', font, boldFont),
-            if (orderInfo['tarih'] != null)
-              _buildInfoRow('Order Date', orderInfo['tarih'].toString(), font, boldFont),
-            _buildInfoRow('Status', _getOrderStatusText(orderInfo['status']), font, boldFont),
-            if (orderInfo['notlar'] != null && orderInfo['notlar'].toString().isNotEmpty)
-              _buildInfoRow('Notes', orderInfo['notlar'].toString(), font, boldFont),
-            _buildInfoRow('Branch ID', orderInfo['branch_id']?.toString() ?? 'N/A', font, boldFont),
-          ],
-          if (invoiceNumber != null && invoiceNumber.isNotEmpty)
-            _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildReceiptInfoSection({
-    required DateTime date,
-    String? invoiceNumber,
-    required bool isOrderBased,
-    required pw.Font font,
-    required pw.Font boldFont,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Receipt Information',
-            style: pw.TextStyle(font: boldFont, fontSize: 14, color: PdfColors.blue700),
-          ),
-          pw.SizedBox(height: 8),
-          _buildInfoRow('Receipt Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
-          if (isOrderBased)
-            _buildInfoRow('Purchase Order', invoiceNumber ?? 'N/A', font, boldFont),
-          if (!isOrderBased)
-            _buildInfoRow('Invoice Number', invoiceNumber ?? 'N/A', font, boldFont),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildDetailedItemsTable(List<ReceiptItemDraft> items, pw.Font font, pw.Font boldFont) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'Items List',
-          style: pw.TextStyle(font: boldFont, fontSize: 14),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.grey400),
-          columnWidths: {
-            0: const pw.FlexColumnWidth(1),
-            1: const pw.FlexColumnWidth(2.5),
-            2: const pw.FlexColumnWidth(1),
-            3: const pw.FlexColumnWidth(1.5),
-            4: const pw.FlexColumnWidth(2),
-          },
-          children: [
-            // Header
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-              children: [
-                _buildTableCell('Code', boldFont, isHeader: true),
-                _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Quantity', boldFont, isHeader: true),
-                _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                _buildTableCell('Container', boldFont, isHeader: true),
-              ],
-            ),
-            // Data rows
-            ...items.map((item) {
-              final productName = item.product.name;
-              final productCode = item.product.stockCode;
-              final quantity = item.quantity.toStringAsFixed(0);
-              final container = item.palletBarcode != null 
-                  ? 'Pallet: ${item.palletBarcode}'
-                  : 'Box';
-              
-              // Format expiry date
-              String expiryDisplay = '-';
-              if (item.expiryDate != null) {
-                expiryDisplay = DateFormat('dd/MM/yyyy').format(item.expiryDate!);
-              }
-              
-              return pw.TableRow(
-                children: [
-                  _buildTableCell(productCode, font),
-                  _buildTableCell(productName, font),
-                  _buildTableCell(quantity, font),
-                  _buildTableCell(expiryDisplay, font),
-                  _buildTableCell(container, font),
-                ],
-              );
-            }),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // New specialized helper functions for enhanced PDF reports
 
   static pw.Widget _buildReceiptOperationInfoSection({
     required PendingOperation operation,

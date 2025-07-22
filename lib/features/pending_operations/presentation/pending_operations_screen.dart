@@ -1,7 +1,5 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'dart:convert';
-
-import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
@@ -519,69 +517,12 @@ class _OperationCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => _generateOperationPdf(context, operation),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.picture_as_pdf, size: 18),
-                const SizedBox(width: 4),
-                Text('pdf_report.actions.generate'.tr()),
-              ],
-            ),
-          ),
-          TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text('common_labels.close'.tr()),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _generateOperationPdf(BuildContext context, PendingOperation operation) async {
-    try {
-      // Show loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 16),
-              Text('pdf_report.actions.generating'.tr()),
-            ],
-          ),
-        ),
-      );
-
-      // Generate PDF. Enrichment is now handled inside the PDF Service.
-      final pdfData = await operation.generatePdf();
-      
-      // Generate enriched filename with order information
-      final enrichedFileName = await PdfService.generateEnrichedPdfFileName(operation);
-
-      // Hide loading dialog
-      if (context.mounted) Navigator.pop(context);
-
-      // Show share dialog with enriched filename
-      if (context.mounted) {
-        await PdfService.showShareDialog(context, pdfData, enrichedFileName);
-      }
-    } catch (e) {
-      // Hide loading dialog if still showing
-      if (context.mounted) Navigator.pop(context);
-
-      // Show error
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('pdf_report.actions.error_generating'.tr(namedArgs: {'error': e.toString()})),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   @override

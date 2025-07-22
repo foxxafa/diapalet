@@ -7,9 +7,6 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
   final PreferredSizeWidget? bottom;
   // YENİ: Geri butonunun görünürlüğünü kontrol etmek için eklendi.
   final bool showBackButton;
-  // PDF indirme butonu için callback
-  final VoidCallback? onPdfPressed;
-  final bool showPdfButton;
 
   const SharedAppBar({
     super.key,
@@ -19,26 +16,11 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
     // YENİ: Varsayılan olarak geri butonunu gösterir.
     // Bu sayede mevcut kullanımların bozulması engellenir.
     this.showBackButton = true,
-    this.onPdfPressed,
-    this.showPdfButton = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final canGoBack = Navigator.of(context).canPop();
-
-    // Mevcut actions listesini kopyala ve PDF butonunu ekle
-    List<Widget>? finalActions = actions?.toList() ?? [];
-    
-    if (showPdfButton && onPdfPressed != null) {
-      finalActions.add(
-        IconButton(
-          icon: const Icon(Icons.picture_as_pdf),
-          onPressed: onPdfPressed,
-          tooltip: 'PDF İndir',
-        ),
-      );
-    }
 
     return AppBar(
       title: Text(title),
@@ -51,7 +33,7 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
               },
             )
           : null,
-      actions: finalActions.isNotEmpty ? finalActions : null,
+      actions: actions,
       bottom: bottom,
     );
   }

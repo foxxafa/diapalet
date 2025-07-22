@@ -1,6 +1,5 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
 import 'package:diapalet/core/services/barcode_intent_service.dart';
-import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -17,7 +16,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -772,68 +770,6 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     required this.onItemRemoved,
   });
 
-  Future<void> _generateAndSharePdf(BuildContext context, GoodsReceivingViewModel viewModel) async {
-    try {
-      // Show loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 16),
-              Text('pdf_report.actions.generating'.tr()),
-            ],
-          ),
-        ),
-      );
-
-      // Get employee name
-      final prefs = await SharedPreferences.getInstance();
-      final firstName = prefs.getString('first_name') ?? '';
-      final lastName = prefs.getString('last_name') ?? '';
-      final employeeName = '$firstName $lastName'.trim();
-
-      // Generate PDF
-      final pdfData = await PdfService.generateGoodsReceiptPdf(
-        items: viewModel.addedItems,
-        isOrderBased: viewModel.isOrderBased,
-        order: viewModel.selectedOrder,
-        invoiceNumber: viewModel.selectedOrder?.poId,
-        employeeName: employeeName.isNotEmpty ? employeeName : 'Unknown Employee',
-        date: DateTime.now(),
-      );
-
-      // Hide loading dialog
-      if (context.mounted) Navigator.pop(context);
-
-      // Generate filename
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final fileName = viewModel.isOrderBased 
-          ? 'goods_receipt_${viewModel.selectedOrder?.poId ?? 'order'}_$timestamp.pdf'
-          : 'free_receipt_$timestamp.pdf';
-
-      // Show share dialog
-      if (context.mounted) {
-        await PdfService.showShareDialog(context, pdfData, fileName);
-      }
-    } catch (e) {
-      // Hide loading dialog if still showing
-      if (context.mounted) Navigator.pop(context);
-      
-      // Show error
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('pdf_report.actions.error_generating'.tr(namedArgs: {'error': e.toString()})),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -845,29 +781,28 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     final totalAcceptedItems = viewModel.addedItems.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
     
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(80),
-        child: AppBar(
-          backgroundColor: theme.colorScheme.primaryContainer,
-          foregroundColor: theme.colorScheme.onPrimaryContainer,
-          elevation: 2,
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(null),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'goods_receiving_screen.dialog_confirmation_title'.tr(),
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(null),
+        ),
+        title: Text(
+          'goods_receiving_screen.dialog_confirmation_title'.tr(),
+        ),
+      ),
+      body: viewModel.isOrderBased
+          ? _buildOrderBasedConfirmationList(context, theme)
+          : _buildFreeReceiveConfirmationList(context, theme),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -885,33 +820,12 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'items to receive',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
-                    ),
+                    'goods_receiving_screen.items_to_receive'.tr(),
+                    style: theme.textTheme.bodyMedium,
                   ),
                 ],
               ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.picture_as_pdf),
-              onPressed: () => _generateAndSharePdf(context, viewModel),
-              tooltip: 'pdf_report.actions.generate'.tr(),
             ),
-          ],
-        ),
-      ),
-      body: viewModel.isOrderBased
-          ? _buildOrderBasedConfirmationList(context, theme)
-          : _buildFreeReceiveConfirmationList(context, theme),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
             if (isCompletingOrder)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
