@@ -15,6 +15,7 @@ import 'package:diapalet/features/inventory_transfer/domain/repositories/invento
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
@@ -286,9 +287,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
-    // GÜNCELLEME: Status 2 (Kısmi Kabul) ve 3 (Manuel Kapatıldı) olan siparişleri getir
-    // Status 3 olanlar manuel kapatılmış olsa bile hala 'receiving' statüsünde ürünleri olabilir
-    final maps = await db.query('satin_alma_siparis_fis', where: 'status IN (2, 3)', whereArgs: []);
+    final prefs = await SharedPreferences.getInstance();
+    final warehouseId = prefs.getInt('warehouse_id');
+
+    // DÜZELTME: Mal kabulü yapılmış (1) veya manuel kapatılmış (2) siparişler transfer edilebilir.
+    final maps = await db.query(
+      'satin_alma_siparis_fis',
+      where: 'status IN (1, 2) AND branch_id = ?',
+      whereArgs: [warehouseId],
+      orderBy: 'tarih DESC',
+    );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -459,7 +467,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     if (allCompleted) {
-      await db.update('satin_alma_siparis_fis', {'status': 4}, where: 'id = ?', whereArgs: [orderId]);
+      await db.update('satin_alma_siparis_fis', {'status': 3}, where: 'id = ?', whereArgs: [orderId]);
     }
   }
 

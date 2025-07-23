@@ -543,8 +543,8 @@ class TerminalController extends Controller
             $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
-            // Sadece status değeri 4'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 4]);
+            // Sadece status değeri 3'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 3]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
             
             // DEBUG: Kaç sipariş bulundu?

@@ -854,7 +854,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+        color: theme.colorScheme.primaryContainer.withAlpha(128),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.colorScheme.primaryContainer),
       ),
