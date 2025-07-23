@@ -64,7 +64,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         if (payload.header.siparisId != null) {
           await txn.update(
             'satin_alma_siparis_fis',
-            {'status': 2},
+            {'status': 1},
             where: 'id = ?',
             whereArgs: [payload.header.siparisId],
           );
@@ -168,7 +168,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     final candidateOrdersMaps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (1, 2) AND branch_id = ?',
+      where: 'status IN (0, 1) AND branch_id = ?',
       whereArgs: [warehouseId],
       orderBy: 'tarih DESC',
     );
@@ -230,7 +230,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status = ?',
-      whereArgs: [2],
+      whereArgs: [1],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -283,13 +283,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       await txn.update(
         'satin_alma_siparis_fis',
-        {'status': 3}, 
+        {'status': 2}, 
         where: 'id = ?',
         whereArgs: [orderId],
       );
     });
 
-    debugPrint("Sipariş #$orderId lokal olarak manuel kapatıldı (status 3) ve senkronizasyon için sıraya alındı.");
+    debugPrint("Sipariş #$orderId lokal olarak manuel kapatıldı (status 2) ve senkronizasyon için sıraya alındı.");
   }
 
   @override

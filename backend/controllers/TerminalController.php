@@ -462,9 +462,9 @@ class TerminalController extends Controller
 
         $newStatus = null;
         if ($allLinesCompleted) {
-            $newStatus = 2; // Tamamlandı -> Kısmi Kabul olarak değiştirildi. Asıl tamamlama rafa yerleştirme sonrası olacak.
+            $newStatus = 1; // Tamamlandı -> Kısmi Kabul olarak değiştirildi. Asıl tamamlama rafa yerleştirme sonrası olacak.
         } elseif ($anyLineReceived) {
-            $newStatus = 2; // Kısmi Kabul
+            $newStatus = 1; // Kısmi Kabul
         }
 
         if ($newStatus !== null) {
@@ -499,8 +499,8 @@ class TerminalController extends Controller
         }
 
         if ($allLinesCompleted) {
-            // Statü: 4 (Oto. Tamamlandı/Yerleştirildi)
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 4], ['id' => $siparisId])->execute();
+            // Statü: 3 (Oto. Tamamlandı/Yerleştirildi)
+            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
         }
     }
 
@@ -509,8 +509,8 @@ class TerminalController extends Controller
         if (empty($siparisId)) {
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
-        // Statü: 3 (Manuel Kapatıldı)
-        $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
+        // Statü: 2 (Manuel Kapatıldı)
+        $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
 
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];
@@ -543,8 +543,8 @@ class TerminalController extends Controller
             $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
-            // Sadece status değeri 5'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 5]);
+            // Sadece status değeri 4'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 4]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
             
             // DEBUG: Kaç sipariş bulundu?

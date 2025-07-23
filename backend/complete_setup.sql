@@ -314,10 +314,10 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 
 -- 6. Satın Alma Siparişlerini ekle
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
-(101, '2025-06-22', 'PO-25B001', 1, 1), -- Depo 1'in (branch_id=1) siparişi
-(102, '2025-06-23', 'PO-25B002', 1, 1), -- Depo 1'in (branch_id=1) siparişi
-(201, '2025-06-22', 'PO-25I001', 1, 2), -- Depo 2'nin (branch_id=2) siparişi
-(203, '2025-06-22', 'PO-25I00S', 1, 1); -- Depo 1'in (branch_id=1) siparişi
+(101, '2025-06-22', 'PO-25B001', 0, 1), -- Depo 1'in (branch_id=1) siparişi
+(102, '2025-06-23', 'PO-25B002', 0, 1), -- Depo 1'in (branch_id=1) siparişi
+(201, '2025-06-22', 'PO-25I001', 0, 2), -- Depo 2'nin (branch_id=2) siparişi
+(203, '2025-06-22', 'PO-25I00S', 0, 1); -- Depo 1'in (branch_id=1) siparişi
 
 -- 7. Sipariş Satırlarını ekle
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
