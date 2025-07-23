@@ -116,7 +116,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
                 itemCount: _filteredOrders.length,
                 itemBuilder: (context, index) {
                   final order = _filteredOrders[index];
-                  final statusText = order.status == 2
+                  final statusText = order.status == 1
                       ? ' (${'orders.status.partially_received'.tr()})'
                       : '';
                   final subtitleText = "${order.supplierName ?? 'orders.no_supplier'.tr()}$statusText";
