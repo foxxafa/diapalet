@@ -107,6 +107,7 @@
     "mode_box": "Kutu",
     "error_change_mode": "Modu değiştirmek için önce mevcut işlemi tamamlayın veya sıfırlayın.",
     "label_select_order": "Sipariş Seç",
+    "label_delivery_note": "İrsaliye Numarası",
     "validator_select_order": "Lütfen bir sipariş seçin.",
     "label_pallet_barcode": "Palet Barkodu Girin/Okutun",
     "validator_pallet_barcode": "Palet barkodu zorunludur.",
@@ -416,7 +417,6 @@
       "file_saved": "Dosya kaydedildi.",
       "file_saved_to_downloads": "Dosya şuraya kaydedildi: {path}",
       "file_save_failed": "Dosya kaydedilemedi.",
-      "preview": "Önizleme",
       "please_select_folder": "Lütfen kaydetmek için bir klasör seçin"
     },
     "share_dialog": {

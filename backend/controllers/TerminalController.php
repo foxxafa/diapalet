@@ -572,7 +572,7 @@ class TerminalController extends Controller
 
         try {
             $data = [];
-            $urunlerData = (new Query())->select(['id' => 'UrunId', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
+            $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
