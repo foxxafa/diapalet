@@ -75,7 +75,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final query = '''
       SELECT DISTINCT s.pallet_barcode
       FROM inventory_stock s
-      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.id
+      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
       WHERE s.pallet_barcode IS NOT NULL AND ${whereClauses.join(' AND ')}
     ''';
 
@@ -119,7 +119,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.id
-      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.id
+      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';
