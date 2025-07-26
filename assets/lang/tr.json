@@ -312,9 +312,11 @@
     }
   },
   "transfer_type": {
-    "title": "Transfer Tipini Seçin",
-    "by_order": "Transfer by Order",
-    "free_transfer": "Serbest Transfer"
+    "title": "Transfer Tipi",
+    "putaway_operation": "Rafa Kaldırma Operasyonu",
+    "order_putaway_operation": "Siparişten Rafa Kaldır",
+    "free_putaway_operation": "Serbest Girişten Rafa Kaldır",
+    "shelf_to_shelf": "Raf-Raf Transfer"
   },
   "order_selection": {
     "title": "Transfer için Sipariş Seç",

@@ -23,11 +23,22 @@ class TransferTypeSelectionScreen extends StatelessWidget {
           children: [
             _buildSelectionButton(
               context: context,
-              icon: Icons.shelves,
-              label: "transfer_type.putaway_operation".tr(),
+              icon: Icons.receipt_long,
+              label: "transfer_type.order_putaway_operation".tr(),
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            _buildSelectionButton(
+              context: context,
+              icon: Icons.input,
+              label: "transfer_type.free_putaway_operation".tr(),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen(isFreePutAway: true)),
                 );
               },
             ),
@@ -38,7 +49,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
               label: "transfer_type.shelf_to_shelf".tr(),
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen()),
+                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen(isFreePutAway: false)),
                 );
               },
             ),

@@ -469,7 +469,8 @@
   },
   "transfer_type": {
     "title": "Select Transfer Type",
-    "putaway_operation": "Put-away Operation",
+    "order_putaway_operation": "Put-away from Order",
+    "free_putaway_operation": "Put-away from Free Receipt",
     "shelf_to_shelf": "Shelf to Shelf Transfer"
   },
   "order_selection": {

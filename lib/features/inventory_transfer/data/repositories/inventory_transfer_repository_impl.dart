@@ -46,37 +46,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<String>> getPalletIdsAtLocation(int? locationId,
-      {List<String> stockStatuses = const ['available']}) async {
-    final db = await dbHelper.database;
-    final whereClauses = <String>[];
-    final whereArgs = <dynamic>[];
-
-    if (locationId == null || locationId == 0) {
-      whereClauses.add('location_id IS NULL');
-    } else {
-      whereClauses.add('location_id = ?');
-      whereArgs.add(locationId);
-    }
-
-    if (stockStatuses.isNotEmpty) {
-      whereClauses.add('stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
-      whereArgs.addAll(stockStatuses);
-    }
-
-    final maps = await db.query(
-      'inventory_stock',
-      distinct: true,
-      columns: ['pallet_barcode'],
-      where: 'pallet_barcode IS NOT NULL AND ${whereClauses.join(' AND ')}',
-      whereArgs: whereArgs,
-    );
-    return maps.map((map) => map['pallet_barcode'] as String).toList();
-  }
-
-  @override
-  Future<List<BoxItem>> getBoxesAtLocation(int? locationId,
-      {List<String> stockStatuses = const ['available']}) async {
+  Future<List<String>> getPalletIdsAtLocation(
+    int? locationId, {
+    List<String> stockStatuses = const ['available'],
+    String? deliveryNoteNumber,
+  }) async {
     final db = await dbHelper.database;
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
@@ -93,6 +67,49 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
+    if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
+      whereClauses.add('gr.delivery_note_number = ?');
+      whereArgs.add(deliveryNoteNumber);
+    }
+
+    final query = '''
+      SELECT DISTINCT s.pallet_barcode
+      FROM inventory_stock s
+      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.id
+      WHERE s.pallet_barcode IS NOT NULL AND ${whereClauses.join(' AND ')}
+    ''';
+
+    final maps = await db.rawQuery(query, whereArgs);
+    return maps.map((map) => map['pallet_barcode'] as String).toList();
+  }
+
+  @override
+  Future<List<BoxItem>> getBoxesAtLocation(
+    int? locationId, {
+    List<String> stockStatuses = const ['available'],
+    String? deliveryNoteNumber,
+  }) async {
+    final db = await dbHelper.database;
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
+
+    if (locationId == null || locationId == 0) {
+      whereClauses.add('s.location_id IS NULL');
+    } else {
+      whereClauses.add('s.location_id = ?');
+      whereArgs.add(locationId);
+    }
+
+    if (stockStatuses.isNotEmpty) {
+      whereClauses.add('s.stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
+      whereArgs.addAll(stockStatuses);
+    }
+
+    if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
+      whereClauses.add('gr.delivery_note_number = ?');
+      whereArgs.add(deliveryNoteNumber);
+    }
+
     final query = '''
       SELECT
         u.id as productId,
@@ -102,6 +119,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.id
+      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.id
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';

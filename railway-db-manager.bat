@@ -204,4 +204,4 @@ echo.
 echo Tesekkurler! Gorusuruz...
 echo.
 timeout /t 2 >nul
-exit /b 0 
+exit /b 0

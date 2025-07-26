@@ -21,8 +21,13 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
+  final bool isFreePutAway;
 
-  const InventoryTransferScreen({super.key, this.selectedOrder});
+  const InventoryTransferScreen({
+    super.key,
+    this.selectedOrder,
+    this.isFreePutAway = false,
+  });
 
   @override
   State<InventoryTransferScreen> createState() => _InventoryTransferScreenState();
@@ -257,10 +262,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final bool isReceivingArea = locationId == 0;
 
       List<String> statusesToQuery;
+      String? deliveryNoteNumber;
+
       if (widget.selectedOrder != null) {
         // Rafa Kaldırma Modu: Sadece 'receiving' statüsündeki ürünler.
         statusesToQuery = ['receiving'];
-      } else {
+      } else if (widget.isFreePutAway) {
+        // Serbest Mal Kabulden Rafa Kaldırma: 'receiving' statüsündeki ve fiş numarası eşleşenler
+        statusesToQuery = ['receiving'];
+        deliveryNoteNumber = _deliveryNoteController.text;
+      }
+      else {
         // Serbest Transfer Modu: Sadece 'available' statüsündeki ürünler gösterilir
         statusesToQuery = ['available'];
       }
@@ -268,12 +280,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (_selectedMode == AssignmentMode.pallet) {
         _availableContainers = await repo.getPalletIdsAtLocation(
           isReceivingArea ? null : locationId,
-          stockStatuses: statusesToQuery
+          stockStatuses: statusesToQuery,
+          deliveryNoteNumber: deliveryNoteNumber,
         );
       } else {
         _availableContainers = await repo.getBoxesAtLocation(
           isReceivingArea ? null : locationId,
-          stockStatuses: statusesToQuery
+          stockStatuses: statusesToQuery,
+          deliveryNoteNumber: deliveryNoteNumber,
         );
       }
     } catch (e) {
@@ -467,21 +481,28 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   ],
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
-                  // Delivery Note Number field
-                  TextFormField(
-                    controller: _deliveryNoteController,
-                    focusNode: _deliveryNoteFocusNode,
-                    decoration: InputDecoration(
-                      labelText: 'inventory_transfer.label_delivery_note_number'.tr(),
+                  if (widget.isFreePutAway) ...[
+                    TextFormField(
+                      controller: _deliveryNoteController,
+                      focusNode: _deliveryNoteFocusNode,
+                      decoration: InputDecoration(
+                        labelText: 'inventory_transfer.label_delivery_note_number'.tr(),
+                      ),
+                      onFieldSubmitted: (value) {
+                        if (value.isNotEmpty) {
+                          _loadContainersForLocation();
+                          FocusScope.of(context).requestFocus(_containerFocusNode);
+                        }
+                      },
+                      validator: (value) {
+                        if (widget.isFreePutAway && (value == null || value.isEmpty)) {
+                          return 'inventory_transfer.validator_delivery_note_number'.tr();
+                        }
+                        return null;
+                      },
                     ),
-                    validator: (value) {
-                      if (widget.selectedOrder == null && (value == null || value.isEmpty)) {
-                        return 'inventory_transfer.validator_delivery_note_number'.tr();
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: _gap),
+                    const SizedBox(height: _gap),
+                  ],
                   if (_selectedMode == AssignmentMode.pallet) ...[
                     _buildPalletOpeningSwitch(),
                     const SizedBox(height: _gap),
