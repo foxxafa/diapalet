@@ -572,13 +572,13 @@ class TerminalController extends Controller
 
         try {
             $data = [];
-            
+
             // DEBUG: Test 1 - Urunler sorgusu
             Yii::info("Starting sync-download for warehouse: $warehouseId", __METHOD__);
-            
+
             $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
             Yii::info("Urunler data fetched: " . count($urunlerData) . " records", __METHOD__);
-            
+
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
             Yii::info("Urunler data processed successfully", __METHOD__);
