@@ -227,7 +227,7 @@ class TerminalController extends Controller
         // Employee'nin warehouse_id'sini al
         $employeeId = $header['employee_id'];
         $warehouseId = (new Query())->select('warehouse_id')->from('employees')->where(['id' => $employeeId])->scalar($db);
-        
+
         if (!$warehouseId) {
             return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı.'];
         }
@@ -599,11 +599,11 @@ class TerminalController extends Controller
                 }
 
                 $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
-                
+
                 // Serbest mal kabulleri de (siparis_id NULL olanlar) indir
                 $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
                 $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
-                
+
                 $this->castNumericValues($data['goods_receipts'], ['goods_receipt_id', 'siparis_id', 'employee_id', 'warehouse_id']);
 
                 $receiptIds = array_column($data['goods_receipts'], 'goods_receipt_id');

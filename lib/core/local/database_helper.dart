@@ -1149,7 +1149,7 @@ class DatabaseHelper {
   // Serbest mal kabullerin listesini almak için yeni fonksiyon
   Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
     final db = await database;
-    
+
     // Sipariş ID'si NULL olan (serbest mal kabul) ve mal kabul alanında stok bulunan receipts
     const sql = '''
       SELECT DISTINCT
@@ -1175,9 +1175,9 @@ class DatabaseHelper {
   // Belirli bir serbest mal kabul için stok kalemlerini almak
   Future<List<Map<String, dynamic>>> getStockItemsForFreeReceipt(String deliveryNoteNumber) async {
     final db = await database;
-    
+
     const sql = '''
-      SELECT 
+      SELECT
         ist.id,
         ist.urun_id,
         ist.quantity,
@@ -1189,7 +1189,7 @@ class DatabaseHelper {
       FROM inventory_stock ist
       LEFT JOIN urunler u ON u.id = ist.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
-      WHERE gr.delivery_note_number = ? 
+      WHERE gr.delivery_note_number = ?
         AND ist.stock_status = 'receiving'
         AND gr.siparis_id IS NULL
       ORDER BY ist.urun_id, ist.expiry_date
