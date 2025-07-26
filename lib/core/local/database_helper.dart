@@ -166,6 +166,7 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           siparis_id INTEGER,
           invoice_number TEXT,
+          delivery_note_number TEXT,
           employee_id INTEGER,
           receipt_date TEXT,
           created_at TEXT
@@ -194,12 +195,13 @@ class DatabaseHelper {
           urun_id INTEGER NOT NULL,
           location_id INTEGER,
           siparis_id INTEGER,
+          goods_receipt_id INTEGER,
           quantity REAL NOT NULL,
           pallet_barcode TEXT,
           expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
           updated_at TEXT,
-          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date)
+          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id)
         )
       ''');
 
@@ -1207,6 +1209,9 @@ class DatabaseHelper {
           if (poId != null) {
             header['po_id'] = poId;
           }
+        }
+         if (header['delivery_note_number'] != null) {
+          header['delivery_note_number'] = header['delivery_note_number'];
         }
 
         data['header'] = header;

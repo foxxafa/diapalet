@@ -37,7 +37,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   // --- State ve Controller'lar ---
   late final GoodsReceivingViewModel _viewModel;
   final _formKey = GlobalKey<FormState>();
-  
+
   // --- Barcode Service ---
   late BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -48,16 +48,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
     final syncService = Provider.of<SyncService>(context, listen: false);
     final barcodeService = Provider.of<BarcodeIntentService>(context, listen: false);
-    
+
     _barcodeService = barcodeService;
-    
+
     _viewModel = GoodsReceivingViewModel(
       repository: repository,
       syncService: syncService,
       barcodeService: barcodeService,
       initialOrder: widget.selectedOrder,
     );
-    
+
     _viewModel.init();
     _viewModel.addListener(_onViewModelUpdate);
     _initBarcode();
@@ -65,7 +65,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   void _onViewModelUpdate() {
     if (!mounted) return;
-    
+
     if (_viewModel.error != null) {
       _showErrorSnackBar(_viewModel.error!);
       _viewModel.clearError();
@@ -122,6 +122,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             ],
                             _buildModeSelector(viewModel),
                             const SizedBox(height: _gap),
+                            // Delivery note number for free receipt
+                            if (!viewModel.isOrderBased) ...[
+                              TextFormField(
+                                controller: viewModel.deliveryNoteController,
+                                focusNode: viewModel.deliveryNoteFocusNode,
+                                decoration: _inputDecoration(
+                                  'goods_receiving_screen.label_delivery_note'.tr(),
+                                  enabled: viewModel.isDeliveryNoteEnabled,
+                                ),
+                                validator: viewModel.validateDeliveryNote,
+                                enabled: viewModel.isDeliveryNoteEnabled,
+                              ),
+                              const SizedBox(height: _gap),
+                            ],
                             if (viewModel.receivingMode == ReceivingMode.palet) ...[
                               _buildPalletIdField(viewModel),
                               const SizedBox(height: _gap),
@@ -389,7 +403,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
   Future<void> _showDatePicker(GoodsReceivingViewModel viewModel) async {
     if (!viewModel.isExpiryDateEnabled) return; // Don't show picker if disabled
-    
+
     final selectedDate = await showDatePicker(
       context: context,
       initialDate: DateTime.now().add(const Duration(days: 30)),
@@ -397,7 +411,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       lastDate: DateTime.now().add(const Duration(days: 3650)), // 10 years from now
       helpText: 'goods_receiving_screen.label_expiry_date'.tr(),
     );
-    
+
     if (selectedDate != null) {
       final formattedDate = DateFormat('dd/MM/yyyy').format(selectedDate);
       viewModel.expiryDateController.text = formattedDate;
@@ -776,10 +790,10 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     final viewModel = context.watch<GoodsReceivingViewModel>();
 
     final isCompletingOrder = viewModel.isReceiptCompletingOrder;
-    
+
     // Calculate total accepted items count
     final totalAcceptedItems = viewModel.addedItems.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
-    
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(

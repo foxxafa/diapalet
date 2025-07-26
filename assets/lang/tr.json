@@ -437,5 +437,27 @@
     "location": "Konum",
     "pallet_barcode": "Palet Barkodu",
     "expiry_date": "Son Kullanma T."
-  }
+  },
+  "goods_receiving.title_with_po": "Mal Kabul (Fiş No: {poId})",
+  "goods_receiving.delivery_note_number": "İrsaliye Numarası",
+  "goods_receiving_screen.no_items_added": "Henüz hiç kalem eklenmedi.",
+  "goods_receiving_screen.quantity_unit": "Miktar: {quantity} {unit}",
+  "goods_receiving_screen.expiry_date": "SKT: {date}",
+  "goods_receiving_screen.confirm_save_title": "Kaydı Onayla",
+  "goods_receiving_screen.confirm_save_message": "Bu kalemleri kaydetmek istediğinizden emin misiniz?",
+  "goods_receiving_screen.total_items": "Toplam Kalem: {count}",
+  "goods_receiving_screen.save_and_continue": "Kaydet ve Devam Et",
+  "goods_receiving_screen.save_and_complete": "Kaydet ve Tamamla",
+  "orders.title": "Satınalma Siparişi Seç",
+  "orders.search_hint": "Sipariş no veya tedarikçiye göre ara...",
+  "orders.no_results": "Açık satınalma siparişi bulunamadı.",
+  "orders.status.partially_received": "Kısmi Teslim Edildi",
+  "orders.no_supplier": "Tedarikçi Bilgisi Yok",
+  "orders.error_loading": "Siparişler yüklenirken hata oluştu: {error}",
+  "options.receive_by_order": "Siparişe Göre Mal Kabul",
+  "options.free_receive": "Serbest Mal Kabul",
+  "form_fields.product": "Ürün",
+  "form_fields.quantity": "Miktar",
+  "form_fields.pallet_barcode": "Palet Barkodu",
+  "form_fields.expiry_date": "Son Kullanma Tarihi"
 }

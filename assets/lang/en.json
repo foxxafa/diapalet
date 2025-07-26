@@ -636,5 +636,18 @@
     "location": "Location",
     "pallet_barcode": "Pallet Barcode",
     "expiry_date": "Expiry Date"
-  }
+  },
+  "goods_receiving.title_with_po": "Goods Receiving (PO: {poId})",
+  "goods_receiving.delivery_note_number": "Delivery Note Number",
+  "goods_receiving_screen.no_items_added": "No items have been added yet.",
+  "goods_receiving_screen.quantity_unit": "Quantity: {quantity} {unit}",
+  "goods_receiving_screen.expiry_date": "Expiry: {date}",
+  "goods_receiving_screen.confirm_save_title": "Confirm Save",
+  "goods_receiving_screen.confirm_save_message": "Are you sure you want to save these items?",
+  "goods_receiving_screen.total_items": "Total Items: {count}",
+  "goods_receiving_screen.save_and_continue": "Save & Continue",
+  "goods_receiving_screen.save_and_complete": "Save & Complete",
+  "orders.title": "Select Purchase Order",
+  "orders.search_hint": "Search by PO number or supplier...",
+  "orders.no_results": "No open purchase orders found."
 }

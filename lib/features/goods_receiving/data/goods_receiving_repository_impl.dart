@@ -38,12 +38,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
     final db = await dbHelper.database;
-    
+
     try {
       await db.transaction((txn) async {
         final receiptHeaderData = {
           'siparis_id': payload.header.siparisId,
           'invoice_number': payload.header.invoiceNumber,
+          'delivery_note_number': payload.header.deliveryNoteNumber,
           'employee_id': payload.header.employeeId,
           'receipt_date': payload.header.receiptDate.toIso8601String(),
           'created_at': DateTime.now().toIso8601String(),
@@ -88,7 +89,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload) async {
     final apiData = payload.toApiJson();
-    
+
     if (payload.header.siparisId != null) {
       final poResult = await txn.query(
         'satin_alma_siparis_fis',
@@ -101,7 +102,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         apiData['header']['po_id'] = poResult.first['po_id'];
       }
     }
-    
+
     final enrichedItems = <Map<String, dynamic>>[];
     if (payload.items.isNotEmpty) {
       for (final item in payload.items) {
@@ -129,13 +130,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
-    
+
     List<dynamic> whereArgs = [urunId, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
     if (palletBarcode != null) whereArgs.add(palletBarcode);
     if (siparisId != null) whereArgs.add(siparisId);
     if (expiryDate != null) whereArgs.add(expiryDate);
-    
+
     final existingStock = await txn.query('inventory_stock',
         where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause',
         whereArgs: whereArgs);
@@ -196,7 +197,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         openOrders.add(order);
       }
     }
-    
+
     debugPrint("Mal kabul için açık siparişler (Depo ID: $warehouseId): ${openOrders.length} adet bulundu");
     return openOrders;
   }
@@ -205,15 +206,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     final maps = await db.rawQuery('''
-        SELECT 
-          s.*, 
-          u.UrunAdi, 
-          u.StokKodu, 
-          u.Barcode1, 
+        SELECT
+          s.*,
+          u.UrunAdi,
+          u.StokKodu,
+          u.Barcode1,
           u.aktif,
-          COALESCE((SELECT SUM(gri.quantity_received) 
-                    FROM goods_receipt_items gri 
-                    JOIN goods_receipts gr ON gr.id = gri.receipt_id 
+          COALESCE((SELECT SUM(gri.quantity_received)
+                    FROM goods_receipt_items gri
+                    JOIN goods_receipts gr ON gr.id = gri.receipt_id
                     WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
@@ -283,7 +284,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       await txn.update(
         'satin_alma_siparis_fis',
-        {'status': 2}, 
+        {'status': 2},
         where: 'id = ?',
         whereArgs: [orderId],
       );

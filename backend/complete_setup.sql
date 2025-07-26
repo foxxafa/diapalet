@@ -54,6 +54,7 @@ CREATE TABLE `goods_receipts` (
   `id` int NOT NULL AUTO_INCREMENT,
   `siparis_id` int DEFAULT NULL,
   `invoice_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `delivery_note_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `employee_id` int NOT NULL,
   `receipt_date` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -67,13 +68,14 @@ CREATE TABLE `inventory_stock` (
   `urun_id` int NOT NULL,
   `location_id` int DEFAULT NULL,
   `siparis_id` int DEFAULT NULL,
+  `goods_receipt_id` int DEFAULT NULL,
   `quantity` decimal(10,2) NOT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `stock_status` enum('receiving','available') CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci NOT NULL DEFAULT 'available' COMMENT 'receiving: Mal kabulde, available: Kullanilabilir',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `expiry_date` date DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_stock_item` (`urun_id`,`location_id`,`pallet_barcode`,`stock_status`,`siparis_id`,`expiry_date`)
+  UNIQUE KEY `uk_stock_item` (`urun_id`,`location_id`,`pallet_barcode`,`stock_status`,`siparis_id`,`expiry_date`,`goods_receipt_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `inventory_transfers`

@@ -22,12 +22,14 @@ class GoodsReceiptPayload {
 class GoodsReceiptHeader {
   final int? siparisId;
   final String? invoiceNumber;
+  final String? deliveryNoteNumber;
   final int employeeId; // <-- Sunucunun istediği zorunlu alan
   final DateTime receiptDate;
 
   const GoodsReceiptHeader({
     this.siparisId,
     this.invoiceNumber,
+    this.deliveryNoteNumber,
     required this.employeeId, // Null olmaması için zorunlu hale getirildi
     required this.receiptDate,
   });
@@ -35,6 +37,7 @@ class GoodsReceiptHeader {
   Map<String, dynamic> toJson() => {
     'siparis_id': siparisId,
     'invoice_number': invoiceNumber,
+    'delivery_note_number': deliveryNoteNumber,
     'employee_id': employeeId,
     'receipt_date': receiptDate.toIso8601String(),
   };

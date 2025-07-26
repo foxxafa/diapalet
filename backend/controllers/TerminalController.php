@@ -217,9 +217,17 @@ class TerminalController extends Controller
         }
 
         $siparisId = $header['siparis_id'] ?? null;
+        $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
+
+        // Serbest mal kabulde fiş numarası zorunludur.
+        if ($siparisId === null && empty($deliveryNoteNumber)) {
+            return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
+        }
+
         $db->createCommand()->insert('goods_receipts', [
             'siparis_id' => $siparisId,
             'invoice_number' => $header['invoice_number'] ?? null,
+            'delivery_note_number' => $deliveryNoteNumber,
             'employee_id' => $header['employee_id'],
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
         ])->execute();
@@ -235,7 +243,7 @@ class TerminalController extends Controller
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
             $stockStatus = $siparisId ? 'receiving' : 'available';
-            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null);
+            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
         }
 
         if ($siparisId) {
@@ -342,7 +350,7 @@ class TerminalController extends Controller
         return ['status' => 'success'];
     }
 
-    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null) {
+    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -356,6 +364,7 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
+            $this->addNullSafeWhere($availabilityQuery, 'goods_receipt_id', $goodsReceiptId);
             $totalAvailable = (float)$availabilityQuery->sum('quantity', $db);
 
             if ($totalAvailable < $toDecrement - 0.001) {
@@ -368,6 +377,7 @@ class TerminalController extends Controller
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
                 
                 $stock = $query->one($db);
@@ -398,6 +408,7 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
+            $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
             
             $stock = $query->one($db);
 
@@ -413,6 +424,7 @@ class TerminalController extends Controller
                     'urun_id' => $urunId, 'location_id' => $locationId, 'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode, 
                     'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
+                    'goods_receipt_id' => $goodsReceiptId,
                 ])->execute();
             }
         }
@@ -598,6 +610,22 @@ class TerminalController extends Controller
                  $stockQuery->where(['is', 'location_id', new \yii\db\Expression('NULL')]);
             }
 
+            // GÜNCELLEME: İlgili depoyla ilişkili mal kabullerini de indir.
+            $warehouseBranchId = (new Query())->select('branch_id')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+            if ($warehouseBranchId) {
+                $relatedReceiptsQuery = (new Query())
+                    ->from('goods_receipts gr')
+                    ->join('LEFT JOIN', 'satin_alma_siparis_fis sasf', 'gr.siparis_id = sasf.id')
+                    ->where(['sasf.branch_id' => $warehouseBranchId])
+                    ->orWhere(['is', 'gr.siparis_id', new \yii\db\Expression('NULL')]); // Serbest kabuller için
+
+                $relatedReceiptIds = $relatedReceiptsQuery->select('gr.id')->column();
+                if (!empty($relatedReceiptIds)) {
+                     $stockQuery->orWhere(['in', 'goods_receipt_id', $relatedReceiptIds]);
+                }
+            }
+
+
             $data['inventory_stock'] = $stockQuery->all();
             
             // DEBUG: Kaç inventory stock kaydı bulundu?
@@ -606,7 +634,7 @@ class TerminalController extends Controller
                 Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
             }
             
-             $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id'], ['quantity']);
+             $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
 
             return [
