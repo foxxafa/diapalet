@@ -11,11 +11,13 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
-  static const _databaseVersion = 31;
+      // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
+      // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
+      // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
+      static const _databaseVersion = 33;
+  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
-  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   static Database? _database;
   Future<Database> get database async {
@@ -163,7 +165,8 @@ class DatabaseHelper {
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipts (
-          id INTEGER PRIMARY KEY,
+          goods_receipt_id INTEGER PRIMARY KEY,
+          warehouse_id INTEGER,
           siparis_id INTEGER,
           invoice_number TEXT,
           delivery_note_number TEXT,
@@ -299,6 +302,13 @@ class DatabaseHelper {
       newRecord['id'] = newRecord['UrunId'];
       newRecord.remove('UrunId');
     }
+    // GÜNCELLEME: Sunucudan 'id' alanı geldiğinde bunu 'goods_receipt_id' olarak atıp eski 'id'yi kaldırıyoruz.
+    if (table == 'goods_receipts') {
+      if (newRecord.containsKey('id') && newRecord['id'] != null) {
+        newRecord['goods_receipt_id'] = newRecord['id'];
+      }
+      newRecord.remove('id');
+    }
     return newRecord;
   }
 
@@ -397,7 +407,7 @@ class DatabaseHelper {
           gri.urun_id,
           SUM(gri.quantity_received) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_id
       ) received ON received.urun_id = sol.urun_id
@@ -418,7 +428,7 @@ class DatabaseHelper {
     final db = await database;
 
     // Önce bu receipt'ın sipariş ID'sini alalım
-    final receipt = await db.query('goods_receipts', where: 'id = ?', whereArgs: [receiptId], limit: 1);
+    final receipt = await db.query('goods_receipts', where: 'goods_receipt_id = ?', whereArgs: [receiptId], limit: 1);
     if (receipt.isEmpty) return [];
 
     final siparisId = receipt.first['siparis_id'];
@@ -441,16 +451,16 @@ class DatabaseHelper {
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u.id = gri.urun_id
-      LEFT JOIN goods_receipts gr ON gr.id = gri.receipt_id
+      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
       LEFT JOIN (
         SELECT
           gri2.urun_id,
           SUM(gri2.quantity_received) as previous_received
         FROM goods_receipt_items gri2
-        JOIN goods_receipts gr2 ON gr2.id = gri2.receipt_id
+        JOIN goods_receipts gr2 ON gr2.goods_receipt_id = gri2.receipt_id
         WHERE gr2.siparis_id = ?
-          AND gr2.id < ?  -- Bu receipt'tan önceki receipt'lar
+          AND gr2.goods_receipt_id < ?  -- Bu receipt'tan önceki receipt'lar
         GROUP BY gri2.urun_id
       ) previous ON previous.urun_id = gri.urun_id
       WHERE gri.receipt_id = ?
@@ -549,7 +559,7 @@ class DatabaseHelper {
       LEFT JOIN employees emp ON emp.id = gr.employee_id
       LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id
       LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
-      WHERE gr.id = ?
+      WHERE gr.goods_receipt_id = ?
     ''';
 
     final result = await db.rawQuery(sql, [receiptId]);
@@ -574,7 +584,7 @@ class DatabaseHelper {
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u.id = gri.urun_id
-      LEFT JOIN goods_receipts gr ON gr.id = gri.receipt_id
+      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
       LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
       WHERE gri.receipt_id = ?
@@ -1134,6 +1144,58 @@ class DatabaseHelper {
   Future<void> addPendingOperation(PendingOperation operation) async {
     final db = await database;
     await db.insert('pending_operation', operation.toDbMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  // Serbest mal kabullerin listesini almak için yeni fonksiyon
+  Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
+    final db = await database;
+    
+    // Sipariş ID'si NULL olan (serbest mal kabul) ve mal kabul alanında stok bulunan receipts
+    const sql = '''
+      SELECT DISTINCT
+        gr.goods_receipt_id,
+        gr.delivery_note_number,
+        gr.receipt_date,
+        gr.employee_id,
+        e.first_name || ' ' || e.last_name as employee_name,
+        COUNT(DISTINCT ist.urun_id) as item_count,
+        SUM(ist.quantity) as total_quantity
+      FROM goods_receipts gr
+      LEFT JOIN employees e ON e.id = gr.employee_id
+      LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id AND ist.stock_status = 'receiving'
+      WHERE gr.siparis_id IS NULL
+        AND ist.id IS NOT NULL
+      GROUP BY gr.goods_receipt_id, gr.delivery_note_number, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
+      ORDER BY gr.receipt_date DESC
+    ''';
+
+    return await db.rawQuery(sql);
+  }
+
+  // Belirli bir serbest mal kabul için stok kalemlerini almak
+  Future<List<Map<String, dynamic>>> getStockItemsForFreeReceipt(String deliveryNoteNumber) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT 
+        ist.id,
+        ist.urun_id,
+        ist.quantity,
+        ist.pallet_barcode,
+        ist.expiry_date,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as product_barcode
+      FROM inventory_stock ist
+      LEFT JOIN urunler u ON u.id = ist.urun_id
+      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
+      WHERE gr.delivery_note_number = ? 
+        AND ist.stock_status = 'receiving'
+        AND gr.siparis_id IS NULL
+      ORDER BY ist.urun_id, ist.expiry_date
+    ''';
+
+    return await db.rawQuery(sql, [deliveryNoteNumber]);
   }
 
   Future<List<PendingOperation>> getPendingOperations() async {

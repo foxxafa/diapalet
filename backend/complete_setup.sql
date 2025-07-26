@@ -45,22 +45,30 @@ CREATE TABLE `goods_receipt_items` (
   `quantity_received` decimal(10,2) NOT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `expiry_date` date DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `fk_receipt_id` (`receipt_id`),
+  CONSTRAINT `goods_receipt_items_ibfk_1` FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts` (`goods_receipt_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `goods_receipts`
 DROP TABLE IF EXISTS `goods_receipts`;
 CREATE TABLE `goods_receipts` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `siparis_id` int DEFAULT NULL,
-  `invoice_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `delivery_note_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `employee_id` int NOT NULL,
+  `goods_receipt_id` int(11) NOT NULL AUTO_INCREMENT,
+  `warehouse_id` int(11) NOT NULL,
+  `siparis_id` int(11) DEFAULT NULL,
+  `invoice_number` varchar(255) DEFAULT NULL,
+  `delivery_note_number` varchar(255) DEFAULT NULL,
+  `employee_id` int(11) NOT NULL,
   `receipt_date` datetime NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `goods_receipt_id` int DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`goods_receipt_id`),
+  KEY `employee_id` (`employee_id`),
+  KEY `siparis_id` (`siparis_id`),
+  KEY `warehouse_id` (`warehouse_id`),
+  CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`),
+  CONSTRAINT `goods_receipts_ibfk_2` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `goods_receipts_ibfk_3` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Table structure for table `inventory_stock`
 DROP TABLE IF EXISTS `inventory_stock`;

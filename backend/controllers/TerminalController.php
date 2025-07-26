@@ -224,12 +224,20 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
         }
 
+        // Employee'nin warehouse_id'sini al
+        $employeeId = $header['employee_id'];
+        $warehouseId = (new Query())->select('warehouse_id')->from('employees')->where(['id' => $employeeId])->scalar($db);
+        
+        if (!$warehouseId) {
+            return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı.'];
+        }
+
         $db->createCommand()->insert('goods_receipts', [
-            'siparis_id' => $siparisId,
-            'invoice_number' => $header['invoice_number'] ?? null,
-            'delivery_note_number' => $deliveryNoteNumber,
-            'employee_id' => $header['employee_id'],
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
+            'warehouse_id' => $warehouseId,
+            'employee_id' => $header['employee_id'],
+            'siparis_id' => $siparisId,
+            'delivery_note_number' => $deliveryNoteNumber,
         ])->execute();
         $receiptId = $db->getLastInsertID();
 
@@ -591,9 +599,14 @@ class TerminalController extends Controller
                 }
 
                 $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
-                $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
+                
+                // Serbest mal kabulleri de (siparis_id NULL olanlar) indir
+                $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
+                $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
+                
+                $this->castNumericValues($data['goods_receipts'], ['goods_receipt_id', 'siparis_id', 'employee_id', 'warehouse_id']);
 
-                $receiptIds = array_column($data['goods_receipts'], 'id');
+                $receiptIds = array_column($data['goods_receipts'], 'goods_receipt_id');
                 if (!empty($receiptIds)) {
                     $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
                     $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
@@ -731,5 +744,36 @@ class TerminalController extends Controller
             Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), 'app');
             throw new \yii\web\ServerErrorHttpException('Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    public function actionGetFreeReceiptsForPutaway()
+    {
+        $params = $this->getJsonBody();
+        $warehouseId = $params['warehouse_id'] ?? null;
+
+        if ($warehouseId === null) {
+            return ['success' => false, 'message' => 'Warehouse ID is required.'];
+        }
+
+        $query = new Query();
+        $receipts = $query->select([
+                'gr.goods_receipt_id',
+                'gr.delivery_note_number',
+                'gr.receipt_date',
+                'e.first_name',
+                'e.last_name',
+                'COUNT(DISTINCT ist.urun_id) as item_count'
+            ])
+            ->from('goods_receipts gr')
+            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.goods_receipt_id')
+            ->innerJoin('employees e', 'e.id = gr.employee_id')
+            ->where(['gr.siparis_id' => null])
+            ->andWhere(['ist.stock_status' => 'receiving'])
+            ->andWhere(['gr.warehouse_id' => $warehouseId])
+            ->groupBy(['gr.goods_receipt_id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
+            ->orderBy(['gr.receipt_date' => SORT_DESC])
+            ->all();
+
+        return ['success' => true, 'data' => $receipts];
     }
 }
