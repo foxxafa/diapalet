@@ -9,6 +9,8 @@ class TransferOperationHeader {
   final String targetLocationName;
   final String? containerId;
   final int? siparisId;
+  final int? goodsReceiptId;
+  final String? deliveryNoteNumber;
 
   const TransferOperationHeader({
     required this.employeeId,
@@ -18,6 +20,8 @@ class TransferOperationHeader {
     required this.targetLocationName,
     this.containerId,
     this.siparisId,
+    this.goodsReceiptId,
+    this.deliveryNoteNumber,
   });
 
   Map<String, dynamic> toApiJson(int sourceLocationId, int targetLocationId) {
@@ -34,6 +38,12 @@ class TransferOperationHeader {
     // Eğer siparisId null değilse, JSON'a ekle.
     if (siparisId != null) {
       jsonMap['siparis_id'] = siparisId;
+    }
+    if (goodsReceiptId != null) {
+      jsonMap['goods_receipt_id'] = goodsReceiptId;
+    }
+    if (deliveryNoteNumber != null) {
+      jsonMap['delivery_note_number'] = deliveryNoteNumber;
     }
 
     return jsonMap;

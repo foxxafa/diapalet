@@ -125,7 +125,7 @@ class TerminalController extends Controller
         try {
             // Transaction timeout ayarla (MySQL için)
             $db->createCommand("SET SESSION innodb_lock_wait_timeout = 10")->execute();
-            
+
             foreach ($operations as $op) {
                 $localId = $op['local_id'] ?? null;
                 $idempotencyKey = $op['idempotency_key'] ?? null;
@@ -173,7 +173,7 @@ class TerminalController extends Controller
                         'response_code' => 200,
                         'response_body' => json_encode($result)
                     ])->execute();
-                    
+
                     $results[] = ['local_id' => (int)$localId, 'result' => $result];
                     Yii::info("İşlem başarılı: ID=$localId", __METHOD__);
                 } else {
@@ -184,7 +184,7 @@ class TerminalController extends Controller
                         'response_code' => 500, // veya uygun bir hata kodu
                         'response_body' => json_encode($result)
                     ])->execute();
-                    
+
                     $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
                     Yii::error($errorMsg, __METHOD__);
                     throw new \Exception($errorMsg);
@@ -201,8 +201,8 @@ class TerminalController extends Controller
             Yii::error($errorDetail, __METHOD__);
             Yii::$app->response->setStatusCode(500);
             return [
-                'success' => false, 
-                'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.', 
+                'success' => false,
+                'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.',
                 'details' => $e->getMessage(),
                 'processed_count' => count($results)
             ];
@@ -264,6 +264,8 @@ class TerminalController extends Controller
         $targetLocationId = $header['target_location_id'];
         $operationType = $header['operation_type'] ?? 'box_transfer';
         $siparisId = $header['siparis_id'] ?? null;
+        $goodsReceiptId = $header['goods_receipt_id'] ?? null;
+        $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
         $isPutawayOperation = ($sourceLocationId === null && $siparisId != null);
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
@@ -309,7 +311,7 @@ class TerminalController extends Controller
                 }
                 $quantityLeft -= $qtyThisCycle;
             }
-            
+
             // 3. Belirlenen DB işlemlerini gerçekleştir (Kaynak Düşürme)
             if (!empty($dbOps['delete'])) {
                 $db->createCommand()->delete('inventory_stock', ['in', 'id', $dbOps['delete']])->execute();
@@ -322,16 +324,23 @@ class TerminalController extends Controller
             foreach($portionsToTransfer as $portion) {
                 // Not: upsertStock'un ekleme kısmı burada yeniden kullanılıyor.
                 $this->upsertStock($db, $productId, $targetLocationId, $portion['qty'], $targetPallet, 'available', null, $portion['expiry']);
-                
+
                 // 5. Her porsiyon için ayrı transfer kaydı oluştur.
                  $db->createCommand()->insert('inventory_transfers', [
-                    'urun_id' => $productId, 'from_location_id' => $sourceLocationId,
-                    'to_location_id' => $targetLocationId, 'quantity' => $portion['qty'],
-                    'from_pallet_barcode' => $sourcePallet, 'pallet_barcode' => $targetPallet,
-                    'employee_id' => $header['employee_id'], 'transfer_date' => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                    'urun_id'             => $productId,
+                    'from_location_id'    => $sourceLocationId,
+                    'to_location_id'      => $targetLocationId,
+                    'quantity'            => $portion['qty'],
+                    'from_pallet_barcode' => $sourcePallet,
+                    'pallet_barcode'      => $targetPallet,
+                    'siparis_id'          => $siparisId,
+                    'goods_receipt_id'     => $goodsReceiptId,
+                    'delivery_note_number' => $deliveryNoteNumber,
+                    'employee_id'         => $header['employee_id'],
+                    'transfer_date'       => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
                 ])->execute();
             }
-            
+
             // 6. Rafa yerleştirme durumunu toplam miktar üzerinden güncelle
             if ($isPutawayOperation) {
                  $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
@@ -379,7 +388,7 @@ class TerminalController extends Controller
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
                 $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
-                
+
                 $stock = $query->one($db);
 
                 if (!$stock) {
@@ -409,7 +418,7 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
             $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
-            
+
             $stock = $query->one($db);
 
             if ($stock) {
@@ -422,7 +431,7 @@ class TerminalController extends Controller
             } elseif ($qtyChange > 0) {
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_id' => $urunId, 'location_id' => $locationId, 'siparis_id' => $siparisId,
-                    'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode, 
+                    'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
                     'goods_receipt_id' => $goodsReceiptId,
                 ])->execute();
@@ -558,13 +567,13 @@ class TerminalController extends Controller
             // Sadece status değeri 3'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
             $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 3]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
-            
+
             // DEBUG: Kaç sipariş bulundu?
             Yii::info("Warehouse $warehouseId için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
             foreach ($data['satin_alma_siparis_fis'] as $order) {
                 Yii::info("Sipariş ID: {$order['id']}, Status: {$order['status']}, PO ID: {$order['po_id']}", __METHOD__);
             }
-            
+
             $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'branch_id', 'status']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
@@ -601,7 +610,7 @@ class TerminalController extends Controller
             // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
             // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
             $locationIds = array_column($data['shelfs'], 'id');
-            
+
             $stockQuery = (new Query())->from('inventory_stock');
             if (!empty($locationIds)) {
                  $stockQuery->where(['in', 'location_id', $locationIds])
@@ -627,13 +636,13 @@ class TerminalController extends Controller
 
 
             $data['inventory_stock'] = $stockQuery->all();
-            
+
             // DEBUG: Kaç inventory stock kaydı bulundu?
             Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
             foreach ($data['inventory_stock'] as $stock) {
                 Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
             }
-            
+
              $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
 
@@ -659,7 +668,7 @@ class TerminalController extends Controller
         $result = DepoComponent::syncWarehousesAndShelfs();
         return $this->asJson($result);
     }
-    
+
     /**
      * 🔧 DEVELOPMENT ONLY: Database'i temizleyip test verileriyle yeniden yükler
      * ⚠️ SADECE DEVELOPMENT/TEST ORTAMLARINDA KULLANILMALIDIR!
@@ -685,9 +694,9 @@ class TerminalController extends Controller
                     throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konumlar: @app/../complete_setup.sql, @app/complete_setup.sql');
                 }
             }
-            
+
             $sqlContent = file_get_contents($sqlFile);
-            
+
             // Yorumları ve boş satırları temizle
             $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Remove multi-line comments
             $sqlContent = preg_replace('/--.*/', '', $sqlContent);    // Remove single-line comments
@@ -695,7 +704,7 @@ class TerminalController extends Controller
 
             // Komutları ';' karakterine göre ayır
             $sqlCommands = explode(';', $sqlContent);
-            
+
             foreach ($sqlCommands as $command) {
                 $command = trim($command);
                 if (!empty($command)) {
@@ -705,7 +714,7 @@ class TerminalController extends Controller
             }
 
             $transaction->commit();
-            
+
             return $this->asJson([
                 'status' => 'success',
                 'message' => 'Veritabanı başarıyla sıfırlandı ve test verileri yüklendi.'

@@ -1,4 +1,4 @@
- // lib/core/local/database_helper.dart
+// lib/core/local/database_helper.dart
 import 'dart:io';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
@@ -223,6 +223,9 @@ class DatabaseHelper {
           quantity REAL,
           from_pallet_barcode TEXT,
           pallet_barcode TEXT,
+          siparis_id INTEGER,
+          goods_receipt_id INTEGER,
+          delivery_note_number TEXT,
           employee_id INTEGER,
           transfer_date TEXT,
           created_at TEXT
@@ -613,7 +616,7 @@ class DatabaseHelper {
           warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
         }
       }
-      
+
       header['warehouse_info'] = warehouseInfo;
 
       // 3. Source location bilgilerini al (null ise 000 noktası)
@@ -944,7 +947,7 @@ class DatabaseHelper {
         FROM pending_operation po
         WHERE po.type = 'forceCloseOrder'
           AND (
-            po.data LIKE '%"siparis_id":' || ? || ',%' OR 
+            po.data LIKE '%"siparis_id":' || ? || ',%' OR
             po.data LIKE '%"siparis_id":' || ? || '}%'
           )
       ''', [siparisId, siparisId]);
@@ -1284,7 +1287,7 @@ class DatabaseHelper {
     if (_database != null && _database!.isOpen) {
       await _database!.close();
     }
-    
+
     // Get the path and delete the database file using the official sqflite helper
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, _databaseName);

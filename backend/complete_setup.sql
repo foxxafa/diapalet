@@ -57,7 +57,9 @@ CREATE TABLE `goods_receipts` (
   `delivery_note_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `employee_id` int NOT NULL,
   `receipt_date` datetime NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+)  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `goods_receipt_id` int DEFAULT NULL,
+  `delivery_note_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
@@ -333,4 +335,4 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 
 
 -- Re-enable foreign key checks
-SET FOREIGN_KEY_CHECKS = 1; 
+SET FOREIGN_KEY_CHECKS = 1;

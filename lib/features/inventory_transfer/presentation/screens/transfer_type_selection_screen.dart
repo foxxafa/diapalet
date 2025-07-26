@@ -23,8 +23,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
           children: [
             _buildSelectionButton(
               context: context,
-              icon: Icons.article_outlined,
-              label: "transfer_type.by_order".tr(),
+              icon: Icons.shelves,
+              label: "transfer_type.putaway_operation".tr(),
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
@@ -34,8 +34,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
             const SizedBox(height: 24),
             _buildSelectionButton(
               context: context,
-              icon: Icons.move_up_rounded,
-              label: "transfer_type.free_transfer".tr(),
+              icon: Icons.swap_horiz,
+              label: "transfer_type.shelf_to_shelf".tr(),
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InventoryTransferScreen()),

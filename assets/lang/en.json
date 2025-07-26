@@ -162,7 +162,9 @@
     "tooltip_remove_item": "Remove Item",
     "button_add": "Add",
     "button_save_confirm": "Save & Confirm",
-    "label_pallet_id": "Pallet ID"
+    "label_pallet_id": "Pallet ID",
+    "label_delivery_note_number": "Delivery Note Number",
+    "validator_delivery_note_number": "Please enter delivery note number."
   },
   "pallet_assignment": {
     "title": "Transfer Operation",
@@ -268,8 +270,6 @@
     "barcode_reading_error": "Barcode reading error: {error}",
     "unknown_order": "Unknown Order",
     "delete": "Delete",
-    "close": "Close",
-    "data_load_error": "Error loading data: {error}",
     "user_id_not_found": "User ID not found.",
     "not_available": "N/A",
     "quantity": "Qty",
@@ -356,8 +356,8 @@
     "operation_types": {
       "order_based_receipt": "Order-based Receipt",
       "free_receipt": "Free Receipt",
-      "putaway_operation": "Putaway Operation",
-      "stock_transfer": "Stock Transfer",
+      "putaway_operation": "Put-away Operation",
+      "shelf_transfer": "Shelf to Shelf Transfer",
       "pallet_transfer": "Pallet Transfer",
       "box_transfer": "Box Transfer"
     },
@@ -400,7 +400,9 @@
     "positive_number": "Please enter a positive number"
   },
   "inventory_transfer": {
-    "title": "Inventory Transfer",
+    "title": "Shelf to Shelf Transfer",
+    "label_delivery_note_number": "Delivery Note Number",
+    "validator_delivery_note_number": "Please enter delivery note number.",
     "mode_pallet": "Pallet",
     "mode_box": "Box",
     "label_source_location": "Source Location",
@@ -467,11 +469,11 @@
   },
   "transfer_type": {
     "title": "Select Transfer Type",
-    "by_order": "Transfer by Order",
-    "free_transfer": "Free Transfer"
+    "putaway_operation": "Put-away Operation",
+    "shelf_to_shelf": "Shelf to Shelf Transfer"
   },
   "order_selection": {
-    "title": "Select Order for Putaway",
+    "title": "Select Order for Put-away",
     "search_hint": "Search by Order ID...",
     "error_loading": "Error loading orders: {error}",
     "no_results": "No open orders found for putaway.",
@@ -480,7 +482,7 @@
     "order_info": "Order: {poId} | Date: {date}"
   },
   "order_transfer": {
-    "title": "Order Transfer (Putaway)",
+    "title": "Put-away Operation",
     "order_title": "ORDER",
     "mode_pallet": "Pallet",
     "mode_box": "Box",
@@ -639,6 +641,8 @@
   },
   "goods_receiving.title_with_po": "Goods Receiving (PO: {poId})",
   "goods_receiving.delivery_note_number": "Delivery Note Number",
+  "goods_receiving_screen.label_delivery_note_number": "Delivery Note Number",
+  "goods_receiving_screen.validator_delivery_note_number": "Please enter delivery note number.",
   "goods_receiving_screen.no_items_added": "No items have been added yet.",
   "goods_receiving_screen.quantity_unit": "Quantity: {quantity} {unit}",
   "goods_receiving_screen.expiry_date": "Expiry: {date}",
