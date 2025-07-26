@@ -475,7 +475,7 @@ class TerminalController extends Controller
                 s.miktar,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
-                 JOIN goods_receipts gr ON gr.id = gri.receipt_id
+                 JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
                  WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id
                 ) as received_quantity
             FROM satin_alma_siparis_fis_satir s
@@ -572,18 +572,9 @@ class TerminalController extends Controller
 
         try {
             $data = [];
-
-            // DEBUG: Test 1 - Urunler sorgusu
-            Yii::info("Starting sync-download for warehouse: $warehouseId", __METHOD__);
-
             $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
-            Yii::info("Urunler data fetched: " . count($urunlerData) . " records", __METHOD__);
-
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
-            $data['urunler'] = $urunlerData;
-            Yii::info("Urunler data processed successfully", __METHOD__);
-
-            $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
+            $data['urunler'] = $urunlerData;            $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
 
             $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
@@ -635,9 +626,9 @@ class TerminalController extends Controller
             $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
             $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
 
-            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+            $this->castNumericValues($data['goods_receipts'], ['goods_receipt_id', 'siparis_id', 'employee_id', 'warehouse_id']);
 
-            $receiptIds = array_column($data['goods_receipts'], 'id');
+            $receiptIds = array_column($data['goods_receipts'], 'goods_receipt_id');
             if (!empty($receiptIds)) {
                 $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
                 $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
@@ -659,7 +650,7 @@ class TerminalController extends Controller
 
             // Condition 2: Stock is in the receiving area (location_id is NULL) AND belongs to one of the warehouse's receipts
             $allReceiptIdsForWarehouse = (new Query())
-                ->select('id')
+                ->select('goods_receipt_id')
                 ->from('goods_receipts')
                 ->where(['warehouse_id' => $warehouseId])
                 ->column();
@@ -697,12 +688,8 @@ class TerminalController extends Controller
 
         } catch (\yii\db\Exception $e) {
             Yii::$app->response->statusCode = 500;
-            Yii::error("SyncDownload DB Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
-            return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu.', 'details' => $e->getMessage()];
-        } catch (\Exception $e) {
-            Yii::$app->response->statusCode = 500;
-            Yii::error("SyncDownload Genel Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
-            return ['success' => false, 'error' => 'Genel bir hata oluştu.', 'details' => $e->getMessage()];
+            Yii::error("SyncDownload DB Hatası: " . $e->getMessage(), __METHOD__);
+            return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu.'];
         }
     }
 
@@ -788,7 +775,7 @@ class TerminalController extends Controller
 
         $query = new Query();
         $receipts = $query->select([
-                'gr.id as goods_receipt_id',
+                'gr.goods_receipt_id as goods_receipt_id',
                 'gr.delivery_note_number',
                 'gr.receipt_date',
                 'e.first_name',
@@ -796,12 +783,12 @@ class TerminalController extends Controller
                 'COUNT(DISTINCT ist.urun_id) as item_count'
             ])
             ->from('goods_receipts gr')
-            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.id')
+            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.goods_receipt_id')
             ->innerJoin('employees e', 'e.id = gr.employee_id')
             ->where(['gr.siparis_id' => null])
             ->andWhere(['ist.stock_status' => 'receiving'])
             ->andWhere(['gr.warehouse_id' => $warehouseId])
-            ->groupBy(['gr.id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
+            ->groupBy(['gr.goods_receipt_id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
             ->orderBy(['gr.receipt_date' => SORT_DESC])
             ->all();
 
