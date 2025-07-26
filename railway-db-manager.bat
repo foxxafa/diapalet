@@ -96,7 +96,7 @@ echo STAGING veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "$headers = @{'Content-Type' = 'application/json'}; try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method POST -Headers $headers -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message; if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()); Write-Host 'Detay:' $reader.ReadToEnd() } }"
 
 echo.
 echo STAGING veritabani sifirlama islemi tamamlandi.
@@ -133,7 +133,7 @@ echo PRODUCTION veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "$headers = @{'Content-Type' = 'application/json'}; try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/dev-reset' -Method POST -Headers $headers -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message; if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()); Write-Host 'Detay:' $reader.ReadToEnd() } }"
 
 echo.
 echo PRODUCTION veritabani sifirlama islemi tamamlandi.

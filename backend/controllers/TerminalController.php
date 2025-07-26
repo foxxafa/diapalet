@@ -17,7 +17,7 @@ class TerminalController extends Controller
         $this->enableCsrfValidation = false;
 
         // DÜZELTME: 'dev-reset' endpoint'i API anahtarı kontrolünden muaf tutuldu.
-        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset') {
+        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset' && $action->id !== 'test-sql-file') {
             $this->checkApiKey();
         }
 
