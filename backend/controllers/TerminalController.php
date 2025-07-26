@@ -676,6 +676,21 @@ class TerminalController extends Controller
         return ['status' => 'ok', 'timestamp' => date('c')];
     }
 
+    public function actionTestSqlFile()
+    {
+        $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+        $appPath = Yii::getAlias('@app');
+        
+        return [
+            'app_path' => $appPath,
+            'sql_file_path' => $sqlFile,
+            'sql_file_exists' => file_exists($sqlFile),
+            'app_dir_contents' => is_dir($appPath) ? scandir($appPath) : 'NOT_A_DIR',
+            'cwd' => getcwd(),
+            'files_in_cwd' => scandir(getcwd())
+        ];
+    }
+
     public function actionSyncShelfs()
     {
         $result = DepoComponent::syncWarehousesAndShelfs();
