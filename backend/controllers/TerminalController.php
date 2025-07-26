@@ -681,7 +681,7 @@ class TerminalController extends Controller
         $sqlFile = Yii::getAlias('@app/complete_setup.sql');
         $appPath = Yii::getAlias('@app');
         
-        return [
+        $result = [
             'app_path' => $appPath,
             'sql_file_path' => $sqlFile,
             'sql_file_exists' => file_exists($sqlFile),
@@ -689,6 +689,8 @@ class TerminalController extends Controller
             'cwd' => getcwd(),
             'files_in_cwd' => scandir(getcwd())
         ];
+        
+        return $this->asJson($result);
     }
 
     public function actionSyncShelfs()
