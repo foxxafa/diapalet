@@ -235,10 +235,11 @@ DROP TABLE IF EXISTS `warehouses`;
 CREATE TABLE `warehouses` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
+  `warehouse_code` varchar(45) DEFAULT NULL,
+  `branch_id` int DEFAULT NULL,
+  `dia_id` INT NULL,
   `post_code` varchar(10) DEFAULT NULL,
   `ap` char(1) DEFAULT NULL,
-  `branch_id` int DEFAULT NULL,
-  `warehouse_code` varchar(45) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -278,9 +279,6 @@ CREATE TABLE `wms_putaway_status` (
 -- ================================================
 -- PART 2: WAREHOUSE UPDATES (from warehouses_update.sql)
 -- ================================================
-
--- Add dia_id column to warehouses table
-ALTER TABLE `warehouses` ADD COLUMN `dia_id` INT NULL AFTER `warehouse_code`;
 
 -- Add dia_key column to shelfs table
 ALTER TABLE `shelfs` ADD COLUMN `dia_key` VARCHAR(20) NULL AFTER `code`;

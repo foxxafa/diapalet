@@ -699,50 +699,104 @@ class TerminalController extends Controller
         try {
             // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
             // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
-            $sqlFile = Yii::getAlias('@app/../complete_setup.sql');
+            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
             if (!file_exists($sqlFile)) {
-                // Alternatif konum dene
-                $sqlFile = Yii::getAlias('@app/complete_setup.sql');
-                if (!file_exists($sqlFile)) {
-                    throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konumlar: @app/../complete_setup.sql, @app/complete_setup.sql');
-                }
+                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
             }
 
             $sqlContent = file_get_contents($sqlFile);
 
-            // Yorumları ve boş satırları temizle
-            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Remove multi-line comments
-            $sqlContent = preg_replace('/--.*/', '', $sqlContent);    // Remove single-line comments
-            $sqlContent = preg_replace('/^\s*$/m', '', $sqlContent);  // Remove empty lines
+            // SQL'i daha güvenli bir şekilde parse et
+            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Remove multi-line comments  
+            $sqlContent = preg_replace('/^\s*--.*$/m', '', $sqlContent); // Remove single-line comments that start at beginning of line
+            $sqlContent = preg_replace('/\s+--.*$/', '', $sqlContent);   // Remove inline comments
+            
+            // Boş satırları temizle
+            $lines = explode("\n", $sqlContent);
+            $cleanLines = [];
+            foreach($lines as $line) {
+                $line = trim($line);
+                if (!empty($line)) {
+                    $cleanLines[] = $line;
+                }
+            }
+            $sqlContent = implode("\n", $cleanLines);
 
-            // Komutları ';' karakterine göre ayır
+            // Komutları ';' karakterine göre ayır ve temizle
             $sqlCommands = explode(';', $sqlContent);
+            $executedCommands = 0;
 
             foreach ($sqlCommands as $command) {
                 $command = trim($command);
-                if (!empty($command)) {
-                    // SET komutları ve diğerleri için direkt execute kullan
-                    $db->createCommand($command)->execute();
+                if (!empty($command) && !preg_match('/^\s*(SET|DELIMITER)/i', $command)) {
+                    try {
+                        $db->createCommand($command)->execute();
+                        $executedCommands++;
+                    } catch (\Exception $e) {
+                        Yii::error("SQL Command failed: $command\nError: " . $e->getMessage(), __METHOD__);
+                        // Kritik olmayan hataları atla, devam et
+                        if (strpos($e->getMessage(), 'already exists') === false && 
+                            strpos($e->getMessage(), 'Unknown column') === false) {
+                            throw $e;
+                        }
+                    }
                 }
             }
+
+            // SET komutlarını ayrı olarak çalıştır
+            $setCommands = [
+                'SET character_set_client = utf8mb4',
+                'SET character_set_connection = utf8mb4', 
+                'SET character_set_results = utf8mb4',
+                'SET NAMES utf8mb4',
+                'SET FOREIGN_KEY_CHECKS = 0'
+            ];
+
+            foreach ($setCommands as $setCommand) {
+                try {
+                    $db->createCommand($setCommand)->execute();
+                } catch (\Exception $e) {
+                    Yii::warning("SET command failed: $setCommand - " . $e->getMessage(), __METHOD__);
+                }
+            }
+
+            // Son olarak FK check'leri tekrar aç
+            $db->createCommand('SET FOREIGN_KEY_CHECKS = 1')->execute();
 
             $transaction->commit();
 
             return $this->asJson([
                 'status' => 'success',
-                'message' => 'Veritabanı başarıyla sıfırlandı ve test verileri yüklendi.'
+                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands SQL komutu çalıştırıldı."
             ]);
 
         } catch (\yii\db\Exception $e) {
             $transaction->rollBack();
-            Yii::error("Database reset failed: " . $e->getMessage(), 'app');
-            // DÜZELTME: Hata mesajını daha anlaşılır hale getir
-            $errorMessage = "Database reset işlemi başarısız: " . $e->getMessage() . " (Sorgu: " . mb_substr($e->getPrevious()->queryString ?? '', 0, 200) . '...)';
-            throw new \yii\web\ServerErrorHttpException($errorMessage, 0, $e);
+            Yii::error("Database reset failed: " . $e->getMessage(), __METHOD__);
+            
+            // Detaylı hata bilgisi
+            $errorDetails = [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'sql' => method_exists($e, 'getPrevious') && $e->getPrevious() ? substr($e->getPrevious()->getMessage(), 0, 500) : 'N/A'
+            ];
+            
+            Yii::error("Database reset error details: " . json_encode($errorDetails), __METHOD__);
+            
+            throw new \yii\web\ServerErrorHttpException(
+                'Database reset işlemi başarısız: ' . $e->getMessage(), 
+                0, 
+                $e
+            );
         } catch (\Exception $e) {
             $transaction->rollBack();
-            Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), 'app');
-            throw new \yii\web\ServerErrorHttpException('Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage(), 0, $e);
+            Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), __METHOD__);
+            throw new \yii\web\ServerErrorHttpException(
+                'Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage(), 
+                0, 
+                $e
+            );
         }
     }
 
