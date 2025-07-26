@@ -274,7 +274,9 @@ class TerminalController extends Controller
         $siparisId = $header['siparis_id'] ?? null;
         $goodsReceiptId = $header['goods_receipt_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
-        $isPutawayOperation = ($sourceLocationId === null && $siparisId != null);
+
+        // A putaway operation is any transfer from the virtual receiving area (source_location_id is NULL)
+        $isPutawayOperation = ($sourceLocationId === null);
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
         foreach ($items as $item) {
@@ -283,22 +285,32 @@ class TerminalController extends Controller
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
-            // 1. Kaynak stokları FIFO'ya göre bul
+            // 1. Find source stocks using FIFO logic
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
                 ->where(['urun_id' => $productId, 'stock_status' => $sourceStatus]);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
-            $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
+
+            // For putaway operations, we must filter by the specific order or receipt
+            if ($isPutawayOperation) {
+                if ($siparisId) {
+                    $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
+                } elseif ($goodsReceiptId) {
+                    $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $goodsReceiptId);
+                }
+            }
+
             $sourceStocksQuery->orderBy(['expiry_date' => SORT_ASC]);
             $sourceStocks = $sourceStocksQuery->all($db);
 
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
             if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
-                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$productId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}"];
+                $errorContext = $isPutawayOperation ? "Putaway for Receipt #$goodsReceiptId / Order #$siparisId" : "Shelf Transfer";
+                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$productId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
             }
 
-            // 2. Transfer edilecek porsiyonları ve yapılacak DB işlemlerini belirle
+            // 2. Determine portions to transfer and the required DB operations
             $quantityLeft = $totalQuantityToTransfer;
             $portionsToTransfer = []; // {qty, expiry}
             $dbOps = ['delete' => [], 'update' => []]; // {id: new_qty}
@@ -320,7 +332,7 @@ class TerminalController extends Controller
                 $quantityLeft -= $qtyThisCycle;
             }
 
-            // 3. Belirlenen DB işlemlerini gerçekleştir (Kaynak Düşürme)
+            // 3. Execute DB operations (Decrement source)
             if (!empty($dbOps['delete'])) {
                 $db->createCommand()->delete('inventory_stock', ['in', 'id', $dbOps['delete']])->execute();
             }
@@ -328,12 +340,11 @@ class TerminalController extends Controller
                 $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $id])->execute();
             }
 
-            // 4. Porsiyonları hedefe ekle (SKT'leri koruyarak)
+            // 4. Add portions to target (preserving expiry dates)
             foreach($portionsToTransfer as $portion) {
-                // Not: upsertStock'un ekleme kısmı burada yeniden kullanılıyor.
                 $this->upsertStock($db, $productId, $targetLocationId, $portion['qty'], $targetPallet, 'available', null, $portion['expiry']);
 
-                // 5. Her porsiyon için ayrı transfer kaydı oluştur.
+                // 5. Create a separate transfer record for each portion
                  $db->createCommand()->insert('inventory_transfers', [
                     'urun_id'             => $productId,
                     'from_location_id'    => $sourceLocationId,
@@ -349,8 +360,8 @@ class TerminalController extends Controller
                 ])->execute();
             }
 
-            // 6. Rafa yerleştirme durumunu toplam miktar üzerinden güncelle
-            if ($isPutawayOperation) {
+            // 6. Update putaway status for order-based operations
+            if ($isPutawayOperation && $siparisId) {
                  $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
                  if ($orderLine) {
                      $orderLineId = $orderLine['id'];
@@ -591,6 +602,13 @@ class TerminalController extends Controller
             $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'branch_id', 'status']);
 
             $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
+
+            // Initialize arrays
+            $data['satin_alma_siparis_fis_satir'] = [];
+            $data['wms_putaway_status'] = [];
+            $data['goods_receipts'] = [];
+            $data['goods_receipt_items'] = [];
+
             if (!empty($poIds)) {
                 $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
                 $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
@@ -600,59 +618,99 @@ class TerminalController extends Controller
                 if (!empty($poLineIds)) {
                     $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'satinalmasiparisfissatir_id', $poLineIds])->all();
                     $this->castNumericValues($data['wms_putaway_status'], ['id', 'satinalmasiparisfissatir_id'], ['putaway_quantity']);
-                } else {
-                    $data['wms_putaway_status'] = [];
                 }
 
-                $data['goods_receipts'] = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
-
-                // Serbest mal kabulleri de (siparis_id NULL olanlar) indir
-                $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
-                $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
-
-                $this->castNumericValues($data['goods_receipts'], ['goods_receipt_id', 'siparis_id', 'employee_id', 'warehouse_id']);
-
-                $receiptIds = array_column($data['goods_receipts'], 'goods_receipt_id');
-                if (!empty($receiptIds)) {
-                    $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
-                    $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
-                } else {
-                    $data['goods_receipt_items'] = [];
-                }
-            } else {
-                 $data['satin_alma_siparis_fis_satir'] = [];
-                 $data['goods_receipts'] = [];
-                 $data['goods_receipt_items'] = [];
-                 $data['wms_putaway_status'] = [];
+                $poReceipts = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+                $data['goods_receipts'] = array_merge($data['goods_receipts'], $poReceipts);
             }
+
+            // Serbest mal kabulleri (siparis_id NULL olanlar) her zaman ilgili depo için indirilir
+            $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
+            $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
+
+            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+
+            $receiptIds = array_column($data['goods_receipts'], 'id');
+            if (!empty($receiptIds)) {
+                $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
+                $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+            }
+
 
             // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
             // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
             $locationIds = array_column($data['shelfs'], 'id');
 
             $stockQuery = (new Query())->from('inventory_stock');
+
+            $stockConditions = ['or'];
+
+            // Condition 1: Stock is in one of the warehouse's shelves
             if (!empty($locationIds)) {
-                 $stockQuery->where(['in', 'location_id', $locationIds])
-                           ->orWhere(['is', 'location_id', new \yii\db\Expression('NULL')]);
+                $stockConditions[] = ['in', 'location_id', $locationIds];
+            }
+
+            // Condition 2: Stock is in the receiving area (location_id is NULL) AND belongs to one of the warehouse's receipts
+            $allReceiptIdsForWarehouse = (new Query())
+                ->select('id')
+                ->from('goods_receipts')
+                ->where(['warehouse_id' => $warehouseId])
+                ->column();
+
+            if (!empty($allReceiptIdsForWarehouse)) {
+                $stockConditions[] = [
+                    'and',
+                    ['is', 'location_id', new \yii\db\Expression('NULL')],
+                    ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
+                ];
+            }
+
+            if (count($stockConditions) > 1) {
+                $stockQuery->where($stockConditions);
             } else {
-                 $stockQuery->where(['is', 'location_id', new \yii\db\Expression('NULL')]);
+                // Eğer depo için hiç raf veya mal kabul yoksa, hiçbir stok kaydı getirme
+                $stockQuery->where('1=0');
             }
 
-            // GÜNCELLEME: İlgili depoyla ilişkili mal kabullerini de indir.
-            // $branchId zaten yukarıda hesaplandı
-            if ($branchId) {
-                $relatedReceiptsQuery = (new Query())
-                    ->from('goods_receipts gr')
-                    ->join('LEFT JOIN', 'satin_alma_siparis_fis sasf', 'gr.siparis_id = sasf.id')
-                    ->where(['sasf.branch_id' => $branchId])
-                    ->orWhere(['is', 'gr.siparis_id', new \yii\db\Expression('NULL')]); // Serbest kabuller için
+            $data['inventory_stock'] = $stockQuery->all();
 
-                $relatedReceiptIds = $relatedReceiptsQuery->select('gr.goods_receipt_id')->column();
-                if (!empty($relatedReceiptIds)) {
-                     $stockQuery->orWhere(['in', 'goods_receipt_id', $relatedReceiptIds]);
-                }
+            // DEBUG: Kaç inventory stock kaydı bulundu?
+            Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
+            foreach ($data['inventory_stock'] as $stock) {
+            // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
+            // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
+            $locationIds = array_column($data['shelfs'], 'id');
+
+            $stockQuery = (new Query())->from('inventory_stock');
+
+            $stockConditions = ['or'];
+
+            // Condition 1: Stock is in one of the warehouse's shelves
+            if (!empty($locationIds)) {
+                $stockConditions[] = ['in', 'location_id', $locationIds];
             }
 
+            // Condition 2: Stock is in the receiving area (location_id is NULL) AND belongs to one of the warehouse's receipts
+            $allReceiptIdsForWarehouse = (new Query())
+                ->select('id')
+                ->from('goods_receipts')
+                ->where(['warehouse_id' => $warehouseId])
+                ->column();
+
+            if (!empty($allReceiptIdsForWarehouse)) {
+                $stockConditions[] = [
+                    'and',
+                    ['is', 'location_id', new \yii\db\Expression('NULL')],
+                    ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
+                ];
+            }
+
+            if (count($stockConditions) > 1) {
+                $stockQuery->where($stockConditions);
+            } else {
+                // Eğer depo için hiç raf veya mal kabul yoksa, hiçbir stok kaydı getirme
+                $stockQuery->where('1=0');
+            }
 
             $data['inventory_stock'] = $stockQuery->all();
 
@@ -759,7 +817,7 @@ class TerminalController extends Controller
 
         $query = new Query();
         $receipts = $query->select([
-                'gr.goods_receipt_id',
+                'gr.id as goods_receipt_id',
                 'gr.delivery_note_number',
                 'gr.receipt_date',
                 'e.first_name',
@@ -767,12 +825,12 @@ class TerminalController extends Controller
                 'COUNT(DISTINCT ist.urun_id) as item_count'
             ])
             ->from('goods_receipts gr')
-            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.goods_receipt_id')
+            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.id')
             ->innerJoin('employees e', 'e.id = gr.employee_id')
             ->where(['gr.siparis_id' => null])
             ->andWhere(['ist.stock_status' => 'receiving'])
             ->andWhere(['gr.warehouse_id' => $warehouseId])
-            ->groupBy(['gr.goods_receipt_id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
+            ->groupBy(['gr.id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
             ->orderBy(['gr.receipt_date' => SORT_DESC])
             ->all();
 
