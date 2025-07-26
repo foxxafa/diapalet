@@ -577,7 +577,7 @@ class TerminalController extends Controller
             if (!$branchId) {
                 throw new \Exception("Warehouse ID $warehouseId için branch bulunamadı.");
             }
-            
+
             // Sadece status değeri 3'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
             $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $branchId])->andWhere(['<', 'status', 3]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();

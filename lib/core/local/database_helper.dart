@@ -886,22 +886,22 @@ class DatabaseHelper {
       }
 
       if (excludeReceiptId != null) {
-        conditions.add('gr.id != ?');
+        conditions.add('gr.goods_receipt_id != ?');
         params.add(excludeReceiptId);
       }
 
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE ${conditions.join(' AND ')}
       ''';
 
       // Debug: Hangi kabuller sayılıyor görelim
       final debugSql = '''
-        SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id
+        SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY gr.receipt_date
       ''';
@@ -910,9 +910,9 @@ class DatabaseHelper {
 
       // Debug: Bu sipariş ve ürün için TÜM kabulleri görelim
       const allReceiptsSql = '''
-        SELECT gr.receipt_date, gri.quantity_received, gr.id as receipt_id, 'ALL' as note
+        SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id, 'ALL' as note
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ? AND gri.urun_id = ?
         ORDER BY gr.receipt_date
       ''';
@@ -923,7 +923,7 @@ class DatabaseHelper {
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ? AND gri.urun_id = ?
       ''';
       params = [siparisId, productId];
