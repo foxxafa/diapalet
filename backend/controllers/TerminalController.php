@@ -572,9 +572,16 @@ class TerminalController extends Controller
 
         try {
             $data = [];
+            
+            // DEBUG: Test 1 - Urunler sorgusu
+            Yii::info("Starting sync-download for warehouse: $warehouseId", __METHOD__);
+            
             $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
+            Yii::info("Urunler data fetched: " . count($urunlerData) . " records", __METHOD__);
+            
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
+            Yii::info("Urunler data processed successfully", __METHOD__);
 
             $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
@@ -690,8 +697,12 @@ class TerminalController extends Controller
 
         } catch (\yii\db\Exception $e) {
             Yii::$app->response->statusCode = 500;
-            Yii::error("SyncDownload DB Hatası: " . $e->getMessage(), __METHOD__);
-            return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu.'];
+            Yii::error("SyncDownload DB Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
+            return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu.', 'details' => $e->getMessage()];
+        } catch (\Exception $e) {
+            Yii::$app->response->statusCode = 500;
+            Yii::error("SyncDownload Genel Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
+            return ['success' => false, 'error' => 'Genel bir hata oluştu.', 'details' => $e->getMessage()];
         }
     }
 
