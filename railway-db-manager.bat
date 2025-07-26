@@ -95,8 +95,9 @@ echo.
 echo STAGING veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
-
-powershell -Command "$headers = @{'Content-Type' = 'application/json'}; try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method POST -Headers $headers -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message; if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()); Write-Host 'Detay:' $reader.ReadToEnd() } }"
+echo.
+REM Execute database reset via REST; using Invoke-RestMethod for simplicity
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-RestMethod -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method Post -Headers @{ Authorization='Bearer 123'; 'Content-Type'='application/json' } -Body '{}' ; Write-Host 'Basarili:' $r.message } catch { Write-Host 'Hata:' $_.Exception.Message }"
 
 echo.
 echo STAGING veritabani sifirlama islemi tamamlandi.
@@ -133,7 +134,34 @@ echo PRODUCTION veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
 
-powershell -Command "$headers = @{'Content-Type' = 'application/json'}; try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/dev-reset' -Method POST -Headers $headers -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message; if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()); Write-Host 'Detay:' $reader.ReadToEnd() } }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
+    $ErrorActionPreference = 'Stop';
+    $headers = @{
+        'Authorization' = 'Bearer 123';
+        'Content-Type'  = 'application/json'
+    };
+    $uri = 'https://diapalet-production.up.railway.app/api/terminal/dev-reset';
+    try {
+        $response = Invoke-WebRequest -Uri $uri -Method POST -Headers $headers -Body '{}';
+        Write-Host 'Basarili:';
+        Write-Host $response.Content;
+    } catch {
+        Write-Host ""Hata: $($_.Exception.Message)"";
+        if ($_.Exception.Response) {
+            try {
+                $stream = $_.Exception.Response.GetResponseStream();
+                $reader = New-Object System.IO.StreamReader($stream);
+                $details = $reader.ReadToEnd();
+                $reader.Close();
+                $stream.Close();
+                Write-Host ""Detay:"";
+                Write-Host $details;
+            } catch {
+                Write-Host ""Hata: Sunucu yanitinin detaylari okunamadi."";
+            }
+        }
+    }
+}"
 
 echo.
 echo PRODUCTION veritabani sifirlama islemi tamamlandi.

@@ -701,7 +701,7 @@ class TerminalController extends Controller
         try {
             $sqlFile = Yii::getAlias('@app/complete_setup.sql');
             Yii::info("SQL file path: $sqlFile", __METHOD__);
-            
+
             if (!file_exists($sqlFile)) {
                 throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
             }
@@ -727,7 +727,7 @@ class TerminalController extends Controller
             }
 
             $transaction->commit();
-            
+
             Yii::info("DevReset başarıyla tamamlandı. Çalıştırılan komut sayısı: $executedCommands", __METHOD__);
 
             return $this->asJson([
