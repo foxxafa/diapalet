@@ -678,19 +678,27 @@ class TerminalController extends Controller
 
     public function actionTestSqlFile()
     {
-        $sqlFile = Yii::getAlias('@app/complete_setup.sql');
-        $appPath = Yii::getAlias('@app');
-        
-        $result = [
-            'app_path' => $appPath,
-            'sql_file_path' => $sqlFile,
-            'sql_file_exists' => file_exists($sqlFile),
-            'app_dir_contents' => is_dir($appPath) ? scandir($appPath) : 'NOT_A_DIR',
-            'cwd' => getcwd(),
-            'files_in_cwd' => scandir(getcwd())
-        ];
-        
-        return $this->asJson($result);
+        try {
+            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+            $appPath = Yii::getAlias('@app');
+            
+            $result = [
+                'status' => 'ok',
+                'app_path' => $appPath,
+                'sql_file_path' => $sqlFile,
+                'sql_file_exists' => file_exists($sqlFile),
+                'timestamp' => date('c')
+            ];
+            
+            return $this->asJson($result);
+        } catch (\Exception $e) {
+            return $this->asJson([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+        }
     }
 
     public function actionSyncShelfs()
