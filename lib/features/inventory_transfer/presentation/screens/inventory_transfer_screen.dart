@@ -22,11 +22,13 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
   final bool isFreePutAway;
+  final String? selectedDeliveryNote;
 
   const InventoryTransferScreen({
     super.key,
     this.selectedOrder,
     this.isFreePutAway = false,
+    this.selectedDeliveryNote,
   });
 
   @override
@@ -43,9 +45,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _formKey = GlobalKey<FormState>();
   final _deliveryNoteController = TextEditingController();
   final _deliveryNoteFocusNode = FocusNode();
-  List<String> _availableDeliveryNotes = [];
   String? _selectedDeliveryNote;
-  bool _isLoadingDeliveryNotes = false;
   late InventoryTransferRepository _repo;
   bool _isLoadingInitialData = true;
   bool _isLoadingContainerContents = false;
@@ -86,6 +86,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
     _barcodeService = BarcodeIntentService();
+
+    // Set selected delivery note if provided
+    if (widget.selectedDeliveryNote != null) {
+      _selectedDeliveryNote = widget.selectedDeliveryNote;
+      _deliveryNoteController.text = widget.selectedDeliveryNote!;
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
@@ -171,11 +177,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         }
       });
 
-      // For free putaway, load delivery notes first
-      if (widget.isFreePutAway) {
-        await _loadDeliveryNotes();
-      }
-
       // For order-based putaway, check available modes
       if (widget.selectedOrder != null) {
         await _checkAvailableModes();
@@ -202,37 +203,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
     }
-  }
-
-  Future<void> _loadDeliveryNotes() async {
-    if (!widget.isFreePutAway) return;
-    
-    setState(() => _isLoadingDeliveryNotes = true);
-    try {
-      final notes = await _repo.getFreeReceiptDeliveryNotes();
-      if (mounted) {
-        setState(() {
-          _availableDeliveryNotes = notes;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('inventory_transfer.error_loading_delivery_notes'.tr(namedArgs: {'error': e.toString()}));
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingDeliveryNotes = false);
-    }
-  }
-
-  void _handleDeliveryNoteSelection(String? deliveryNote) {
-    if (deliveryNote == null) return;
-    setState(() {
-      _selectedDeliveryNote = deliveryNote;
-      _deliveryNoteController.text = deliveryNote;
-      _resetContainerAndProducts();
-    });
-    _loadContainersForLocation();
-    _containerFocusNode.requestFocus();
   }
 
   Future<void> _checkAvailableModes() async {
@@ -575,24 +545,35 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   ],
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
-                  if (widget.isFreePutAway) ...[
-                    _isLoadingDeliveryNotes
-                        ? const Center(child: CircularProgressIndicator())
-                        : DropdownButtonFormField<String>(
-                            value: _selectedDeliveryNote,
-                            decoration: InputDecoration(
-                              labelText: 'inventory_transfer.label_delivery_note_number'.tr(),
-                              border: OutlineInputBorder(borderRadius: _borderRadius),
+                  if (widget.isFreePutAway && widget.selectedDeliveryNote != null) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.receipt_long, color: Colors.blue),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'inventory_transfer.selected_delivery_note'.tr(),
+                                    style: Theme.of(context).textTheme.labelMedium,
+                                  ),
+                                  Text(
+                                    widget.selectedDeliveryNote!,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            items: _availableDeliveryNotes
-                                .map((note) => DropdownMenuItem<String>(
-                                      value: note,
-                                      child: Text(note),
-                                    ))
-                                .toList(),
-                            onChanged: _handleDeliveryNoteSelection,
-                            validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_delivery_note_number'.tr() : null,
-                          ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: _gap),
                   ],
                   if (_selectedMode == AssignmentMode.pallet) ...[

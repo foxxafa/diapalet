@@ -2,6 +2,7 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/order_selection_screen.dart';
+import 'package:diapalet/features/inventory_transfer/presentation/screens/delivery_note_selection_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -38,7 +39,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
               label: "transfer_type.free_putaway_operation".tr(),
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen(isFreePutAway: true)),
+                  MaterialPageRoute(builder: (_) => const DeliveryNoteSelectionScreen()),
                 );
               },
             ),
