@@ -8,8 +8,8 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_op
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 
 abstract class InventoryTransferRepository {
-    Future<Map<String, int>> getSourceLocations();
-    Future<Map<String, int>> getTargetLocations();
+    Future<Map<String, int>> getSourceLocations({bool includeReceivingArea = true});
+    Future<Map<String, int>> getTargetLocations({bool excludeReceivingArea = false});
     
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
     Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available']});
@@ -44,4 +44,13 @@ abstract class InventoryTransferRepository {
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 
     Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {List<String> stockStatuses = const ['available']});
+
+    /// Serbest mal kabullerin delivery note numberlarını getirir
+    Future<List<String>> getFreeReceiptDeliveryNotes();
+
+    /// Belirli bir sipariş için palet ile kabul edilmiş ürün var mı kontrol eder
+    Future<bool> hasOrderReceivedWithPallets(int orderId);
+
+    /// Belirli bir sipariş için kutular ile kabul edilmiş ürün var mı kontrol eder
+    Future<bool> hasOrderReceivedWithBoxes(int orderId);
 }

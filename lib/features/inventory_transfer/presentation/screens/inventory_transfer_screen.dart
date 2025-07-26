@@ -43,6 +43,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _formKey = GlobalKey<FormState>();
   final _deliveryNoteController = TextEditingController();
   final _deliveryNoteFocusNode = FocusNode();
+  List<String> _availableDeliveryNotes = [];
+  String? _selectedDeliveryNote;
+  bool _isLoadingDeliveryNotes = false;
   late InventoryTransferRepository _repo;
   bool _isLoadingInitialData = true;
   bool _isLoadingContainerContents = false;
@@ -50,6 +53,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   bool _isPalletOpening = false;
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
+  bool _isPalletModeAvailable = true;
+  bool _isBoxModeAvailable = true;
 
   Map<String, int> _availableSourceLocations = {};
   String? _selectedSourceLocationName;
@@ -130,35 +135,64 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (!mounted) return;
     setState(() => _isLoadingInitialData = true);
     try {
+      late Future<Map<String, int>> sourceLocationsFuture;
+      late Future<Map<String, int>> targetLocationsFuture;
+      
+      if (widget.selectedOrder != null) {
+        // Put away from order: Kaynak sadece mal kabul alanı (000), hedef tüm raflar
+        sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: true);
+        targetLocationsFuture = _repo.getTargetLocations(excludeReceivingArea: true);
+      } else if (widget.isFreePutAway) {
+        // Put away from free receipt: Kaynak sadece mal kabul alanı (000), hedef tüm raflar
+        sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: true);
+        targetLocationsFuture = _repo.getTargetLocations(excludeReceivingArea: true);
+      } else {
+        // Shelf to shelf: Kaynak ve hedef tüm raflar (000 hariç)
+        sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: false);
+        targetLocationsFuture = _repo.getTargetLocations(excludeReceivingArea: true);
+      }
+      
       final results = await Future.wait([
-        _repo.getSourceLocations(),
-        _repo.getTargetLocations(),
+        sourceLocationsFuture,
+        targetLocationsFuture,
       ]);
       if (!mounted) return;
       setState(() {
         _availableSourceLocations = results[0];
         _availableTargetLocations = results[1];
 
-        // If this is order-based transfer, automatically set source to goods receiving area
-        if (widget.selectedOrder != null) {
+        // If this is order-based transfer or free putaway, automatically set source to goods receiving area
+        if (widget.selectedOrder != null || widget.isFreePutAway) {
           _selectedSourceLocationName = '000';
           _sourceLocationController.text = '000';
-          _loadContainersForLocation();
-        } else {
-          // For free transfer, also default to "000" location
-          _selectedSourceLocationName = '000';
-          _sourceLocationController.text = '000';
-          _loadContainersForLocation();
+          if (!widget.isFreePutAway) {
+            _loadContainersForLocation();
+          }
         }
       });
 
+      // For free putaway, load delivery notes first
+      if (widget.isFreePutAway) {
+        await _loadDeliveryNotes();
+      }
+
+      // For order-based putaway, check available modes
+      if (widget.selectedOrder != null) {
+        await _checkAvailableModes();
+      }
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (widget.selectedOrder != null) {
-          // For order-based transfer, focus on container selection
-          FocusScope.of(context).requestFocus(_containerFocusNode);
+        if (widget.selectedOrder != null || widget.isFreePutAway) {
+          // For order-based transfer or free putaway, focus on container selection
+          if (widget.isFreePutAway) {
+            // For free putaway, focus on delivery note first
+            FocusScope.of(context).requestFocus(_deliveryNoteFocusNode);
+          } else {
+            FocusScope.of(context).requestFocus(_containerFocusNode);
+          }
         } else {
-          // For free transfer, focus on container selection since source is already set
-          FocusScope.of(context).requestFocus(_containerFocusNode);
+          // For shelf to shelf, focus on source location
+          FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
         }
       });
     } catch (e) {
@@ -167,6 +201,66 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoadingInitialData = false);
+    }
+  }
+
+  Future<void> _loadDeliveryNotes() async {
+    if (!widget.isFreePutAway) return;
+    
+    setState(() => _isLoadingDeliveryNotes = true);
+    try {
+      final notes = await _repo.getFreeReceiptDeliveryNotes();
+      if (mounted) {
+        setState(() {
+          _availableDeliveryNotes = notes;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('inventory_transfer.error_loading_delivery_notes'.tr(namedArgs: {'error': e.toString()}));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingDeliveryNotes = false);
+    }
+  }
+
+  void _handleDeliveryNoteSelection(String? deliveryNote) {
+    if (deliveryNote == null) return;
+    setState(() {
+      _selectedDeliveryNote = deliveryNote;
+      _deliveryNoteController.text = deliveryNote;
+      _resetContainerAndProducts();
+    });
+    _loadContainersForLocation();
+    _containerFocusNode.requestFocus();
+  }
+
+  Future<void> _checkAvailableModes() async {
+    if (widget.selectedOrder == null) return;
+    
+    try {
+      final results = await Future.wait([
+        _repo.hasOrderReceivedWithPallets(widget.selectedOrder!.id),
+        _repo.hasOrderReceivedWithBoxes(widget.selectedOrder!.id),
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          _isPalletModeAvailable = results[0];
+          _isBoxModeAvailable = results[1];
+          
+          // If current mode is not available, switch to available one
+          if (!_isPalletModeAvailable && _selectedMode == AssignmentMode.pallet) {
+            _selectedMode = AssignmentMode.box;
+          } else if (!_isBoxModeAvailable && _selectedMode == AssignmentMode.box) {
+            _selectedMode = AssignmentMode.pallet;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('inventory_transfer.error_checking_modes'.tr(namedArgs: {'error': e.toString()}));
+      }
     }
   }
 
@@ -270,7 +364,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       } else if (widget.isFreePutAway) {
         // Serbest Mal Kabulden Rafa Kaldırma: 'receiving' statüsündeki ve fiş numarası eşleşenler
         statusesToQuery = ['receiving'];
-        deliveryNoteNumber = _deliveryNoteController.text;
+        deliveryNoteNumber = _selectedDeliveryNote;
       }
       else {
         // Serbest Transfer Modu: Sadece 'available' statüsündeki ürünler gösterilir
@@ -482,25 +576,23 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   _buildModeSelector(),
                   const SizedBox(height: _gap),
                   if (widget.isFreePutAway) ...[
-                    TextFormField(
-                      controller: _deliveryNoteController,
-                      focusNode: _deliveryNoteFocusNode,
-                      decoration: InputDecoration(
-                        labelText: 'inventory_transfer.label_delivery_note_number'.tr(),
-                      ),
-                      onFieldSubmitted: (value) {
-                        if (value.isNotEmpty) {
-                          _loadContainersForLocation();
-                          FocusScope.of(context).requestFocus(_containerFocusNode);
-                        }
-                      },
-                      validator: (value) {
-                        if (widget.isFreePutAway && (value == null || value.isEmpty)) {
-                          return 'inventory_transfer.validator_delivery_note_number'.tr();
-                        }
-                        return null;
-                      },
-                    ),
+                    _isLoadingDeliveryNotes
+                        ? const Center(child: CircularProgressIndicator())
+                        : DropdownButtonFormField<String>(
+                            value: _selectedDeliveryNote,
+                            decoration: InputDecoration(
+                              labelText: 'inventory_transfer.label_delivery_note_number'.tr(),
+                              border: OutlineInputBorder(borderRadius: _borderRadius),
+                            ),
+                            items: _availableDeliveryNotes
+                                .map((note) => DropdownMenuItem<String>(
+                                      value: note,
+                                      child: Text(note),
+                                    ))
+                                .toList(),
+                            onChanged: _handleDeliveryNoteSelection,
+                            validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_delivery_note_number'.tr() : null,
+                          ),
                     const SizedBox(height: _gap),
                   ],
                   if (_selectedMode == AssignmentMode.pallet) ...[
@@ -622,16 +714,26 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ButtonSegment(
               value: AssignmentMode.pallet,
               label: Text('inventory_transfer.mode_pallet'.tr()),
-              icon: const Icon(Icons.pallet)),
+              icon: const Icon(Icons.pallet),
+              enabled: widget.selectedOrder != null ? _isPalletModeAvailable : true),
           ButtonSegment(
               value: AssignmentMode.box,
               label: Text('inventory_transfer.mode_box'.tr()),
-              icon: const Icon(Icons.inventory_2_outlined)),
+              icon: const Icon(Icons.inventory_2_outlined),
+              enabled: widget.selectedOrder != null ? _isBoxModeAvailable : true),
         ],
         selected: {_selectedMode},
         onSelectionChanged: (newSelection) {
+          final newMode = newSelection.first;
+          
+          // Check if the new mode is available for orders
+          if (widget.selectedOrder != null) {
+            if (newMode == AssignmentMode.pallet && !_isPalletModeAvailable) return;
+            if (newMode == AssignmentMode.box && !_isBoxModeAvailable) return;
+          }
+          
           setState(() {
-            _selectedMode = newSelection.first;
+            _selectedMode = newMode;
             _isPalletOpening = false;
             // Keep source location, but reset container and target.
             _resetForm(resetAll: false);
