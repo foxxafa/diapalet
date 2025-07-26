@@ -10,11 +10,11 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transferabl
 abstract class InventoryTransferRepository {
     Future<Map<String, int>> getSourceLocations({bool includeReceivingArea = true});
     Future<Map<String, int>> getTargetLocations({bool excludeReceivingArea = false});
-    
+
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
     Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available']});
     Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available']});
-    
+
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
     Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId});
 

@@ -143,7 +143,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       late Future<Map<String, int>> sourceLocationsFuture;
       late Future<Map<String, int>> targetLocationsFuture;
-      
+
       if (widget.selectedOrder != null) {
         // Put away from order: Kaynak sadece mal kabul alanı (000), hedef tüm raflar
         sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: true);
@@ -157,7 +157,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: false);
         targetLocationsFuture = _repo.getTargetLocations(excludeReceivingArea: true);
       }
-      
+
       final results = await Future.wait([
         sourceLocationsFuture,
         targetLocationsFuture,
@@ -207,18 +207,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Future<void> _checkAvailableModes() async {
     if (widget.selectedOrder == null) return;
-    
+
     try {
       final results = await Future.wait([
         _repo.hasOrderReceivedWithPallets(widget.selectedOrder!.id),
         _repo.hasOrderReceivedWithBoxes(widget.selectedOrder!.id),
       ]);
-      
+
       if (mounted) {
         setState(() {
           _isPalletModeAvailable = results[0];
           _isBoxModeAvailable = results[1];
-          
+
           // If current mode is not available, switch to available one
           if (!_isPalletModeAvailable && _selectedMode == AssignmentMode.pallet) {
             _selectedMode = AssignmentMode.box;
@@ -706,13 +706,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         selected: {_selectedMode},
         onSelectionChanged: (newSelection) {
           final newMode = newSelection.first;
-          
+
           // Check if the new mode is available for orders
           if (widget.selectedOrder != null) {
             if (newMode == AssignmentMode.pallet && !_isPalletModeAvailable) return;
             if (newMode == AssignmentMode.box && !_isBoxModeAvailable) return;
           }
-          
+
           setState(() {
             _selectedMode = newMode;
             _isPalletOpening = false;

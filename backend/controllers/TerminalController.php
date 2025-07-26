@@ -250,7 +250,7 @@ class TerminalController extends Controller
 
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
-            $stockStatus = $siparisId ? 'receiving' : 'available';
+            $stockStatus = 'receiving'; // For all goods receipts, stock should initially be in 'receiving' status.
             $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
         }
 

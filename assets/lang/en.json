@@ -482,6 +482,11 @@
     "supplier": "Supplier",
     "order_info": "Order: {poId} | Date: {date}"
   },
+  "delivery_note_selection": {
+    "title": "Select Delivery Note for Put-away",
+    "search_hint": "Search by Delivery Note...",
+    "no_results": "No receipts found for putaway."
+  },
   "order_transfer": {
     "title": "Put-away Operation",
     "order_title": "ORDER",
@@ -616,7 +621,6 @@
       "file_saved": "PDF saved to Downloads folder",
       "file_saved_to_downloads": "File saved to {path} folder.",
       "file_save_failed": "Failed to save file.",
-      "preview": "Preview",
       "please_select_folder": "Please select a folder to save"
     },
     "share_dialog": {

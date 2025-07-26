@@ -28,11 +28,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final maps = await db.query('shelfs', where: 'is_active = 1');
     final result = <String, int>{};
-    
+
     if (includeReceivingArea) {
       result['000'] = 0; // Goods receiving area
     }
-    
+
     for (var map in maps) {
       result[map['name'] as String] = map['id'] as int;
     }
@@ -44,11 +44,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final maps = await db.query('shelfs', where: 'is_active = 1');
     final result = <String, int>{};
-    
+
     if (!excludeReceivingArea) {
       result['000'] = 0; // Goods receiving area
     }
-    
+
     for (var map in maps) {
       result[map['name'] as String] = map['id'] as int;
     }
@@ -757,19 +757,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<String>> getFreeReceiptDeliveryNotes() async {
     final db = await dbHelper.database;
-    
+
     final query = '''
       SELECT DISTINCT gr.delivery_note_number
       FROM goods_receipts gr
       JOIN inventory_stock s ON gr.goods_receipt_id = s.goods_receipt_id
-      WHERE gr.siparis_id IS NULL 
-        AND gr.delivery_note_number IS NOT NULL 
+      WHERE gr.siparis_id IS NULL
+        AND gr.delivery_note_number IS NOT NULL
         AND gr.delivery_note_number != ''
         AND s.stock_status = 'receiving'
         AND s.quantity > 0
       ORDER BY gr.delivery_note_number
     ''';
-    
+
     final maps = await db.rawQuery(query);
     return maps.map((map) => map['delivery_note_number'] as String).toList();
   }
@@ -777,17 +777,17 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<bool> hasOrderReceivedWithPallets(int orderId) async {
     final db = await dbHelper.database;
-    
+
     final query = '''
       SELECT COUNT(*) as count
       FROM inventory_stock s
       JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
-      WHERE gr.siparis_id = ? 
+      WHERE gr.siparis_id = ?
         AND s.stock_status = 'receiving'
         AND s.pallet_barcode IS NOT NULL
         AND s.quantity > 0
     ''';
-    
+
     final result = await db.rawQuery(query, [orderId]);
     return (result.first['count'] as int) > 0;
   }
@@ -795,17 +795,17 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<bool> hasOrderReceivedWithBoxes(int orderId) async {
     final db = await dbHelper.database;
-    
+
     final query = '''
       SELECT COUNT(*) as count
       FROM inventory_stock s
       JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
-      WHERE gr.siparis_id = ? 
+      WHERE gr.siparis_id = ?
         AND s.stock_status = 'receiving'
         AND s.pallet_barcode IS NULL
         AND s.quantity > 0
     ''';
-    
+
     final result = await db.rawQuery(query, [orderId]);
     return (result.first['count'] as int) > 0;
   }
