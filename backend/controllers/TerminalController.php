@@ -677,46 +677,6 @@ class TerminalController extends Controller
             // DEBUG: Kaç inventory stock kaydı bulundu?
             Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
             foreach ($data['inventory_stock'] as $stock) {
-            // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
-            // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
-            $locationIds = array_column($data['shelfs'], 'id');
-
-            $stockQuery = (new Query())->from('inventory_stock');
-
-            $stockConditions = ['or'];
-
-            // Condition 1: Stock is in one of the warehouse's shelves
-            if (!empty($locationIds)) {
-                $stockConditions[] = ['in', 'location_id', $locationIds];
-            }
-
-            // Condition 2: Stock is in the receiving area (location_id is NULL) AND belongs to one of the warehouse's receipts
-            $allReceiptIdsForWarehouse = (new Query())
-                ->select('id')
-                ->from('goods_receipts')
-                ->where(['warehouse_id' => $warehouseId])
-                ->column();
-
-            if (!empty($allReceiptIdsForWarehouse)) {
-                $stockConditions[] = [
-                    'and',
-                    ['is', 'location_id', new \yii\db\Expression('NULL')],
-                    ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
-                ];
-            }
-
-            if (count($stockConditions) > 1) {
-                $stockQuery->where($stockConditions);
-            } else {
-                // Eğer depo için hiç raf veya mal kabul yoksa, hiçbir stok kaydı getirme
-                $stockQuery->where('1=0');
-            }
-
-            $data['inventory_stock'] = $stockQuery->all();
-
-            // DEBUG: Kaç inventory stock kaydı bulundu?
-            Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
-            foreach ($data['inventory_stock'] as $stock) {
                 Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
             }
 
