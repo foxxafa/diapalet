@@ -572,12 +572,18 @@ class TerminalController extends Controller
             $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
             $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
+            // DÜZELTME: Warehouse ID'den Branch ID'yi bulup ona göre siparişleri getir
+            $branchId = (new Query())->select('branch_id')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+            if (!$branchId) {
+                throw new \Exception("Warehouse ID $warehouseId için branch bulunamadı.");
+            }
+            
             // Sadece status değeri 3'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $warehouseId])->andWhere(['<', 'status', 3]);
+            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $branchId])->andWhere(['<', 'status', 3]);
             $data['satin_alma_siparis_fis'] = $poQuery->all();
 
             // DEBUG: Kaç sipariş bulundu?
-            Yii::info("Warehouse $warehouseId için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
+            Yii::info("Warehouse $warehouseId (Branch $branchId) için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
             foreach ($data['satin_alma_siparis_fis'] as $order) {
                 Yii::info("Sipariş ID: {$order['id']}, Status: {$order['status']}, PO ID: {$order['po_id']}", __METHOD__);
             }
@@ -633,15 +639,15 @@ class TerminalController extends Controller
             }
 
             // GÜNCELLEME: İlgili depoyla ilişkili mal kabullerini de indir.
-            $warehouseBranchId = (new Query())->select('branch_id')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-            if ($warehouseBranchId) {
+            // $branchId zaten yukarıda hesaplandı
+            if ($branchId) {
                 $relatedReceiptsQuery = (new Query())
                     ->from('goods_receipts gr')
                     ->join('LEFT JOIN', 'satin_alma_siparis_fis sasf', 'gr.siparis_id = sasf.id')
-                    ->where(['sasf.branch_id' => $warehouseBranchId])
+                    ->where(['sasf.branch_id' => $branchId])
                     ->orWhere(['is', 'gr.siparis_id', new \yii\db\Expression('NULL')]); // Serbest kabuller için
 
-                $relatedReceiptIds = $relatedReceiptsQuery->select('gr.id')->column();
+                $relatedReceiptIds = $relatedReceiptsQuery->select('gr.goods_receipt_id')->column();
                 if (!empty($relatedReceiptIds)) {
                      $stockQuery->orWhere(['in', 'goods_receipt_id', $relatedReceiptIds]);
                 }
