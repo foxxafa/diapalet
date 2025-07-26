@@ -693,22 +693,36 @@ class TerminalController extends Controller
             throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
         } */
 
-        Yii::info("DevReset başlatılıyor...", __METHOD__);
-
-        $db = Yii::$app->db;
-        $transaction = $db->beginTransaction();
-
         try {
-            // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
-            // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
-            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
-            Yii::info("SQL file path: $sqlFile", __METHOD__);
+            Yii::info("DevReset başlatılıyor...", __METHOD__);
+
+            $db = Yii::$app->db;
             
-            if (!file_exists($sqlFile)) {
-                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
+            // Transaction başlatmadan önce basit bir test
+            try {
+                $db->createCommand('SELECT 1')->queryScalar();
+                Yii::info("Database bağlantısı OK", __METHOD__);
+            } catch (\Exception $e) {
+                Yii::error("Database bağlantı hatası: " . $e->getMessage(), __METHOD__);
+                return $this->asJson([
+                    'status' => 'error',
+                    'message' => 'Veritabanı bağlantısı kurulamadı: ' . $e->getMessage()
+                ]);
             }
 
-            Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
+            $transaction = $db->beginTransaction();
+
+            try {
+                // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
+                // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
+                $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+                Yii::info("SQL file path: $sqlFile", __METHOD__);
+                
+                if (!file_exists($sqlFile)) {
+                    throw new \Exception('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
+                }
+
+                Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
 
             $sqlContent = file_get_contents($sqlFile);
 
@@ -795,33 +809,39 @@ class TerminalController extends Controller
                 'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands SQL komutu çalıştırıldı, $skippedCommands komut atlandı."
             ]);
 
-        } catch (\yii\db\Exception $e) {
-            $transaction->rollBack();
-            Yii::error("Database reset failed: " . $e->getMessage(), __METHOD__);
-            
-            // Detaylı hata bilgisi
-            $errorDetails = [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'sql' => method_exists($e, 'getPrevious') && $e->getPrevious() ? substr($e->getPrevious()->getMessage(), 0, 500) : 'N/A'
-            ];
-            
-            Yii::error("Database reset error details: " . json_encode($errorDetails), __METHOD__);
-            
-            throw new \yii\web\ServerErrorHttpException(
-                'Database reset işlemi başarısız: ' . $e->getMessage(), 
-                0, 
-                $e
-            );
+            } catch (\yii\db\Exception $e) {
+                $transaction->rollBack();
+                Yii::error("Database reset failed: " . $e->getMessage(), __METHOD__);
+                
+                // Detaylı hata bilgisi
+                $errorDetails = [
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'sql' => method_exists($e, 'getPrevious') && $e->getPrevious() ? substr($e->getPrevious()->getMessage(), 0, 500) : 'N/A'
+                ];
+                
+                Yii::error("Database reset error details: " . json_encode($errorDetails), __METHOD__);
+                
+                return $this->asJson([
+                    'status' => 'error',
+                    'message' => 'Database reset işlemi başarısız: ' . $e->getMessage()
+                ]);
+            } catch (\Exception $e) {
+                $transaction->rollBack();
+                Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), __METHOD__);
+                return $this->asJson([
+                    'status' => 'error',
+                    'message' => 'Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage()
+                ]);
+            }
         } catch (\Exception $e) {
-            $transaction->rollBack();
-            Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), __METHOD__);
-            throw new \yii\web\ServerErrorHttpException(
-                'Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage(), 
-                0, 
-                $e
-            );
+            Yii::error("DevReset genel hatası: " . $e->getMessage(), __METHOD__);
+            return $this->asJson([
+                'status' => 'error',
+                'message' => 'İşlem başarısız: ' . $e->getMessage()
+            ]);
+        }
         }
     }
 
