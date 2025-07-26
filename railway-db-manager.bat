@@ -96,7 +96,7 @@ echo STAGING veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
 
 echo.
 echo STAGING veritabani sifirlama islemi tamamlandi.
@@ -133,7 +133,7 @@ echo PRODUCTION veritabani sifirlaniyor...
 echo Lutfen bekleyin...
 echo.
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/dev-reset' -Method POST -ContentType 'application/json' -Body '{}'; Write-Host 'Basarili:' $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
 
 echo.
 echo PRODUCTION veritabani sifirlama islemi tamamlandi.
@@ -155,7 +155,7 @@ echo ==========================================
 echo.
 echo Staging ortami test ediliyor...
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/health-check' -Method GET; Write-Host $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-staging.up.railway.app/api/terminal/health-check' -Method GET; Write-Host 'Staging Baglanti:' $r.Content } catch { Write-Host 'Staging Hata:' $_.Exception.Message }"
 
 echo.
 echo Staging test tamamlandi.
@@ -170,7 +170,7 @@ echo ==========================================
 echo.
 echo Production ortami test ediliyor...
 
-powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/health-check' -Method GET; Write-Host $r.Content } catch { Write-Host 'Hata:' $_.Exception.Message }"
+powershell -Command "try { $r = Invoke-WebRequest -Uri 'https://diapalet-production.up.railway.app/api/terminal/health-check' -Method GET; Write-Host 'Production Baglanti:' $r.Content } catch { Write-Host 'Production Hata:' $_.Exception.Message }"
 
 echo.
 echo Production test tamamlandi.
