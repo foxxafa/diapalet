@@ -17,7 +17,7 @@ class TerminalController extends Controller
         $this->enableCsrfValidation = false;
 
         // DÜZELTME: 'dev-reset' endpoint'i API anahtarı kontrolünden muaf tutuldu.
-        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset' && $action->id !== 'test-sql-file') {
+        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset') {
             $this->checkApiKey();
         }
 
@@ -676,11 +676,6 @@ class TerminalController extends Controller
         return ['status' => 'ok', 'timestamp' => date('c')];
     }
 
-    public function actionTestSqlFile()
-    {
-        return $this->asJson(['status' => 'test', 'timestamp' => date('c')]);
-    }
-
     public function actionSyncShelfs()
     {
         $result = DepoComponent::syncWarehousesAndShelfs();
@@ -698,155 +693,52 @@ class TerminalController extends Controller
             throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
         } */
 
-        try {
-            Yii::info("DevReset başlatılıyor...", __METHOD__);
+        Yii::info("DevReset başlatılıyor...", __METHOD__);
 
-            $db = Yii::$app->db;
+        $db = Yii::$app->db;
+        $transaction = $db->beginTransaction();
+
+        try {
+            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+            Yii::info("SQL file path: $sqlFile", __METHOD__);
             
-            // Transaction başlatmadan önce basit bir test
-            try {
-                $db->createCommand('SELECT 1')->queryScalar();
-                Yii::info("Database bağlantısı OK", __METHOD__);
-            } catch (\Exception $e) {
-                Yii::error("Database bağlantı hatası: " . $e->getMessage(), __METHOD__);
-                return $this->asJson([
-                    'status' => 'error',
-                    'message' => 'Veritabanı bağlantısı kurulamadı: ' . $e->getMessage()
-                ]);
+            if (!file_exists($sqlFile)) {
+                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
             }
 
-            $transaction = $db->beginTransaction();
-
-            try {
-                // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
-                // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
-                $sqlFile = Yii::getAlias('@app/complete_setup.sql');
-                Yii::info("SQL file path: $sqlFile", __METHOD__);
-                
-                if (!file_exists($sqlFile)) {
-                    throw new \Exception('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
-                }
-
-                Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
-
+            Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
             $sqlContent = file_get_contents($sqlFile);
 
-            // SQL'i daha güvenli bir şekilde parse et
-            // Multi-line comments'leri temizle
-            $sqlContent = preg_replace('!/\*.*?\*/!s', ' ', $sqlContent);
-            
-            // Single-line comments'leri temizle (-- ile başlayanlar)
-            $sqlContent = preg_replace('/^\s*--.*$/m', '', $sqlContent);
-            $sqlContent = preg_replace('/\s+--[^\r\n]*/', '', $sqlContent);
-            
-            // Çoklu boşlukları tek boşluğa çevir
-            $sqlContent = preg_replace('/\s+/', ' ', $sqlContent);
-            
-            // Komutları ';' karakterine göre ayır ve temizle
-            $sqlCommands = explode(';', $sqlContent);
+            // Yorumları ve boş satırları temizle
+            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Multi-line comments
+            $sqlContent = preg_replace('/--.*/', '', $sqlContent);      // Single-line comments
+            $sqlContent = preg_replace('/^\s*$/m', '', $sqlContent);    // Boş satırlar
+
+            // Komutları ';' ile ayır
+            $commands = explode(';', $sqlContent);
             $executedCommands = 0;
-            $skippedCommands = 0;
 
-            // SET komutlarını önce çalıştır
-            $setCommands = [
-                'SET character_set_client = utf8mb4',
-                'SET character_set_connection = utf8mb4', 
-                'SET character_set_results = utf8mb4',
-                'SET NAMES utf8mb4',
-                'SET FOREIGN_KEY_CHECKS = 0'
-            ];
-
-            foreach ($setCommands as $setCommand) {
-                try {
-                    $db->createCommand($setCommand)->execute();
-                    $executedCommands++;
-                } catch (\Exception $e) {
-                    Yii::warning("SET command failed: $setCommand - " . $e->getMessage(), __METHOD__);
-                }
-            }
-
-            foreach ($sqlCommands as $command) {
+            foreach ($commands as $command) {
                 $command = trim($command);
-                if (empty($command)) {
-                    continue;
-                }
-                
-                // SET komutlarını tekrar atlayalım (zaten çalıştırdık)
-                if (preg_match('/^\s*SET\s+/i', $command)) {
-                    $skippedCommands++;
-                    continue;
-                }
-                
-                try {
+                if (!empty($command)) {
                     $db->createCommand($command)->execute();
                     $executedCommands++;
-                } catch (\Exception $e) {
-                    $errorMsg = $e->getMessage();
-                    Yii::error("SQL Command failed: " . substr($command, 0, 100) . "...\nError: " . $errorMsg, __METHOD__);
-                    
-                    // Kritik olmayan hataları atla
-                    if (strpos($errorMsg, 'already exists') !== false || 
-                        strpos($errorMsg, 'Unknown column') !== false ||
-                        strpos($errorMsg, "doesn't exist") !== false) {
-                        $skippedCommands++;
-                        continue;
-                    }
-                    
-                    // Kritik hata - işlemi durdur
-                    throw $e;
                 }
-            }
-
-            // Son olarak FK check'leri tekrar aç
-            try {
-                $db->createCommand('SET FOREIGN_KEY_CHECKS = 1')->execute();
-                $executedCommands++;
-            } catch (\Exception $e) {
-                Yii::warning("Failed to re-enable FK checks: " . $e->getMessage(), __METHOD__);
             }
 
             $transaction->commit();
             
-            Yii::info("DevReset başarıyla tamamlandı. Executed: $executedCommands, Skipped: $skippedCommands", __METHOD__);
+            Yii::info("DevReset başarıyla tamamlandı. Çalıştırılan komut sayısı: $executedCommands", __METHOD__);
 
             return $this->asJson([
                 'status' => 'success',
-                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands SQL komutu çalıştırıldı, $skippedCommands komut atlandı."
+                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands komut çalıştırıldı."
             ]);
 
-            } catch (\yii\db\Exception $e) {
-                $transaction->rollBack();
-                Yii::error("Database reset failed: " . $e->getMessage(), __METHOD__);
-                
-                // Detaylı hata bilgisi
-                $errorDetails = [
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                    'sql' => method_exists($e, 'getPrevious') && $e->getPrevious() ? substr($e->getPrevious()->getMessage(), 0, 500) : 'N/A'
-                ];
-                
-                Yii::error("Database reset error details: " . json_encode($errorDetails), __METHOD__);
-                
-                return $this->asJson([
-                    'status' => 'error',
-                    'message' => 'Database reset işlemi başarısız: ' . $e->getMessage()
-                ]);
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                Yii::error("An unexpected error occurred during DB reset: " . $e->getMessage(), __METHOD__);
-                return $this->asJson([
-                    'status' => 'error',
-                    'message' => 'Veritabanı sıfırlanırken beklenmedik bir hata oluştu: ' . $e->getMessage()
-                ]);
-            }
         } catch (\Exception $e) {
-            Yii::error("DevReset genel hatası: " . $e->getMessage(), __METHOD__);
-            return $this->asJson([
-                'status' => 'error',
-                'message' => 'İşlem başarısız: ' . $e->getMessage()
-            ]);
-        }
+            $transaction->rollBack();
+            Yii::error("Database reset işlemi başarısız: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
+            throw new \yii\web\ServerErrorHttpException('Veritabanı sıfırlanırken bir hata oluştu: ' . $e->getMessage(), 0, $e);
         }
     }
 

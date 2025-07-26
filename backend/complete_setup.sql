@@ -1,27 +1,41 @@
 -- COMPLETE DATABASE SETUP FOR DIAPALET
 -- This file combines dump.sql, warehouses_update.sql, and test_data.sql
 
-SET character_set_client = utf8mb4;
-SET character_set_connection = utf8mb4;
-SET character_set_results = utf8mb4;
-SET NAMES utf8mb4;
-SET FOREIGN_KEY_CHECKS = 0;
+SET FOREIGN_KEY_CHECKS=0;
 
+DROP TABLE IF EXISTS `branches`;
 DROP TABLE IF EXISTS `employees`;
 DROP TABLE IF EXISTS `goods_receipt_items`;
 DROP TABLE IF EXISTS `goods_receipts`;
 DROP TABLE IF EXISTS `inventory_stock`;
 DROP TABLE IF EXISTS `inventory_transfers`;
 DROP TABLE IF EXISTS `processed_requests`;
-DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
 DROP TABLE IF EXISTS `satin_alma_siparis_fis`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
 DROP TABLE IF EXISTS `shelfs`;
 DROP TABLE IF EXISTS `urunler`;
 DROP TABLE IF EXISTS `warehouses`;
-DROP TABLE IF EXISTS `branches`;
 DROP TABLE IF EXISTS `wms_putaway_status`;
 
--- Table structure for table `employees`
+CREATE TABLE `branches` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE utf8mb4_turkish_ci NOT NULL,
+  `branch_code` varchar(15) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `post_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `is_active` int DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `address` varchar(255) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `description` text COLLATE utf8mb4_turkish_ci,
+  `latitude` decimal(10,8) DEFAULT NULL,
+  `longitude` decimal(11,8) DEFAULT NULL,
+  `parent_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `ap` char(1) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `_key` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `branch_code` (`branch_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
 CREATE TABLE `employees` (
   `id` int NOT NULL AUTO_INCREMENT,
   `first_name` varchar(100) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
@@ -42,20 +56,6 @@ CREATE TABLE `employees` (
   KEY `branch_id` (`branch_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
--- Table structure for table `goods_receipt_items`
-CREATE TABLE `goods_receipt_items` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `receipt_id` int NOT NULL,
-  `urun_id` int NOT NULL,
-  `quantity_received` decimal(10,2) NOT NULL,
-  `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `expiry_date` date DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `fk_receipt_id` (`receipt_id`),
-  CONSTRAINT `goods_receipt_items_ibfk_1` FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts` (`goods_receipt_id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
-
--- Table structure for table `goods_receipts`
 CREATE TABLE `goods_receipts` (
   `goods_receipt_id` int(11) NOT NULL AUTO_INCREMENT,
   `warehouse_id` int(11) NOT NULL,
@@ -68,13 +68,21 @@ CREATE TABLE `goods_receipts` (
   PRIMARY KEY (`goods_receipt_id`),
   KEY `employee_id` (`employee_id`),
   KEY `siparis_id` (`siparis_id`),
-  KEY `warehouse_id` (`warehouse_id`),
-  CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`),
-  CONSTRAINT `goods_receipts_ibfk_2` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `goods_receipts_ibfk_3` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`)
+  KEY `warehouse_id` (`warehouse_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Table structure for table `inventory_stock`
+CREATE TABLE `goods_receipt_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `receipt_id` int NOT NULL,
+  `urun_id` int NOT NULL,
+  `quantity_received` decimal(10,2) NOT NULL,
+  `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
+  `expiry_date` date DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `fk_receipt_id` (`receipt_id`),
+  CONSTRAINT `goods_receipt_items_ibfk_1` FOREIGN KEY (`receipt_id`) REFERENCES `goods_receipts` (`goods_receipt_id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
 CREATE TABLE `inventory_stock` (
   `id` int NOT NULL AUTO_INCREMENT,
   `urun_id` int NOT NULL,
@@ -90,7 +98,6 @@ CREATE TABLE `inventory_stock` (
   UNIQUE KEY `uk_stock_item` (`urun_id`,`location_id`,`pallet_barcode`,`stock_status`,`siparis_id`,`expiry_date`,`goods_receipt_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
--- Table structure for table `inventory_transfers`
 CREATE TABLE `inventory_transfers` (
   `id` int NOT NULL AUTO_INCREMENT,
   `urun_id` int NOT NULL,
@@ -105,7 +112,6 @@ CREATE TABLE `inventory_transfers` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
--- Table structure for table `processed_requests`
 CREATE TABLE `processed_requests` (
   `idempotency_key` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci NOT NULL,
   `response_code` int NOT NULL,
@@ -114,7 +120,6 @@ CREATE TABLE `processed_requests` (
   PRIMARY KEY (`idempotency_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
--- Table structure for table `satin_alma_siparis_fis`
 CREATE TABLE `satin_alma_siparis_fis` (
   `id` int NOT NULL AUTO_INCREMENT,
   `tarih` date DEFAULT NULL,
@@ -131,7 +136,6 @@ CREATE TABLE `satin_alma_siparis_fis` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
--- Table structure for table `satin_alma_siparis_fis_satir`
 CREATE TABLE `satin_alma_siparis_fis_satir` (
   `id` int NOT NULL AUTO_INCREMENT,
   `siparis_id` int DEFAULT NULL,
@@ -147,11 +151,9 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
   `layer` tinyint DEFAULT NULL,
   `notes` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `siparis_id` (`siparis_id`),
-  CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE
+  KEY `siparis_id` (`siparis_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2108 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
--- Table structure for table `shelfs`
 CREATE TABLE `shelfs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `warehouse_id` int DEFAULT NULL,
@@ -162,7 +164,6 @@ CREATE TABLE `shelfs` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Table structure for table `urunler`
 CREATE TABLE `urunler` (
   `UrunId` int NOT NULL AUTO_INCREMENT,
   `StokKodu` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
@@ -228,7 +229,6 @@ CREATE TABLE `urunler` (
   UNIQUE KEY `StokKodu_UNIQUE` (`StokKodu`)
 ) ENGINE=InnoDB AUTO_INCREMENT=210814 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
--- Table structure for table `warehouses`
 CREATE TABLE `warehouses` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
@@ -240,27 +240,6 @@ CREATE TABLE `warehouses` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Table structure for table `branches`
-CREATE TABLE `branches` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) COLLATE utf8mb4_turkish_ci NOT NULL,
-  `branch_code` varchar(15) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `post_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `is_active` int DEFAULT '1',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `address` varchar(255) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `description` text COLLATE utf8mb4_turkish_ci,
-  `latitude` decimal(10,8) DEFAULT NULL,
-  `longitude` decimal(11,8) DEFAULT NULL,
-  `parent_code` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `ap` char(1) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `_key` varchar(10) COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `branch_code` (`branch_code`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
-
--- Table structure for table `wms_putaway_status`
 CREATE TABLE `wms_putaway_status` (
   `id` int NOT NULL AUTO_INCREMENT,
   `satinalmasiparisfissatir_id` int DEFAULT NULL,
@@ -301,8 +280,8 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 (7, 'SKYBLUE','SKY BLUE', '5000143975956', 1);
 
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
-(101, '2025-06-22', 'PO-25B001', 0, 1), -- Depo 1'in (branch_id=1) siparişi
-(102, '2025-06-23', 'PO-25B002', 0, 1), -- Depo 1'in (branch_id=1) siparişi
+(101, '2025-06-22', 'PO-25B001', 0, 1),
+(102, '2025-06-23', 'PO-25B002', 0, 1),
 (201, '2025-06-22', 'PO-25I001', 0, 2),
 (203, '2025-06-22', 'PO-25I00S', 0, 1);
 
@@ -315,4 +294,12 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 (6, 203, 6, 75.00, 'BOX'),
 (7, 203, 7, 95.00, 'BOX');
 
-SET FOREIGN_KEY_CHECKS = 1;
+ALTER TABLE `goods_receipts`
+ADD CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`),
+ADD CONSTRAINT `goods_receipts_ibfk_2` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
+ADD CONSTRAINT `goods_receipts_ibfk_3` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`);
+
+ALTER TABLE `satin_alma_siparis_fis_satir`
+ADD CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE;
+
+SET FOREIGN_KEY_CHECKS=1;

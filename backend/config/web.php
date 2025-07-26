@@ -55,7 +55,6 @@ $config = [
                 'POST api/terminal/sync-shelfs' => 'terminal/sync-shelfs',
                 'POST api/terminal/dev-reset' => 'terminal/dev-reset',
                 'GET api/terminal/health-check' => 'terminal/health-check',
-                'GET api/terminal/test-sql-file' => 'terminal/test-sql-file',
             ],
         ],
     ],
@@ -79,4 +78,4 @@ if (YII_ENV_DEV) {
     ];
 }
 
-return $config; 
+return $config;
