@@ -693,6 +693,8 @@ class TerminalController extends Controller
             throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
         } */
 
+        Yii::info("DevReset başlatılıyor...", __METHOD__);
+
         $db = Yii::$app->db;
         $transaction = $db->beginTransaction();
 
@@ -700,50 +702,33 @@ class TerminalController extends Controller
             // DÜZELTME: SQL dosyasını parçalara ayırıp komut komut çalıştırma.
             // Bu, yorum satırları ve çoklu ifadelerle ilgili sorunları çözer.
             $sqlFile = Yii::getAlias('@app/complete_setup.sql');
+            Yii::info("SQL file path: $sqlFile", __METHOD__);
+            
             if (!file_exists($sqlFile)) {
                 throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
             }
 
+            Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
+
             $sqlContent = file_get_contents($sqlFile);
 
             // SQL'i daha güvenli bir şekilde parse et
-            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Remove multi-line comments  
-            $sqlContent = preg_replace('/^\s*--.*$/m', '', $sqlContent); // Remove single-line comments that start at beginning of line
-            $sqlContent = preg_replace('/\s+--.*$/', '', $sqlContent);   // Remove inline comments
+            // Multi-line comments'leri temizle
+            $sqlContent = preg_replace('!/\*.*?\*/!s', ' ', $sqlContent);
             
-            // Boş satırları temizle
-            $lines = explode("\n", $sqlContent);
-            $cleanLines = [];
-            foreach($lines as $line) {
-                $line = trim($line);
-                if (!empty($line)) {
-                    $cleanLines[] = $line;
-                }
-            }
-            $sqlContent = implode("\n", $cleanLines);
-
+            // Single-line comments'leri temizle (-- ile başlayanlar)
+            $sqlContent = preg_replace('/^\s*--.*$/m', '', $sqlContent);
+            $sqlContent = preg_replace('/\s+--[^\r\n]*/', '', $sqlContent);
+            
+            // Çoklu boşlukları tek boşluğa çevir
+            $sqlContent = preg_replace('/\s+/', ' ', $sqlContent);
+            
             // Komutları ';' karakterine göre ayır ve temizle
             $sqlCommands = explode(';', $sqlContent);
             $executedCommands = 0;
+            $skippedCommands = 0;
 
-            foreach ($sqlCommands as $command) {
-                $command = trim($command);
-                if (!empty($command) && !preg_match('/^\s*(SET|DELIMITER)/i', $command)) {
-                    try {
-                        $db->createCommand($command)->execute();
-                        $executedCommands++;
-                    } catch (\Exception $e) {
-                        Yii::error("SQL Command failed: $command\nError: " . $e->getMessage(), __METHOD__);
-                        // Kritik olmayan hataları atla, devam et
-                        if (strpos($e->getMessage(), 'already exists') === false && 
-                            strpos($e->getMessage(), 'Unknown column') === false) {
-                            throw $e;
-                        }
-                    }
-                }
-            }
-
-            // SET komutlarını ayrı olarak çalıştır
+            // SET komutlarını önce çalıştır
             $setCommands = [
                 'SET character_set_client = utf8mb4',
                 'SET character_set_connection = utf8mb4', 
@@ -755,19 +740,59 @@ class TerminalController extends Controller
             foreach ($setCommands as $setCommand) {
                 try {
                     $db->createCommand($setCommand)->execute();
+                    $executedCommands++;
                 } catch (\Exception $e) {
                     Yii::warning("SET command failed: $setCommand - " . $e->getMessage(), __METHOD__);
                 }
             }
 
+            foreach ($sqlCommands as $command) {
+                $command = trim($command);
+                if (empty($command)) {
+                    continue;
+                }
+                
+                // SET komutlarını tekrar atlayalım (zaten çalıştırdık)
+                if (preg_match('/^\s*SET\s+/i', $command)) {
+                    $skippedCommands++;
+                    continue;
+                }
+                
+                try {
+                    $db->createCommand($command)->execute();
+                    $executedCommands++;
+                } catch (\Exception $e) {
+                    $errorMsg = $e->getMessage();
+                    Yii::error("SQL Command failed: " . substr($command, 0, 100) . "...\nError: " . $errorMsg, __METHOD__);
+                    
+                    // Kritik olmayan hataları atla
+                    if (strpos($errorMsg, 'already exists') !== false || 
+                        strpos($errorMsg, 'Unknown column') !== false ||
+                        strpos($errorMsg, "doesn't exist") !== false) {
+                        $skippedCommands++;
+                        continue;
+                    }
+                    
+                    // Kritik hata - işlemi durdur
+                    throw $e;
+                }
+            }
+
             // Son olarak FK check'leri tekrar aç
-            $db->createCommand('SET FOREIGN_KEY_CHECKS = 1')->execute();
+            try {
+                $db->createCommand('SET FOREIGN_KEY_CHECKS = 1')->execute();
+                $executedCommands++;
+            } catch (\Exception $e) {
+                Yii::warning("Failed to re-enable FK checks: " . $e->getMessage(), __METHOD__);
+            }
 
             $transaction->commit();
+            
+            Yii::info("DevReset başarıyla tamamlandı. Executed: $executedCommands, Skipped: $skippedCommands", __METHOD__);
 
             return $this->asJson([
                 'status' => 'success',
-                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands SQL komutu çalıştırıldı."
+                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands SQL komutu çalıştırıldı, $skippedCommands komut atlandı."
             ]);
 
         } catch (\yii\db\Exception $e) {

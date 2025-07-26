@@ -1,21 +1,27 @@
 -- COMPLETE DATABASE SETUP FOR DIAPALET
 -- This file combines dump.sql, warehouses_update.sql, and test_data.sql
 
--- Set character encoding
 SET character_set_client = utf8mb4;
 SET character_set_connection = utf8mb4;
 SET character_set_results = utf8mb4;
 SET NAMES utf8mb4;
-
--- Disable foreign key checks temporarily
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ================================================
--- PART 1: DATABASE SCHEMA (from dump.sql)
--- ================================================
+DROP TABLE IF EXISTS `employees`;
+DROP TABLE IF EXISTS `goods_receipt_items`;
+DROP TABLE IF EXISTS `goods_receipts`;
+DROP TABLE IF EXISTS `inventory_stock`;
+DROP TABLE IF EXISTS `inventory_transfers`;
+DROP TABLE IF EXISTS `processed_requests`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
+DROP TABLE IF EXISTS `satin_alma_siparis_fis`;
+DROP TABLE IF EXISTS `shelfs`;
+DROP TABLE IF EXISTS `urunler`;
+DROP TABLE IF EXISTS `warehouses`;
+DROP TABLE IF EXISTS `branches`;
+DROP TABLE IF EXISTS `wms_putaway_status`;
 
 -- Table structure for table `employees`
-DROP TABLE IF EXISTS `employees`;
 CREATE TABLE `employees` (
   `id` int NOT NULL AUTO_INCREMENT,
   `first_name` varchar(100) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
@@ -37,7 +43,6 @@ CREATE TABLE `employees` (
 ) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 -- Table structure for table `goods_receipt_items`
-DROP TABLE IF EXISTS `goods_receipt_items`;
 CREATE TABLE `goods_receipt_items` (
   `id` int NOT NULL AUTO_INCREMENT,
   `receipt_id` int NOT NULL,
@@ -51,7 +56,6 @@ CREATE TABLE `goods_receipt_items` (
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `goods_receipts`
-DROP TABLE IF EXISTS `goods_receipts`;
 CREATE TABLE `goods_receipts` (
   `goods_receipt_id` int(11) NOT NULL AUTO_INCREMENT,
   `warehouse_id` int(11) NOT NULL,
@@ -71,7 +75,6 @@ CREATE TABLE `goods_receipts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Table structure for table `inventory_stock`
-DROP TABLE IF EXISTS `inventory_stock`;
 CREATE TABLE `inventory_stock` (
   `id` int NOT NULL AUTO_INCREMENT,
   `urun_id` int NOT NULL,
@@ -88,7 +91,6 @@ CREATE TABLE `inventory_stock` (
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `inventory_transfers`
-DROP TABLE IF EXISTS `inventory_transfers`;
 CREATE TABLE `inventory_transfers` (
   `id` int NOT NULL AUTO_INCREMENT,
   `urun_id` int NOT NULL,
@@ -104,7 +106,6 @@ CREATE TABLE `inventory_transfers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `processed_requests`
-DROP TABLE IF EXISTS `processed_requests`;
 CREATE TABLE `processed_requests` (
   `idempotency_key` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci NOT NULL,
   `response_code` int NOT NULL,
@@ -114,7 +115,6 @@ CREATE TABLE `processed_requests` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `satin_alma_siparis_fis`
-DROP TABLE IF EXISTS `satin_alma_siparis_fis`;
 CREATE TABLE `satin_alma_siparis_fis` (
   `id` int NOT NULL AUTO_INCREMENT,
   `tarih` date DEFAULT NULL,
@@ -132,7 +132,6 @@ CREATE TABLE `satin_alma_siparis_fis` (
 ) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 -- Table structure for table `satin_alma_siparis_fis_satir`
-DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
 CREATE TABLE `satin_alma_siparis_fis_satir` (
   `id` int NOT NULL AUTO_INCREMENT,
   `siparis_id` int DEFAULT NULL,
@@ -153,18 +152,17 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
 ) ENGINE=InnoDB AUTO_INCREMENT=2108 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 -- Table structure for table `shelfs`
-DROP TABLE IF EXISTS `shelfs`;
 CREATE TABLE `shelfs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `warehouse_id` int DEFAULT NULL,
   `name` varchar(20) DEFAULT NULL,
   `code` varchar(20) DEFAULT NULL,
+  `dia_key` VARCHAR(20) NULL,
   `is_active` int DEFAULT '1',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- Table structure for table `urunler`
-DROP TABLE IF EXISTS `urunler`;
 CREATE TABLE `urunler` (
   `UrunId` int NOT NULL AUTO_INCREMENT,
   `StokKodu` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
@@ -231,7 +229,6 @@ CREATE TABLE `urunler` (
 ) ENGINE=InnoDB AUTO_INCREMENT=210814 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 -- Table structure for table `warehouses`
-DROP TABLE IF EXISTS `warehouses`;
 CREATE TABLE `warehouses` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
@@ -244,7 +241,6 @@ CREATE TABLE `warehouses` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- Table structure for table `branches`
-DROP TABLE IF EXISTS `branches`;
 CREATE TABLE `branches` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) COLLATE utf8mb4_turkish_ci NOT NULL,
@@ -265,7 +261,6 @@ CREATE TABLE `branches` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 -- Table structure for table `wms_putaway_status`
-DROP TABLE IF EXISTS `wms_putaway_status`;
 CREATE TABLE `wms_putaway_status` (
   `id` int NOT NULL AUTO_INCREMENT,
   `satinalmasiparisfissatir_id` int DEFAULT NULL,
@@ -276,42 +271,26 @@ CREATE TABLE `wms_putaway_status` (
   UNIQUE KEY `uk_wms_putaway_status_line_id` (`satinalmasiparisfissatir_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- ================================================
--- PART 2: WAREHOUSE UPDATES (from warehouses_update.sql)
--- ================================================
-
--- Add dia_key column to shelfs table
-ALTER TABLE `shelfs` ADD COLUMN `dia_key` VARCHAR(20) NULL AFTER `code`;
-
--- ================================================
--- PART 3: TEST DATA (from test_data.sql)
--- ================================================
-
--- 1. Branches Ekle
+-- Test Data
 INSERT INTO `branches` (`id`, `name`, `branch_code`, `address`) VALUES
 (1, 'London Central', 'LON-C', '123 Oxford Street, London'),
 (2, 'Manchester North', 'MAN-N', '456 Deansgate, Manchester');
 
--- 2. Depoları Güncelle (branch_id ile)
 INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `branch_id`) VALUES
 (1, 'SOUTHALL WAREHOUSE', 'WHS-SLL', 1),
-(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 2)
-ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `warehouse_code`=VALUES(`warehouse_code`), `branch_id`=VALUES(`branch_id`);
+(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 2);
 
--- 3. Rafları ekle
 INSERT INTO `shelfs` (`warehouse_id`, `name`, `code`, `is_active`) VALUES
 (1, '10A21', '10A21', 1),
 (1, '10A22', '10A22', 1),
 (1, '10B21', '10B21', 1),
 (2, '10B22', '10B22', 1);
 
--- 4. Çalışanları ekle (warehouse_id ile depolara atanır)
 INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `branch_id`) VALUES
 (1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 1),
 (2, 'test', 'test', 'test', '123', 1, 1),
 (3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 2);
 
--- 5. Ürünleri ekle
 INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VALUES
 (1, 'KOL-001', 'Kola 2.5 LT', '8690001123456', 1),
 (2, 'SUT-001', 'Sut 1 LT', '8690002123457', 1),
@@ -321,14 +300,12 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 (6, 'SPRKSB','SUPERKINGS SKY BLUE', '5000143997248', 1),
 (7, 'SKYBLUE','SKY BLUE', '5000143975956', 1);
 
--- 6. Satın Alma Siparişlerini ekle
 INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
 (101, '2025-06-22', 'PO-25B001', 0, 1), -- Depo 1'in (branch_id=1) siparişi
 (102, '2025-06-23', 'PO-25B002', 0, 1), -- Depo 1'in (branch_id=1) siparişi
-(201, '2025-06-22', 'PO-25I001', 0, 2), -- Depo 2'nin (branch_id=2) siparişi
-(203, '2025-06-22', 'PO-25I00S', 0, 1); -- Depo 1'in (branch_id=1) siparişi
+(201, '2025-06-22', 'PO-25I001', 0, 2),
+(203, '2025-06-22', 'PO-25I00S', 0, 1);
 
--- 7. Sipariş Satırlarını ekle
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
 (1, 101, 1, 50.00, 'BOX'),
 (2, 101, 2, 100.00, 'BOX'),
@@ -338,6 +315,4 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 (6, 203, 6, 75.00, 'BOX'),
 (7, 203, 7, 95.00, 'BOX');
 
-
--- Re-enable foreign key checks
 SET FOREIGN_KEY_CHECKS = 1;
