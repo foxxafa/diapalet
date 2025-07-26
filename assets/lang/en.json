@@ -400,7 +400,7 @@
     "positive_number": "Please enter a positive number"
   },
   "inventory_transfer": {
-    "title": "Shelf to Shelf Transfer",
+    "title": "Putaway Operation",
     "label_delivery_note_number": "Delivery Note Number",
     "validator_delivery_note_number": "Please enter delivery note number.",
     "mode_pallet": "Pallet",
