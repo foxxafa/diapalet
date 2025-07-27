@@ -320,7 +320,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _resetContainerAndProducts();
     });
     try {
-      final repo = _repo as dynamic; // Cast to access helper methods
+      final repo = _repo;
       final bool isReceivingArea = locationId == 0;
 
       List<String> statusesToQuery;
@@ -339,12 +339,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         statusesToQuery = ['available'];
       }
 
-      print('DEBUG: Loading containers for location $locationId, isReceivingArea: $isReceivingArea');
-      print('DEBUG: statusesToQuery: $statusesToQuery');
-      print('DEBUG: deliveryNoteNumber: $deliveryNoteNumber');
-      print('DEBUG: widget.isFreePutAway: ${widget.isFreePutAway}');
-      print('DEBUG: _selectedDeliveryNote: $_selectedDeliveryNote');
-
       if (_selectedMode == AssignmentMode.pallet) {
         _availableContainers = await repo.getPalletIdsAtLocation(
           isReceivingArea ? null : locationId,
@@ -359,10 +353,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         );
       }
 
-      print('DEBUG: Found ${_availableContainers.length} containers');
-      if (_availableContainers.isNotEmpty) {
-        print('DEBUG: First few containers: ${_availableContainers.take(3).toList()}');
-      }
     } catch (e) {
       if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
     } finally {
@@ -388,7 +378,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     try {
       List<ProductItem> contents = [];
-      final stockStatus = widget.selectedOrder != null ? 'receiving' : 'available';
+      // FIX: The stock status should be 'receiving' for ANY put-away operation
+      // (both order-based and free receipt based).
+      final stockStatus = (widget.selectedOrder != null || widget.isFreePutAway)
+          ? 'receiving'
+          : 'available';
 
       if (_selectedMode == AssignmentMode.pallet && container is String) {
         contents = await _repo.getPalletContents(
@@ -464,13 +458,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final sourceId = _availableSourceLocations[_selectedSourceLocationName!];
     final targetId = _availableTargetLocations[_selectedTargetLocationName!];
 
-    if (sourceId == null || targetId == null || employeeId == null) {
+    if ((widget.selectedOrder == null && !widget.isFreePutAway && sourceId == null) || targetId == null || employeeId == null) {
       _showErrorSnackBar('inventory_transfer.error_location_id_not_found'.tr());
       return;
     }
 
     setState(() => _isSaving = true);
-    // Önce lokal kaydı dene
     try {
       final header = TransferOperationHeader(
         employeeId: employeeId,
@@ -585,7 +578,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     ),
                     const SizedBox(height: _gap),
                   ],
-                  if (_selectedMode == AssignmentMode.pallet) ...[
+                  // FIX: Hide "Break Pallet" switch for free put-away operations.
+                  if (_selectedMode == AssignmentMode.pallet && !widget.isFreePutAway) ...[
                     _buildPalletOpeningSwitch(),
                     const SizedBox(height: _gap),
                   ],
@@ -599,7 +593,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     onItemSelected: _handleSourceSelection,
                     filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                     validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                    enabled: !widget.isFreePutAway, // Disable source location selection for free put-away
+                    enabled: !(widget.selectedOrder != null || widget.isFreePutAway), // Disable for all put-away types
                   ),
                   const SizedBox(height: _gap),
                   _buildHybridDropdownWithQr<dynamic>(

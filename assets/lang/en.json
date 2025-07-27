@@ -347,7 +347,18 @@
       "full_sync": "Force Full Sync",
       "reset_confirm_title": "Confirm Reset",
       "reset_confirm_body": "This will delete all local data and operations. This cannot be undone. Are you sure?",
-      "reset_success": "Local database has been cleared."
+      "reset_success": "Local database has been cleared.",
+      "reset_all_data_title": "Reset All Data?",
+      "reset_all_data_confirm": "This will delete all local data and operations. This cannot be undone. Are you sure?",
+      "reset_all_data_yes": "Yes, Reset",
+      "reset_all_data_no": "No, Keep",
+      "server_reset_progress": "Resetting server database...",
+      "server_reset_error_title": "Server Reset Error",
+      "server_reset_error_message": "An error occurred while resetting the server:\n\n{error}",
+      "local_reset_progress": "Deleting local database and logging out...",
+      "local_reset_error": "Error occurred while resetting local database: {error}",
+      "local_reset_confirm_message": "Do you want to delete the local data as well?",
+      "local_reset_confirm_yes": "Yes, Delete Local Data"
     },
     "error_details": "Error Details",
     "details_title": "Operation Details",
@@ -358,7 +369,8 @@
       "putaway_operation": "Put-away Operation",
       "shelf_transfer": "Shelf to Shelf Transfer",
       "pallet_transfer": "Pallet Transfer",
-      "box_transfer": "Box Transfer"
+      "box_transfer": "Box Transfer",
+      "stock_transfer": "Stock Transfer"
     },
     "operation_labels": {
       "order": "Order",
@@ -445,7 +457,8 @@
     "transfer_cart_title": "Transfer Cart ({count} items)",
     "button_save_cart": "Confirm Transfer ({count})",
     "error_cart_empty": "Transfer cart is empty. Please add items first.",
-    "validation_select_container": "Please select a pallet or product to transfer."
+    "validation_select_container": "Please select a pallet or product to transfer.",
+    "selected_delivery_note": "Selected Delivery Note"
   },
   "options": {
     "receive_by_order": "Receive by Order",
@@ -655,7 +668,106 @@
   "goods_receiving_screen.total_items": "Total Items: {count}",
   "goods_receiving_screen.save_and_continue": "Save & Continue",
   "goods_receiving_screen.save_and_complete": "Save & Complete",
+  "goods_receiving_screen.no_order_selected": "No order selected",
+  "goods_receiving_screen.order_info": "Order Information",
+  "goods_receiving_screen.order_number": "Order Number",
+  "goods_receiving_screen.supplier": "Supplier",
+  "goods_receiving_screen.order_date": "Order Date",
+  "goods_receiving_screen.progress": "Progress",
+  "goods_receiving_screen.validator_delivery_note_required": "Please enter delivery note number.",
+  "goods_receiving_screen.label_delivery_note": "Delivery Note Number",
   "orders.title": "Select Purchase Order",
   "orders.search_hint": "Search by PO number or supplier...",
-  "orders.no_results": "No open purchase orders found."
+  "orders.no_results": "No open purchase orders found.",
+  "order_selection.no_date": "No Date",
+  "order_selection.error_loading": "Error loading orders: {error}",
+  "delivery_note_selection.error_loading": "Error loading delivery notes: {error}",
+  "delivery_note_selection.tap_to_continue": "Tap to continue with this delivery note",
+  "common_labels.edit": "Edit",
+  "common_labels.remove": "Remove",
+  "pending_operations.operation_types.stock_transfer": "Stock Transfer",
+  "admin": {
+    "reset_button": "Reset",
+    "confirm_full_reset_title": "Reset All Data?",
+    "confirm_full_reset_message": "This will delete all local data and operations. This cannot be undone. Are you sure?",
+    "confirm_full_reset_yes": "Yes, Reset",
+    "confirm_full_reset_no": "No, Keep",
+    "server_reset_progress": "Resetting server database...",
+    "server_reset_error_title": "Server Reset Error",
+    "server_reset_error_message": "An error occurred while resetting the server:\n\n{error}",
+    "local_reset_progress": "Deleting local database and logging out...",
+    "local_reset_error": "Error occurred while resetting local database: {error}",
+    "local_reset_confirm_message": "Do you want to delete the local data as well?",
+    "local_reset_confirm_yes": "Yes, Delete Local Data"
+  },
+  "pdf": {
+    "received_items": "Received Items",
+    "headers": {
+      "goods_receipt_report": "Goods Receipt Report",
+      "putaway_operation_report": "Putaway Operation Report",
+      "inventory_transfer_report": "Inventory Transfer Report",
+      "force_close_order_report": "Force Close Order Report"
+    },
+    "sections": {
+      "employee_warehouse_info": "Employee & Warehouse Information",
+      "putaway_information": "Putaway Information",
+      "transfer_information": "Transfer Information",
+      "force_close_order_information": "Force Close Order Information",
+      "order_details": "Order Details",
+      "transferred_items": "Transferred Items"
+    },
+    "fields": {
+      "employee_name": "Employee Name",
+      "warehouse": "Warehouse",
+      "branch": "Branch",
+      "operation_type": "Operation Type",
+      "created_date": "Created Date",
+      "from_location": "From Location",
+      "to_location": "To Location",
+      "purchase_order": "Purchase Order",
+      "container_id": "Container ID",
+      "transfer_mode": "Transfer Mode",
+      "status": "Status",
+      "order_date": "Order Date",
+      "invoice": "Invoice",
+      "notes": "Notes",
+      "barcode": "Barcode",
+      "product_name_code": "Product Name + Code",
+      "quantity": "Quantity",
+      "container": "Container",
+      "total": "TOTAL"
+    },
+    "operation_types": {
+      "putaway_operation": "Putaway Operation",
+      "stock_transfer": "Stock Transfer"
+    },
+    "transfer_modes": {
+      "pallet_transfer": "Pallet Transfer",
+      "box_transfer": "Box Transfer"
+    },
+    "order_statuses": {
+      "new": "New",
+      "in_progress": "In Progress",
+      "partially_received": "Partially Received",
+      "manually_closed": "Manually Closed",
+      "completed": "Completed",
+      "unknown": "Unknown"
+    },
+    "misc": {
+      "unknown_product": "Unknown Product",
+      "please_select_folder": "Please select a folder to save"
+    }
+  },
+  "system": {
+    "user": "System User",
+    "development_tools": "Development Tools",
+    "order_status_closed": "Order Status",
+    "closed_with_remainings": "Closed with remainings"
+  },
+  "ui": {
+    "ok": "OK",
+    "reset": "Reset",
+    "confirm_yes": "Yes, Reset",
+    "confirm_no": "No, Keep"
+  }
 }

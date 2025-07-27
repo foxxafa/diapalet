@@ -118,7 +118,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
       whereClauses.add('gr.delivery_note_number = ?');
       whereArgs.add(deliveryNoteNumber);
-      print('DEBUG: Added delivery note filter: $deliveryNoteNumber');
     }
 
     final query = '''
@@ -135,14 +134,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';
 
-    print('DEBUG: getBoxesAtLocation SQL query: $query');
-    print('DEBUG: getBoxesAtLocation whereArgs: $whereArgs');
-
     final maps = await db.rawQuery(query, whereArgs);
-    print('DEBUG: getBoxesAtLocation returned ${maps.length} results');
-    if (maps.isNotEmpty) {
-      print('DEBUG: First result: ${maps.first}');
-    }
     return maps.map((map) => BoxItem.fromJson(map)).toList();
   }
 
@@ -153,11 +145,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final whereParts = <String>[];
     final whereArgs = <dynamic>[];
 
-    // Palet kodu ile filtrele
     whereParts.add('s.pallet_barcode = ?');
     whereArgs.add(palletBarcode);
 
-    // Lokasyon ile filtrele
     if (locationId == null || locationId == 0) {
       whereParts.add('s.location_id IS NULL');
     } else {
@@ -165,11 +155,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.add(locationId);
     }
 
-    // Stok durumu ile filtrele
     whereParts.add('s.stock_status = ?');
     whereArgs.add(stockStatus);
 
-    // Sipariş ID ile filtrele (eğer verilmişse)
     if (siparisId != null) {
       whereParts.add('s.siparis_id = ?');
       whereArgs.add(siparisId);
@@ -181,7 +169,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         u.Barcode1 as barcode1,
-        s.quantity as currentQuantity
+        s.quantity as currentQuantity,
+        s.expiry_date as expiryDate
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.id
       WHERE ${whereParts.join(' AND ')}
@@ -191,13 +180,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final maps = await db.rawQuery(query, whereArgs);
     debugPrint("Palet '$palletBarcode' içinde ${maps.length} ürün bulundu");
 
-    final result = maps.map((map) => ProductItem(
-      id: map['productId'] as int,
-      name: map['productName'] as String,
-      productCode: map['productCode'] as String,
-      barcode1: map['barcode1'] as String?,
-      currentQuantity: (map['currentQuantity'] as num).toDouble(),
-    )).toList();
+    final result = maps.map((map) => ProductItem.fromJson(map)).toList();
 
     return result;
   }
@@ -216,22 +199,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         final List<Map<String, dynamic>> itemsForJson = [];
 
         for (final item in items) {
-          // 1. Kaynak stoktan düşür
           await _updateStockSmart(
             txn,
             productId: item.productId,
             locationId: sourceLocationId,
             quantityChange: -item.quantity,
             palletId: item.palletId,
-            status: (sourceLocationId == null && header.siparisId != null) ? 'receiving' : 'available',
-            siparisId: (sourceLocationId == null && header.siparisId != null) ? header.siparisId : null,
+            status: (sourceLocationId == null) ? 'receiving' : 'available',
+            siparisId: header.siparisId,
             expiryDateForAddition: item.expiryDate,
           );
 
-          // 2. Hedefteki palet durumunu belirle
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
 
-          // 3. Hedefe ekle
           await _updateStockSmart(
             txn,
             productId: item.productId,
@@ -243,7 +223,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             expiryDateForAddition: item.expiryDate,
           );
 
-          // 4. Transfer işlemini logla
           await txn.insert('inventory_transfers', {
             'urun_id': item.productId,
             'from_location_id': (sourceLocationId == 0) ? null : sourceLocationId,
@@ -255,7 +234,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             'transfer_date': header.transferDate.toIso8601String(),
           });
 
-          // 5. Rafa kaldırma ise wms_putaway_status'u güncelle
           if (sourceLocationId == null && header.siparisId != null) {
             final orderLine = await txn.query(
               'satin_alma_siparis_fis_satir',
@@ -324,13 +302,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    final warehouseId = prefs.getInt('warehouse_id');
+    final branchId = prefs.getInt('branch_id');
 
-    // DÜZELTME: Mal kabulü yapılmış (1) veya manuel kapatılmış (2) siparişler transfer edilebilir.
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status IN (1, 2) AND branch_id = ?',
-      whereArgs: [warehouseId],
+      whereArgs: [branchId],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -341,30 +318,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final isPutaway = orderId != null;
 
-    debugPrint("=== getTransferableContainers ===");
-    debugPrint("locationId: $locationId, orderId: $orderId, isPutaway: $isPutaway");
-
     final List<Map<String, dynamic>> stockMaps;
 
     if (isPutaway) {
-      // Siparişli yerleştirme: Mal kabul alanındaki (location_id IS NULL) ilgili siparişin stoğunu al
       stockMaps = await db.query('inventory_stock', where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
-      debugPrint("Stok kayıtları (sipariş $orderId): ${stockMaps.length}");
     } else {
-      // Serbest Transfer: Sadece 'available' statüsündeki ürünler gösterilir
       if (locationId == null || locationId == 0) {
-        // Mal kabul alanından serbest transfer: Sadece 'available' stokları al
         stockMaps = await db.query('inventory_stock', where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);
-        debugPrint("Stok kayıtları (mal kabul alanı): ${stockMaps.length}");
       } else {
-        // Belirli bir raftan serbest transfer: Sadece 'available' stokları al
         stockMaps = await db.query('inventory_stock', where: 'location_id = ? AND stock_status = ?', whereArgs: [locationId, 'available']);
-        debugPrint("Stok kayıtları (raf $locationId): ${stockMaps.length}");
       }
     }
 
     if (stockMaps.isEmpty) {
-      debugPrint("Hiç stok bulunamadı");
       return [];
     }
 
@@ -372,10 +338,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final productsQuery = await db.query('urunler', where: 'id IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
     final productDetails = {for (var p in productsQuery) p['id'] as int: ProductInfo.fromDbMap(p)};
 
-    // final Map<String, List<TransferableItem>> groupedByContainer = {};
-    // GÜNCELLEME: Aynı ürünü (farklı SKT'lerle) tek kalemde toplamak için yeni bir map.
     final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
-
 
     for (final stock in stockMaps) {
       final productId = stock['urun_id'] as int;
@@ -384,28 +347,21 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       final pallet = stock['pallet_barcode'] as String?;
       final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date']) : null;
-      // Paletsiz ürünler için `urun_id`'yi anahtar olarak kullan.
-      final containerId = pallet ?? 'box_$productId';
+      final containerId = pallet ?? 'box_${productInfo.stockCode}';
 
-      // Gruplama için anahtar: Palet veya Kutu ID'si
       final groupingKey = containerId;
 
-      // Toplama map'ini hazırla
       aggregatedItems.putIfAbsent(groupingKey, () => {});
 
       if (aggregatedItems[groupingKey]!.containsKey(productId)) {
-        // Eğer ürün bu konteynerde zaten varsa, miktarını artır.
         final existingItem = aggregatedItems[groupingKey]![productId]!;
         aggregatedItems[groupingKey]![productId] = TransferableItem(
           product: existingItem.product,
           quantity: existingItem.quantity + (stock['quantity'] as num).toDouble(),
           sourcePalletBarcode: pallet,
-          // Not: SKT'ler farklı olabileceğinden, burada ilk bulunanı koruyoruz.
-          // Arayüzde SKT'ye göre ayırmadığımız için bu kabul edilebilir.
           expiryDate: existingItem.expiryDate,
         );
       } else {
-        // Eğer ürün bu konteynerde ilk kez ekleniyorsa, yeni bir kalem oluştur.
         aggregatedItems[groupingKey]![productId] = TransferableItem(
           product: productInfo,
           quantity: (stock['quantity'] as num).toDouble(),
@@ -415,7 +371,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       }
     }
 
-    // Toplanmış verileri `TransferableContainer` listesine dönüştür.
     final result = aggregatedItems.entries.map((entry) {
       final containerId = entry.key;
       final itemsMap = entry.value;
@@ -427,8 +382,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         items: itemsMap.values.toList(),
       );
     }).toList();
-
-    debugPrint("Sonuç konteyner sayısı: ${result.length}");
 
     return result;
   }
@@ -486,9 +439,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (orderLinesQuery.isEmpty) return;
 
     final putawayStatusQuery = await db.query(
-      'wms_putaway_status',
-      columns: ['satinalmasiparisfissatir_id', 'putaway_quantity'],
-      where: 'satinalmasiparisfissatir_id IN (${orderLinesQuery.map((e) => e['id']).join(',')})'
+        'wms_putaway_status',
+        columns: ['satinalmasiparisfissatir_id', 'putaway_quantity'],
+        where: 'satinalmasiparisfissatir_id IN (${orderLinesQuery.map((e) => e['id']).join(',')})'
     );
     final putawayMap = {for (var e in putawayStatusQuery) e['satinalmasiparisfissatir_id']: (e['putaway_quantity'] as num).toDouble()};
 
@@ -525,7 +478,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final whereParts = <String>[];
     final whereArgs = <dynamic>[];
 
-    // Lokasyon filtresi
     if (locationId == 0) {
       whereParts.add('s.location_id IS NULL');
     } else {
@@ -533,18 +485,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.add(locationId);
     }
 
-    // Stok durumu filtresi
     if (stockStatuses.isNotEmpty) {
       whereParts.add('s.stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
       whereArgs.addAll(stockStatuses);
     }
 
-    // Ürün kodu veya barkod filtresi
     whereParts.add('(u.StokKodu = ? OR u.Barcode1 = ?)');
     whereArgs.add(productCodeOrBarcode);
     whereArgs.add(productCodeOrBarcode);
 
-    // Paletsiz ürünler
     whereParts.add('s.pallet_barcode IS NULL');
 
     final query = '''
@@ -568,98 +517,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return null;
   }
 
-  /// GÜNCELLEME: Bu metod artık kullanılmıyor ve yerini _updateStockSmart'a bıraktı.
-  /*
-  Future<void> _updateStock(
-    DatabaseExecutor txn,
-    int productId,
-    int? locationId,
-    double quantityChange,
-    String? palletId,
-    String status,
-    int? siparisId,
-    DateTime? expiryDate,
-  ) async {
-    final whereParts = <String>[];
-    final whereArgs = <dynamic>[];
-
-    whereParts.add('urun_id = ?');
-    whereArgs.add(productId);
-
-    if (palletId == null) {
-      whereParts.add('pallet_barcode IS NULL');
-    } else {
-      whereParts.add('pallet_barcode = ?');
-      whereArgs.add(palletId);
-    }
-
-    if (locationId == null || locationId == 0) {
-      whereParts.add('location_id IS NULL');
-    } else {
-      whereParts.add('location_id = ?');
-      whereArgs.add(locationId);
-    }
-
-    whereParts.add('stock_status = ?');
-    whereArgs.add(status);
-
-    if (siparisId == null) {
-      whereParts.add('siparis_id IS NULL');
-    } else {
-      whereParts.add('siparis_id = ?');
-      whereArgs.add(siparisId);
-    }
-
-    if (expiryDate == null) {
-      whereParts.add('expiry_date IS NULL');
-    } else {
-      whereParts.add('expiry_date = ?');
-      whereArgs.add(expiryDate.toIso8601String());
-    }
-
-    final existing = await txn.query(
-      'inventory_stock',
-      where: whereParts.join(' AND '),
-      whereArgs: whereArgs,
-      limit: 1,
-    );
-
-    if (existing.isNotEmpty) {
-      final currentQty = (existing.first['quantity'] as num).toDouble();
-      final newQty = currentQty + quantityChange;
-
-      if (newQty > 0.001) {
-        await txn.update(
-          'inventory_stock',
-          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
-      } else {
-        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existing.first['id']]);
-      }
-    } else if (quantityChange > 0) {
-      await txn.insert('inventory_stock', {
-        'urun_id': productId,
-        'location_id': locationId,
-        'quantity': quantityChange,
-        'pallet_barcode': palletId,
-        'stock_status': status,
-        'siparis_id': siparisId,
-        'updated_at': DateTime.now().toIso8601String(),
-        'expiry_date': expiryDate?.toIso8601String(),
-      });
-    } else {
-      debugPrint("ERROR: Kaynakta stok bulunamadı - urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}");
-      throw Exception('Kaynakta stok bulunamadı veya düşülecek miktar yetersiz. Aranan: {urun_id: $productId, location_id: $locationId, status: $status, pallet: $palletId, siparis_id: $siparisId, expiry_date: ${expiryDate?.toIso8601String()}}');
-    }
-  }
-  */
-
-  // ANA GÜNCELLEME: Akıllı Stok Güncelleme Fonksiyonu
-  // Bu fonksiyon, bir ürün için miktar değişikliğini (artırma/azaltma) FIFO'ya
-  // (İlk Giren İlk Çıkar) göre yönetir. Miktar düşüşlerinde en eski son kullanma
-  // tarihli stoktan başlar.
   Future<void> _updateStockSmart(
     DatabaseExecutor txn, {
     required int productId,
@@ -668,8 +525,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required String? palletId,
     required String status,
     required int? siparisId,
-    // Düşürme işlemi için SKT'ye gerek yok, FIFO uygulanacak.
-    // Ekleme işlemi için ise SKT zorunludur.
     DateTime? expiryDateForAddition,
   }) async {
     if (quantityChange == 0) return;
@@ -677,15 +532,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final isDecrement = quantityChange < 0;
 
     if (isDecrement) {
-      // --- Stok Düşürme Mantığı (FIFO) ---
       double remainingToDecrement = quantityChange.abs();
 
-      // İlgili stokları SKT'ye göre (NULL'lar en sona) artan sırada çek.
       final stockEntries = await txn.query(
         'inventory_stock',
         where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL))',
         whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisId, siparisId],
-        orderBy: 'expiry_date ASC', // NULLS LAST by default in SQLite
+        orderBy: 'expiry_date ASC',
       );
 
       if (stockEntries.isEmpty) {
@@ -698,7 +551,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         final currentQty = (stock['quantity'] as num).toDouble();
 
         if (currentQty >= remainingToDecrement) {
-          // Bu stok kalemi yeterli, miktarını azalt ve döngüyü bitir.
           final newQty = currentQty - remainingToDecrement;
           if (newQty > 0.001) {
             await txn.update('inventory_stock', {'quantity': newQty}, where: 'id = ?', whereArgs: [stockId]);
@@ -708,27 +560,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           remainingToDecrement = 0;
           break;
         } else {
-          // Bu stok kalemi yeterli değil, tamamını sil ve kalanı bir sonrakinden düş.
           remainingToDecrement -= currentQty;
           await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stockId]);
         }
       }
 
       if (remainingToDecrement > 0.001) {
-        // Döngü bitti ama hala düşülecek miktar kaldıysa, stok yetersizdir.
         debugPrint("HATA: _updateStockSmart - Yetersiz stok. Kalan: $remainingToDecrement");
         throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
       }
     } else {
-      // --- Stok Ekleme Mantığı ---
-      if (expiryDateForAddition == null) {
-        // Not: SKT'siz ürünler de olabilir, bu yüzden hata fırlatmak yerine null kabul edelim.
-        // throw Exception('Stok ekleme işlemi için son kullanma tarihi (expiryDateForAddition) gereklidir.');
-      }
-
       final expiryDateStr = expiryDateForAddition?.toIso8601String();
 
-      // Tam olarak aynı özelliklere sahip bir stok kalemi var mı kontrol et.
       final existing = await txn.query(
         'inventory_stock',
         where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
@@ -737,7 +580,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       );
 
       if (existing.isNotEmpty) {
-        // Varsa, miktarını artır.
         final currentQty = (existing.first['quantity'] as num).toDouble();
         final newQty = currentQty + quantityChange;
         await txn.update(
@@ -747,7 +589,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           whereArgs: [existing.first['id']],
         );
       } else {
-        // Yoksa, yeni bir stok kalemi oluştur.
         await txn.insert('inventory_stock', {
           'urun_id': productId,
           'location_id': locationId,
@@ -764,30 +605,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<String>> getFreeReceiptDeliveryNotes() async {
-    try {
-      // Önce sunucudan güncel listeyi almaya çalış
-      final warehouseId = await _getWarehouseId();
-      if (warehouseId != null) {
-        final response = await dio.post('/terminal/get-free-receipts-for-putaway',
-          data: {'warehouse_id': warehouseId});
-
-        if (response.statusCode == 200 && response.data['success'] == true) {
-          final receipts = response.data['data'] as List;
-          return receipts
-              .where((r) => r['delivery_note_number'] != null)
-              .map((r) => r['delivery_note_number'] as String)
-              .toSet() // Remove duplicates
-              .toList();
-        }
-      }
-    } catch (e) {
-      debugPrint('API çağrısı başarısız, yerel veritabanından alınıyor: $e');
-    }
-
-    // API başarısız ise yerel veritabanından al
     final db = await dbHelper.database;
 
-    final query = '''
+    const query = '''
       SELECT DISTINCT gr.delivery_note_number
       FROM goods_receipts gr
       JOIN inventory_stock s ON gr.goods_receipt_id = s.goods_receipt_id
@@ -796,23 +616,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         AND gr.delivery_note_number != ''
         AND s.stock_status = 'receiving'
         AND s.quantity > 0
-      ORDER BY gr.delivery_note_number
+      ORDER BY gr.receipt_date DESC
     ''';
 
     final maps = await db.rawQuery(query);
     return maps.map((map) => map['delivery_note_number'] as String).toList();
   }
 
-  Future<int?> _getWarehouseId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('warehouse_id');
-  }
-
   @override
   Future<bool> hasOrderReceivedWithPallets(int orderId) async {
     final db = await dbHelper.database;
 
-    final query = '''
+    const query = '''
       SELECT COUNT(*) as count
       FROM inventory_stock s
       JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
@@ -823,14 +638,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''';
 
     final result = await db.rawQuery(query, [orderId]);
-    return (result.first['count'] as int) > 0;
+    // FIX: Use Sqflite.firstIntValue to safely get the count and prevent type errors.
+    return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 
   @override
   Future<bool> hasOrderReceivedWithBoxes(int orderId) async {
     final db = await dbHelper.database;
 
-    final query = '''
+    const query = '''
       SELECT COUNT(*) as count
       FROM inventory_stock s
       JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
@@ -841,6 +657,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''';
 
     final result = await db.rawQuery(query, [orderId]);
-    return (result.first['count'] as int) > 0;
+    // FIX: Use Sqflite.firstIntValue to safely get the count and prevent type errors.
+    return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 }

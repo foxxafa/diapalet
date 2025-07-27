@@ -12,8 +12,8 @@ abstract class InventoryTransferRepository {
     Future<Map<String, int>> getTargetLocations({bool excludeReceivingArea = false});
 
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
-    Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available']});
-    Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available']});
+    Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
+    Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
 
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
     Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId});
