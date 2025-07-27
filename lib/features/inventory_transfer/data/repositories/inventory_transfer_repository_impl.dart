@@ -118,6 +118,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
       whereClauses.add('gr.delivery_note_number = ?');
       whereArgs.add(deliveryNoteNumber);
+      print('DEBUG: Added delivery note filter: $deliveryNoteNumber');
     }
 
     final query = '''
@@ -134,7 +135,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';
 
+    print('DEBUG: getBoxesAtLocation SQL query: $query');
+    print('DEBUG: getBoxesAtLocation whereArgs: $whereArgs');
+
     final maps = await db.rawQuery(query, whereArgs);
+    print('DEBUG: getBoxesAtLocation returned ${maps.length} results');
+    if (maps.isNotEmpty) {
+      print('DEBUG: First result: ${maps.first}');
+    }
     return maps.map((map) => BoxItem.fromJson(map)).toList();
   }
 
@@ -760,9 +768,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       // Önce sunucudan güncel listeyi almaya çalış
       final warehouseId = await _getWarehouseId();
       if (warehouseId != null) {
-        final response = await dio.post('/terminal/get-free-receipts-for-putaway', 
+        final response = await dio.post('/terminal/get-free-receipts-for-putaway',
           data: {'warehouse_id': warehouseId});
-        
+
         if (response.statusCode == 200 && response.data['success'] == true) {
           final receipts = response.data['data'] as List;
           return receipts

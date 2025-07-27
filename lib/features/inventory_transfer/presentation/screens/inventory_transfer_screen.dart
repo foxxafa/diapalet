@@ -171,9 +171,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (widget.selectedOrder != null || widget.isFreePutAway) {
           _selectedSourceLocationName = '000';
           _sourceLocationController.text = '000';
-          if (!widget.isFreePutAway) {
-            _loadContainersForLocation();
-          }
+          _loadContainersForLocation();
         }
       });
 
@@ -341,6 +339,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         statusesToQuery = ['available'];
       }
 
+      print('DEBUG: Loading containers for location $locationId, isReceivingArea: $isReceivingArea');
+      print('DEBUG: statusesToQuery: $statusesToQuery');
+      print('DEBUG: deliveryNoteNumber: $deliveryNoteNumber');
+      print('DEBUG: widget.isFreePutAway: ${widget.isFreePutAway}');
+      print('DEBUG: _selectedDeliveryNote: $_selectedDeliveryNote');
+
       if (_selectedMode == AssignmentMode.pallet) {
         _availableContainers = await repo.getPalletIdsAtLocation(
           isReceivingArea ? null : locationId,
@@ -353,6 +357,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           stockStatuses: statusesToQuery,
           deliveryNoteNumber: deliveryNoteNumber,
         );
+      }
+
+      print('DEBUG: Found ${_availableContainers.length} containers');
+      if (_availableContainers.isNotEmpty) {
+        print('DEBUG: First few containers: ${_availableContainers.take(3).toList()}');
       }
     } catch (e) {
       if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_containers'.tr(namedArgs: {'error': e.toString()}));
@@ -590,6 +599,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     onItemSelected: _handleSourceSelection,
                     filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
                     validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                    enabled: !widget.isFreePutAway, // Disable source location selection for free put-away
                   ),
                   const SizedBox(height: _gap),
                   _buildHybridDropdownWithQr<dynamic>(
@@ -776,6 +786,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     required void Function(T? item) onItemSelected,
     required bool Function(T item, String query) filterCondition,
     required FormFieldValidator<String>? validator,
+    bool enabled = true,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start, // Hata mesajı için hizalama
@@ -783,13 +794,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         Expanded(
           child: TextFormField(
             readOnly: true,
+            enabled: enabled,
             controller: controller,
             focusNode: focusNode,
             decoration: _inputDecoration(
               label,
               suffixIcon: const Icon(Icons.arrow_drop_down),
             ),
-            onTap: () async {
+            onTap: enabled ? () async {
               FocusScope.of(context).unfocus();
 
               final T? selectedItem = await _showSearchableDropdownDialog<T>(
@@ -801,20 +813,27 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               if (selectedItem != null) {
                 onItemSelected(selectedItem);
               }
-            },
+            } : null,
             validator: validator,
           ),
         ),
         const SizedBox(width: _smallGap),
         SizedBox(
           height: 56, // TextFormField ile aynı yükseklik
-          child: _QrButton(
+          child: enabled ? _QrButton(
             onTap: () async {
               final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
               if (result != null && result.isNotEmpty) {
                 _processScannedData(fieldIdentifier, result);
               }
             },
+          ) : Container(
+            width: 56,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            child: const Icon(Icons.qr_code_scanner, color: Colors.grey),
           ),
         ),
       ],

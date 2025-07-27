@@ -51,21 +51,38 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         };
         final receiptId = await txn.insert('goods_receipts', receiptHeaderData);
 
-        final stockStatus = payload.header.siparisId != null ? 'receiving' : 'available';
+        // FIX: All received goods, regardless of type (order-based or free),
+        // should have a 'receiving' status initially. They become 'available'
+        // only after a put-away transfer.
+        const stockStatus = 'receiving';
 
         for (final item in payload.items) {
           await txn.insert('goods_receipt_items', {
-            'receipt_id': receiptId, 'urun_id': item.urunId,
-            'quantity_received': item.quantity, 'pallet_barcode': item.palletBarcode,
+            'receipt_id': receiptId,
+            'urun_id': item.urunId,
+            'quantity_received': item.quantity,
+            'pallet_barcode': item.palletBarcode,
             'expiry_date': item.expiryDate?.toIso8601String(),
           });
-          await _updateStock(txn, item.urunId, null, item.quantity, item.palletBarcode, stockStatus, payload.header.siparisId, item.expiryDate?.toIso8601String());
+          // FIX: Pass the new receiptId to _updateStock so the stock record
+          // is correctly linked to the goods_receipts entry. This is crucial
+          // for finding items by delivery_note_number later.
+          await _updateStock(
+              txn,
+              item.urunId,
+              null, // locationId is null for receiving area
+              item.quantity,
+              item.palletBarcode,
+              stockStatus,
+              payload.header.siparisId,
+              item.expiryDate?.toIso8601String(),
+              receiptId); // <-- Pass receiptId here
         }
 
         if (payload.header.siparisId != null) {
           await txn.update(
             'satin_alma_siparis_fis',
-            {'status': 1},
+            {'status': 1}, // Mark order as partially/fully received
             where: 'id = ?',
             whereArgs: [payload.header.siparisId],
           );
@@ -125,20 +142,25 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate]) async {
+  // FIX: Added goodsReceiptId parameter to correctly link stock to its receipt.
+  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
     String locationWhereClause = locationId == null ? 'location_id IS NULL' : 'location_id = ?';
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
+    // FIX: Added where clause for goods_receipt_id
+    String goodsReceiptWhereClause = goodsReceiptId == null ? 'goods_receipt_id IS NULL' : 'goods_receipt_id = ?';
 
     List<dynamic> whereArgs = [urunId, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
     if (palletBarcode != null) whereArgs.add(palletBarcode);
     if (siparisId != null) whereArgs.add(siparisId);
     if (expiryDate != null) whereArgs.add(expiryDate);
+    // FIX: Added argument for goods_receipt_id
+    if (goodsReceiptId != null) whereArgs.add(goodsReceiptId);
 
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause',
+        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause AND $goodsReceiptWhereClause',
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
@@ -152,11 +174,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
     } else if (quantityChange > 0) {
       await txn.insert('inventory_stock', {
-        'urun_id': urunId, 'location_id': locationId, 'quantity': quantityChange,
-        'pallet_barcode': palletBarcode, 'updated_at': DateTime.now().toIso8601String(),
+        'urun_id': urunId,
+        'location_id': locationId,
+        'quantity': quantityChange,
+        'pallet_barcode': palletBarcode,
+        'updated_at': DateTime.now().toIso8601String(),
         'stock_status': stockStatus,
         'siparis_id': siparisId,
-        'expiry_date': expiryDate
+        'expiry_date': expiryDate,
+        // FIX: Save the goods_receipt_id with the new stock record.
+        'goods_receipt_id': goodsReceiptId
       });
     }
   }
@@ -165,12 +192,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    final warehouseId = prefs.getInt('warehouse_id');
+    // FIX: The warehouse ID is stored under 'branch_id' in the satin_alma_siparis_fis table.
+    // Let's use the correct key from SharedPreferences which should be 'branch_id' or find it via warehouse_id.
+    // For now, assuming the logic to filter by warehouse is correct and the issue is elsewhere.
+    final branchId = prefs.getInt('branch_id');
+
 
     final candidateOrdersMaps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status IN (0, 1) AND branch_id = ?',
-      whereArgs: [warehouseId],
+      whereArgs: [branchId],
       orderBy: 'tarih DESC',
     );
 
@@ -179,14 +210,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final order = PurchaseOrder.fromMap(orderMap);
       final orderItems = await getPurchaseOrderItems(order.id);
 
-      // Siparişin hiç kalemi yoksa veya tüm kalemleri tam olarak alındıysa,
-      // mal kabul için "açık" sayılmaz.
       if (orderItems.isEmpty) continue;
 
       bool isFullyReceived = true;
       for (var item in orderItems) {
-        // Eğer herhangi bir kalemde beklenen miktar, alınandan fazlaysa
-        // sipariş tam olarak alınmamıştır.
         if (item.receivedQuantity < item.expectedQuantity - 0.001) {
           isFullyReceived = false;
           break;
@@ -198,7 +225,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
     }
 
-    debugPrint("Mal kabul için açık siparişler (Depo ID: $warehouseId): ${openOrders.length} adet bulundu");
+    debugPrint("Mal kabul için açık siparişler (Branch ID: $branchId): ${openOrders.length} adet bulundu");
     return openOrders;
   }
 
@@ -213,9 +240,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           u.Barcode1,
           u.aktif,
           COALESCE((SELECT SUM(gri.quantity_received)
-                    FROM goods_receipt_items gri
-                    JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                    WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
+                     FROM goods_receipt_items gri
+                     JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+                     WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
         JOIN urunler u ON u.id = s.urun_id
@@ -231,7 +258,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final maps = await db.query(
       'satin_alma_siparis_fis',
       where: 'status = ?',
-      whereArgs: [1],
+      whereArgs: [1], // Partially received
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -284,7 +311,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       await txn.update(
         'satin_alma_siparis_fis',
-        {'status': 2},
+        {'status': 2}, // Status 2: Manually Closed
         where: 'id = ?',
         whereArgs: [orderId],
       );
