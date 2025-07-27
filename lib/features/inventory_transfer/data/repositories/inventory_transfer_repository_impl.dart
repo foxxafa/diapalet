@@ -756,6 +756,27 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<String>> getFreeReceiptDeliveryNotes() async {
+    try {
+      // Önce sunucudan güncel listeyi almaya çalış
+      final warehouseId = await _getWarehouseId();
+      if (warehouseId != null) {
+        final response = await dio.post('/terminal/get-free-receipts-for-putaway', 
+          data: {'warehouse_id': warehouseId});
+        
+        if (response.statusCode == 200 && response.data['success'] == true) {
+          final receipts = response.data['data'] as List;
+          return receipts
+              .where((r) => r['delivery_note_number'] != null)
+              .map((r) => r['delivery_note_number'] as String)
+              .toSet() // Remove duplicates
+              .toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('API çağrısı başarısız, yerel veritabanından alınıyor: $e');
+    }
+
+    // API başarısız ise yerel veritabanından al
     final db = await dbHelper.database;
 
     final query = '''
@@ -772,6 +793,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final maps = await db.rawQuery(query);
     return maps.map((map) => map['delivery_note_number'] as String).toList();
+  }
+
+  Future<int?> _getWarehouseId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('warehouse_id');
   }
 
   @override
