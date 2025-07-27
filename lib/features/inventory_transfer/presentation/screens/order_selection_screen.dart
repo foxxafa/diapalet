@@ -2,7 +2,8 @@
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart';
+// FIX: Navigating to the correct screen for order-based put-away.
+import 'package:diapalet/features/inventory_transfer/presentation/screens/order_transfer_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -44,7 +45,6 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
 
   Future<List<PurchaseOrder>> _fetchAndFilterOrders() async {
     try {
-      // # GÜNCELLEME: Bu metod artık sadece durumu 2 (Kısmi Kabul) olanları getirecek.
       final orders = await _repo.getOpenPurchaseOrdersForTransfer();
       if (orders.isEmpty) {
         if (mounted) {
@@ -61,7 +61,6 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
 
       final transferableOrders = orders.where((order) => transferableOrderIds.contains(order.id)).toList();
 
-      // UI'ı anında güncellemek için setState içinde ata
       if (mounted) {
         setState(() {
           _allOrders = transferableOrders;
@@ -75,7 +74,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
           SnackBar(content: Text('order_selection.error_loading'.tr(namedArgs: {'error': e.toString()}))),
         );
       }
-      return []; // Hata durumunda boş liste dön
+      return [];
     }
   }
 
@@ -141,19 +140,20 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                         child: ListTile(
                           title: Text(order.poId ?? 'common_labels.unknown_order'.tr()),
                           subtitle: Text(
-                            "${'orders.no_supplier'.tr()}\n" // Tedarikçi adı kaldırıldı, gerekirse eklenebilir.
+                            "${'orders.no_supplier'.tr()}\n"
                                 "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
                           ),
                           isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
+                            // FIX: Navigate to the correct screen for order-based put-away.
                             final result = await Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => InventoryTransferScreen(selectedOrder: order),
+                                builder: (_) => OrderTransferScreen(order: order),
                               ),
                             );
 
-                            // Yerleştirme ekranından `true` dönerse (yani işlem yapıldıysa) listeyi yenile.
+                            // Refresh the list if an operation was completed on the next screen.
                             if (result == true && mounted) {
                               _loadOrders();
                             }
