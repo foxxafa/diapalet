@@ -47,6 +47,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
   StreamSubscription<String>? _intentSub;
   String? _lastError;
   PurchaseOrder? _selectedOrder;
+  String? _deliveryNoteNumber; // Free receipt için delivery note
 
   // GÜNCELLEME: UI olayları için state'ler eklendi.
   String? _error;
@@ -77,6 +78,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
   PurchaseOrder? get selectedOrder => _selectedOrder;
   
   bool get isPutawayMode => _initialOrder != null;
+  String? get deliveryNoteNumber => _deliveryNoteNumber;
+
+  void setDeliveryNote(String? deliveryNote) {
+    _deliveryNoteNumber = deliveryNote;
+  }
 
   AssignmentMode get finalOperationMode => _selectedMode == AssignmentMode.pallet
       ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
@@ -303,7 +309,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
     notifyListeners();
     
     try {
-      _availableContainers = await _repo.getTransferableContainers(locationId, orderId: _selectedOrder?.id);
+      _availableContainers = await _repo.getTransferableContainers(
+        locationId, 
+        orderId: _selectedOrder?.id,
+        deliveryNoteNumber: _deliveryNoteNumber,
+      );
     } catch (e) {
       _setError('inventory_transfer.error_loading_containers', e);
       _availableContainers = [];

@@ -151,7 +151,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId}) async {
+  Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber}) async {
     final db = await dbHelper.database;
 
     final whereParts = <String>[];
@@ -173,6 +173,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (siparisId != null) {
       whereParts.add('s.siparis_id = ?');
       whereArgs.add(siparisId);
+    }
+
+    // Free receipt için delivery note kontrolü
+    if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
+      final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
+      if (goodsReceiptId != null) {
+        whereParts.add('s.goods_receipt_id = ?');
+        whereArgs.add(goodsReceiptId);
+      } else {
+        // Delivery note bulunamazsa boş liste döndür
+        return [];
+      }
     }
 
     final query = '''
@@ -326,14 +338,26 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId}) async {
+  Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId, String? deliveryNoteNumber}) async {
     final db = await dbHelper.database;
-    final isPutaway = orderId != null;
+    final isPutaway = orderId != null || deliveryNoteNumber != null;
 
     final List<Map<String, dynamic>> stockMaps;
 
     if (isPutaway) {
-      stockMaps = await db.query('inventory_stock', where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
+      if (orderId != null) {
+        // Order-based putaway
+        stockMaps = await db.query('inventory_stock', where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
+      } else if (deliveryNoteNumber != null) {
+        // Free receipt putaway - find stocks by delivery note
+        final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
+        if (goodsReceiptId == null) {
+          return [];
+        }
+        stockMaps = await db.query('inventory_stock', where: 'goods_receipt_id = ? AND stock_status = ?', whereArgs: [goodsReceiptId, 'receiving']);
+      } else {
+        stockMaps = [];
+      }
     } else {
       if (locationId == null || locationId == 0) {
         stockMaps = await db.query('inventory_stock', where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);

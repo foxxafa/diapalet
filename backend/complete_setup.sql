@@ -108,6 +108,7 @@ CREATE TABLE `inventory_transfers` (
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `employee_id` int NOT NULL,
   `transfer_date` datetime NOT NULL,
+  `siparis_id` int DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;

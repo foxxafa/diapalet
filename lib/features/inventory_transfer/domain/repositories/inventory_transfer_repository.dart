@@ -16,7 +16,7 @@ abstract class InventoryTransferRepository {
     Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
 
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
-    Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId});
+    Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber});
 
     Future<void> recordTransferOperation(
         TransferOperationHeader header,
@@ -32,7 +32,8 @@ abstract class InventoryTransferRepository {
     /// ANA GÜNCELLEME: Belirli bir lokasyondaki veya sanal mal kabul alanındaki transfer edilebilir birimleri getirir.
     /// `orderId` null değilse, bu bir rafa kaldırma işlemidir ve sanal alandan (`locationId` null) veri çeker.
     /// `orderId` null ise, bu bir serbest transferdir ve belirtilen `locationId`'den veri çeker.
-    Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId});
+    /// `deliveryNoteNumber` serbest mal kabul için spesifik irsaliye numarası
+    Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId, String? deliveryNoteNumber});
 
     /// Verilen sipariş ID'leri listesinden hangilerinin transfer edilebilir stoğu olduğunu kontrol eder.
     Future<Set<int>> getOrderIdsWithTransferableItems(List<int> orderIds);

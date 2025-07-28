@@ -405,6 +405,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           locationId == 0 ? null : locationId,
           stockStatus: stockStatus,
           siparisId: widget.selectedOrder?.id,
+          deliveryNoteNumber: widget.isFreePutAway ? widget.selectedDeliveryNote : null,
         );
       } else if (_selectedMode == AssignmentMode.box && container is BoxItem) {
         contents = [ProductItem.fromBoxItem(container)];

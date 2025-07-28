@@ -357,19 +357,24 @@ class TerminalController extends Controller
                 $this->upsertStock($db, $productId, $targetLocationId, $portion['qty'], $targetPallet, 'available', null, $portion['expiry']);
 
                 // 5. Create a separate transfer record for each portion
-                 $db->createCommand()->insert('inventory_transfers', [
+                $transferData = [
                     'urun_id'             => $productId,
                     'from_location_id'    => $sourceLocationId,
                     'to_location_id'      => $targetLocationId,
                     'quantity'            => $portion['qty'],
                     'from_pallet_barcode' => $sourcePallet,
                     'pallet_barcode'      => $targetPallet,
-                    'siparis_id'          => $siparisId,
-                    'goods_receipt_id'     => $goodsReceiptId,
+                    'goods_receipt_id'    => $goodsReceiptId,
                     'delivery_note_number' => $deliveryNoteNumber,
                     'employee_id'         => $header['employee_id'],
                     'transfer_date'       => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
-                ])->execute();
+                ];
+
+                if ($siparisId) {
+                    $transferData['siparis_id'] = $siparisId;
+                }
+
+                $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
             }
 
             // 6. Update putaway status for order-based operations
