@@ -267,17 +267,12 @@ class DatabaseHelper {
 
         // FIX: The logic for handling inventory_stock during sync is updated.
         if (table == 'inventory_stock') {
-          // 1. Clear all 'available' stock. This is always safe as the server is the source of truth for it.
-          await txn.delete('inventory_stock', where: 'stock_status = ?', whereArgs: ['available']);
-
+          // Clear all local inventory_stock records to fully sync with server (prevent duplicates)
+          await txn.delete('inventory_stock');
+          // Insert all stock records from the server
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
-            // 2. Insert all stock records from the server.
-            // - 'available' records will be new.
-            // - 'receiving' records (from other terminals) will be added if they don't already exist locally.
-            //   The UNIQUE constraint on the table will prevent exact duplicates.
-            //   Using ConflictAlgorithm.ignore is a safe way to handle this without overwriting local un-synced data.
-            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.ignore);
+            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         } else {
           // For all other tables, a full refresh is safe.

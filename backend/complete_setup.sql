@@ -109,6 +109,8 @@ CREATE TABLE `inventory_transfers` (
   `employee_id` int NOT NULL,
   `transfer_date` datetime NOT NULL,
   `siparis_id` int DEFAULT NULL,
+  `goods_receipt_id` int DEFAULT NULL,
+  `delivery_note_number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
