@@ -30,20 +30,20 @@ class InventoryTransferViewModel extends ChangeNotifier {
   // State
   bool _isLoadingInitialData = true, _isLoadingContainerContents = false, _isSaving = false, _isPalletOpening = false;
   bool _isDisposed = false, _isInitialized = false, _navigateBack = false;
-  
+
   AssignmentMode _selectedMode = AssignmentMode.pallet;
   Map<String, int> _availableSourceLocationsMap = {};
   Map<String, int> _availableTargetLocationsMap = {};
   String? _selectedSourceLocationName, _selectedTargetLocationName;
-  
+
   // GÜNCELLEME: Veri tipi `TransferableContainer` olarak değiştirildi.
   List<TransferableContainer> _availableContainers = [];
   TransferableContainer? _selectedContainer;
-  
+
   List<ProductItem> _productsInContainer = [];
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
-  
+
   StreamSubscription<String>? _intentSub;
   String? _lastError;
   PurchaseOrder? _selectedOrder;
@@ -62,21 +62,21 @@ class InventoryTransferViewModel extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get navigateBack => _navigateBack;
   AssignmentMode get selectedMode => _selectedMode;
-  
+
   List<MapEntry<String, int>> get availableSourceLocations => _availableSourceLocationsMap.entries.toList();
   String? get selectedSourceLocationName => _selectedSourceLocationName;
   List<MapEntry<String, int>> get availableTargetLocations => _availableTargetLocationsMap.entries.toList();
   String? get selectedTargetLocationName => _selectedTargetLocationName;
-  
+
   List<TransferableContainer> get availableContainers => _availableContainers;
   TransferableContainer? get selectedContainer => _selectedContainer;
-  
+
   List<ProductItem> get productsInContainer => _productsInContainer;
   Map<int, TextEditingController> get productQuantityControllers => _productQuantityControllers;
   Map<int, FocusNode> get productQuantityFocusNodes => _productQuantityFocusNodes;
   String? get lastError => _lastError;
   PurchaseOrder? get selectedOrder => _selectedOrder;
-  
+
   bool get isPutawayMode => _initialOrder != null;
   String? get deliveryNoteNumber => _deliveryNoteNumber;
 
@@ -100,20 +100,20 @@ class InventoryTransferViewModel extends ChangeNotifier {
        _syncService = syncService,
        _barcodeService = barcodeService,
        _initialOrder = initialOrder;
-  
+
   void init(PurchaseOrder? order) {
     if (_isInitialized || _isDisposed) return;
-    
+
     _isInitialized = true;
     _selectedOrder = order;
-    
+
     sourceLocationController = TextEditingController();
     targetLocationController = TextEditingController();
     scannedContainerIdController = TextEditingController();
     sourceLocationFocusNode = FocusNode();
     targetLocationFocusNode = FocusNode();
     containerFocusNode = FocusNode();
-    
+
     _initializeListeners();
     _loadInitialData();
   }
@@ -137,7 +137,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       if (!_isDisposed) {
         _isLoadingInitialData = false;
         notifyListeners();
-        
+
         if (!isPutawayMode) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             sourceLocationFocusNode.requestFocus();
@@ -146,7 +146,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       }
     }
   }
-  
+
   Future<bool> confirmAndSave() async {
     _syncService.startUserOperation();
     _isSaving = true;
@@ -162,7 +162,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         _setError('inventory_transfer.error_location_id_not_found');
         return false;
       }
-      
+
       final header = TransferOperationHeader(
         employeeId: employeeId,
         transferDate: DateTime.now(),
@@ -172,7 +172,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       );
 
       final itemsToTransfer = getTransferItems();
-      
+
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);
 
       if (isPutawayMode && _selectedOrder != null) {
@@ -193,7 +193,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   // Listener and Dispose Methods
   void _initializeListeners() {
     _intentSub = _barcodeService.stream.listen(_handleBarcodeScan);
@@ -253,10 +253,10 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
   void handleSourceSelection(String? selection) {
     if (selection == null || selection == _selectedSourceLocationName) return;
-    
+
     _selectedSourceLocationName = selection;
     sourceLocationController.text = selection;
-    
+
     _resetContainerAndProducts();
     _loadContainers();
     notifyListeners();
@@ -268,10 +268,10 @@ class InventoryTransferViewModel extends ChangeNotifier {
     targetLocationController.text = selection;
     notifyListeners();
   }
-  
+
   void handleContainerSelection(TransferableContainer? selection) {
     if (selection == null) return;
-    
+
     _selectedContainer = selection;
     scannedContainerIdController.text = selection.displayName;
     _loadContainerContents();
@@ -281,7 +281,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
   void togglePalletOpening(bool value) {
     if (_isPalletOpening == value || productsInContainer.isEmpty) return;
     _isPalletOpening = value;
-    
+
     if (!value) {
       for (var product in _productsInContainer) {
         final initialQty = product.currentQuantity;
@@ -290,12 +290,12 @@ class InventoryTransferViewModel extends ChangeNotifier {
     }
     notifyListeners();
   }
-  
+
   void changeAssignmentMode(AssignmentMode newMode) {
     if (_selectedMode == newMode) return;
     _selectedMode = newMode;
     _resetContainerAndProducts();
-    _loadContainers(); 
+    _loadContainers();
     notifyListeners();
   }
 
@@ -307,10 +307,10 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _isLoadingContainerContents = true;
     _resetContainerAndProducts();
     notifyListeners();
-    
+
     try {
       _availableContainers = await _repo.getTransferableContainers(
-        locationId, 
+        locationId,
         orderId: _selectedOrder?.id,
         deliveryNoteNumber: _deliveryNoteNumber,
       );
@@ -324,7 +324,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       }
     }
   }
-  
+
   void _loadContainerContents() {
     _clearProducts();
     if (_selectedContainer == null) return;
@@ -343,7 +343,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _initializeProductControllers();
     notifyListeners();
   }
-  
+
   void _initializeProductControllers() {
     _clearProductControllers();
     for (var product in _productsInContainer) {
@@ -352,7 +352,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _productQuantityFocusNodes[product.id] = FocusNode();
     }
   }
-  
+
   // Field Handling (Find, Set, Clear)
   Future<void> _findLocationAndSet(String barcode, {required bool isSource}) async {
     final location = await _repo.findLocationByCode(barcode);
@@ -384,7 +384,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _setError('inventory_transfer.error_container_not_found');
     }
   }
-  
+
   void _resetContainerAndProducts() {
     _selectedContainer = null;
     scannedContainerIdController.clear();
@@ -446,7 +446,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
     }
     notifyListeners();
   }
-  
+
   void clearError() {
     _error = null;
   }
@@ -454,30 +454,30 @@ class InventoryTransferViewModel extends ChangeNotifier {
   void clearSuccessMessage() {
     _successMessage = null;
   }
-  
+
   void clearNavigateBack() {
     _navigateBack = false;
   }
 
   void changeMode(AssignmentMode newMode) {
     if (_isSaving) return;
-    
+
     _selectedMode = newMode;
     _isPalletOpening = false;
     _resetContainerAndProducts();
-    
+
     if (_selectedSourceLocationName != null) {
       _loadContainers();
     }
-    
+
     notifyListeners();
   }
 
   void setPalletOpening(bool value) {
     if (_productsInContainer.isEmpty) return;
-    
+
     _isPalletOpening = value;
-    
+
     if (!value) {
       for (var product in _productsInContainer) {
         final initialQty = product.currentQuantity;
@@ -487,7 +487,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         _productQuantityControllers[product.id]?.text = initialQtyText;
       }
     }
-    
+
     notifyListeners();
   }
 
@@ -554,7 +554,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
   List<TransferItemDetail> getTransferItems() {
     final List<TransferItemDetail> items = [];
-    
+
     for (var product in _productsInContainer) {
       final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
@@ -575,4 +575,4 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
 
-} 
+}
