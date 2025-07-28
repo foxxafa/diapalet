@@ -1,4 +1,4 @@
-// lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart
+﻿// lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
@@ -77,6 +77,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
+    // DÜZELTME: Eğer deliveryNoteNumber varsa, goods_receipts tablosuyla INNER JOIN yapmak daha güvenilirdir.
+    // Bu, stok kaydının kesinlikle geçerli bir mal kabule bağlı olmasını sağlar.
+    final joinClause = deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty
+        ? 'INNER JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id'
+        : '';
+
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
       whereClauses.add('gr.delivery_note_number = ?');
       whereArgs.add(deliveryNoteNumber);
@@ -85,7 +91,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final query = '''
       SELECT DISTINCT s.pallet_barcode
       FROM inventory_stock s
-      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
+      $joinClause
       WHERE s.pallet_barcode IS NOT NULL AND ${whereClauses.join(' AND ')}
     ''';
 
@@ -115,6 +121,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
+    // DÜZELTME: Eğer deliveryNoteNumber varsa, goods_receipts tablosuyla INNER JOIN yapmak daha güvenilirdir.
+    // Bu, stok kaydının kesinlikle geçerli bir mal kabule bağlı olmasını sağlar.
+    final joinClause = deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty
+        ? 'INNER JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id'
+        : '';
+
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
       whereClauses.add('gr.delivery_note_number = ?');
       whereArgs.add(deliveryNoteNumber);
@@ -129,7 +141,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.id
-      LEFT JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
+      $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';
@@ -205,7 +217,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             locationId: sourceLocationId,
             quantityChange: -item.quantity,
             palletId: item.palletId,
-            status: (sourceLocationId == null) ? 'receiving' : 'available',
+            status: (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available',
             siparisId: header.siparisId,
             expiryDateForAddition: item.expiryDate,
           );
@@ -346,7 +358,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (productInfo == null) continue;
 
       final pallet = stock['pallet_barcode'] as String?;
-      final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date']) : null;
+      final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date'].toString()) : null;
       final containerId = pallet ?? 'box_${productInfo.stockCode}';
 
       final groupingKey = containerId;
@@ -626,38 +638,30 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<bool> hasOrderReceivedWithPallets(int orderId) async {
     final db = await dbHelper.database;
-
     const query = '''
       SELECT COUNT(*) as count
-      FROM inventory_stock s
-      JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
-      WHERE gr.siparis_id = ?
-        AND s.stock_status = 'receiving'
-        AND s.pallet_barcode IS NOT NULL
-        AND s.quantity > 0
+      FROM inventory_stock
+      WHERE siparis_id = ?
+        AND stock_status = 'receiving'
+        AND pallet_barcode IS NOT NULL
+        AND quantity > 0
     ''';
-
     final result = await db.rawQuery(query, [orderId]);
-    // FIX: Use Sqflite.firstIntValue to safely get the count and prevent type errors.
     return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 
   @override
   Future<bool> hasOrderReceivedWithBoxes(int orderId) async {
     final db = await dbHelper.database;
-
     const query = '''
       SELECT COUNT(*) as count
-      FROM inventory_stock s
-      JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id
-      WHERE gr.siparis_id = ?
-        AND s.stock_status = 'receiving'
-        AND s.pallet_barcode IS NULL
-        AND s.quantity > 0
+      FROM inventory_stock
+      WHERE siparis_id = ?
+        AND stock_status = 'receiving'
+        AND pallet_barcode IS NULL
+        AND quantity > 0
     ''';
-
     final result = await db.rawQuery(query, [orderId]);
-    // FIX: Use Sqflite.firstIntValue to safely get the count and prevent type errors.
     return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 }
