@@ -296,6 +296,18 @@ class TerminalController extends Controller
             if ($isPutawayOperation) {
                 if ($siparisId) {
                     $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
+                } elseif ($deliveryNoteNumber) {
+                    // Serbest mal kabul için delivery note üzerinden receipt ID bulun
+                    $actualGoodsReceiptId = (new Query())
+                        ->select('goods_receipt_id')
+                        ->from('goods_receipts')
+                        ->where(['delivery_note_number' => $deliveryNoteNumber])
+                        ->scalar($db);
+                    if ($actualGoodsReceiptId) {
+                        $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $actualGoodsReceiptId);
+                        // errorContext ve sonraki işlemler için goodsReceiptId'i güncelle
+                        $goodsReceiptId = $actualGoodsReceiptId;
+                    }
                 } elseif ($goodsReceiptId) {
                     $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $goodsReceiptId);
                 }

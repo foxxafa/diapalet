@@ -48,6 +48,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   bool _isLoadingInitialData = true;
   bool _isLoadingContainerContents = false;
   bool _isSaving = false;
+  int? _goodsReceiptId; // FIX: To hold the ID for free putaway operations
   bool _isPalletOpening = false;
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
@@ -144,6 +145,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (widget.selectedOrder != null || widget.isFreePutAway) {
         _selectedSourceLocationName = '000';
         _sourceLocationController.text = '000';
+        if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
+          // FIX: Fetch the goods_receipt_id for the free receipt to use in the transfer payload.
+          _goodsReceiptId = await _repo.getGoodsReceiptIdByDeliveryNote(widget.selectedDeliveryNote!);
+        }
       }
 
       if (widget.selectedOrder != null) {
@@ -485,6 +490,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         transferDate: DateTime.now(),
         siparisId: widget.selectedOrder?.id,
         deliveryNoteNumber: widget.selectedDeliveryNote,
+        goodsReceiptId: _goodsReceiptId,
       );
 
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);

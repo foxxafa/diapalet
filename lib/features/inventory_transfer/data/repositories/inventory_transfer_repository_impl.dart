@@ -664,4 +664,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final result = await db.rawQuery(query, [orderId]);
     return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
+
+  @override
+  Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber) async {
+    final db = await dbHelper.database;
+    final result = await db.query(
+      'goods_receipts',
+      columns: ['goods_receipt_id'],
+      where: 'delivery_note_number = ?',
+      whereArgs: [deliveryNoteNumber],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first['goods_receipt_id'] as int?;
+    }
+    return null;
+  }
 }

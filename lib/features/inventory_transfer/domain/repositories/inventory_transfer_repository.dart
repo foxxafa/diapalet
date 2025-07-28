@@ -53,4 +53,7 @@ abstract class InventoryTransferRepository {
 
     /// Belirli bir sipariş için kutular ile kabul edilmiş ürün var mı kontrol eder
     Future<bool> hasOrderReceivedWithBoxes(int orderId);
+
+    /// İrsaliye numarasına göre mal kabul ID'sini getirir.
+    Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber);
 }
