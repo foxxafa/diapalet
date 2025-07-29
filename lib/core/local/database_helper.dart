@@ -183,7 +183,9 @@ class DatabaseHelper {
           urun_id INTEGER,
           quantity_received REAL,
           pallet_barcode TEXT,
-          expiry_date TEXT
+          expiry_date TEXT,
+          FOREIGN KEY(receipt_id) REFERENCES goods_receipts(goods_receipt_id),
+          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId)
         )
       ''');
 
@@ -204,7 +206,11 @@ class DatabaseHelper {
           expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
           updated_at TEXT,
-          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id)
+          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
+          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
+          FOREIGN KEY(location_id) REFERENCES shelfs(id),
+          FOREIGN KEY(siparis_id) REFERENCES satin_alma_siparis_fis(id),
+          FOREIGN KEY(goods_receipt_id) REFERENCES goods_receipts(goods_receipt_id)
         )
       ''');
 
@@ -231,7 +237,11 @@ class DatabaseHelper {
           delivery_note_number TEXT,
           employee_id INTEGER,
           transfer_date TEXT,
-          created_at TEXT
+          created_at TEXT,
+          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
+          FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
+          FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
+          FOREIGN KEY(employee_id) REFERENCES employees(id)
         )
       ''');
 

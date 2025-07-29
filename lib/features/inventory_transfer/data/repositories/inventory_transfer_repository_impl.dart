@@ -223,6 +223,31 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         final List<Map<String, dynamic>> itemsForJson = [];
 
         for (final item in items) {
+          // 1. Azaltma işleminden önce kaynak stok kaydını/kayıtlarını bul.
+          // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
+          final sourceStockQuery = await txn.query(
+            'inventory_stock',
+            where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?',
+            whereArgs: [
+              item.productId,
+              sourceLocationId,
+              sourceLocationId,
+              item.palletId,
+              item.palletId,
+              (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available'
+            ],
+            limit: 1, // Sadece bir tane bulmamız yeterli
+          );
+          
+          int? sourceSiparisId;
+          int? sourceGoodsReceiptId;
+
+          if (sourceStockQuery.isNotEmpty) {
+            sourceSiparisId = sourceStockQuery.first['siparis_id'] as int?;
+            sourceGoodsReceiptId = sourceStockQuery.first['goods_receipt_id'] as int?;
+          }
+
+          // 2. Stoğu kaynaktan azalt
           await _updateStockSmart(
             txn,
             productId: item.productId,
@@ -230,12 +255,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: -item.quantity,
             palletId: item.palletId,
             status: (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available',
-            siparisId: header.siparisId,
+            siparisIdForAddition: null, // Azaltma için null
+            goodsReceiptIdForAddition: null, // Azaltma için null
             expiryDateForAddition: item.expiryDate,
           );
 
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
 
+          // 3. Stoğu hedefe ekle (yeni ID'lerle birlikte)
           await _updateStockSmart(
             txn,
             productId: item.productId,
@@ -243,7 +270,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: item.quantity,
             palletId: targetPalletId,
             status: 'available',
-            siparisId: null,
+            siparisIdForAddition: sourceSiparisId, // YENİ: Kaynaktan gelen ID'yi aktar
+            goodsReceiptIdForAddition: sourceGoodsReceiptId, // YENİ: Kaynaktan gelen ID'yi aktar
             expiryDateForAddition: item.expiryDate,
           );
 
@@ -560,7 +588,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required double quantityChange,
     required String? palletId,
     required String status,
-    required int? siparisId,
+    int? siparisIdForAddition,
+    int? goodsReceiptIdForAddition,
     DateTime? expiryDateForAddition,
   }) async {
     if (quantityChange == 0) return;
@@ -572,8 +601,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       final stockEntries = await txn.query(
         'inventory_stock',
-        where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL))',
-        whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisId, siparisId],
+        where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?',
+        whereArgs: [productId, locationId, locationId, palletId, palletId, status],
         orderBy: 'expiry_date ASC',
       );
 
@@ -611,7 +640,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final existing = await txn.query(
         'inventory_stock',
         where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
-        whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisId, siparisId, expiryDateStr, expiryDateStr],
+        whereArgs: [productId, locationId, locationId, palletId, palletId, status, siparisIdForAddition, siparisIdForAddition, expiryDateStr, expiryDateStr],
         limit: 1,
       );
 
@@ -631,7 +660,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           'quantity': quantityChange,
           'pallet_barcode': palletId,
           'stock_status': status,
-          'siparis_id': siparisId,
+          'siparis_id': siparisIdForAddition,
+          'goods_receipt_id': goodsReceiptIdForAddition,
           'updated_at': DateTime.now().toIso8601String(),
           'expiry_date': expiryDateStr,
         });

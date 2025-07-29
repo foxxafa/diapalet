@@ -324,7 +324,7 @@ class TerminalController extends Controller
 
             // 2. Determine portions to transfer and the required DB operations
             $quantityLeft = $totalQuantityToTransfer;
-            $portionsToTransfer = []; // {qty, expiry}
+            $portionsToTransfer = []; // {qty, expiry, siparis_id, goods_receipt_id}
             $dbOps = ['delete' => [], 'update' => []]; // {id: new_qty}
 
             foreach ($sourceStocks as $stock) {
@@ -334,7 +334,12 @@ class TerminalController extends Controller
                 $stockQty = (float)$stock['quantity'];
                 $qtyThisCycle = min($stockQty, $quantityLeft);
 
-                $portionsToTransfer[] = ['qty' => $qtyThisCycle, 'expiry' => $stock['expiry_date']];
+                $portionsToTransfer[] = [
+                    'qty' => $qtyThisCycle, 
+                    'expiry' => $stock['expiry_date'],
+                    'siparis_id' => $stock['siparis_id'],
+                    'goods_receipt_id' => $stock['goods_receipt_id']
+                ];
 
                 if ($stockQty - $qtyThisCycle > 0.001) {
                     $dbOps['update'][$stockId] = $stockQty - $qtyThisCycle;
@@ -352,9 +357,20 @@ class TerminalController extends Controller
                 $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $id])->execute();
             }
 
-            // 4. Add portions to target (preserving expiry dates)
+            // 4. Add portions to target (preserving expiry dates and source IDs)
             foreach($portionsToTransfer as $portion) {
-                $this->upsertStock($db, $productId, $targetLocationId, $portion['qty'], $targetPallet, 'available', null, $portion['expiry']);
+                $this->upsertStock(
+                    $db, 
+                    $productId, 
+                    $targetLocationId, 
+                    $portion['qty'], 
+                    $targetPallet, 
+                    'available',
+                    // GÜNCELLEME: Null yerine kaynak stoktaki ID'leri gönderiyoruz
+                    $portion['siparis_id'], 
+                    $portion['expiry'], 
+                    $portion['goods_receipt_id']
+                );
 
                 // 5. Create a separate transfer record for each portion
                 $transferData = [

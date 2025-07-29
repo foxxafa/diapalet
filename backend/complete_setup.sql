@@ -305,4 +305,22 @@ ADD CONSTRAINT `goods_receipts_ibfk_3` FOREIGN KEY (`warehouse_id`) REFERENCES `
 ALTER TABLE `satin_alma_siparis_fis_satir`
 ADD CONSTRAINT `satin_alma_siparis_fis_satir_ibfk_1` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE CASCADE;
 
+-- inventory_stock için Foreign Key'ler
+ALTER TABLE `inventory_stock`
+ADD CONSTRAINT `fk_stock_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE RESTRICT ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_stock_location` FOREIGN KEY (`location_id`) REFERENCES `shelfs` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_stock_siparis` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_stock_receipt` FOREIGN KEY (`goods_receipt_id`) REFERENCES `goods_receipts` (`goods_receipt_id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- inventory_transfers için Foreign Key'ler
+ALTER TABLE `inventory_transfers`
+ADD CONSTRAINT `fk_transfer_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE RESTRICT ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_transfer_from_location` FOREIGN KEY (`from_location_id`) REFERENCES `shelfs` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_transfer_to_location` FOREIGN KEY (`to_location_id`) REFERENCES `shelfs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_transfer_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- goods_receipt_items için Foreign Key
+ALTER TABLE `goods_receipt_items`
+ADD CONSTRAINT `fk_receipt_item_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
 SET FOREIGN_KEY_CHECKS=1;

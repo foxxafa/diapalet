@@ -1,5 +1,3 @@
-import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
-
 class RecentReceiptItem {
   final int id;
   final String productName;
@@ -24,16 +22,4 @@ class RecentReceiptItem {
       createdAt: map['created_at'] as String,
     );
   }
-}
-
-class ReceiptItemDraft {
-  final ProductInfo product;
-  final double quantity;
-  final String? palletBarcode;
-
-  ReceiptItemDraft({
-    required this.product,
-    required this.quantity,
-    this.palletBarcode,
-  });
 }
