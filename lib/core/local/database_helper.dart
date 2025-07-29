@@ -109,7 +109,7 @@ class DatabaseHelper {
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS urunler (
-          id INTEGER PRIMARY KEY,
+          UrunId INTEGER PRIMARY KEY,
           StokKodu TEXT UNIQUE,
           UrunAdi TEXT,
           Barcode1 TEXT,
@@ -303,9 +303,9 @@ class DatabaseHelper {
 
   Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
     final newRecord = Map<String, dynamic>.from(record);
-    if (table == 'urunler' && newRecord.containsKey('UrunId')) {
-      newRecord['id'] = newRecord['UrunId'];
-      newRecord.remove('UrunId');
+    if (table == 'urunler' && newRecord.containsKey('id')) {
+      newRecord['UrunId'] = newRecord['id'];
+      newRecord.remove('id');
     }
     if (table == 'goods_receipts') {
       if (newRecord.containsKey('id') && newRecord['id'] != null) {
@@ -399,7 +399,7 @@ class DatabaseHelper {
         COALESCE(received.total_received, 0) as received_quantity,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM satin_alma_siparis_fis_satir sol
-      LEFT JOIN urunler u ON u.id = sol.urun_id
+      LEFT JOIN urunler u ON u.UrunId = sol.urun_id
       LEFT JOIN (
         SELECT
           gri.urun_id,
@@ -444,7 +444,7 @@ class DatabaseHelper {
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.id = gri.urun_id
+      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
       LEFT JOIN (
@@ -474,7 +474,7 @@ class DatabaseHelper {
         u.StokKodu as product_code,
         u.Barcode1 as product_barcode
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.id = gri.urun_id
+      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
@@ -498,7 +498,7 @@ class DatabaseHelper {
         emp.first_name || ' ' || emp.last_name as employee_name,
         emp.username as employee_username
       FROM inventory_transfers it
-      LEFT JOIN urunler u ON u.id = it.urun_id
+      LEFT JOIN urunler u ON u.UrunId = it.urun_id
       LEFT JOIN shelfs source_loc ON source_loc.id = it.from_location_id
       LEFT JOIN shelfs target_loc ON target_loc.id = it.to_location_id
       LEFT JOIN employees emp ON emp.id = it.employee_id
@@ -521,7 +521,7 @@ class DatabaseHelper {
         loc.name as location_name,
         loc.code as location_code
       FROM inventory_stock ints
-      LEFT JOIN urunler u ON u.id = ints.urun_id
+      LEFT JOIN urunler u ON u.UrunId = ints.urun_id
       LEFT JOIN shelfs loc ON loc.id = ints.location_id
       WHERE ints.siparis_id = ? AND ints.stock_status = 'receiving'
       ORDER BY ints.urun_id
@@ -575,7 +575,7 @@ class DatabaseHelper {
         sol.notes as order_line_notes,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.id = gri.urun_id
+      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
       LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
@@ -1114,7 +1114,7 @@ class DatabaseHelper {
         u.StokKodu as product_code,
         u.Barcode1 as product_barcode
       FROM inventory_stock ist
-      LEFT JOIN urunler u ON u.id = ist.urun_id
+      LEFT JOIN urunler u ON u.UrunId = ist.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
       WHERE gr.delivery_note_number = ?
         AND ist.stock_status = 'receiving'

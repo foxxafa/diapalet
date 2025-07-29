@@ -335,7 +335,7 @@ class TerminalController extends Controller
                 $qtyThisCycle = min($stockQty, $quantityLeft);
 
                 $portionsToTransfer[] = [
-                    'qty' => $qtyThisCycle, 
+                    'qty' => $qtyThisCycle,
                     'expiry' => $stock['expiry_date'],
                     'siparis_id' => $stock['siparis_id'],
                     'goods_receipt_id' => $stock['goods_receipt_id']
@@ -360,15 +360,15 @@ class TerminalController extends Controller
             // 4. Add portions to target (preserving expiry dates and source IDs)
             foreach($portionsToTransfer as $portion) {
                 $this->upsertStock(
-                    $db, 
-                    $productId, 
-                    $targetLocationId, 
-                    $portion['qty'], 
-                    $targetPallet, 
+                    $db,
+                    $productId,
+                    $targetLocationId,
+                    $portion['qty'],
+                    $targetPallet,
                     'available',
                     // GÜNCELLEME: Null yerine kaynak stoktaki ID'leri gönderiyoruz
-                    $portion['siparis_id'], 
-                    $portion['expiry'], 
+                    $portion['siparis_id'],
+                    $portion['expiry'],
                     $portion['goods_receipt_id']
                 );
 

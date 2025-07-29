@@ -140,7 +140,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.Barcode1 as barcode1,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.id
+      JOIN urunler u ON s.urun_id = u.UrunId
       $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
       GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
@@ -196,7 +196,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.id
+      JOIN urunler u ON s.urun_id = u.UrunId
       WHERE ${whereParts.join(' AND ')}
       ORDER BY u.UrunAdi
     ''';
@@ -238,7 +238,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             ],
             limit: 1, // Sadece bir tane bulmamız yeterli
           );
-          
+
           int? sourceSiparisId;
           int? sourceGoodsReceiptId;
 
@@ -399,8 +399,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final productIds = stockMaps.map((e) => e['urun_id'] as int).toSet();
-    final productsQuery = await db.query('urunler', where: 'id IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
-    final productDetails = {for (var p in productsQuery) p['id'] as int: ProductInfo.fromDbMap(p)};
+    final productsQuery = await db.query('urunler', where: 'UrunId IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
+    final productDetails = {for (var p in productsQuery) p['UrunId'] as int: ProductInfo.fromDbMap(p)};
 
     final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
 
@@ -562,15 +562,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final query = '''
       SELECT
-        u.id as productId,
+        u.UrunId as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         u.Barcode1 as barcode1,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.id
+      JOIN urunler u ON s.urun_id = u.UrunId
       WHERE ${whereParts.join(' AND ')}
-      GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
       LIMIT 1
     ''';
 
