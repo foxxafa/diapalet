@@ -134,7 +134,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final query = '''
       SELECT
-        u.id as productId,
+        u.UrunId as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         u.Barcode1 as barcode1,
@@ -143,7 +143,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       JOIN urunler u ON s.urun_id = u.UrunId
       $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
-      GROUP BY u.id, u.UrunAdi, u.StokKodu, u.Barcode1
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
@@ -189,7 +189,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final query = '''
       SELECT
-        u.id as productId,
+        u.UrunId as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         u.Barcode1 as barcode1,

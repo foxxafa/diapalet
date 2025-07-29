@@ -16,7 +16,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
 
     // Aranacak potansiyel kodları bir listeye topla
     final searchTerms = <String>{}; // Benzersizliği korumak için Set kullan
-    
+
     // 1. Sadece GS1 GTIN (01) kodunu ara
     if (parsedData.containsKey('01')) {
       final gtin = parsedData['01']!;
@@ -31,7 +31,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     }
 
     if (searchTerms.isEmpty) return [];
-    
+
     // Sorgu için parametre listesi ve yer tutucuları oluştur
     final placeholders = ('?' * searchTerms.length).split('').join(',');
     final whereArgs = searchTerms.toList();
@@ -47,11 +47,11 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     if (productQuery.isEmpty) {
       return [];
     }
-    final productId = productQuery.first['id'] as int;
+    final productId = productQuery.first['UrunId'] as int;
 
     // 2. Ürün ID'sine göre stok lokasyonlarını bul
     const sql = '''
-      SELECT 
+      SELECT
         s.urun_id,
         u.UrunAdi,
         u.StokKodu,
@@ -62,14 +62,14 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
         sh.name as location_name,
         sh.code as location_code
       FROM inventory_stock s
-      JOIN urunler u ON u.id = s.urun_id
+      JOIN urunler u ON u.UrunId = s.urun_id
       LEFT JOIN shelfs sh ON sh.id = s.location_id
       WHERE s.urun_id = ? AND s.stock_status = 'available'
       ORDER BY s.expiry_date ASC, s.updated_at ASC
     ''';
 
     final results = await db.rawQuery(sql, [productId]);
-    
+
     return results.map((map) => ProductLocation.fromMap(map)).toList();
   }
-} 
+}

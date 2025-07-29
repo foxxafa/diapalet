@@ -245,7 +245,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                      WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
-        JOIN urunler u ON u.id = s.urun_id
+        JOIN urunler u ON u.UrunId = s.urun_id
         LEFT JOIN wms_putaway_status wps ON wps.satinalmasiparisfissatir_id = s.id
         WHERE s.siparis_id = ?
     ''', [orderId]);
