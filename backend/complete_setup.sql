@@ -62,7 +62,7 @@ CREATE TABLE `goods_receipts` (
   `siparis_id` int(11) DEFAULT NULL,
   `invoice_number` varchar(255) DEFAULT NULL,
   `delivery_note_number` varchar(255) DEFAULT NULL,
-  `employee_id` int(11) NOT NULL,
+  `employee_id` int(11) DEFAULT NULL,
   `receipt_date` datetime NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`goods_receipt_id`),
@@ -74,7 +74,7 @@ CREATE TABLE `goods_receipts` (
 CREATE TABLE `goods_receipt_items` (
   `id` int NOT NULL AUTO_INCREMENT,
   `receipt_id` int NOT NULL,
-  `urun_id` int NOT NULL,
+  `urun_id` int DEFAULT NULL,
   `quantity_received` decimal(10,2) NOT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `expiry_date` date DEFAULT NULL,
@@ -100,13 +100,13 @@ CREATE TABLE `inventory_stock` (
 
 CREATE TABLE `inventory_transfers` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `urun_id` int NOT NULL,
+  `urun_id` int DEFAULT NULL,
   `from_location_id` int DEFAULT NULL,
   `to_location_id` int NOT NULL,
   `quantity` decimal(10,2) NOT NULL,
   `from_pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
-  `employee_id` int NOT NULL,
+  `employee_id` int DEFAULT NULL,
   `transfer_date` datetime NOT NULL,
   `siparis_id` int DEFAULT NULL,
   `goods_receipt_id` int DEFAULT NULL,
