@@ -504,10 +504,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final putawayStatusQuery = await db.query(
         'wms_putaway_status',
-        columns: ['satinalmasiparisfissatir_id', 'putaway_quantity'],
-        where: 'satinalmasiparisfissatir_id IN (${orderLinesQuery.map((e) => e['id']).join(',')})'
+        columns: ['purchase_order_line_id', 'putaway_quantity'],
+        where: 'purchase_order_line_id IN (${orderLinesQuery.map((e) => e['id']).join(',')})'
     );
-    final putawayMap = {for (var e in putawayStatusQuery) e['satinalmasiparisfissatir_id']: (e['putaway_quantity'] as num).toDouble()};
+    final putawayMap = {for (var e in putawayStatusQuery) e['purchase_order_line_id']: (e['putaway_quantity'] as num).toDouble()};
 
     bool allCompleted = true;
     for (final line in orderLinesQuery) {
