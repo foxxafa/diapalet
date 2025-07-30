@@ -423,7 +423,7 @@ class DatabaseHelper {
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_id
       ) received ON received.urun_id = sol.urun_id
-      LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
+      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sol.id
       WHERE sol.siparis_id = ?
     ''';
 
@@ -592,7 +592,7 @@ class DatabaseHelper {
       LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
-      LEFT JOIN wms_putaway_status putaway ON putaway.satinalmasiparisfissatir_id = sol.id
+      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sol.id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';

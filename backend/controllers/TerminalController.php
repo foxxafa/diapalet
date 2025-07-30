@@ -555,7 +555,7 @@ class TerminalController extends Controller
         $orderLines = (new Query())
             ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
             ->from(['s' => 'satin_alma_siparis_fis_satir'])
-            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.satinalmasiparisfissatir_id')
+            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.purchase_order_line_id')
             ->where(['s.siparis_id' => $siparisId])
             ->all($db);
 
@@ -647,8 +647,8 @@ class TerminalController extends Controller
                 // Yeni eklenen kısım: wms_putaway_status verilerini çek
                 $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
                 if (!empty($poLineIds)) {
-                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'satinalmasiparisfissatir_id', $poLineIds])->all();
-                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'satinalmasiparisfissatir_id'], ['putaway_quantity']);
+                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds])->all();
+                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
                 }
 
                 $poReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();

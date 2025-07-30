@@ -197,6 +197,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     // For now, assuming the logic to filter by warehouse is correct and the issue is elsewhere.
     final branchId = prefs.getInt('branch_id');
 
+    debugPrint("DEBUG: Branch ID from SharedPreferences: $branchId");
+
+    // DEBUG: Let's also check all orders in the database without filtering
+    final allOrdersForDebug = await db.query('satin_alma_siparis_fis');
+    debugPrint("DEBUG: Total orders in database: ${allOrdersForDebug.length}");
+    for (var order in allOrdersForDebug) {
+      debugPrint("DEBUG: All Orders - ID: ${order['id']}, PO ID: ${order['po_id']}, Status: ${order['status']}, Branch ID: ${order['branch_id']}");
+    }
 
     final candidateOrdersMaps = await db.query(
       'satin_alma_siparis_fis',
@@ -205,20 +213,33 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       orderBy: 'tarih DESC',
     );
 
+    debugPrint("DEBUG: Found ${candidateOrdersMaps.length} candidate orders");
+    for (var order in candidateOrdersMaps) {
+      debugPrint("DEBUG: Order ID: ${order['id']}, PO ID: ${order['po_id']}, Status: ${order['status']}, Branch ID: ${order['branch_id']}");
+    }
+
     final openOrders = <PurchaseOrder>[];
     for (var orderMap in candidateOrdersMaps) {
       final order = PurchaseOrder.fromMap(orderMap);
       final orderItems = await getPurchaseOrderItems(order.id);
 
-      if (orderItems.isEmpty) continue;
+      debugPrint("DEBUG: Order ${order.id} has ${orderItems.length} items");
+
+      if (orderItems.isEmpty) {
+        debugPrint("DEBUG: Skipping order ${order.id} - no items found");
+        continue;
+      }
 
       bool isFullyReceived = true;
       for (var item in orderItems) {
+        debugPrint("DEBUG: Item ${item.productId} - Expected: ${item.expectedQuantity}, Received: ${item.receivedQuantity}");
         if (item.receivedQuantity < item.expectedQuantity - 0.001) {
           isFullyReceived = false;
           break;
         }
       }
+
+      debugPrint("DEBUG: Order ${order.id} is fully received: $isFullyReceived");
 
       if (!isFullyReceived) {
         openOrders.add(order);
@@ -232,6 +253,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
+    debugPrint("DEBUG: Getting items for order ID: $orderId");
     final maps = await db.rawQuery('''
         SELECT
           s.*,
@@ -249,6 +271,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         LEFT JOIN wms_putaway_status wps ON wps.purchase_order_line_id = s.id
         WHERE s.siparis_id = ?
     ''', [orderId]);
+    debugPrint("DEBUG: Found ${maps.length} items for order $orderId");
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
   }
 
