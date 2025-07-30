@@ -246,7 +246,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM satin_alma_siparis_fis_satir s
         JOIN urunler u ON u.UrunId = s.urun_id
-        LEFT JOIN wms_putaway_status wps ON wps.satinalmasiparisfissatir_id = s.id
+        LEFT JOIN wms_putaway_status wps ON wps.purchase_order_line_id = s.id
         WHERE s.siparis_id = ?
     ''', [orderId]);
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();

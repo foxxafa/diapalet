@@ -156,7 +156,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS wms_putaway_status (
           id INTEGER PRIMARY KEY,
-          satinalmasiparisfissatir_id INTEGER UNIQUE,
+          purchase_order_line_id INTEGER UNIQUE,
           putaway_quantity REAL DEFAULT 0.00,
           created_at TEXT,
           updated_at TEXT

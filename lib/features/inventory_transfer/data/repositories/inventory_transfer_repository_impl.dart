@@ -297,9 +297,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             if (orderLine.isNotEmpty) {
               final lineId = orderLine.first['id'] as int;
               await txn.rawInsert('''
-                INSERT INTO wms_putaway_status (satinalmasiparisfissatir_id, putaway_quantity, created_at, updated_at)
+                INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity, created_at, updated_at)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(satinalmasiparisfissatir_id) DO UPDATE SET
+                ON CONFLICT(purchase_order_line_id) DO UPDATE SET
                 putaway_quantity = putaway_quantity + excluded.putaway_quantity,
                 updated_at = excluded.updated_at
               ''', [lineId, item.quantity, DateTime.now().toIso8601String(), DateTime.now().toIso8601String()]);
