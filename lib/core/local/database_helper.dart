@@ -269,6 +269,9 @@ class DatabaseHelper {
   Future<void> applyDownloadedData(Map<String, dynamic> data) async {
     final db = await database;
     await db.transaction((txn) async {
+      // Foreign key constraint'leri geçici olarak devre dışı bırak
+      await txn.execute('PRAGMA foreign_keys = OFF');
+      
       final batch = txn.batch();
       for (var table in data.keys) {
         if (data[table] is! List) continue;
@@ -298,6 +301,9 @@ class DatabaseHelper {
         }
       }
       await batch.commit(noResult: true);
+      
+      // Foreign key constraint'leri yeniden etkinleştir
+      await txn.execute('PRAGMA foreign_keys = ON');
     });
   }
 

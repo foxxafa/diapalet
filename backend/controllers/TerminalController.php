@@ -651,17 +651,17 @@ class TerminalController extends Controller
                     $this->castNumericValues($data['wms_putaway_status'], ['id', 'satinalmasiparisfissatir_id'], ['putaway_quantity']);
                 }
 
-                $poReceipts = (new Query())->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+                $poReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
                 $data['goods_receipts'] = array_merge($data['goods_receipts'], $poReceipts);
             }
 
             // Serbest mal kabulleri (siparis_id NULL olanlar) her zaman ilgili depo için indirilir
-            $freeReceipts = (new Query())->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
+            $freeReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
             $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
 
-            $this->castNumericValues($data['goods_receipts'], ['goods_receipt_id', 'siparis_id', 'employee_id', 'warehouse_id']);
+            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
 
-            $receiptIds = array_column($data['goods_receipts'], 'goods_receipt_id');
+            $receiptIds = array_column($data['goods_receipts'], 'id');
             if (!empty($receiptIds)) {
                 $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
                 $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
