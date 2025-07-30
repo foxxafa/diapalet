@@ -15,20 +15,20 @@ import 'package:share_plus/share_plus.dart';
 
 class PdfService {
   static const String _companyName = 'ROWHUB Warehouse Management';
-  
+
   /// Generates an enriched filename for PDF export using enriched data
   static Future<String> generateEnrichedPdfFileName(PendingOperation operation) async {
     final effectiveDate = operation.syncedAt ?? operation.createdAt;
     final formattedDate = DateFormat('yyyyMMdd_HHmmss').format(effectiveDate);
     final typeName = operation.displayTitle.replaceAll(' ', '');
-    
+
     String identifier = '';
-    
+
     try {
       switch (operation.type) {
         case PendingOperationType.goodsReceipt:
           final enrichedData = await DatabaseHelper.instance.getEnrichedGoodsReceiptData(
-            operation.data, 
+            operation.data,
             operationDate: operation.createdAt,
           );
           final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
@@ -54,7 +54,7 @@ class PdfService {
     if (identifier.isNotEmpty) {
       return '${typeName}_${identifier}_$formattedDate.pdf';
     }
-    
+
     return '${typeName}_$formattedDate.pdf';
   }
 
@@ -67,7 +67,7 @@ class PdfService {
 
     // Get enriched data from database with operation date for historical accuracy
     final dbHelper = DatabaseHelper.instance;
-    
+
     // Data içindeki receipt_date'i kullan, created_at değil (server timing farkı için)
     DateTime operationDate = operation.createdAt;
     try {
@@ -79,9 +79,9 @@ class PdfService {
     } catch (e) {
       // Parse hatası durumunda created_at kullan
     }
-    
+
     final enrichedData = await dbHelper.getEnrichedGoodsReceiptData(operation.data, operationDate: operationDate);
-    
+
     // Operation type'a göre farklı PDF formatları
     switch (operation.type) {
       case PendingOperationType.goodsReceipt:
@@ -104,7 +104,7 @@ class PdfService {
   ) async {
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
-    
+
     // Extract information from the enriched data
     final employeeInfo = header['employee_info'] as Map<String, dynamic>?;
     final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
@@ -117,8 +117,12 @@ class PdfService {
     final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
     final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
     final poId = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    final deliveryNoteNumber = header['delivery_note_number']?.toString();
     final invoiceNumber = header['invoice_number']?.toString() ?? 'N/A';
-    
+
+    // Check if this is an order-based receipt or free receipt
+    final isOrderBased = header['siparis_id'] != null;
+
     // Force close kontrolü - sipariş eksiklerle kapatıldı mı?
     bool isForceClosed = false;
     final siparisId = header['siparis_id'] as int?;
@@ -135,7 +139,7 @@ class PdfService {
         } catch (e) {
           // Parse hatası durumunda created_at kullan
         }
-        
+
         final db = DatabaseHelper.instance;
         // Bu mal kabul işleminden SONRA force close yapıldı mı kontrol et
         isForceClosed = await db.hasForceCloseOperationForOrder(siparisId, operationDate);
@@ -143,9 +147,9 @@ class PdfService {
         // Hata durumunda force close bilgisini false olarak bırak
       }
     }
-     
+
     final pdf = pw.Document();
-     
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -166,6 +170,8 @@ class PdfService {
             _buildReceiptOperationInfoSection(
               operation: operation,
               poId: poId,
+              deliveryNoteNumber: deliveryNoteNumber,
+              isOrderBased: isOrderBased,
               invoiceNumber: invoiceNumber,
               date: operation.createdAt,
               isForceClosed: isForceClosed,
@@ -173,17 +179,17 @@ class PdfService {
               boldFont: boldFont,
             ),
             pw.SizedBox(height: 20),
-            _buildDetailedGoodsReceiptItemsTable(items, font, boldFont),
+            _buildDetailedGoodsReceiptItemsTable(items, isOrderBased, font, boldFont),
             pw.SizedBox(height: 30),
             _buildFooter(font),
           ];
         },
       ),
     );
-     
+
     return pdf.save();
   }
-  
+
   /// Generates a detailed PDF for inventory transfer operations
   static Future<Uint8List> _generateInventoryTransferOperationPdf(
     PendingOperation operation,
@@ -192,11 +198,11 @@ class PdfService {
     pw.Font boldFont,
   ) async {
     final pdf = pw.Document();
-    
+
     // Parse enriched data
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
-    
+
     // Extract information from enriched data
     final sourceName = header['source_location_name'] ?? 'N/A';
     final sourceCode = header['source_location_code'] ?? '';
@@ -207,17 +213,17 @@ class PdfService {
     final containerId = header['container_id']?.toString();
     final poId = header['po_id']?.toString();
     final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
-    
+
     // Determine operation type
     final isPutawayOperation = header['source_location_id'] == null || header['source_location_id'] == 0;
     final operationTitle = isPutawayOperation ? 'Putaway Operation Report' : 'Inventory Transfer Report';
-    
+
     // Location displays
     final sourceDisplay = sourceCode.isNotEmpty ? '$sourceName ($sourceCode)' : sourceName;
     final targetDisplay = targetCode.isNotEmpty ? '$targetName ($targetCode)' : targetName;
-    
+
     // Calculate totals - not used in transfer report
-    
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -226,9 +232,9 @@ class PdfService {
           return [
             // Header
             _buildHeader(operationTitle, boldFont),
-            
+
             pw.SizedBox(height: 20),
-            
+
             // Employee and Warehouse Info Section
             _buildEmployeeWarehouseInfoSection(
               employeeName: employeeName,
@@ -238,9 +244,9 @@ class PdfService {
               font: font,
               boldFont: boldFont,
             ),
-            
+
             pw.SizedBox(height: 15),
-            
+
             // Transfer Info Section
             _buildTransferInfoSection(
               operation: operation,
@@ -254,24 +260,24 @@ class PdfService {
               font: font,
               boldFont: boldFont,
             ),
-            
+
             pw.SizedBox(height: 20),
-            
+
             // Items Table
             _buildTransferItemsTable(items, font, boldFont),
-            
+
             pw.SizedBox(height: 30),
-            
+
             // Footer
             _buildFooter(font),
           ];
         },
       ),
     );
-    
+
     return pdf.save();
   }
-  
+
   /// Generates a detailed PDF for force close order operations
   static Future<Uint8List> _generateForceCloseOrderOperationPdf(
     PendingOperation operation,
@@ -280,12 +286,12 @@ class PdfService {
     pw.Font boldFont,
   ) async {
     final pdf = pw.Document();
-    
+
          // Parse operation data
      final data = enrichedData ?? {};
      final poId = data['po_id'] ?? 'N/A';
      final employeeName = data['employee_name'] ?? 'System User';
-    
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -294,9 +300,9 @@ class PdfService {
           return [
             // Header
             _buildHeader('Force Close Order Report', boldFont),
-            
+
             pw.SizedBox(height: 20),
-            
+
                                       // Order Info Section
              _buildForceCloseOrderInfoSection(
                operation: operation,
@@ -305,31 +311,31 @@ class PdfService {
                font: font,
                boldFont: boldFont,
              ),
-             
+
              pw.SizedBox(height: 20),
-             
+
              // Order Details if available
              if (data['order_details'] != null)
                _buildOrderDetailsSection(data['order_details'], font, boldFont),
-             
+
              pw.SizedBox(height: 30),
-            
+
             // Footer
             _buildFooter(font),
           ];
         },
       ),
     );
-    
+
     return pdf.save();
   }
-  
 
-  
+
+
   /// Shows a share dialog with options for saving and sharing
   static Future<void> showShareDialog(
-    BuildContext context, 
-    Uint8List pdfData, 
+    BuildContext context,
+    Uint8List pdfData,
     String fileName,
   ) async {
     await showModalBottomSheet(
@@ -343,7 +349,7 @@ class PdfService {
       },
     );
   }
-  
+
   /// Saves PDF to a user-selected directory.
   static Future<String?> savePdfWithPicker(Uint8List pdfData, String fileName) async {
     try {
@@ -376,9 +382,9 @@ class PdfService {
     await file.writeAsBytes(pdfData);
     await Share.shareXFiles([XFile(file.path)], text: 'PDF Report');
   }
-  
+
   // Private helper methods
-  
+
   static pw.Widget _buildHeader(String title, pw.Font boldFont) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -401,9 +407,9 @@ class PdfService {
       ],
     );
   }
-  
+
   // This function has been replaced by more detailed sections above
-  
+
   static pw.Widget _buildInfoRow(String label, String value, pw.Font font, pw.Font boldFont) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 2),
@@ -427,7 +433,7 @@ class PdfService {
       ),
     );
   }
-  
+
   static pw.Widget _buildTableCell(String text, pw.Font font, {bool isHeader = false}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(8),
@@ -441,7 +447,7 @@ class PdfService {
       ),
     );
   }
-  
+
   static pw.Widget _buildFooter(pw.Font font) {
     return pw.Column(
       children: [
@@ -458,13 +464,13 @@ class PdfService {
       ],
     );
   }
-  
+
 
 
   // New specialized info sections
-  
 
-  
+
+
   static pw.Widget _buildTransferInfoSection({
     required PendingOperation operation,
     required String sourceLocation,
@@ -480,7 +486,7 @@ class PdfService {
     final infoTitle = isPutawayOperation ? 'Putaway Information' : 'Transfer Information';
     final operationTypeText = isPutawayOperation ? 'Putaway Operation' : 'Stock Transfer';
     final transferModeText = operationType == 'pallet_transfer' ? 'Pallet Transfer' : 'Box Transfer';
-    
+
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
       decoration: pw.BoxDecoration(
@@ -509,7 +515,7 @@ class PdfService {
       ),
     );
   }
-  
+
   static pw.Widget _buildForceCloseOrderInfoSection({
     required PendingOperation operation,
     required String poId,
@@ -540,7 +546,7 @@ class PdfService {
       ),
     );
   }
-  
+
   static pw.Widget _buildOrderDetailsSection(Map<String, dynamic> orderDetails, pw.Font font, pw.Font boldFont) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
@@ -568,7 +574,7 @@ class PdfService {
       ),
     );
   }
-  
+
   static String _getOrderStatusText(dynamic status) {
     switch (status) {
       case 0:
@@ -585,14 +591,14 @@ class PdfService {
         return 'Unknown';
     }
   }
-  
-  // New specialized item tables
-  
 
-  
+  // New specialized item tables
+
+
+
   static pw.Widget _buildTransferItemsTable(List<dynamic> items, pw.Font font, pw.Font boldFont) {
     final totalQuantity = items.fold<double>(0.0, (sum, item) => sum + ((item['quantity_transferred'] as num? ?? item['quantity'] as num?)?.toDouble() ?? 0.0));
-    
+
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -615,7 +621,7 @@ class PdfService {
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
                 _buildTableCell('Barcode', boldFont, isHeader: true),
-                _buildTableCell('Product Name + Code', boldFont, isHeader: true),
+                _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Quantity', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
               ],
@@ -627,10 +633,10 @@ class PdfService {
               final productBarcode = item['product_barcode'] ?? '';
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
               final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box';
-              
+
               // Product Name + Code birleştirme
               final productNameAndCode = productCode != 'N/A' ? '$productName ($productCode)' : productName;
-              
+
               return pw.TableRow(
                 children: [
                   _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
@@ -693,6 +699,8 @@ class PdfService {
   static pw.Widget _buildReceiptOperationInfoSection({
     required PendingOperation operation,
     required String poId,
+    String? deliveryNoteNumber,
+    bool isOrderBased = true,
     required String invoiceNumber,
     required DateTime date,
     bool isForceClosed = false,
@@ -715,7 +723,10 @@ class PdfService {
           pw.SizedBox(height: 8),
           _buildInfoRow('Operation Type', operation.displayTitle, font, boldFont),
           _buildInfoRow('Receipt Date', DateFormat('dd/MM/yyyy HH:mm').format(date), font, boldFont),
-          _buildInfoRow('Purchase Order', poId, font, boldFont),
+          if (isOrderBased)
+            _buildInfoRow('Purchase Order', poId, font, boldFont)
+          else if (deliveryNoteNumber != null)
+            _buildInfoRow('Delivery Note Number', deliveryNoteNumber, font, boldFont),
           if (invoiceNumber != 'N/A' && invoiceNumber != poId)
             _buildInfoRow('Invoice Number', invoiceNumber, font, boldFont),
           _buildInfoRow('Status', operation.status, font, boldFont),
@@ -728,6 +739,7 @@ class PdfService {
 
   static pw.Widget _buildDetailedGoodsReceiptItemsTable(
     List<dynamic> items,
+    bool isOrderBased,
     pw.Font font,
     pw.Font boldFont,
   ) {
@@ -749,9 +761,8 @@ class PdfService {
         pw.SizedBox(height: 10),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
-          // DÜZELTME: Sütun genişlikleri isteğe göre ayarlandı.
-          // 'Container' daraltıldı, 'Ordered' ve 'This Receipt' genişletildi.
-          columnWidths: const {
+          // Sütun genişlikleri - sipariş bazlı olup olmadığına göre
+          columnWidths: isOrderBased ? const {
             0: pw.FlexColumnWidth(1.5), // Barcode
             1: pw.FlexColumnWidth(2), // Product Name
             2: pw.FlexColumnWidth(1.0), // Ordered
@@ -759,41 +770,46 @@ class PdfService {
             4: pw.FlexColumnWidth(1.0), // This Receipt
             5: pw.FlexColumnWidth(1.2), // Expiry Date
             6: pw.FlexColumnWidth(1.5), // Container
+          } : const {
+            0: pw.FlexColumnWidth(2), // Barcode
+            1: pw.FlexColumnWidth(2.5), // Product Name
+            2: pw.FlexColumnWidth(1.5), // Quantity
+            3: pw.FlexColumnWidth(1.5), // Expiry Date
+            4: pw.FlexColumnWidth(2), // Container
           },
           children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-              children: [
-                _buildTableCell('Barcode', boldFont, isHeader: true),
-                // DÜZELTME: Sütun başlığı "Product Name" olarak değiştirildi.
-                _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Ordered', boldFont, isHeader: true),
-                _buildTableCell('Total Received', boldFont, isHeader: true),
-                _buildTableCell('This Receipt', boldFont, isHeader: true),
-                _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                _buildTableCell('Container', boldFont, isHeader: true),
-              ],
-            ),
+            // Header row - sipariş bazlı olup olmadığına göre farklı
+            if (isOrderBased)
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  _buildTableCell('Barcode', boldFont, isHeader: true),
+                  _buildTableCell('Product Name', boldFont, isHeader: true),
+                  _buildTableCell('Ordered', boldFont, isHeader: true),
+                  _buildTableCell('Total Received', boldFont, isHeader: true),
+                  _buildTableCell('This Receipt', boldFont, isHeader: true),
+                  _buildTableCell('Expiry Date', boldFont, isHeader: true),
+                  _buildTableCell('Container', boldFont, isHeader: true),
+                ],
+              )
+            else
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  _buildTableCell('Barcode', boldFont, isHeader: true),
+                  _buildTableCell('Product Name', boldFont, isHeader: true),
+                  _buildTableCell('Quantity', boldFont, isHeader: true),
+                  _buildTableCell('Expiry Date', boldFont, isHeader: true),
+                  _buildTableCell('Container', boldFont, isHeader: true),
+                ],
+              ),
             ...items.map((item) {
               final productBarcode = item['product_barcode'] ?? '';
               final productName = item['product_name'] ?? 'Unknown';
               final productCode = item['product_code'] ?? 'N/A';
               final productNameAndCode = '$productName ($productCode)';
               final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
-              
-              // Miktarlar
-              final orderedQty = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
-              final currentReceived = (item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0;
-              final previousReceived = (item['previous_received'] as num?)?.toDouble() ?? 0.0;
-              
-              // Total received display: "60 + 12" formatında
-              String totalReceivedDisplay;
-              if (previousReceived > 0) {
-                totalReceivedDisplay = '${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)}';
-              } else {
-                totalReceivedDisplay = currentReceived.toStringAsFixed(0);
-              }
-              
+
               // Get expiry date
               final expiryDate = item['expiry_date'];
               String expiryDisplay = '-';
@@ -805,31 +821,72 @@ class PdfService {
                   expiryDisplay = expiryDate.toString();
                 }
               }
-              
-              return pw.TableRow(
-                children: [
-                  _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                  _buildTableCell(productNameAndCode, font),
-                  _buildTableCell(orderedQty.toStringAsFixed(0), font),
-                  _buildTableCell(totalReceivedDisplay, font),
-                  _buildTableCell(currentReceived.toStringAsFixed(0), font),
-                  _buildTableCell(expiryDisplay, font),
-                  _buildTableCell(containerDisplay, font),
-                ],
-              );
+
+              if (isOrderBased) {
+                // Sipariş bazlı mal kabul - tüm sütunları göster
+                final orderedQty = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
+                final currentReceived = (item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0;
+                final previousReceived = (item['previous_received'] as num?)?.toDouble() ?? 0.0;
+
+                // Total received display: "60 + 12" formatında
+                String totalReceivedDisplay;
+                if (previousReceived > 0) {
+                  totalReceivedDisplay = '${previousReceived.toStringAsFixed(0)} + ${currentReceived.toStringAsFixed(0)}';
+                } else {
+                  totalReceivedDisplay = currentReceived.toStringAsFixed(0);
+                }
+
+                return pw.TableRow(
+                  children: [
+                    _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
+                    _buildTableCell(productNameAndCode, font),
+                    _buildTableCell(orderedQty.toStringAsFixed(0), font),
+                    _buildTableCell(totalReceivedDisplay, font),
+                    _buildTableCell(currentReceived.toStringAsFixed(0), font),
+                    _buildTableCell(expiryDisplay, font),
+                    _buildTableCell(containerDisplay, font),
+                  ],
+                );
+              } else {
+                // Serbest mal kabul - sadece gerekli sütunları göster
+                final currentReceived = (item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0;
+
+                return pw.TableRow(
+                  children: [
+                    _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
+                    _buildTableCell(productNameAndCode, font),
+                    _buildTableCell(currentReceived.toStringAsFixed(0), font),
+                    _buildTableCell(expiryDisplay, font),
+                    _buildTableCell(containerDisplay, font),
+                  ],
+                );
+              }
             }),
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.blue50),
-              children: [
-                _buildTableCell('', boldFont, isHeader: true),
-                _buildTableCell('TOTAL', boldFont, isHeader: true),
-                _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
-                _buildTableCell('', boldFont, isHeader: true),
-                _buildTableCell('', boldFont, isHeader: true),
-              ],
-            ),
+            // Total row - sipariş bazlı olup olmadığına göre farklı
+            if (isOrderBased)
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.blue50),
+                children: [
+                  _buildTableCell('', boldFont, isHeader: true),
+                  _buildTableCell('TOTAL', boldFont, isHeader: true),
+                  _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
+                  _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
+                  _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
+                ],
+              )
+            else
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.blue50),
+                children: [
+                  _buildTableCell('', boldFont, isHeader: true),
+                  _buildTableCell('TOTAL', boldFont, isHeader: true),
+                  _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
+                ],
+              ),
           ],
         ),
       ],
@@ -841,16 +898,16 @@ class PdfService {
 class _ShareBottomSheet extends StatelessWidget {
   final Uint8List pdfData;
   final String fileName;
-  
+
   const _ShareBottomSheet({
     required this.pdfData,
     required this.fileName,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -870,7 +927,7 @@ class _ShareBottomSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
+
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -880,7 +937,7 @@ class _ShareBottomSheet extends StatelessWidget {
                   style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Share options grid
                                   Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -934,9 +991,9 @@ class _ShareBottomSheet extends StatelessWidget {
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: Text('common_labels.close'.tr()),
@@ -954,17 +1011,17 @@ class _ShareOption extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  
+
   const _ShareOption({
     required this.icon,
     required this.label,
     required this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -991,4 +1048,4 @@ class _ShareOption extends StatelessWidget {
       ),
     );
   }
-} 
+}

@@ -275,6 +275,7 @@
     "po_prefix": "PO: ",
     "status_separator": "/ ",
     "goods_receiving_area": "000",
+    "goods_receiving_area_display": "Goods Receiving Area",
     "active_session_found": "Active session found. Redirecting to main page.",
     "no_active_session": "No active session found. Showing login screen."
   },
@@ -403,7 +404,9 @@
     "unknown_product": "Unknown Product",
     "operation_type": "Operation Type",
     "employee": "Employee",
-    "transfer_mode": "Transfer Mode"
+    "transfer_mode": "Transfer Mode",
+    "delivery_note_number": "Delivery Note Number",
+    "order_status": "Order Status"
   },
   "validation": {
     "field_required": "This field is required",

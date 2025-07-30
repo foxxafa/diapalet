@@ -250,7 +250,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       // SharedPreferences'ı temizle
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
-      
+
       // Tüm sayfalardan çıkıp login ekranına yönlendir.
       navigator.pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -556,7 +556,7 @@ class _OperationCard extends StatelessWidget {
 
       // Generate PDF. Enrichment is now handled inside the PDF Service.
       final pdfData = await operation.generatePdf();
-      
+
       // Generate enriched filename with order information
       final enrichedFileName = await PdfService.generateEnrichedPdfFileName(operation);
 
@@ -728,6 +728,7 @@ class _OperationDetailsView extends StatelessWidget {
 
     // Bilgileri extract et
     final poId = header['order_info']?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    final deliveryNoteNumber = header['delivery_note_number']?.toString();
     final invoice = header['invoice_number']?.toString() ?? 'N/A';
     final employeeName = header['employee_info'] != null
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
@@ -758,9 +759,10 @@ class _OperationDetailsView extends StatelessWidget {
       details: {
         'dialog_labels.operation_type'.tr(): isOrderBased ? 'pending_operations.operation_types.order_based_receipt'.tr() : 'pending_operations.operation_types.free_receipt'.tr(),
         'dialog_labels.employee'.tr(): employeeName,
-        'dialog_labels.purchase_order'.tr(): poId,
+        if (isOrderBased) 'dialog_labels.purchase_order'.tr(): poId,
+        if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) 'dialog_labels.delivery_note_number'.tr(): deliveryNoteNumber,
         if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
-        if (isForceClosed) 'Order Status': 'Closed with remainings',
+        if (isForceClosed) 'dialog_labels.order_status'.tr(): 'Force Closed',
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
@@ -942,11 +944,10 @@ class _OperationDetailsView extends StatelessWidget {
       details: {
         'dialog_labels.operation_type'.tr(): operationDescription,
         'dialog_labels.employee'.tr(): employeeName,
-        'dialog_labels.from'.tr(): sourceDisplay == "000" ? "common_labels.goods_receiving_area".tr() : sourceDisplay,
+        'dialog_labels.from'.tr(): sourceDisplay == "000" ? "common_labels.goods_receiving_area_display".tr() : sourceDisplay,
         'dialog_labels.to'.tr(): targetDisplay,
         if (poId != null && poId.isNotEmpty && poId != 'null') 'dialog_labels.purchase_order'.tr(): poId,
         if (containerId != null) 'dialog_labels.container'.tr(): containerId,
-        // 'dialog_labels.transfer_mode'.tr(): operationType == 'pallet_transfer' ? 'pending_operations.operation_types.pallet_transfer'.tr() : 'pending_operations.operation_types.box_transfer'.tr(),
       },
       items: items.cast<Map<String, dynamic>>(),
       itemBuilder: (item) {
@@ -1162,27 +1163,33 @@ class _OperationDetailsView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ...details.entries.map((entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0), // Spacing artırıldı
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // DÜZELTME: Taşmayı önlemek için etiket dar bir alana sabitlendi
-                  SizedBox(
-                    width: 100, // Etiket için sabit genişlik
-                    child: Text('${entry.key}:',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.bold, // Etiketi kalın yap
-                        )),
+        Table(
+          columnWidths: const <int, TableColumnWidth>{
+            0: IntrinsicColumnWidth(),
+            1: FlexColumnWidth(),
+          },
+          defaultVerticalAlignment: TableCellVerticalAlignment.top,
+          children: details.entries.map((entry) => TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Text(
+                  '${entry.key}:',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(width: 8),
-                  // DÜZELTME: Değerin kalan alanı doldurması için Expanded eklendi
-                  Expanded(
-                    child: Text(entry.value, style: theme.textTheme.bodyMedium),
-                  ),
-                ],
+                ),
               ),
-            )),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0, left: 8.0),
+                child: Text(
+                  entry.value,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          )).toList(),
+        ),
         if (items != null && items.isNotEmpty && itemBuilder != null) ...[
           const Divider(height: 24),
           Text(

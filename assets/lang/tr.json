@@ -461,5 +461,18 @@
   "form_fields.product": "Ürün",
   "form_fields.quantity": "Miktar",
   "form_fields.pallet_barcode": "Palet Barkodu",
-  "form_fields.expiry_date": "Son Kullanma Tarihi"
+  "form_fields.expiry_date": "Son Kullanma Tarihi",
+  "dialog_labels.receiving_area": "Teslim Alma Alanı",
+  "dialog_labels.purchase_order": "Satınalma Siparişi",
+  "dialog_labels.invoice": "Fatura",
+  "dialog_labels.from": "Nereden",
+  "dialog_labels.to": "Nereye",
+  "dialog_labels.container": "Konteyner",
+  "dialog_labels.items_count": "Kalemler ({count})",
+  "dialog_labels.unknown_product": "Bilinmeyen Ürün",
+  "dialog_labels.operation_type": "İşlem Tipi",
+  "dialog_labels.employee": "Personel",
+  "dialog_labels.transfer_mode": "Transfer Modu",
+  "dialog_labels.delivery_note_number": "İrsaliye Numarası",
+  "dialog_labels.order_status": "Sipariş Durumu"
 }

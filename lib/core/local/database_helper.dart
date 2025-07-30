@@ -268,18 +268,18 @@ class DatabaseHelper {
 
   Future<void> applyDownloadedData(Map<String, dynamic> data) async {
     final db = await database;
-    
+
     // Foreign key constraint'leri geçici olarak devre dışı bırak (transaction dışında)
     await db.execute('PRAGMA foreign_keys = OFF');
-    
+
     try {
       await db.transaction((txn) async {
         final batch = txn.batch();
-        
+
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
           'goods_receipt_items',
-          'goods_receipts', 
+          'goods_receipts',
           'wms_putaway_status',
           'satin_alma_siparis_fis_satir',
           'satin_alma_siparis_fis',
@@ -289,14 +289,14 @@ class DatabaseHelper {
           'warehouses',
           'urunler'
         ];
-        
+
         // Tablolari belirtilen sirada sil
         for (final table in deletionOrder) {
           if (data.containsKey(table)) {
             await txn.delete(table);
           }
         }
-        
+
         // Sonra verileri ekle
         for (var table in data.keys) {
           if (data[table] is! List) continue;
@@ -308,7 +308,7 @@ class DatabaseHelper {
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         }
-        
+
         await batch.commit(noResult: true);
       });
     } finally {
