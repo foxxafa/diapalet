@@ -102,7 +102,7 @@ CREATE TABLE `inventory_transfers` (
   `id` int NOT NULL AUTO_INCREMENT,
   `urun_id` int DEFAULT NULL,
   `from_location_id` int DEFAULT NULL,
-  `to_location_id` int NOT NULL,
+  `to_location_id` int DEFAULT NULL,
   `quantity` decimal(10,2) NOT NULL,
   `from_pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
