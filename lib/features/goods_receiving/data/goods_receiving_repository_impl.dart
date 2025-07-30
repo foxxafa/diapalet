@@ -192,58 +192,45 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    // FIX: The warehouse ID is stored under 'branch_id' in the satin_alma_siparis_fis table.
-    // Let's use the correct key from SharedPreferences which should be 'branch_id' or find it via warehouse_id.
-    // For now, assuming the logic to filter by warehouse is correct and the issue is elsewhere.
     final branchId = prefs.getInt('branch_id');
 
     debugPrint("DEBUG: Branch ID from SharedPreferences: $branchId");
 
-    // DEBUG: Let's also check all orders in the database without filtering
-    final allOrdersForDebug = await db.query('satin_alma_siparis_fis');
-    debugPrint("DEBUG: Total orders in database: ${allOrdersForDebug.length}");
-    for (var order in allOrdersForDebug) {
-      debugPrint("DEBUG: All Orders - ID: ${order['id']}, PO ID: ${order['po_id']}, Status: ${order['status']}, Branch ID: ${order['branch_id']}");
-    }
+    // Optimized query: Single SQL query to get only open orders
+    // Uses JOIN and GROUP BY to calculate received vs expected quantities in one go
+    final openOrdersMaps = await db.rawQuery('''
+      SELECT DISTINCT
+        o.id,
+        o.po_id,
+        o.tarih,
+        o.aciklama,
+        o.branch_id,
+        o.status,
+        o.created_at,
+        o.updated_at
+      FROM satin_alma_siparis_fis o
+      WHERE o.status IN (0, 1)
+        AND o.branch_id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM satin_alma_siparis_fis_satir s
+          WHERE s.siparis_id = o.id
+            AND s.miktar > COALESCE((
+              SELECT SUM(gri.quantity_received)
+              FROM goods_receipt_items gri
+              JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+              WHERE gr.siparis_id = o.id AND gri.urun_id = s.urun_id
+            ), 0) + 0.001
+        )
+      ORDER BY o.tarih DESC
+    ''', [branchId]);
 
-    final candidateOrdersMaps = await db.query(
-      'satin_alma_siparis_fis',
-      where: 'status IN (0, 1) AND branch_id = ?',
-      whereArgs: [branchId],
-      orderBy: 'tarih DESC',
-    );
+    debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders with optimized query");
 
-    debugPrint("DEBUG: Found ${candidateOrdersMaps.length} candidate orders");
-    for (var order in candidateOrdersMaps) {
-      debugPrint("DEBUG: Order ID: ${order['id']}, PO ID: ${order['po_id']}, Status: ${order['status']}, Branch ID: ${order['branch_id']}");
-    }
+    final openOrders = openOrdersMaps.map((orderMap) => PurchaseOrder.fromMap(orderMap)).toList();
 
-    final openOrders = <PurchaseOrder>[];
-    for (var orderMap in candidateOrdersMaps) {
-      final order = PurchaseOrder.fromMap(orderMap);
-      final orderItems = await getPurchaseOrderItems(order.id);
-
-      debugPrint("DEBUG: Order ${order.id} has ${orderItems.length} items");
-
-      if (orderItems.isEmpty) {
-        debugPrint("DEBUG: Skipping order ${order.id} - no items found");
-        continue;
-      }
-
-      bool isFullyReceived = true;
-      for (var item in orderItems) {
-        debugPrint("DEBUG: Item ${item.productId} - Expected: ${item.expectedQuantity}, Received: ${item.receivedQuantity}");
-        if (item.receivedQuantity < item.expectedQuantity - 0.001) {
-          isFullyReceived = false;
-          break;
-        }
-      }
-
-      debugPrint("DEBUG: Order ${order.id} is fully received: $isFullyReceived");
-
-      if (!isFullyReceived) {
-        openOrders.add(order);
-      }
+    for (var order in openOrders) {
+      debugPrint("DEBUG: Open Order ID: ${order.id}, PO ID: ${order.poId}, Status: ${order.status}");
     }
 
     debugPrint("Mal kabul için açık siparişler (Branch ID: $branchId): ${openOrders.length} adet bulundu");

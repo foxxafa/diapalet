@@ -342,3 +342,22 @@ ADD CONSTRAINT `fk_transfer_employee` FOREIGN KEY (`employee_id`) REFERENCES `em
 ALTER TABLE `wms_putaway_status`
 ADD CONSTRAINT `fk_putaway_order_line` FOREIGN KEY (`purchase_order_line_id`) REFERENCES `satin_alma_siparis_fis_satir` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- PERFORMANCE INDEXES
+-- These indexes optimize the N+1 query problem fixed in getOpenPurchaseOrders function
+
+-- 1. Sipariş tablosu için composite index (N+1 optimizasyonu için kritik)
+CREATE INDEX IF NOT EXISTS idx_siparis_status_branch 
+ON satin_alma_siparis_fis(status, branch_id, tarih DESC);
+
+-- 2. Sipariş satırları için index
+CREATE INDEX IF NOT EXISTS idx_siparis_satir_siparis_urun 
+ON satin_alma_siparis_fis_satir(siparis_id, urun_id);
+
+-- 3. Mal kabul kayıtları için index
+CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis 
+ON goods_receipts(siparis_id);
+
+-- 4. Mal kabul kalemleri için index
+CREATE INDEX IF NOT EXISTS idx_goods_receipt_items_receipt_urun 
+ON goods_receipt_items(receipt_id, urun_id);
+
