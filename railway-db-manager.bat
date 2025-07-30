@@ -97,7 +97,7 @@ echo Lutfen bekleyin...
 echo.
 echo.
 REM Execute database reset via REST; using Invoke-RestMethod for simplicity
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-RestMethod -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method Post -Headers @{ Authorization='Bearer 123'; 'Content-Type'='application/json' } -Body '{}' ; Write-Host 'Basarili:' $r.message } catch { Write-Host 'Hata:' $_.Exception.Message }"
+ powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-RestMethod -Uri 'https://diapalet-staging.up.railway.app/api/terminal/dev-reset' -Method Post ; Write-Host 'Basarili:' $r.message } catch { Write-Host 'Hata:' $_.Exception.Message }"
 
 echo.
 echo STAGING veritabani sifirlama islemi tamamlandi.

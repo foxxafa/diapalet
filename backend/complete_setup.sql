@@ -85,7 +85,7 @@ CREATE TABLE `goods_receipt_items` (
 
 CREATE TABLE `inventory_stock` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `urun_id` int NOT NULL,
+  `urun_id` int DEFAULT NULL,
   `location_id` int DEFAULT NULL,
   `siparis_id` int DEFAULT NULL,
   `goods_receipt_id` int DEFAULT NULL,

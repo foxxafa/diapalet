@@ -336,7 +336,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.query(
       'urunler',
-      where: 'id = ?',
+      where: 'UrunId = ?',
       whereArgs: [productId],
       limit: 1,
     );

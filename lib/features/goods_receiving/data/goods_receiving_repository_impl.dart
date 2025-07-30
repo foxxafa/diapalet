@@ -127,7 +127,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         final productResult = await txn.query(
           'urunler',
           columns: ['UrunAdi', 'StokKodu'],
-          where: 'id = ?',
+          where: 'UrunId = ?',
           whereArgs: [item.urunId],
           limit: 1,
         );
