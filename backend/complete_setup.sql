@@ -298,7 +298,7 @@ INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `mikt
 (7, 203, 7, 95.00, 'BOX');
 
 ALTER TABLE `goods_receipts`
-ADD CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`),
+ADD CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
 ADD CONSTRAINT `goods_receipts_ibfk_2` FOREIGN KEY (`siparis_id`) REFERENCES `satin_alma_siparis_fis` (`id`) ON DELETE SET NULL,
 ADD CONSTRAINT `goods_receipts_ibfk_3` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`);
 
@@ -322,10 +322,5 @@ ADD CONSTRAINT `fk_transfer_employee` FOREIGN KEY (`employee_id`) REFERENCES `em
 -- goods_receipt_items için Foreign Key
 ALTER TABLE `goods_receipt_items`
 ADD CONSTRAINT `fk_receipt_item_urun` FOREIGN KEY (`urun_id`) REFERENCES `urunler` (`UrunId`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- goods_receipts için employee constraint güncelleme
-ALTER TABLE `goods_receipts`
-DROP FOREIGN KEY `goods_receipts_ibfk_1`,
-ADD CONSTRAINT `goods_receipts_ibfk_1` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 SET FOREIGN_KEY_CHECKS=1;
