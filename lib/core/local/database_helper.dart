@@ -268,46 +268,54 @@ class DatabaseHelper {
 
   Future<void> applyDownloadedData(Map<String, dynamic> data) async {
     final db = await database;
-    await db.transaction((txn) async {
-      // Foreign key constraint'leri geçici olarak devre dışı bırak
-      await txn.execute('PRAGMA foreign_keys = OFF');
-      
-      final batch = txn.batch();
-      for (var table in data.keys) {
-        if (data[table] is! List) continue;
-        final records = List<Map<String, dynamic>>.from(data[table]);
-        if (records.isEmpty) continue;
-
-        // FIX: The logic for handling inventory_stock during sync is updated.
-        if (table == 'inventory_stock') {
-          // Clear all local inventory_stock records to fully sync with server (prevent duplicates)
-          await txn.delete('inventory_stock');
-          // Insert all stock records from the server
-          for (final record in records) {
-            final sanitizedRecord = _sanitizeRecord(table, record);
-            batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-          }
-        } else {
-          // For all other tables, a full refresh is safe.
-          const fullRefreshTables = ['employees', 'urunler', 'warehouses', 'shelfs', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status'];
-          if(fullRefreshTables.contains(table)) {
+    
+    // Foreign key constraint'leri geçici olarak devre dışı bırak (transaction dışında)
+    await db.execute('PRAGMA foreign_keys = OFF');
+    
+    try {
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        
+        // Silme sırası önemli: önce child tablolar, sonra parent tablolar
+        const deletionOrder = [
+          'goods_receipt_items',
+          'goods_receipts', 
+          'wms_putaway_status',
+          'satin_alma_siparis_fis_satir',
+          'satin_alma_siparis_fis',
+          'inventory_stock',
+          'employees',
+          'shelfs',
+          'warehouses',
+          'urunler'
+        ];
+        
+        // Tablolari belirtilen sirada sil
+        for (final table in deletionOrder) {
+          if (data.containsKey(table)) {
             await txn.delete(table);
           }
+        }
+        
+        // Sonra verileri ekle
+        for (var table in data.keys) {
+          if (data[table] is! List) continue;
+          final records = List<Map<String, dynamic>>.from(data[table]);
+          if (records.isEmpty) continue;
 
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         }
-      }
-      await batch.commit(noResult: true);
-      
+        
+        await batch.commit(noResult: true);
+      });
+    } finally {
       // Foreign key constraint'leri yeniden etkinleştir
-      await txn.execute('PRAGMA foreign_keys = ON');
-    });
-  }
-
-  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
+      await db.execute('PRAGMA foreign_keys = ON');
+    }
+  }  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
     final newRecord = Map<String, dynamic>.from(record);
     if (table == 'urunler' && newRecord.containsKey('id')) {
       newRecord['UrunId'] = newRecord['id'];
