@@ -474,5 +474,55 @@
   "dialog_labels.employee": "Personel",
   "dialog_labels.transfer_mode": "Transfer Modu",
   "dialog_labels.delivery_note_number": "İrsaliye Numarası",
-  "dialog_labels.order_status": "Sipariş Durumu"
+  "dialog_labels.order_status": "Sipariş Durumu",
+  "sync": {
+    "loading_screen": {
+      "title": "Veriler Senkronize Ediliyor",
+      "subtitle": "Çalışma alanınız hazırlanırken lütfen bekleyiniz",
+      "progress_preparing": "Senkronizasyon hazırlanıyor...",
+      "progress_downloading": "{table} yükleniyor...",
+      "progress_processing": "{table} verileri işleniyor...",
+      "progress_finalizing": "Senkronizasyon tamamlanıyor...",
+      "progress_complete": "Senkronizasyon tamamlandı",
+      "estimated_time": "Tahmini süre: {minutes}d {seconds}s", 
+      "records_processed": "{current} / {total} kayıt",
+      "please_wait": "Lütfen bekleyiniz...",
+      "do_not_close": "Lütfen uygulamayı kapatmayınız"
+    },
+    "tables": {
+      "employees": "Personel Bilgileri",
+      "warehouses": "Depo Bilgileri", 
+      "shelfs": "Raf Lokasyonları",
+      "urunler": "Ürün Kataloğu",
+      "goods_receipts": "Mal Kabul Kayıtları",
+      "goods_receipt_items": "Kabul Kalemleri",
+      "inventory_stock": "Stok Bilgileri",
+      "wms_putaway_status": "Yerleştirme Durumu",
+      "satin_alma_siparis_fis": "Satınalma Siparişleri",
+      "satin_alma_siparis_fis_satir": "Sipariş Kalemleri"
+    },
+    "stages": {
+      "stage_1": "Sistem verileri yükleniyor...",
+      "stage_2": "Depo verileri yükleniyor...", 
+      "stage_3": "Ürün kataloğu yükleniyor...",
+      "stage_4": "Stok bilgileri yükleniyor...",
+      "stage_5": "Sipariş verileri yükleniyor...",
+      "final_stage": "Kurulum tamamlanıyor..."
+    },
+    "status": {
+      "connecting": "Sunucuya bağlanılıyor...",
+      "downloading": "Veriler indiriliyor...",
+      "processing": "Veriler işleniyor...",
+      "saving": "Yerel veritabanına kaydediliyor...",
+      "completed": "Senkronizasyon başarıyla tamamlandı",
+      "failed": "Senkronizasyon başarısız"
+    },
+    "errors": {
+      "network_error": "Ağ bağlantı hatası. Lütfen internet bağlantınızı kontrol ediniz.",
+      "server_error": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyiniz.",
+      "timeout_error": "Bağlantı zaman aşımı. Lütfen bağlantınızı kontrol edip tekrar deneyiniz.",
+      "data_error": "Veri işleme hatası. Lütfen destek ile iletişime geçiniz.",
+      "cancelled": "Senkronizasyon kullanıcı tarafından iptal edildi"
+    }
+  }
 }

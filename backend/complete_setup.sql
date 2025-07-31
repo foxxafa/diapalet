@@ -70,6 +70,8 @@ CREATE TABLE `warehouses` (
   `dia_id` INT NULL,
   `post_code` varchar(10) DEFAULT NULL,
   `ap` char(1) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -80,6 +82,8 @@ CREATE TABLE `shelfs` (
   `code` varchar(20) DEFAULT NULL,
   `dia_key` VARCHAR(20) NULL,
   `is_active` int DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_shelf_warehouse` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -193,6 +197,7 @@ CREATE TABLE `goods_receipts` (
   `employee_id` int(11) DEFAULT NULL,
   `receipt_date` datetime NOT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`goods_receipt_id`),
   KEY `employee_id` (`employee_id`),
   KEY `siparis_id` (`siparis_id`),
@@ -206,6 +211,8 @@ CREATE TABLE `goods_receipt_items` (
   `quantity_received` decimal(10,2) NOT NULL,
   `pallet_barcode` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_turkish_ci DEFAULT NULL,
   `expiry_date` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `fk_receipt_id` (`receipt_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;

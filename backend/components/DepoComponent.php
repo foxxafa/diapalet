@@ -139,13 +139,26 @@ class DepoComponent extends Component
             if (isset($lookup[$dia_warehouse_key])) {
                 $local_warehouse_id = $lookup[$dia_warehouse_key];
 
-                $db->createCommand()->insert('shelfs', [
-                    'warehouse_id' => $local_warehouse_id,
-                    'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
-                    'code' => $shelf['kod'] ?? 'KODSUZ',
-                    'dia_key' => $shelf['_key'],
-                    'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
-                ])->execute();
+                $existingShelf = (new Query())->select('id')->from('shelfs')->where(['dia_key' => $shelf['_key']])->one();
+
+                if ($existingShelf) {
+                    // Varsa güncelle (UPDATE ile updated_at otomatik güncellenir)
+                    $db->createCommand()->update('shelfs', [
+                        'warehouse_id' => $local_warehouse_id,
+                        'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
+                        'code' => $shelf['kod'] ?? 'KODSUZ',
+                        'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
+                    ], ['id' => $existingShelf['id']])->execute();
+                } else {
+                    // Yoksa yeni ekle
+                    $db->createCommand()->insert('shelfs', [
+                        'warehouse_id' => $local_warehouse_id,
+                        'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
+                        'code' => $shelf['kod'] ?? 'KODSUZ',
+                        'dia_key' => $shelf['_key'],
+                        'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
+                    ])->execute();
+                }
                 $count++;
             }
         }

@@ -10,6 +10,33 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum SyncStage {
+  initializing,
+  downloading,
+  processing,
+  finalizing,
+  completed,
+  error
+}
+
+class SyncProgress {
+  final SyncStage stage;
+  final String tableName;
+  final double progress; // 0.0 to 1.0
+  final int processedItems;
+  final int totalItems;
+  final String? message;
+
+  const SyncProgress({
+    required this.stage,
+    required this.tableName,
+    required this.progress,
+    this.processedItems = 0,
+    this.totalItems = 0,
+    this.message,
+  });
+}
+
 enum SyncStatus {
   offline,
   online,
@@ -26,6 +53,7 @@ class SyncService with ChangeNotifier {
   bool _isSyncing = false;
   bool _userOperationInProgress = false;
   final StreamController<SyncStatus> _statusController = StreamController<SyncStatus>.broadcast();
+  final StreamController<SyncProgress> _progressController = StreamController<SyncProgress>.broadcast();
   late final StreamSubscription _connectivitySubscription;
   Timer? _periodicTimer;
   SyncStatus _currentStatus = SyncStatus.offline;
@@ -42,7 +70,14 @@ class SyncService with ChangeNotifier {
 
   SyncStatus get currentStatus => _currentStatus;
   Stream<SyncStatus> get syncStatusStream => _statusController.stream;
+  Stream<SyncProgress> get syncProgressStream => _progressController.stream;
   bool get isSyncing => _isSyncing;
+
+  void _emitProgress(SyncProgress progress) {
+    if (!_progressController.isClosed) {
+      _progressController.add(progress);
+    }
+  }
 
   void _updateStatus(SyncStatus status) {
     if (_currentStatus == status) return;
@@ -112,6 +147,13 @@ class SyncService with ChangeNotifier {
     }
 
     try {
+      // Initializing stage
+      _emitProgress(const SyncProgress(
+        stage: SyncStage.initializing,
+        tableName: '',
+        progress: 0.0,
+      ));
+
       await uploadPendingOperations();
       
       final prefs = await SharedPreferences.getInstance();
@@ -123,6 +165,13 @@ class SyncService with ChangeNotifier {
       await _downloadDataFromServer(warehouseId: warehouseId);
       await dbHelper.cleanupOldSyncedOperations();
 
+      // Finalizing stage
+      _emitProgress(const SyncProgress(
+        stage: SyncStage.finalizing,
+        tableName: '',
+        progress: 0.95,
+      ));
+
       final remainingOps = await dbHelper.getPendingOperations();
       if (remainingOps.isEmpty) {
         _updateStatus(SyncStatus.upToDate);
@@ -131,10 +180,25 @@ class SyncService with ChangeNotifier {
         _updateStatus(SyncStatus.error);
         await dbHelper.addSyncLog('sync_status', 'error', 'Senkronizasyon sonrası hala ${remainingOps.length} gönderilmeyen işlem var.');
       }
+
+      // Completed stage
+      _emitProgress(const SyncProgress(
+        stage: SyncStage.completed,
+        tableName: '',
+        progress: 1.0,
+      ));
     } catch (e, s) {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
       _updateStatus(SyncStatus.error);
+      
+      // Error stage
+      _emitProgress(SyncProgress(
+        stage: SyncStage.error,
+        tableName: '',
+        progress: 0.0,
+        message: e.toString(),
+      ));
     } finally {
       _isSyncing = false;
       notifyListeners();
@@ -143,6 +207,14 @@ class SyncService with ChangeNotifier {
 
   Future<void> _downloadDataFromServer({required int warehouseId}) async {
     debugPrint("Sunucudan veri indirme başlıyor...");
+    
+    // Start downloading stage
+    _emitProgress(const SyncProgress(
+      stage: SyncStage.downloading,
+      tableName: '',
+      progress: 0.1,
+    ));
+    
     final prefs = await SharedPreferences.getInstance();
     final lastSync = prefs.getString(_lastSyncTimestampKey);
 
@@ -154,8 +226,23 @@ class SyncService with ChangeNotifier {
     if (response.statusCode == 200 && response.data['success'] == true) {
       final data = response.data['data'] as Map<String, dynamic>;
       final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
-      await dbHelper.applyDownloadedData(data);
-      await prefs.setString(_lastSyncTimestampKey, newTimestamp);
+      
+      // Processing stage
+      _emitProgress(const SyncProgress(
+        stage: SyncStage.processing,
+        tableName: '',
+        progress: 0.5,
+      ));
+      
+      await dbHelper.applyDownloadedData(data, onTableProgress: (tableName, processed, total) {
+        _emitProgress(SyncProgress(
+          stage: SyncStage.processing,
+          tableName: tableName,
+          progress: 0.5 + (processed / total * 0.4), // 0.5 to 0.9
+          processedItems: processed,
+          totalItems: total,
+        ));
+      });      await prefs.setString(_lastSyncTimestampKey, newTimestamp);
       debugPrint("Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
     } else {
       throw Exception("Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
@@ -255,6 +342,7 @@ class SyncService with ChangeNotifier {
     _connectivitySubscription.cancel();
     _periodicTimer?.cancel();
     _statusController.close();
+    _progressController.close();
     super.dispose();
   }
 }

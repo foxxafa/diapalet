@@ -1,5 +1,6 @@
 // lib/features/auth/presentation/login_screen.dart
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/widgets/sync_loading_screen.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:flutter/material.dart';
@@ -37,15 +38,34 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (authData != null && mounted) {
-          // GÜNCELLEME: Giriş başarılı olduktan hemen sonra senkronizasyonu tetikle.
-          // Bu, çalışan listesinin anında indirilmesini ve offline login için
-          // lokal veritabanının hazır olmasını sağlar.
-          await context.read<SyncService>().performFullSync();
-
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          final syncService = context.read<SyncService>();
+          
+          // Show sync loading screen
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => SyncLoadingScreen(
+                progressStream: syncService.syncProgressStream,
+                onSyncComplete: () {
+                  if (mounted) {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (context) => const HomeScreen()),
+                    );
+                  }
+                },
+                onSyncError: (error) {
+                  if (mounted) {
+                    Navigator.of(context).pop(); // Close loading screen
+                    setState(() {
+                      _errorMessage = 'sync.error.general'.tr();
+                    });
+                  }
+                },
+              ),
+            ),
           );
+          
+          // Start sync after showing loading screen
+          syncService.performFullSync();
         }
       } catch (e) {
         if (mounted) {

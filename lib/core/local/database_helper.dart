@@ -15,7 +15,9 @@ class DatabaseHelper {
       // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
       // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
       // GÜNCELLEME: satin_alma_siparis_fis tablosunda branch_id -> warehouse_code değişikliği
-      static const _databaseVersion = 34;
+      // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, warehouses, goods_receipts, goods_receipt_items)
+      // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
+      static const _databaseVersion = 36;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -79,7 +81,9 @@ class DatabaseHelper {
           post_code TEXT,
           ap TEXT,
           branch_id INTEGER,
-          warehouse_code TEXT
+          warehouse_code TEXT,
+          created_at TEXT,
+          updated_at TEXT
         )
       ''');
 
@@ -90,7 +94,9 @@ class DatabaseHelper {
           name TEXT,
           code TEXT,
           dia_key TEXT,
-          is_active INTEGER DEFAULT 1
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT,
+          updated_at TEXT
         )
       ''');
 
@@ -173,7 +179,8 @@ class DatabaseHelper {
           delivery_note_number TEXT,
           employee_id INTEGER,
           receipt_date TEXT,
-          created_at TEXT
+          created_at TEXT,
+          updated_at TEXT
         )
       ''');
 
@@ -185,6 +192,8 @@ class DatabaseHelper {
           quantity_received REAL,
           pallet_barcode TEXT,
           expiry_date TEXT,
+          created_at TEXT,
+          updated_at TEXT,
           FOREIGN KEY(receipt_id) REFERENCES goods_receipts(goods_receipt_id),
           FOREIGN KEY(urun_id) REFERENCES urunler(UrunId)
         )
@@ -267,7 +276,10 @@ class DatabaseHelper {
     debugPrint("Yükseltme için tüm eski tablolar silindi.");
   }
 
-  Future<void> applyDownloadedData(Map<String, dynamic> data) async {
+  Future<void> applyDownloadedData(
+    Map<String, dynamic> data, {
+    void Function(String tableName, int processed, int total)? onTableProgress
+  }) async {
     final db = await database;
 
     // Foreign key constraint'leri geçici olarak devre dışı bırak (transaction dışında)
@@ -277,29 +289,156 @@ class DatabaseHelper {
       await db.transaction((txn) async {
         final batch = txn.batch();
 
+        // Count total items for progress tracking
+        int totalItems = 0;
+        int processedItems = 0;
+        
+        data.forEach((key, value) {
+          if (value is List) {
+            totalItems += value.length;
+          }
+        });
+
+        // ########## İNKREMENTAL SYNC İÇİN YENİ LOJİK ##########
+        // Ürünler için özel işlem: aktif=0 olanları sil, diğerlerini güncelle
+        if (data.containsKey('urunler')) {
+          final urunlerData = List<Map<String, dynamic>>.from(data['urunler']);
+
+          for (final urun in urunlerData) {
+            final urunId = urun['id'];
+            final aktif = urun['aktif'];
+
+            if (aktif == 0) {
+              // Silinmiş ürün: local'den sil
+              batch.delete('urunler', where: 'id = ?', whereArgs: [urunId]);
+            } else {
+              // Aktif ürün: güncelle veya ekle
+              final sanitizedRecord = _sanitizeRecord('urunler', urun);
+              batch.insert('urunler', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+            
+            processedItems++;
+            onTableProgress?.call('urunler', processedItems, totalItems);
+          }
+        }
+
+        // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('shelfs')) {
+          final shelfsData = List<Map<String, dynamic>>.from(data['shelfs']);
+
+          for (final shelf in shelfsData) {
+            final shelfId = shelf['id'];
+            final isActive = shelf['is_active'];
+
+            if (isActive == 0) {
+              // Aktif olmayan rafı sil
+              batch.delete('shelfs', where: 'id = ?', whereArgs: [shelfId]);
+            } else {
+              // Aktif rafı güncelle/ekle
+              batch.insert('shelfs', shelf, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+            
+            processedItems++;
+            onTableProgress?.call('shelfs', processedItems, totalItems);
+          }
+        }
+
+        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('warehouses')) {
+          final warehousesData = List<Map<String, dynamic>>.from(data['warehouses']);
+          for (final warehouse in warehousesData) {
+            batch.insert('warehouses', warehouse, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call('warehouses', processedItems, totalItems);
+          }
+        }
+
+        // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('employees')) {
+          final employeesData = List<Map<String, dynamic>>.from(data['employees']);
+
+          for (final employee in employeesData) {
+            final employeeId = employee['id'];
+            final isActive = employee['is_active'];
+
+            if (isActive == 0) {
+              // Aktif olmayan çalışanı sil
+              batch.delete('employees', where: 'id = ?', whereArgs: [employeeId]);
+            } else {
+              // Aktif çalışanı güncelle/ekle
+              batch.insert('employees', employee, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+            
+            processedItems++;
+            onTableProgress?.call('employees', processedItems, totalItems);
+          }
+        }
+
+        // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('goods_receipts')) {
+          final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
+          for (final receipt in goodsReceiptsData) {
+            final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
+            batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call('goods_receipts', processedItems, totalItems);
+          }
+        }
+
+        // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('goods_receipt_items')) {
+          final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
+          for (final item in goodsReceiptItemsData) {
+            batch.insert('goods_receipt_items', item, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call('goods_receipt_items', processedItems, totalItems);
+          }
+        }
+
+        // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('wms_putaway_status')) {
+          final putawayStatusData = List<Map<String, dynamic>>.from(data['wms_putaway_status']);
+          for (final putaway in putawayStatusData) {
+            batch.insert('wms_putaway_status', putaway, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call('wms_putaway_status', processedItems, totalItems);
+          }
+        }
+
+        // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('inventory_stock')) {
+          final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
+          for (final stock in inventoryStockData) {
+            batch.insert('inventory_stock', stock, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call('inventory_stock', processedItems, totalItems);
+          }
+        }
+
+        // Diğer tablolar için eski mantık (full replacement)
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
-          'goods_receipt_items',
-          'goods_receipts',
-          'wms_putaway_status',
           'satin_alma_siparis_fis_satir',
-          'satin_alma_siparis_fis',
-          'inventory_stock',
-          'employees',
-          'shelfs',
-          'warehouses',
-          'urunler'
+          'satin_alma_siparis_fis'
+          // 'urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
         ];
 
-        // Tablolari belirtilen sirada sil
+        // Tablolari belirtilen sirada sil (incremental tablolar hariç)
         for (final table in deletionOrder) {
           if (data.containsKey(table)) {
             await txn.delete(table);
           }
         }
 
-        // Sonra verileri ekle
+        // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
+        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock'];
         for (var table in data.keys) {
+          if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (data[table] is! List) continue;
           final records = List<Map<String, dynamic>>.from(data[table]);
           if (records.isEmpty) continue;
@@ -307,8 +446,12 @@ class DatabaseHelper {
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            onTableProgress?.call(table, processedItems, totalItems);
           }
         }
+        // ########## İNKREMENTAL SYNC BİTTİ ##########
 
         await batch.commit(noResult: true);
       });

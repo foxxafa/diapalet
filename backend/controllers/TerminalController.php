@@ -596,6 +596,7 @@ class TerminalController extends Controller
 {
     $payload = $this->getJsonBody();
     $warehouseId = $payload['warehouse_id'] ?? null;
+    $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null; // <<<--- YENİ PARAMETRE
 
     if (!$warehouseId) {
         Yii::$app->response->statusCode = 400;
@@ -605,16 +606,60 @@ class TerminalController extends Controller
 
     try {
         $data = [];
-        // Diğer tablolarla ilgili kısımlar doğru, onlara dokunmuyoruz.
-        $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
+
+        // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
+        $urunlerQuery = (new Query())
+            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif', 'updated_at'])
+            ->from('urunler');
+
+        // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
+        if ($lastSyncTimestamp) {
+            $urunlerQuery->where(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki ürünler alınıyor.", __METHOD__);
+        } else {
+            // İlk sync ise tüm aktif ürünleri al
+            Yii::info("Full sync: Tüm ürünler alınıyor (ilk sync).", __METHOD__);
+        }
+
+        $urunlerData = $urunlerQuery->all();
         $this->castNumericValues($urunlerData, ['id', 'aktif']);
         $data['urunler'] = $urunlerData;
 
-        $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
+        Yii::info("Ürün sync: " . count($urunlerData) . " ürün gönderiliyor.", __METHOD__);
+        // ########## İNKREMENTAL SYNC BİTTİ ##########
+
+        // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
+        $shelfsQuery = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId]);
+        if ($lastSyncTimestamp) {
+            $shelfsQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki raflar alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm raflar alınıyor (ilk sync).", __METHOD__);
+        }
+        $data['shelfs'] = $shelfsQuery->all();
         $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
 
+        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
+        $warehousesQuery = (new Query())->from('warehouses');
+        if ($lastSyncTimestamp) {
+            $warehousesQuery->where(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki depolar alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm depolar alınıyor (ilk sync).", __METHOD__);
+        }
+        $data['warehouses'] = $warehousesQuery->all();
+        $this->castNumericValues($data['warehouses'], ['id', 'branch_id']);
+
+        // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
         $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
-        $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
+        $employeesQuery = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId]);
+        if ($lastSyncTimestamp) {
+            $employeesQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki çalışanlar alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm çalışanlar alınıyor (ilk sync).", __METHOD__);
+        }
+        $data['employees'] = $employeesQuery->all();
         $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
 
         // ########## ROWHUB'A ÖZEL UYARLAMA BAŞLIYOR ##########
@@ -657,25 +702,50 @@ class TerminalController extends Controller
 
             $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
             if (!empty($poLineIds)) {
-                $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds])->all();
+                // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
+                $putawayQuery = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds]);
+                if ($lastSyncTimestamp) {
+                    $putawayQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                    Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki yerleştirme durumları alınıyor.", __METHOD__);
+                }
+                $data['wms_putaway_status'] = $putawayQuery->all();
                 $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
             }
 
-            $poReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+            // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
+            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
+            if ($lastSyncTimestamp) {
+                $poReceiptsQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki sipariş mal kabulleri alınıyor.", __METHOD__);
+            }
+            $poReceipts = $poReceiptsQuery->all();
             $data['goods_receipts'] = $poReceipts;
         }
 
-        $freeReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
+        // ########## FREE RECEIPTS İÇİN İNKREMENTAL SYNC ##########
+        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId]);
+        if ($lastSyncTimestamp) {
+            $freeReceiptsQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki serbest mal kabulleri alınıyor.", __METHOD__);
+        }
+        $freeReceipts = $freeReceiptsQuery->all();
         $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
 
         $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
 
+        // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
         $receiptIds = array_column($data['goods_receipts'], 'id');
         if (!empty($receiptIds)) {
-            $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
+            $receiptItemsQuery = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds]);
+            if ($lastSyncTimestamp) {
+                $receiptItemsQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki mal kabul kalemleri alınıyor.", __METHOD__);
+            }
+            $data['goods_receipt_items'] = $receiptItemsQuery->all();
             $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
         }
 
+        // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
         $stockQuery = (new Query())->from('inventory_stock');
         $stockConditions = ['or'];
@@ -700,6 +770,11 @@ class TerminalController extends Controller
 
         if (count($stockConditions) > 1) {
             $stockQuery->where($stockConditions);
+            // İnkremental sync için updated_at filtresi
+            if ($lastSyncTimestamp) {
+                $stockQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki stok kayıtları alınıyor.", __METHOD__);
+            }
         } else {
             $stockQuery->where('1=0');
         }
@@ -708,8 +783,14 @@ class TerminalController extends Controller
          $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
         return [
-            'success' => true, 'data' => $data,
-            'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z')
+            'success' => true,
+            'data' => $data,
+            'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z'),
+            'stats' => [
+                'urunler_count' => count($data['urunler'] ?? []),
+                'is_incremental' => !empty($lastSyncTimestamp),
+                'last_sync_timestamp' => $lastSyncTimestamp
+            ]
         ];
 
     } catch (\Exception $e) {

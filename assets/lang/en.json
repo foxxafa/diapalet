@@ -720,5 +720,55 @@
     "reset": "Reset",
     "confirm_yes": "Yes, Reset",
     "confirm_no": "No, Keep"
+  },
+  "sync": {
+    "loading_screen": {
+      "title": "Synchronizing Data",
+      "subtitle": "Please wait while we prepare your workspace",
+      "progress_preparing": "Preparing synchronization...",
+      "progress_downloading": "Loading {table}...",
+      "progress_processing": "Processing {table} data...",
+      "progress_finalizing": "Finalizing synchronization...",
+      "progress_complete": "Synchronization complete",
+      "estimated_time": "Estimated time: {minutes}m {seconds}s",
+      "records_processed": "{current} of {total} records",
+      "please_wait": "Please wait...",
+      "do_not_close": "Please do not close the application"
+    },
+    "tables": {
+      "employees": "Employee Data",
+      "warehouses": "Warehouse Information", 
+      "shelfs": "Shelf Locations",
+      "urunler": "Product Catalog",
+      "goods_receipts": "Goods Receipts",
+      "goods_receipt_items": "Receipt Items",
+      "inventory_stock": "Inventory Stock",
+      "wms_putaway_status": "Putaway Status",
+      "satin_alma_siparis_fis": "Purchase Orders",
+      "satin_alma_siparis_fis_satir": "Order Items"
+    },
+    "stages": {
+      "stage_1": "Loading system data...",
+      "stage_2": "Loading warehouse data...", 
+      "stage_3": "Loading product catalog...",
+      "stage_4": "Loading stock information...",
+      "stage_5": "Loading order data...",
+      "final_stage": "Finalizing setup..."
+    },
+    "status": {
+      "connecting": "Connecting to server...",
+      "downloading": "Downloading data...",
+      "processing": "Processing data...",
+      "saving": "Saving to local database...",
+      "completed": "Synchronization completed successfully",
+      "failed": "Synchronization failed"
+    },
+    "errors": {
+      "network_error": "Network connection error. Please check your internet connection.",
+      "server_error": "Server error occurred. Please try again later.",
+      "timeout_error": "Connection timeout. Please check your connection and try again.",
+      "data_error": "Data processing error. Please contact support.",
+      "cancelled": "Synchronization cancelled by user"
+    }
   }
 }
