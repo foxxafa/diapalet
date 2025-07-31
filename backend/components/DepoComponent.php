@@ -3,36 +3,31 @@ namespace app\components;
 
 use Yii;
 use yii\base\Component;
-use app\components\Dia; // Dia bileşeninin doğru yerde olduğundan emin ol
+use app\components\Dia;
 
 class DepoComponent extends Component
 {
-    /**
-     * Ana senkronizasyon fonksiyonu. Tüm depo ve raf verilerini Dia'dan çeker.
-     * Bu fonksiyon, önce yerel tabloları temizler, sonra depoları, en son da rafları ekler.
-     */
     public static function syncWarehousesAndShelfs()
     {
         $db = Yii::$app->db;
         $transaction = $db->beginTransaction();
 
         try {
-            // 1. Önce tabloları güvenli bir şekilde boşalt
-            // Senin şemandaki doğru tablo adları: 'shelfs' ve 'warehouses'
+            // DEĞİŞİKLİK: Artık tabloları tamamen silmiyoruz.
+            // Sadece rafları temizleyebiliriz çünkü onlar tamamen depolara bağlı.
             $db->createCommand('SET FOREIGN_KEY_CHECKS=0')->execute();
             $db->createCommand()->truncateTable('shelfs')->execute();
-            $db->createCommand()->truncateTable('warehouses')->execute();
-            // branches tablosunu da temizlemek iyi olabilir, çünkü depolar onlara bağlı.
-            $db->createCommand()->truncateTable('branches')->execute();
+            // $db->createCommand()->truncateTable('warehouses')->execute(); // BU SATIR SİLİNDİ
+            // $db->createCommand()->truncateTable('branches')->execute(); // BU SATIR SİLİNDİ
             $db->createCommand('SET FOREIGN_KEY_CHECKS=1')->execute();
 
-            // 2. Dia'dan şube ve depoları çek ve veritabanına kaydet (Güncellenmiş Fonksiyon)
-            $warehousesResult = self::fetchAndSaveBranchesAndWarehouses();
+            // Dia'dan gelen verilerle mevcut şube ve depoları güncelle/ekle
+            $warehousesResult = self::upsertBranchesAndWarehouses();
             if ($warehousesResult['status'] === 'error') {
-                throw new \Exception("AŞAMA 1 (Şube/Depo Çekme) BAŞARISIZ: " . $warehousesResult['message']);
+                throw new \Exception("AŞAMA 1 (Şube/Depo Güncelleme) BAŞARISIZ: " . $warehousesResult['message']);
             }
 
-            // 3. Dia'dan rafları çek ve doğru depoyla ilişkilendirerek kaydet
+            // Rafları çekip ekle (rafları her seferinde yeniden oluşturmak daha güvenli)
             $shelfsResult = self::fetchAndSaveShelfs();
             if ($shelfsResult['status'] === 'error') {
                 throw new \Exception("AŞAMA 2 (Raf Çekme) BAŞARISIZ: " . $shelfsResult['message']);
@@ -46,62 +41,75 @@ class DepoComponent extends Component
 
         } catch (\Exception $e) {
             $transaction->rollBack();
-            // Hata detayını daha anlaşılır yapalım
             return ['status' => 'error', 'message' => $e->getMessage(), 'trace' => $e->getTraceAsString()];
         }
     }
 
     /**
-     * YENİ FONKSİYON: Dia'dan hem şubeleri hem de depoları çeker.
-     * Bu, depoları doğru şube (branch) ile ilişkilendirmemizi sağlar.
+     * YENİ AKILLI FONKSİYON: Mevcut kayıtları güncelle, yeni olanları ekle (Upsert).
      */
-    private static function fetchAndSaveBranchesAndWarehouses() {
-        // Dia'dan yetkili olunan tüm şube ve depoları çekelim.
-        // Bu bize şube kodu (branch_code) ve depo kodu (warehouse_code) bilgilerini verir.
-        $subeDepoListesi = Dia::subeDepolarGetir(); // dia.php içinde bu fonksiyonun olması lazım.
+    private static function upsertBranchesAndWarehouses() {
+        $subeDepoListesi = Dia::subeDepolarGetir();
 
         if (empty($subeDepoListesi) || !isset($subeDepoListesi['result'])) {
             return ['status' => 'error', 'message' => 'Dia API yanıtında "result" anahtarı bulunamadı veya boş (subeDepolarGetir).', 'response' => $subeDepoListesi];
         }
 
         $db = Yii::$app->db;
-        $branchCount = 0;
-        $warehouseCount = 0;
+        $branchCreated = 0;
+        $branchUpdated = 0;
+        $warehouseCreated = 0;
+        $warehouseUpdated = 0;
 
         foreach ($subeDepoListesi['result'] as $yetki) {
             if (isset($yetki['subeler'])) {
                 foreach ($yetki['subeler'] as $sube) {
-                    // Şubeyi (Branch) veritabanına ekle
-                    $db->createCommand()->insert('branches', [
-                        'name' => $sube['aciklama'],
-                        'branch_code' => $sube['subekodu'],
-                        '_key' => $sube['_key']
-                    ])->execute();
-                    $branchId = $db->getLastInsertID();
-                    $branchCount++;
+                    // Şube veritabanında var mı diye kontrol et
+                    $existingBranch = (new Query())->select('id')->from('branches')->where(['branch_code' => $sube['subekodu']])->one();
 
-                    // O şubeye ait depoları işle
+                    if ($existingBranch) {
+                        // Varsa güncelle
+                        $db->createCommand()->update('branches', ['name' => $sube['aciklama'], '_key' => $sube['_key']], ['id' => $existingBranch['id']])->execute();
+                        $branchId = $existingBranch['id'];
+                        $branchUpdated++;
+                    } else {
+                        // Yoksa yeni ekle
+                        $db->createCommand()->insert('branches', ['name' => $sube['aciklama'], 'branch_code' => $sube['subekodu'], '_key' => $sube['_key']])->execute();
+                        $branchId = $db->getLastInsertID();
+                        $branchCreated++;
+                    }
+
                     if (isset($sube['depolar'])) {
                         foreach ($sube['depolar'] as $depo) {
-                            $db->createCommand()->insert('warehouses', [
+                            // Depo veritabanında var mı diye kontrol et
+                            $existingWarehouse = (new Query())->select('id')->from('warehouses')->where(['warehouse_code' => $depo['depokodu']])->one();
+
+                            $warehouseData = [
                                 'name' => $depo['aciklama'],
                                 'warehouse_code' => $depo['depokodu'],
-                                'branch_id' => $branchId, // İşte sihrin gerçekleştiği yer!
-                                'dia_id' => $depo['_key']
-                            ])->execute();
-                            $warehouseCount++;
+                                'branch_id' => $branchId, // En önemli alan
+                                'dia_id' => $depo['_key']  // En önemli alan
+                            ];
+
+                            if ($existingWarehouse) {
+                                // Varsa güncelle
+                                $db->createCommand()->update('warehouses', $warehouseData, ['id' => $existingWarehouse['id']])->execute();
+                                $warehouseUpdated++;
+                            } else {
+                                // Yoksa yeni ekle
+                                $db->createCommand()->insert('warehouses', $warehouseData)->execute();
+                                $warehouseCreated++;
+                            }
                         }
                     }
                 }
             }
         }
-        return ['status' => 'success', 'message' => "$branchCount şube ve $warehouseCount depo eklendi."];
+        return ['status' => 'success', 'message' => "$branchCreated şube eklendi, $branchUpdated güncellendi. $warehouseCreated depo eklendi, $warehouseUpdated güncellendi."];
     }
 
-
     /**
-     * Dia'dan 'scf_rafyeri_listele' servisini kullanarak tüm rafları çeker.
-     * Daha önce kaydedilen depolarla eşleştirerek 'shelfs' tablosuna kaydeder.
+     * Bu fonksiyon rafları sıfırdan eklediği için aynı kalabilir.
      */
     private static function fetchAndSaveShelfs() {
         $session_id = Dia::getsessionid();
@@ -109,7 +117,7 @@ class DepoComponent extends Component
              return ['status' => 'error', 'message' => 'Dia oturum kimliği alınamadı (Raf).'];
         }
 
-        $url = Yii::$app->params['dia_base_url'] . Yii::$app->params['dia_endpoints']['scf'];
+        $url = (Yii::$app->params['dia_base_url'] ?? '') . (Yii::$app->params['dia_endpoints']['scf'] ?? '');
         $requestBody = ["scf_rafyeri_listele" => [ "session_id" => $session_id, "firma_kodu" => 1, "limit" => 20000 ]];
 
         $response = self::makeRequest($url, $requestBody);
@@ -123,8 +131,7 @@ class DepoComponent extends Component
         $db = Yii::$app->db;
         $count = 0;
 
-        // Yerel veritabanındaki depoları Dia ID'lerine göre bir haritaya alalım
-        $warehouseMap = $db->createCommand('SELECT dia_id, id FROM warehouses')->queryAll();
+        $warehouseMap = (new Query())->select(['id', 'dia_id'])->from('warehouses')->all();
         $lookup = array_column($warehouseMap, 'id', 'dia_id');
 
         foreach ($shelfsFromDia as $shelf) {
@@ -132,12 +139,11 @@ class DepoComponent extends Component
             if (isset($lookup[$dia_warehouse_key])) {
                 $local_warehouse_id = $lookup[$dia_warehouse_key];
 
-                // Şemandaki doğru tablo ve sütun adlarını kullanıyoruz
                 $db->createCommand()->insert('shelfs', [
                     'warehouse_id' => $local_warehouse_id,
                     'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
                     'code' => $shelf['kod'] ?? 'KODSUZ',
-                    'dia_key' => $shelf['_key'], // Bu alanı da şemana göre ekledik
+                    'dia_key' => $shelf['_key'],
                     'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
                 ])->execute();
                 $count++;
@@ -146,9 +152,6 @@ class DepoComponent extends Component
         return ['status' => 'success', 'message' => "$count raf eklendi."];
     }
 
-    /**
-     * Dia'ya API isteği gönderen ve gelen yanıtı kontrol eden yardımcı fonksiyon.
-     */
     private static function makeRequest($url, $requestBody) {
         $jsonData = json_encode($requestBody);
         $curl = curl_init($url);

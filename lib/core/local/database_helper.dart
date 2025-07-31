@@ -14,7 +14,8 @@ class DatabaseHelper {
       // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
       // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
       // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
-      static const _databaseVersion = 33;
+      // GÜNCELLEME: satin_alma_siparis_fis tablosunda branch_id -> warehouse_code değişikliği
+      static const _databaseVersion = 34;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -126,7 +127,7 @@ class DatabaseHelper {
           created_at TEXT,
           updated_at TEXT,
           gun INTEGER DEFAULT 0,
-          branch_id INTEGER,
+          warehouse_code TEXT,
           invoice TEXT,
           delivery INTEGER,
           po_id TEXT,

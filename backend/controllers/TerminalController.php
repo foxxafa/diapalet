@@ -593,138 +593,131 @@ class TerminalController extends Controller
     }
 
     public function actionSyncDownload()
-    {
-        $payload = $this->getJsonBody();
-        $warehouseId = $payload['warehouse_id'] ?? null;
+{
+    $payload = $this->getJsonBody();
+    $warehouseId = $payload['warehouse_id'] ?? null;
 
-        if (!$warehouseId) {
-            Yii::$app->response->statusCode = 400;
-            return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
-        }
-        $warehouseId = (int)$warehouseId;
-
-        try {
-            $data = [];
-            $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
-            $this->castNumericValues($urunlerData, ['id', 'aktif']);
-            $data['urunler'] = $urunlerData;            $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
-            $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
-
-            $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
-            $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
-            $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
-
-            // DÜZELTME: Warehouse ID'den Branch ID'yi bulup ona göre siparişleri getir
-            $branchId = (new Query())->select('branch_id')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-            if (!$branchId) {
-                throw new \Exception("Warehouse ID $warehouseId için branch bulunamadı.");
-            }
-
-            // Sadece status değeri 3'ten küçük olan (Yani tamamen kaybolmamış) siparişleri indir
-            $poQuery = (new Query())->from('satin_alma_siparis_fis')->where(['branch_id' => $branchId])->andWhere(['<', 'status', 3]);
-            $data['satin_alma_siparis_fis'] = $poQuery->all();
-
-            // DEBUG: Kaç sipariş bulundu?
-            Yii::info("Warehouse $warehouseId (Branch $branchId) için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
-            foreach ($data['satin_alma_siparis_fis'] as $order) {
-                Yii::info("Sipariş ID: {$order['id']}, Status: {$order['status']}, PO ID: {$order['po_id']}", __METHOD__);
-            }
-
-            $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'branch_id', 'status']);
-
-            $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
-
-            // Initialize arrays
-            $data['satin_alma_siparis_fis_satir'] = [];
-            $data['wms_putaway_status'] = [];
-            $data['goods_receipts'] = [];
-            $data['goods_receipt_items'] = [];
-
-            if (!empty($poIds)) {
-                $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
-                $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
-
-                // Yeni eklenen kısım: wms_putaway_status verilerini çek
-                $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
-                if (!empty($poLineIds)) {
-                    $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds])->all();
-                    $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
-                }
-
-                $poReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
-                $data['goods_receipts'] = array_merge($data['goods_receipts'], $poReceipts);
-            }
-
-            // Serbest mal kabulleri (siparis_id NULL olanlar) her zaman ilgili depo için indirilir
-            $freeReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
-            $data['goods_receipts'] = array_merge($data['goods_receipts'], $freeReceipts);
-
-            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
-
-            $receiptIds = array_column($data['goods_receipts'], 'id');
-            if (!empty($receiptIds)) {
-                $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
-                $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
-            }
-
-
-            // DÜZELTME: Stokları indirirken, ilgili depodaki raflara ek olarak
-            // location_id'si NULL olan (Mal Kabul Alanı) stokları da indir.
-            $locationIds = array_column($data['shelfs'], 'id');
-
-            $stockQuery = (new Query())->from('inventory_stock');
-
-            $stockConditions = ['or'];
-
-            // Condition 1: Stock is in one of the warehouse's shelves
-            if (!empty($locationIds)) {
-                $stockConditions[] = ['in', 'location_id', $locationIds];
-            }
-
-            // Condition 2: Stock is in the receiving area (location_id is NULL) AND belongs to one of the warehouse's receipts
-            $allReceiptIdsForWarehouse = (new Query())
-                ->select('goods_receipt_id')
-                ->from('goods_receipts')
-                ->where(['warehouse_id' => $warehouseId])
-                ->column();
-
-            if (!empty($allReceiptIdsForWarehouse)) {
-                $stockConditions[] = [
-                    'and',
-                    ['is', 'location_id', new \yii\db\Expression('NULL')],
-                    ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
-                ];
-            }
-
-            if (count($stockConditions) > 1) {
-                $stockQuery->where($stockConditions);
-            } else {
-                // Eğer depo için hiç raf veya mal kabul yoksa, hiçbir stok kaydı getirme
-                $stockQuery->where('1=0');
-            }
-
-            $data['inventory_stock'] = $stockQuery->all();
-
-            // DEBUG: Kaç inventory stock kaydı bulundu?
-            Yii::info("Inventory stock kayıt sayısı: " . count($data['inventory_stock']), __METHOD__);
-            foreach ($data['inventory_stock'] as $stock) {
-                Yii::info("Stock: ID {$stock['id']}, Urun ID: {$stock['urun_id']}, Location: {$stock['location_id']}, Status: {$stock['stock_status']}, Siparis: {$stock['siparis_id']}", __METHOD__);
-            }
-
-             $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
-
-
-            return [
-                'success' => true, 'data' => $data,
-                'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z')
-            ];
-
-        } catch (\yii\db\Exception $e) {
-            Yii::$app->response->statusCode = 500;
-            Yii::error("SyncDownload DB Hatası: " . $e->getMessage(), __METHOD__);
-            return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu.'];
-        }
+    if (!$warehouseId) {
+        Yii::$app->response->statusCode = 400;
+        return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
     }
+    $warehouseId = (int)$warehouseId;
+
+    try {
+        $data = [];
+        // Diğer tablolarla ilgili kısımlar doğru, onlara dokunmuyoruz.
+        $urunlerData = (new Query())->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif'])->from('urunler')->all();
+        $this->castNumericValues($urunlerData, ['id', 'aktif']);
+        $data['urunler'] = $urunlerData;
+
+        $data['shelfs'] = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId])->all();
+        $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
+
+        $employeeColumns = ['id', 'first_name', 'last_name', 'username', 'password', 'warehouse_id', 'is_active', 'created_at', 'updated_at'];
+        $data['employees'] = (new Query())->select($employeeColumns)->from('employees')->where(['is_active' => 1, 'warehouse_id' => $warehouseId])->all();
+        $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
+
+        // ########## ROWHUB'A ÖZEL UYARLAMA BAŞLIYOR ##########
+
+        // 1. Gelen warehouseId'ye ait `warehouse_code`'u buluyoruz.
+        $warehouseCode = (new Query())
+            ->select('warehouse_code')
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->scalar();
+
+        if (!$warehouseCode) {
+            throw new \Exception("Warehouse ID $warehouseId için warehouse_code bulunamadı. Siparişler indirilemiyor.");
+        }
+
+        // 2. Siparişleri `branch_id` yerine `warehouse_code`'a göre arıyoruz.
+        $poQuery = (new Query())
+            ->from('satin_alma_siparis_fis')
+            ->where(['warehouse_code' => $warehouseCode]) // <<<--- İşte sihir burada!
+            ->andWhere(['<', 'status', 3]);
+
+        $data['satin_alma_siparis_fis'] = $poQuery->all();
+        // ########## UYARLAMA BİTTİ ##########
+
+        Yii::info("Warehouse $warehouseId (Code: $warehouseCode) için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
+
+        $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'status']); // `branch_id` artık bu tabloda olmadığı için cast'ten çıkarıldı.
+
+        // Fonksiyonun geri kalanı aynı, çünkü diğer tablolarımız zaten uyumlu.
+        $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
+
+        $data['satin_alma_siparis_fis_satir'] = [];
+        $data['wms_putaway_status'] = [];
+        $data['goods_receipts'] = [];
+        $data['goods_receipt_items'] = [];
+
+        if (!empty($poIds)) {
+            $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
+            $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
+
+            $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
+            if (!empty($poLineIds)) {
+                $data['wms_putaway_status'] = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds])->all();
+                $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
+            }
+
+            $poReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds])->all();
+            $data['goods_receipts'] = $poReceipts;
+        }
+
+        $freeReceipts = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId])->all();
+        $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
+
+        $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+
+        $receiptIds = array_column($data['goods_receipts'], 'id');
+        if (!empty($receiptIds)) {
+            $data['goods_receipt_items'] = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds])->all();
+            $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+        }
+
+        $locationIds = array_column($data['shelfs'], 'id');
+        $stockQuery = (new Query())->from('inventory_stock');
+        $stockConditions = ['or'];
+
+        if (!empty($locationIds)) {
+            $stockConditions[] = ['in', 'location_id', $locationIds];
+        }
+
+        $allReceiptIdsForWarehouse = (new Query())
+            ->select('goods_receipt_id')
+            ->from('goods_receipts')
+            ->where(['warehouse_id' => $warehouseId])
+            ->column();
+
+        if (!empty($allReceiptIdsForWarehouse)) {
+            $stockConditions[] = [
+                'and',
+                ['is', 'location_id', new \yii\db\Expression('NULL')],
+                ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
+            ];
+        }
+
+        if (count($stockConditions) > 1) {
+            $stockQuery->where($stockConditions);
+        } else {
+            $stockQuery->where('1=0');
+        }
+
+        $data['inventory_stock'] = $stockQuery->all();
+         $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+
+        return [
+            'success' => true, 'data' => $data,
+            'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z')
+        ];
+
+    } catch (\Exception $e) {
+        Yii::$app->response->statusCode = 500;
+        Yii::error("SyncDownload Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
+        return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu: ' . $e->getMessage()];
+    }
+}
 
     public function actionHealthCheck()
     {
@@ -768,25 +761,25 @@ class TerminalController extends Controller
             // Remove comments but preserve newlines for proper statement separation
             $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Multi-line comments
             $sqlContent = preg_replace('/--[^\r\n]*/', '', $sqlContent); // Single-line comments
-            
+
             // Split by semicolon but be careful about CREATE TABLE statements
             $commands = [];
             $currentCommand = '';
             $lines = explode("\n", $sqlContent);
-            
+
             foreach ($lines as $line) {
                 $line = trim($line);
                 if (empty($line)) continue;
-                
+
                 $currentCommand .= $line . "\n";
-                
+
                 // If line ends with semicolon and we're not in a complex statement
                 if (substr($line, -1) === ';') {
                     $commands[] = trim($currentCommand);
                     $currentCommand = '';
                 }
             }
-            
+
             // Add any remaining command
             if (!empty(trim($currentCommand))) {
                 $commands[] = trim($currentCommand);
@@ -798,7 +791,7 @@ class TerminalController extends Controller
             foreach ($commands as $i => $command) {
                 $command = trim($command);
                 if (empty($command)) continue;
-                
+
                 try {
                     Yii::info("Executing command " . ($i + 1) . ": " . substr($command, 0, 100) . "...", __METHOD__);
                     $db->createCommand($command)->execute();

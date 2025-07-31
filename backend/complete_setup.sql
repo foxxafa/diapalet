@@ -92,13 +92,14 @@ CREATE TABLE `satin_alma_siparis_fis` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `gun` int DEFAULT '0',
-  `branch_id` int DEFAULT NULL,
+  -- `branch_id` int DEFAULT NULL, -- Bu satırı siliyoruz veya yorum satırı yapıyoruz
+  `warehouse_code` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL, -- <<<--- YERİNE BU SATIRI EKLİYORUZ
   `invoice` varchar(45) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `delivery` int DEFAULT NULL,
   `po_id` varchar(11) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `status` int DEFAULT '0',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 CREATE TABLE `satin_alma_siparis_fis_satir` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -289,11 +290,11 @@ INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VAL
 (6, 'SPRKSB','SUPERKINGS SKY BLUE', '5000143997248', 1),
 (7, 'SKYBLUE','SKY BLUE', '5000143975956', 1);
 
-INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `branch_id`) VALUES
-(101, '2025-06-22', 'PO-25B001', 0, 1),
-(102, '2025-06-23', 'PO-25B002', 0, 1),
-(201, '2025-06-22', 'PO-25I001', 0, 2),
-(203, '2025-06-22', 'PO-25I00S', 0, 1);
+INSERT INTO `satin_alma_siparis_fis` (`id`, `tarih`, `po_id`, `status`, `warehouse_code`) VALUES
+(101, '2025-06-22', 'PO-25B001', 0, 'WHS-SLL'),
+(102, '2025-06-23', 'PO-25B002', 0, 'WHS-SLL'),
+(201, '2025-06-22', 'PO-25I001', 0, 'WHS-MNC'),
+(203, '2025-06-22', 'PO-25I00S', 0, 'WHS-SLL');
 
 INSERT INTO `satin_alma_siparis_fis_satir` (`id`, `siparis_id`, `urun_id`, `miktar`, `birim`) VALUES
 (1, 101, 1, 50.00, 'BOX'),
