@@ -55,12 +55,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   bool _isPalletModeAvailable = true;
   bool _isBoxModeAvailable = true;
 
-  Map<String, int> _availableSourceLocations = {};
+  Map<String, int?> _availableSourceLocations = {};
   String? _selectedSourceLocationName;
   final _sourceLocationController = TextEditingController();
   final _sourceLocationFocusNode = FocusNode();
 
-  Map<String, int> _availableTargetLocations = {};
+  Map<String, int?> _availableTargetLocations = {};
   String? _selectedTargetLocationName;
   final _targetLocationController = TextEditingController();
   final _targetLocationFocusNode = FocusNode();
@@ -134,7 +134,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() => _isLoadingInitialData = true);
     try {
       final targetLocationsFuture = _repo.getTargetLocations(excludeReceivingArea: true);
-      final sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: !widget.isFreePutAway);
+      // FIX: For shelf-to-shelf transfers, exclude receiving area from source locations too
+      final sourceLocationsFuture = _repo.getSourceLocations(includeReceivingArea: widget.selectedOrder != null || widget.isFreePutAway);
 
       final results = await Future.wait([sourceLocationsFuture, targetLocationsFuture]);
       if (!mounted) return;
@@ -628,7 +629,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     focusNode: _targetLocationFocusNode,
                     label: 'inventory_transfer.label_target_location'.tr(),
                     fieldIdentifier: 'target',
-                    items: _availableTargetLocations.keys.toList(),
+                    items: _availableTargetLocations.keys.where((location) {
+                      // Exclude the selected source location from target options
+                      return location != _selectedSourceLocationName;
+                    }).toList(),
                     itemToString: (item) => item,
                     onItemSelected: _handleTargetSelection,
                     filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),

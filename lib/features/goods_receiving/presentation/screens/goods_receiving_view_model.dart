@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -292,6 +293,37 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         productFocusNode.requestFocus();
         break;
       case 'product':
+        // Parse GS1 data to extract GTIN and expiry date
+        final parsedData = GS1Parser.parse(data);
+        String productCodeToSearch = data;
+        DateTime? scannedExpiryDate;
+
+        // If GS1 data contains GTIN (01), use it for product search
+        if (parsedData.containsKey('01')) {
+          String gtin = parsedData['01']!;
+          // If 14-digit GTIN starts with '0', remove it
+          if (gtin.length == 14 && gtin.startsWith('0')) {
+            productCodeToSearch = gtin.substring(1);
+          } else {
+            productCodeToSearch = gtin;
+          }
+        }
+
+        // If GS1 data contains expiry date (17), parse it
+        if (parsedData.containsKey('17')) {
+          try {
+            final expiryStr = parsedData['17']!;
+            if (expiryStr.length == 6) {
+              final year = 2000 + int.parse(expiryStr.substring(0, 2));
+              final month = int.parse(expiryStr.substring(2, 4));
+              final day = int.parse(expiryStr.substring(4, 6));
+              scannedExpiryDate = DateTime(year, month, day);
+            }
+          } catch (e) {
+            // Invalid date format in GS1, ignore
+          }
+        }
+
         final productSource = isOrderBased
             ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
             : _availableProducts;
@@ -299,13 +331,39 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         ProductInfo? foundProduct;
         try {
           foundProduct = productSource.firstWhere((p) =>
-            p.stockCode.toLowerCase() == data.toLowerCase() || (p.barcode1?.toLowerCase() == data.toLowerCase()));
+            p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase() ||
+            (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
           foundProduct = null;
         }
 
         if (foundProduct != null) {
           selectProduct(foundProduct);
+
+          // Auto-fill expiry date if found in GS1 barcode
+          if (scannedExpiryDate != null) {
+            // Validate that the scanned expiry date is not in the past
+            final today = DateTime.now();
+            final todayOnly = DateTime(today.year, today.month, today.day);
+
+            if (scannedExpiryDate.isBefore(todayOnly)) {
+              _error = 'goods_receiving_screen.error_expiry_date_past_scanned'.tr(
+                namedArgs: {'date': DateFormat('dd/MM/yyyy').format(scannedExpiryDate)}
+              );
+            } else {
+              // Auto-fill the expiry date field
+              expiryDateController.text = DateFormat('dd/MM/yyyy').format(scannedExpiryDate);
+              // Move focus to quantity field
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                quantityFocusNode.requestFocus();
+              });
+            }
+          } else {
+            // No expiry date in barcode, focus on expiry date field
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              expiryDateFocusNode.requestFocus();
+            });
+          }
         } else {
           productController.clear();
           _selectedProduct = null;
@@ -387,6 +445,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
     if (expiryDate == null) {
       _error = 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      notifyListeners();
+      return;
+    }
+
+    // Validate that expiry date is not before today
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (expiryDate.isBefore(todayOnly)) {
+      _error = 'goods_receiving_screen.error_expiry_date_past'.tr();
       notifyListeners();
       return;
     }

@@ -404,15 +404,44 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   Future<void> _showDatePicker(GoodsReceivingViewModel viewModel) async {
     if (!viewModel.isExpiryDateEnabled) return; // Don't show picker if disabled
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day); // Today at 00:00:00
+
+    // Debug: Bugünün tarihini konsola yazdır
+    debugPrint('Today is: ${today.toString()}');
+    debugPrint('Current time: ${now.toString()}');
+
     final selectedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now().add(const Duration(days: 30)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 3650)), // 10 years from now
+      initialDate: today, // Bugünden başla, 30 gün sonra değil
+      firstDate: today, // Bugünün başlangıcından itibaren seçim yapılabilir
+      lastDate: today.add(const Duration(days: 3650)), // 10 years from now
       helpText: 'goods_receiving_screen.label_expiry_date'.tr(),
+      // Ekstra parametreler ekleyelim
+      currentDate: today, // Bugünü vurgula
+      selectableDayPredicate: (DateTime day) {
+        // Sadece bugün ve sonraki günler seçilebilir
+        return !day.isBefore(today);
+      },
     );
 
     if (selectedDate != null) {
+      // Ekstra güvenlik kontrolü: Seçilen tarih bugünden önce mi?
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      if (selectedDate.isBefore(today)) {
+        // Bu durum normalde date picker tarafından engellenmelidir
+        // Ancak ekstra güvenlik için kontrol ediyoruz
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('goods_receiving_screen.error_expiry_date_past'.tr()),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       final formattedDate = DateFormat('dd/MM/yyyy').format(selectedDate);
       viewModel.expiryDateController.text = formattedDate;
       viewModel.onExpiryDateEntered(); // Trigger the next field enable

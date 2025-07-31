@@ -32,8 +32,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   bool _isDisposed = false, _isInitialized = false, _navigateBack = false;
 
   AssignmentMode _selectedMode = AssignmentMode.pallet;
-  Map<String, int> _availableSourceLocationsMap = {};
-  Map<String, int> _availableTargetLocationsMap = {};
+  Map<String, int?> _availableSourceLocationsMap = {};
+  Map<String, int?> _availableTargetLocationsMap = {};
   String? _selectedSourceLocationName, _selectedTargetLocationName;
 
   // GÜNCELLEME: Veri tipi `TransferableContainer` olarak değiştirildi.
@@ -63,9 +63,12 @@ class InventoryTransferViewModel extends ChangeNotifier {
   bool get navigateBack => _navigateBack;
   AssignmentMode get selectedMode => _selectedMode;
 
-  List<MapEntry<String, int>> get availableSourceLocations => _availableSourceLocationsMap.entries.toList();
+  List<MapEntry<String, int?>> get availableSourceLocations => _availableSourceLocationsMap.entries.toList();
   String? get selectedSourceLocationName => _selectedSourceLocationName;
-  List<MapEntry<String, int>> get availableTargetLocations => _availableTargetLocationsMap.entries.toList();
+  List<MapEntry<String, int?>> get availableTargetLocations => _availableTargetLocationsMap.entries.where((entry) {
+    // For shelf-to-shelf transfers, exclude the selected source location from target options
+    return isPutawayMode || entry.key != _selectedSourceLocationName;
+  }).toList();
   String? get selectedTargetLocationName => _selectedTargetLocationName;
 
   List<TransferableContainer> get availableContainers => _availableContainers;
@@ -122,14 +125,16 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _isLoadingInitialData = true;
     notifyListeners();
     try {
-      _availableTargetLocationsMap = await _repo.getTargetLocations();
+      // FIX: For putaway operations, exclude receiving area from target locations
+      _availableTargetLocationsMap = await _repo.getTargetLocations(excludeReceivingArea: isPutawayMode);
 
       if (isPutawayMode) {
         _selectedSourceLocationName = '000';
         sourceLocationController.text = _selectedSourceLocationName!;
         await _loadContainers();
       } else {
-        _availableSourceLocationsMap = await _repo.getSourceLocations();
+        // FIX: For shelf-to-shelf transfers, exclude receiving area from source locations
+        _availableSourceLocationsMap = await _repo.getSourceLocations(includeReceivingArea: false);
       }
     } catch (e) {
       _setError('inventory_transfer.error_loading_locations', e);
@@ -256,6 +261,12 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
     _selectedSourceLocationName = selection;
     sourceLocationController.text = selection;
+
+    // Clear target location if it would become invalid (same as source)
+    if (_selectedTargetLocationName == selection) {
+      _selectedTargetLocationName = null;
+      targetLocationController.clear();
+    }
 
     _resetContainerAndProducts();
     _loadContainers();

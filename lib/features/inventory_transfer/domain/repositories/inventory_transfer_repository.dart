@@ -8,8 +8,8 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_op
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 
 abstract class InventoryTransferRepository {
-    Future<Map<String, int>> getSourceLocations({bool includeReceivingArea = true});
-    Future<Map<String, int>> getTargetLocations({bool excludeReceivingArea = false});
+    Future<Map<String, int?>> getSourceLocations({bool includeReceivingArea = true});
+    Future<Map<String, int?>> getTargetLocations({bool excludeReceivingArea = false});
 
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
     Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
@@ -38,13 +38,13 @@ abstract class InventoryTransferRepository {
     /// Verilen sipariş ID'leri listesinden hangilerinin transfer edilebilir stoğu olduğunu kontrol eder.
     Future<Set<int>> getOrderIdsWithTransferableItems(List<int> orderIds);
 
-    Future<MapEntry<String, int>?> findLocationByCode(String code);
+    Future<MapEntry<String, int?>?> findLocationByCode(String code);
 
     Future<void> checkAndCompletePutaway(int orderId);
 
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 
-    Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int locationId, {List<String> stockStatuses = const ['available']});
+    Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
 
     /// Serbest mal kabullerin delivery note numberlarını getirir
     Future<List<String>> getFreeReceiptDeliveryNotes();

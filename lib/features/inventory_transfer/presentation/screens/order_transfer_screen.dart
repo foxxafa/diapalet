@@ -48,7 +48,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   final String _sourceLocationName = '000';
   final _sourceLocationController = TextEditingController();
 
-  Map<String, int> _availableTargetLocations = {};
+  Map<String, int?> _availableTargetLocations = {};
   String? _selectedTargetLocationName;
   final _targetLocationController = TextEditingController();
   final _targetLocationFocusNode = FocusNode();
@@ -78,7 +78,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
     _barcodeService = BarcodeIntentService();
-    
+
     // Kaynak lokasyon her zaman "Mal Kabul Alanı"
     _sourceLocationController.text = '000';
 
@@ -105,13 +105,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (!mounted) return;
     if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
       _scannedContainerIdController.selection = TextSelection(
-        baseOffset: 0, 
+        baseOffset: 0,
         extentOffset: _scannedContainerIdController.text.length
       );
     }
     if (_targetLocationFocusNode.hasFocus && _targetLocationController.text.isNotEmpty) {
       _targetLocationController.selection = TextSelection(
-        baseOffset: 0, 
+        baseOffset: 0,
         extentOffset: _targetLocationController.text.length
       );
     }
@@ -128,16 +128,17 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (!mounted) return;
     setState(() => _isLoadingInitialData = true);
     try {
-      final targetLocations = await _repo.getTargetLocations();
+      // FIX: For putaway operations, exclude receiving area from target locations
+      final targetLocations = await _repo.getTargetLocations(excludeReceivingArea: true);
       if (!mounted) return;
-      
+
       setState(() {
         _availableTargetLocations = targetLocations;
       });
-      
+
       await _loadAllContainers();
       if (!mounted) return;
-      
+
       // GÜNCELLEME: Eğer hiç konteyner yoksa geri dön
       if (_allContainers.isEmpty) {
         if (mounted) {
@@ -146,17 +147,17 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         }
         return;
       }
-      
+
       // GÜNCELLEME: Mod durumlarını kontrol et
       _updateModeAvailability();
-      
+
       // GÜNCELLEME: Mevcut olmayan modda başladıysak geçerli moda geç
       if (!_isModeAvailable(_selectedMode)) {
         _selectedMode = _hasPalletContainers ? AssignmentMode.pallet : AssignmentMode.box;
       }
-      
+
       _filterContainersByMode();
-      
+
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -205,11 +206,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   // GÜNCELLEME: Konteynerleri moda göre filtrele
   void _filterContainersByMode() {
     if (_selectedMode == AssignmentMode.pallet) {
-      _availableContainers = _allContainers.where((container) => 
+      _availableContainers = _allContainers.where((container) =>
         container.isPallet
       ).toList();
     } else {
-      _availableContainers = _allContainers.where((container) => 
+      _availableContainers = _allContainers.where((container) =>
         !container.isPallet
       ).toList();
     }
@@ -252,12 +253,12 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   void _handleContainerSelection(TransferableContainer? selectedContainer) {
     if (selectedContainer == null) return;
-    
+
     setState(() {
       _selectedContainer = selectedContainer;
       _scannedContainerIdController.text = selectedContainer.displayName;
     });
-    
+
     _fetchContainerContents();
     _targetLocationFocusNode.requestFocus();
   }
@@ -355,21 +356,21 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                           // Sipariş Bilgi Kartı
                           OrderInfoCard(order: widget.order),
                           const SizedBox(height: _gap),
-                          
+
                           // Mod Seçimi
                           _buildModeSelector(),
                           const SizedBox(height: _gap),
-                          
+
                           // GÜNCELLEME: Mod durumu bilgisi
                           if (!_isModeAvailable(_selectedMode))
                             _buildModeUnavailableMessage(),
-                          
+
                           // Palet Açma Seçeneği - Commented out as requested
                           // if (_selectedMode == AssignmentMode.pallet && _isModeAvailable(_selectedMode)) ...[
                           //   _buildPalletOpeningSwitch(),
                           //   const SizedBox(height: _gap),
                           // ],
-                          
+
                           // Kaynak Lokasyon (Disabled - Her zaman Mal Kabul Alanı)
                           TextFormField(
                             controller: _sourceLocationController,
@@ -377,14 +378,14 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                             decoration: _inputDecoration('order_transfer.label_source_location'.tr(), enabled: false),
                           ),
                           const SizedBox(height: _gap),
-                          
+
                           // Konteyner Seçimi
                           if (_isModeAvailable(_selectedMode))
                             _buildHybridDropdownWithQr<TransferableContainer>(
                               controller: _scannedContainerIdController,
                               focusNode: _containerFocusNode,
-                              label: _selectedMode == AssignmentMode.pallet 
-                                  ? 'order_transfer.label_pallet'.tr() 
+                              label: _selectedMode == AssignmentMode.pallet
+                                  ? 'order_transfer.label_pallet'.tr()
                                   : 'order_transfer.label_product'.tr(),
                               fieldIdentifier: 'container',
                               items: _availableContainers,
@@ -401,22 +402,22 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                                          product.stockCode.toLowerCase().contains(lowerQuery);
                                 }
                               },
-                              validator: (val) => (val == null || val.isEmpty) 
-                                  ? 'order_transfer.validator_required_field'.tr() 
+                              validator: (val) => (val == null || val.isEmpty)
+                                  ? 'order_transfer.validator_required_field'.tr()
                                   : null,
                             ),
                           const SizedBox(height: _gap),
-                          
+
                           // Konteyner İçeriği
                           if (_isLoadingContainerContents)
                             const Padding(
-                              padding: EdgeInsets.symmetric(vertical: _gap), 
+                              padding: EdgeInsets.symmetric(vertical: _gap),
                               child: Center(child: CircularProgressIndicator())
                             )
                           else if (_productsInContainer.isNotEmpty)
                             _buildProductsList(),
                           const SizedBox(height: _gap),
-                          
+
                           // Hedef Lokasyon Seçimi
                           if (_isModeAvailable(_selectedMode))
                             _buildHybridDropdownWithQr<String>(
@@ -428,8 +429,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                               itemToString: (item) => item,
                               onItemSelected: _handleTargetSelection,
                               filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                              validator: (val) => (val == null || val.isEmpty) 
-                                  ? 'order_transfer.validator_required_field'.tr() 
+                              validator: (val) => (val == null || val.isEmpty)
+                                  ? 'order_transfer.validator_required_field'.tr()
                                   : null,
                             ),
                           const SizedBox(height: _gap),
@@ -520,7 +521,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   //     borderRadius: _borderRadius,
   //     color: Theme.of(context).colorScheme.secondary.withAlpha(26),
   //     child: SwitchListTile(
-  //       title: Text('order_transfer.label_break_pallet'.tr(), 
+  //       title: Text('order_transfer.label_break_pallet'.tr(),
   //                  style: const TextStyle(fontWeight: FontWeight.bold)),
   //       value: _isPalletOpening,
   //       onChanged: _productsInContainer.isNotEmpty ? (bool value) {
@@ -601,20 +602,20 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         transferDate: DateTime.now(),
         siparisId: widget.order.id,
       );
-      
+
       // Kaynak lokasyon sipariş bazlı transferde her zaman null (Mal Kabul Alanı)
       await _repo.recordTransferOperation(header, itemsToTransfer, null, targetId);
 
       if (mounted) {
         context.read<SyncService>().uploadPendingOperations();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('order_transfer.success_transfer_saved'.tr()),
             backgroundColor: Colors.green,
           ),
         );
-        
+
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -671,7 +672,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           child: _QrButton(
             onTap: () async {
               final result = await Navigator.push<String>(
-                context, 
+                context,
                 MaterialPageRoute(builder: (context) => const QrScannerScreen())
               );
               if (result != null && result.isNotEmpty) {
@@ -708,9 +709,9 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             padding: const EdgeInsets.all(_smallGap),
             itemCount: _productsInContainer.length,
             separatorBuilder: (context, index) => const Divider(
-              height: _smallGap, 
-              indent: 16, 
-              endIndent: 16, 
+              height: _smallGap,
+              indent: 16,
+              endIndent: 16,
               thickness: 0.2
             ),
             itemBuilder: (context, index) {
@@ -729,13 +730,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            product.name, 
-                            style: Theme.of(context).textTheme.bodyLarge, 
+                            product.name,
+                            style: Theme.of(context).textTheme.bodyLarge,
                             overflow: TextOverflow.ellipsis
                           ),
                           Text(
                             'order_transfer.label_current_quantity'.tr(namedArgs: {
-                              'productCode': product.productCode, 
+                              'productCode': product.productCode,
                               'quantity': product.currentQuantity.toStringAsFixed(
                                 product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
                               )
@@ -795,8 +796,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         onPressed: _isSaving || _productsInContainer.isEmpty || !_isModeAvailable(_selectedMode) ? null : _onConfirmSave,
         icon: _isSaving
             ? const SizedBox(
-                width: 20, 
-                height: 20, 
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
               )
             : const Icon(Icons.check_circle_outline),
@@ -818,19 +819,19 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(
-        borderRadius: _borderRadius, 
+        borderRadius: _borderRadius,
         borderSide: BorderSide(color: theme.dividerColor)
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: _borderRadius, 
+        borderRadius: _borderRadius,
         borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius, 
+        borderRadius: _borderRadius,
         borderSide: BorderSide(color: theme.colorScheme.error, width: 1)
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius, 
+        borderRadius: _borderRadius,
         borderSide: BorderSide(color: theme.colorScheme.error, width: 2)
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
