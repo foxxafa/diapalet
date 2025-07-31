@@ -203,7 +203,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         o.id,
         o.po_id,
         o.tarih,
-        o.aciklama,
+        o.notlar,
         o.branch_id,
         o.status,
         o.created_at,
