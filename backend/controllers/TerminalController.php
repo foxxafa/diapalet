@@ -764,21 +764,57 @@ class TerminalController extends Controller
             Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
             $sqlContent = file_get_contents($sqlFile);
 
-            // Yorumları ve boş satırları temizle
+            // Improved SQL parsing to handle multi-line statements properly
+            // Remove comments but preserve newlines for proper statement separation
             $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Multi-line comments
-            $sqlContent = preg_replace('/--.*/', '', $sqlContent);      // Single-line comments
-            $sqlContent = preg_replace('/^\s*$/m', '', $sqlContent);    // Boş satırlar
+            $sqlContent = preg_replace('/--[^\r\n]*/', '', $sqlContent); // Single-line comments
+            
+            // Split by semicolon but be careful about CREATE TABLE statements
+            $commands = [];
+            $currentCommand = '';
+            $lines = explode("\n", $sqlContent);
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                
+                $currentCommand .= $line . "\n";
+                
+                // If line ends with semicolon and we're not in a complex statement
+                if (substr($line, -1) === ';') {
+                    $commands[] = trim($currentCommand);
+                    $currentCommand = '';
+                }
+            }
+            
+            // Add any remaining command
+            if (!empty(trim($currentCommand))) {
+                $commands[] = trim($currentCommand);
+            }
 
-            // Komutları ';' ile ayır
-            $commands = explode(';', $sqlContent);
             $executedCommands = 0;
+            $failedCommands = [];
 
-            foreach ($commands as $command) {
+            foreach ($commands as $i => $command) {
                 $command = trim($command);
-                if (!empty($command)) {
+                if (empty($command)) continue;
+                
+                try {
+                    Yii::info("Executing command " . ($i + 1) . ": " . substr($command, 0, 100) . "...", __METHOD__);
                     $db->createCommand($command)->execute();
                     $executedCommands++;
+                } catch (\Exception $cmdException) {
+                    $failedCommands[] = [
+                        'command' => substr($command, 0, 200),
+                        'error' => $cmdException->getMessage()
+                    ];
+                    Yii::error("Failed to execute command " . ($i + 1) . ": " . $cmdException->getMessage(), __METHOD__);
+                    // Continue with other commands instead of failing completely
                 }
+            }
+
+            if (!empty($failedCommands)) {
+                Yii::warning("Some commands failed during DevReset: " . json_encode($failedCommands), __METHOD__);
             }
 
             $transaction->commit();
@@ -787,7 +823,10 @@ class TerminalController extends Controller
 
             return $this->asJson([
                 'status' => 'success',
-                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands komut çalıştırıldı."
+                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands komut çalıştırıldı.",
+                'executed_commands' => $executedCommands,
+                'failed_commands' => count($failedCommands),
+                'failures' => $failedCommands
             ]);
 
         } catch (\Exception $e) {
