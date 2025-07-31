@@ -372,12 +372,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    final branchId = prefs.getInt('branch_id');
+    final warehouseCode = prefs.getString('warehouse_code');
 
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (1, 2) AND branch_id = ?',
-      whereArgs: [branchId],
+      where: 'status IN (1, 2) AND warehouse_code = ?',
+      whereArgs: [warehouseCode],
       orderBy: 'tarih DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();

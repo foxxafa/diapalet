@@ -41,7 +41,6 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove('warehouse_id');
     await prefs.remove('warehouse_name');
     await prefs.remove('warehouse_code');
-    await prefs.remove('branch_id');
     await prefs.remove('branch_name');
     await prefs.remove('apikey');
     await prefs.remove('first_name');
@@ -85,7 +84,6 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
           await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
           await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
-          await prefs.setInt('branch_id', user['branch_id'] as int? ?? 0);
           await prefs.setString('branch_name', user['branch_name'] as String? ?? 'N/A');
           await prefs.setString('apikey', apiKey);
           await prefs.setString('first_name', user['first_name'] as String);
@@ -113,7 +111,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Map<String, dynamic>?> _loginOffline(String username, String password) async {
     try {
       final db = await dbHelper.database;
-      
+
       // Employee bilgilerini warehouse bilgileriyle birlikte al
       const sql = '''
         SELECT e.*, w.name as warehouse_name, w.warehouse_code
@@ -122,7 +120,7 @@ class AuthRepositoryImpl implements AuthRepository {
         WHERE e.username = ? AND e.password = ? AND e.is_active = 1
         LIMIT 1
       ''';
-      
+
       final List<Map<String, dynamic>> result = await db.rawQuery(sql, [username, password]);
 
       if (result.isNotEmpty) {
@@ -135,11 +133,10 @@ class AuthRepositoryImpl implements AuthRepository {
         await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
         await prefs.setString('first_name', user['first_name'] as String);
         await prefs.setString('last_name', user['last_name'] as String);
-        
+
         // Offline durumda branch bilgisi genelde mevcut olmaz, N/A olarak ayarla
         await prefs.setString('branch_name', 'N/A');
-        await prefs.setInt('branch_id', 0);
-        
+
         return {'warehouse_id': user['warehouse_id'] as int};
       } else {
         throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");

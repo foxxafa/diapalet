@@ -562,7 +562,7 @@ class DatabaseHelper {
         po.tarih as order_date,
         po.notlar as order_notes,
         po.status as order_status,
-        po.branch_id as order_branch_id
+        po.warehouse_code as order_warehouse_code
       FROM goods_receipts gr
       LEFT JOIN employees emp ON emp.id = gr.employee_id
       LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id

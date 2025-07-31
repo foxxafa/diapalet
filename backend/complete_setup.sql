@@ -347,8 +347,8 @@ ADD CONSTRAINT `fk_putaway_order_line` FOREIGN KEY (`purchase_order_line_id`) RE
 -- These indexes optimize the N+1 query problem fixed in getOpenPurchaseOrders function
 
 -- 1. Sipariş tablosu için composite index (N+1 optimizasyonu için kritik)
-CREATE INDEX IF NOT EXISTS idx_siparis_status_branch
-ON satin_alma_siparis_fis(status, branch_id, tarih DESC);
+CREATE INDEX IF NOT EXISTS idx_siparis_status_warehouse
+ON satin_alma_siparis_fis(status, warehouse_code, tarih DESC);
 
 -- 2. Sipariş satırları için index
 CREATE INDEX IF NOT EXISTS idx_siparis_satir_siparis_urun

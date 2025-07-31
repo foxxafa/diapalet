@@ -192,9 +192,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    final branchId = prefs.getInt('branch_id');
+    final warehouseCode = prefs.getString('warehouse_code');
 
-    debugPrint("DEBUG: Branch ID from SharedPreferences: $branchId");
+    debugPrint("DEBUG: Warehouse Code from SharedPreferences: $warehouseCode");
 
     // Optimized query: Single SQL query to get only open orders
     // Uses JOIN and GROUP BY to calculate received vs expected quantities in one go
@@ -204,13 +204,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         o.po_id,
         o.tarih,
         o.notlar,
-        o.branch_id,
+        o.warehouse_code,
         o.status,
         o.created_at,
         o.updated_at
       FROM satin_alma_siparis_fis o
       WHERE o.status IN (0, 1)
-        AND o.branch_id = ?
+        AND o.warehouse_code = ?
         AND EXISTS (
           SELECT 1
           FROM satin_alma_siparis_fis_satir s
@@ -223,7 +223,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             ), 0) + 0.001
         )
       ORDER BY o.tarih DESC
-    ''', [branchId]);
+    ''', [warehouseCode]);
 
     debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders with optimized query");
 
@@ -233,7 +233,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("DEBUG: Open Order ID: ${order.id}, PO ID: ${order.poId}, Status: ${order.status}");
     }
 
-    debugPrint("Mal kabul için açık siparişler (Branch ID: $branchId): ${openOrders.length} adet bulundu");
+    debugPrint("Mal kabul için açık siparişler (Warehouse Code: $warehouseCode): ${openOrders.length} adet bulundu");
     return openOrders;
   }
 
