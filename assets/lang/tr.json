@@ -484,14 +484,14 @@
       "progress_processing": "{table} verileri işleniyor...",
       "progress_finalizing": "Senkronizasyon tamamlanıyor...",
       "progress_complete": "Senkronizasyon tamamlandı",
-      "estimated_time": "Tahmini süre: {minutes}d {seconds}s", 
+      "estimated_time": "Tahmini süre: {minutes}d {seconds}s",
       "records_processed": "{current} / {total} kayıt",
       "please_wait": "Lütfen bekleyiniz...",
       "do_not_close": "Lütfen uygulamayı kapatmayınız"
     },
     "tables": {
       "employees": "Personel Bilgileri",
-      "warehouses": "Depo Bilgileri", 
+      "warehouses": "Depo Bilgileri",
       "shelfs": "Raf Lokasyonları",
       "urunler": "Ürün Kataloğu",
       "goods_receipts": "Mal Kabul Kayıtları",
@@ -503,7 +503,7 @@
     },
     "stages": {
       "stage_1": "Sistem verileri yükleniyor...",
-      "stage_2": "Depo verileri yükleniyor...", 
+      "stage_2": "Depo verileri yükleniyor...",
       "stage_3": "Ürün kataloğu yükleniyor...",
       "stage_4": "Stok bilgileri yükleniyor...",
       "stage_5": "Sipariş verileri yükleniyor...",
@@ -522,7 +522,8 @@
       "server_error": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyiniz.",
       "timeout_error": "Bağlantı zaman aşımı. Lütfen bağlantınızı kontrol edip tekrar deneyiniz.",
       "data_error": "Veri işleme hatası. Lütfen destek ile iletişime geçiniz.",
-      "cancelled": "Senkronizasyon kullanıcı tarafından iptal edildi"
+      "cancelled": "Senkronizasyon kullanıcı tarafından iptal edildi",
+      "general": "Senkronizasyon başarısız. Lütfen tekrar deneyiniz."
     }
   }
 }

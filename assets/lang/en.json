@@ -288,6 +288,9 @@
       "up_to_date": "Up to Date",
       "error": "Sync Error"
     },
+    "errors": {
+      "general": "Synchronization failed. Please try again."
+    },
     "admin": {
       "title": "Admin Actions",
       "reset_db": "Clear & Reset",
@@ -737,7 +740,7 @@
     },
     "tables": {
       "employees": "Employee Data",
-      "warehouses": "Warehouse Information", 
+      "warehouses": "Warehouse Information",
       "shelfs": "Shelf Locations",
       "urunler": "Product Catalog",
       "goods_receipts": "Goods Receipts",
@@ -749,7 +752,7 @@
     },
     "stages": {
       "stage_1": "Loading system data...",
-      "stage_2": "Loading warehouse data...", 
+      "stage_2": "Loading warehouse data...",
       "stage_3": "Loading product catalog...",
       "stage_4": "Loading stock information...",
       "stage_5": "Loading order data...",
@@ -764,6 +767,7 @@
       "failed": "Synchronization failed"
     },
     "errors": {
+      "general": "Synchronization failed. Please try again.",
       "network_error": "Network connection error. Please check your internet connection.",
       "server_error": "Server error occurred. Please try again later.",
       "timeout_error": "Connection timeout. Please check your connection and try again.",

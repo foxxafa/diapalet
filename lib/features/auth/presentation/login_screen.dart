@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (authData != null && mounted) {
           final syncService = context.read<SyncService>();
-          
+
           // Show sync loading screen
           Navigator.of(context).push(
             MaterialPageRoute(
@@ -56,14 +56,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (mounted) {
                     Navigator.of(context).pop(); // Close loading screen
                     setState(() {
-                      _errorMessage = 'sync.error.general'.tr();
+                      _errorMessage = 'sync.errors.general'.tr();
                     });
                   }
                 },
               ),
             ),
           );
-          
+
           // Start sync after showing loading screen
           syncService.performFullSync();
         }

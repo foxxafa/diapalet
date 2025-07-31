@@ -128,7 +128,7 @@ class SyncService with ChangeNotifier {
       debugPrint("Senkronizasyon zaten devam ediyor. Atlanıyor.");
       return;
     }
-    
+
     if (_userOperationInProgress && !force) {
       debugPrint("Kullanıcı işlemi devam ediyor, senkronizasyon atlanıyor.");
       return;
@@ -155,13 +155,13 @@ class SyncService with ChangeNotifier {
       ));
 
       await uploadPendingOperations();
-      
+
       final prefs = await SharedPreferences.getInstance();
       final warehouseId = prefs.getInt('warehouse_id');
       if (warehouseId == null) {
         throw Exception("Warehouse ID bulunamadı. Lütfen tekrar giriş yapın.");
       }
-      
+
       await _downloadDataFromServer(warehouseId: warehouseId);
       await dbHelper.cleanupOldSyncedOperations();
 
@@ -191,7 +191,7 @@ class SyncService with ChangeNotifier {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
       _updateStatus(SyncStatus.error);
-      
+
       // Error stage
       _emitProgress(SyncProgress(
         stage: SyncStage.error,
@@ -207,14 +207,14 @@ class SyncService with ChangeNotifier {
 
   Future<void> _downloadDataFromServer({required int warehouseId}) async {
     debugPrint("Sunucudan veri indirme başlıyor...");
-    
+
     // Start downloading stage
     _emitProgress(const SyncProgress(
       stage: SyncStage.downloading,
       tableName: '',
       progress: 0.1,
     ));
-    
+
     final prefs = await SharedPreferences.getInstance();
     final lastSync = prefs.getString(_lastSyncTimestampKey);
 
@@ -226,14 +226,14 @@ class SyncService with ChangeNotifier {
     if (response.statusCode == 200 && response.data['success'] == true) {
       final data = response.data['data'] as Map<String, dynamic>;
       final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
-      
+
       // Processing stage
       _emitProgress(const SyncProgress(
         stage: SyncStage.processing,
         tableName: '',
         progress: 0.5,
       ));
-      
+
       await dbHelper.applyDownloadedData(data, onTableProgress: (tableName, processed, total) {
         _emitProgress(SyncProgress(
           stage: SyncStage.processing,
@@ -301,12 +301,12 @@ class SyncService with ChangeNotifier {
       if (id != null && status == 'success') {
         debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
         await dbHelper.markOperationAsSynced(id);
-        dataChanged = true; 
+        dataChanged = true;
       } else if (id != null) {
         await dbHelper.updateOperationWithError(id, message ?? 'Bilinmeyen sunucu hatası');
       }
     }
-    
+
     if (dataChanged) {
       debugPrint("Veri başarıyla yüklendi, sunucudan güncel durum indiriliyor...");
       final prefs = await SharedPreferences.getInstance();

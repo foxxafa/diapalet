@@ -24,18 +24,18 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
     with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  
+
   SyncProgress? _currentProgress;
 
   @override
   void initState() {
     super.initState();
-    
+
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-    
+
     _pulseAnimation = Tween<double>(
       begin: 0.8,
       end: 1.0,
@@ -50,7 +50,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         setState(() {
           _currentProgress = progress;
         });
-        
+
         // Handle completion and errors
         if (progress.stage == SyncStage.completed) {
           widget.onSyncComplete?.call();
@@ -59,6 +59,33 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         }
       }
     });
+  }
+
+  String _getTableDisplayName(String tableName) {
+    switch (tableName) {
+      case 'employees':
+        return 'sync.tables.employees'.tr();
+      case 'warehouses':
+        return 'sync.tables.warehouses'.tr();
+      case 'shelfs':
+        return 'sync.tables.shelfs'.tr();
+      case 'urunler':
+        return 'sync.tables.urunler'.tr();
+      case 'goods_receipts':
+        return 'sync.tables.goods_receipts'.tr();
+      case 'goods_receipt_items':
+        return 'sync.tables.goods_receipt_items'.tr();
+      case 'inventory_stock':
+        return 'sync.tables.inventory_stock'.tr();
+      case 'wms_putaway_status':
+        return 'sync.tables.wms_putaway_status'.tr();
+      case 'satin_alma_siparis_fis':
+        return 'sync.tables.satin_alma_siparis_fis'.tr();
+      case 'satin_alma_siparis_fis_satir':
+        return 'sync.tables.satin_alma_siparis_fis_satir'.tr();
+      default:
+        return tableName; // Fallback to table name if translation not found
+    }
   }
 
   @override
@@ -77,7 +104,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
           child: Column(
             children: [
               const Spacer(flex: 2),
-              
+
               // App Logo/Title
               AnimatedBuilder(
                 animation: _pulseAnimation,
@@ -92,9 +119,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                   );
                 },
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Title
               Text(
                 'sync.loading_screen.title'.tr(),
@@ -103,9 +130,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                 ),
                 textAlign: TextAlign.center,
               ),
-              
+
               const SizedBox(height: 12),
-              
+
               // Subtitle
               Text(
                 'sync.loading_screen.subtitle'.tr(),
@@ -114,9 +141,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                 ),
                 textAlign: TextAlign.center,
               ),
-              
+
               const SizedBox(height: 48),
-              
+
               // Progress Bar
               Container(
                 width: double.infinity,
@@ -136,9 +163,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Percentage
               Text(
                 '${((_currentProgress?.progress ?? 0) * 100).toInt()}%',
@@ -147,21 +174,21 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                   color: Theme.of(context).primaryColor,
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Current Stage
               _buildCurrentStage(),
-              
+
               const SizedBox(height: 16),
-              
+
               // Records Progress (if available)
-              if (_currentProgress?.processedItems != null && 
+              if (_currentProgress?.processedItems != null &&
                   _currentProgress?.totalItems != null)
                 _buildRecordsProgress(),
-              
+
               const SizedBox(height: 32),
-              
+
               // Warning Message
               Container(
                 padding: const EdgeInsets.all(16),
@@ -191,7 +218,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                   ],
                 ),
               ),
-              
+
               const Spacer(flex: 3),
             ],
           ),
@@ -202,15 +229,15 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
 
   Widget _buildCurrentStage() {
     String stageText = 'sync.loading_screen.progress_preparing'.tr();
-    
+
     if (_currentProgress?.tableName != null) {
       final tableName = _currentProgress!.tableName;
-      final tableDisplayName = 'sync.tables.$tableName'.tr();
+      final tableDisplayName = _getTableDisplayName(tableName);
       stageText = 'sync.loading_screen.progress_downloading'
           .tr()
           .replaceAll('{table}', tableDisplayName);
     }
-    
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -245,7 +272,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
   Widget _buildRecordsProgress() {
     final current = _currentProgress!.processedItems;
     final total = _currentProgress!.totalItems;
-    
+
     return Text(
       'sync.loading_screen.records_processed'
           .tr()

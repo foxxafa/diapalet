@@ -292,7 +292,7 @@ class DatabaseHelper {
         // Count total items for progress tracking
         int totalItems = 0;
         int processedItems = 0;
-        
+
         data.forEach((key, value) {
           if (value is List) {
             totalItems += value.length;
@@ -316,7 +316,7 @@ class DatabaseHelper {
               final sanitizedRecord = _sanitizeRecord('urunler', urun);
               batch.insert('urunler', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
             }
-            
+
             processedItems++;
             onTableProgress?.call('urunler', processedItems, totalItems);
           }
@@ -335,9 +335,10 @@ class DatabaseHelper {
               batch.delete('shelfs', where: 'id = ?', whereArgs: [shelfId]);
             } else {
               // Aktif rafı güncelle/ekle
-              batch.insert('shelfs', shelf, conflictAlgorithm: ConflictAlgorithm.replace);
+              final sanitizedShelf = _sanitizeRecord('shelfs', shelf);
+              batch.insert('shelfs', sanitizedShelf, conflictAlgorithm: ConflictAlgorithm.replace);
             }
-            
+
             processedItems++;
             onTableProgress?.call('shelfs', processedItems, totalItems);
           }
@@ -347,8 +348,9 @@ class DatabaseHelper {
         if (data.containsKey('warehouses')) {
           final warehousesData = List<Map<String, dynamic>>.from(data['warehouses']);
           for (final warehouse in warehousesData) {
-            batch.insert('warehouses', warehouse, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+            final sanitizedWarehouse = _sanitizeRecord('warehouses', warehouse);
+            batch.insert('warehouses', sanitizedWarehouse, conflictAlgorithm: ConflictAlgorithm.replace);
+
             processedItems++;
             onTableProgress?.call('warehouses', processedItems, totalItems);
           }
@@ -367,9 +369,10 @@ class DatabaseHelper {
               batch.delete('employees', where: 'id = ?', whereArgs: [employeeId]);
             } else {
               // Aktif çalışanı güncelle/ekle
-              batch.insert('employees', employee, conflictAlgorithm: ConflictAlgorithm.replace);
+              final sanitizedEmployee = _sanitizeRecord('employees', employee);
+              batch.insert('employees', sanitizedEmployee, conflictAlgorithm: ConflictAlgorithm.replace);
             }
-            
+
             processedItems++;
             onTableProgress?.call('employees', processedItems, totalItems);
           }
@@ -381,7 +384,7 @@ class DatabaseHelper {
           for (final receipt in goodsReceiptsData) {
             final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
             batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+
             processedItems++;
             onTableProgress?.call('goods_receipts', processedItems, totalItems);
           }
@@ -391,8 +394,9 @@ class DatabaseHelper {
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
-            batch.insert('goods_receipt_items', item, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+            final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
+            batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
+
             processedItems++;
             onTableProgress?.call('goods_receipt_items', processedItems, totalItems);
           }
@@ -402,8 +406,9 @@ class DatabaseHelper {
         if (data.containsKey('wms_putaway_status')) {
           final putawayStatusData = List<Map<String, dynamic>>.from(data['wms_putaway_status']);
           for (final putaway in putawayStatusData) {
-            batch.insert('wms_putaway_status', putaway, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+            final sanitizedPutaway = _sanitizeRecord('wms_putaway_status', putaway);
+            batch.insert('wms_putaway_status', sanitizedPutaway, conflictAlgorithm: ConflictAlgorithm.replace);
+
             processedItems++;
             onTableProgress?.call('wms_putaway_status', processedItems, totalItems);
           }
@@ -413,8 +418,9 @@ class DatabaseHelper {
         if (data.containsKey('inventory_stock')) {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
-            batch.insert('inventory_stock', stock, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+            final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
+            batch.insert('inventory_stock', sanitizedStock, conflictAlgorithm: ConflictAlgorithm.replace);
+
             processedItems++;
             onTableProgress?.call('inventory_stock', processedItems, totalItems);
           }
@@ -446,7 +452,7 @@ class DatabaseHelper {
           for (final record in records) {
             final sanitizedRecord = _sanitizeRecord(table, record);
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-            
+
             processedItems++;
             onTableProgress?.call(table, processedItems, totalItems);
           }
@@ -461,16 +467,53 @@ class DatabaseHelper {
     }
   }  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
     final newRecord = Map<String, dynamic>.from(record);
-    if (table == 'urunler' && newRecord.containsKey('id')) {
-      newRecord['UrunId'] = newRecord['id'];
-      newRecord.remove('id');
+
+    // Remove server-only fields that don't exist in local schema
+    newRecord.remove('created_at');
+    newRecord.remove('updated_at');
+
+    // Handle table-specific field mappings and removals
+    switch (table) {
+      case 'urunler':
+        if (newRecord.containsKey('id')) {
+          newRecord['UrunId'] = newRecord['id'];
+          newRecord.remove('id');
+        }
+        break;
+
+      case 'goods_receipts':
+        if (newRecord.containsKey('id') && newRecord['id'] != null) {
+          newRecord['goods_receipt_id'] = newRecord['id'];
+        }
+        newRecord.remove('id');
+        break;
+
+      case 'warehouses':
+        // Remove server-only fields that don't exist in local schema
+        newRecord.remove('dia_id');
+        break;
+
+      case 'shelfs':
+        // No additional sanitization needed for shelfs
+        break;
+
+      case 'employees':
+        // No additional sanitization needed for employees
+        break;
+
+      case 'goods_receipt_items':
+        // No additional sanitization needed for goods_receipt_items
+        break;
+
+      case 'wms_putaway_status':
+        // No additional sanitization needed for wms_putaway_status
+        break;
+
+      case 'inventory_stock':
+        // No additional sanitization needed for inventory_stock
+        break;
     }
-    if (table == 'goods_receipts') {
-      if (newRecord.containsKey('id') && newRecord['id'] != null) {
-        newRecord['goods_receipt_id'] = newRecord['id'];
-      }
-      newRecord.remove('id');
-    }
+
     return newRecord;
   }
 
