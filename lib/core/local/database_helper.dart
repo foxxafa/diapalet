@@ -17,7 +17,10 @@ class DatabaseHelper {
       // GÜNCELLEME: satin_alma_siparis_fis tablosunda branch_id -> warehouse_code değişikliği
       // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, warehouses, goods_receipts, goods_receipt_items)
       // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
-      static const _databaseVersion = 36;
+      // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
+      // GÜNCELLEME: inventory_transfers için incremental sync eklendi
+      // GÜNCELLEME: _sanitizeRecord fonksiyonu düzeltildi - timestamp alanları sadece gerekli tablolar için kaldırılıyor
+      static const _databaseVersion = 38;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -215,6 +218,7 @@ class DatabaseHelper {
           pallet_barcode TEXT,
           expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
+          created_at TEXT,
           updated_at TEXT,
           UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
           FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
@@ -248,6 +252,7 @@ class DatabaseHelper {
           employee_id INTEGER,
           transfer_date TEXT,
           created_at TEXT,
+          updated_at TEXT,
           FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
           FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
           FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
@@ -426,6 +431,18 @@ class DatabaseHelper {
           }
         }
 
+        // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('inventory_transfers')) {
+          final inventoryTransfersData = List<Map<String, dynamic>>.from(data['inventory_transfers']);
+          for (final transfer in inventoryTransfersData) {
+            final sanitizedTransfer = _sanitizeRecord('inventory_transfers', transfer);
+            batch.insert('inventory_transfers', sanitizedTransfer, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            onTableProgress?.call('inventory_transfers', processedItems, totalItems);
+          }
+        }
+
         // ########## SATIN ALMA SİPARİŞ FİŞ İÇİN İNKREMENTAL SYNC ##########
         if (data.containsKey('satin_alma_siparis_fis')) {
           final siparislerData = List<Map<String, dynamic>>.from(data['satin_alma_siparis_fis']);
@@ -465,7 +482,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
+        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (data[table] is! List) continue;
@@ -491,13 +508,10 @@ class DatabaseHelper {
   }  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
     final newRecord = Map<String, dynamic>.from(record);
 
-    // Remove server-only fields that don't exist in local schema
-    newRecord.remove('created_at');
-    newRecord.remove('updated_at');
-
-    // Handle table-specific field mappings and removals
+    // Only handle critical field mappings - let SQLite ignore unknown fields
     switch (table) {
       case 'urunler':
+        // Server uses 'id', local uses 'UrunId'
         if (newRecord.containsKey('id')) {
           newRecord['UrunId'] = newRecord['id'];
           newRecord.remove('id');
@@ -505,38 +519,16 @@ class DatabaseHelper {
         break;
 
       case 'goods_receipts':
+        // Server uses 'id', local uses 'goods_receipt_id'
         if (newRecord.containsKey('id') && newRecord['id'] != null) {
           newRecord['goods_receipt_id'] = newRecord['id'];
+          newRecord.remove('id');
         }
-        newRecord.remove('id');
-        break;
-
-      case 'warehouses':
-        // Remove server-only fields that don't exist in local schema
-        newRecord.remove('dia_id');
-        break;
-
-      case 'shelfs':
-        // No additional sanitization needed for shelfs
-        break;
-
-      case 'employees':
-        // No additional sanitization needed for employees
-        break;
-
-      case 'goods_receipt_items':
-        // No additional sanitization needed for goods_receipt_items
-        break;
-
-      case 'wms_putaway_status':
-        // No additional sanitization needed for wms_putaway_status
-        break;
-
-      case 'inventory_stock':
-        // No additional sanitization needed for inventory_stock
         break;
     }
 
+    // SQLite will automatically ignore unknown columns during INSERT
+    // No need to manually remove every field that doesn't exist in local schema
     return newRecord;
   }
 

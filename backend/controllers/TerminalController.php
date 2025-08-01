@@ -802,12 +802,43 @@ class TerminalController extends Controller
         $data['inventory_stock'] = $stockQuery->all();
          $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
+        // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
+        $transferQuery = (new Query())->from('inventory_transfers');
+        $transferConditions = ['or'];
+
+        // Warehouse'a ait location'lardan/location'lara yapılan transferler
+        if (!empty($locationIds)) {
+            $transferConditions[] = ['in', 'from_location_id', $locationIds];
+            $transferConditions[] = ['in', 'to_location_id', $locationIds];
+        }
+
+        // Warehouse'a ait goods_receipt'lerle ilgili transferler
+        if (!empty($allReceiptIdsForWarehouse)) {
+            $transferConditions[] = ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse];
+        }
+
+        if (count($transferConditions) > 1) {
+            $transferQuery->where($transferConditions);
+            // İnkremental sync için updated_at filtresi
+            if ($lastSyncTimestamp) {
+                $transferQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki transfer kayıtları alınıyor.", __METHOD__);
+            }
+        } else {
+            $transferQuery->where('1=0');
+        }
+
+        $data['inventory_transfers'] = $transferQuery->all();
+        $this->castNumericValues($data['inventory_transfers'], ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+
         return [
             'success' => true,
             'data' => $data,
             'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z'),
             'stats' => [
                 'urunler_count' => count($data['urunler'] ?? []),
+                'inventory_stock_count' => count($data['inventory_stock'] ?? []),
+                'inventory_transfers_count' => count($data['inventory_transfers'] ?? []),
                 'is_incremental' => !empty($lastSyncTimestamp),
                 'last_sync_timestamp' => $lastSyncTimestamp
             ]
