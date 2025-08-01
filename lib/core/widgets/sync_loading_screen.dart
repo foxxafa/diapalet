@@ -9,12 +9,12 @@ class SyncLoadingScreen extends StatefulWidget {
   final Function(String error)? onSyncError;
 
   const SyncLoadingScreen({
-    Key? key,
+    super.key,
     this.progressStream,
     this.onCancel,
     this.onSyncComplete,
     this.onSyncError,
-  }) : super(key: key);
+  });
 
   @override
   State<SyncLoadingScreen> createState() => _SyncLoadingScreenState();
@@ -188,7 +188,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                 width: double.infinity,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: ClipRRect(
@@ -234,10 +234,10 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -291,7 +291,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
             width: 20,
             height: 20,
             child: _currentProgress?.stage == SyncStage.completed
-                ? Icon(
+                ? const Icon(
                     Icons.check_circle,
                     color: Colors.green,
                     size: 20,

@@ -16,14 +16,17 @@
     "system": "System Default"
   },
   "home": {
-    "title": "ROWHUB",
+    "title": "RowHub DWMS",
     "reset_db": "Reset Database",
     "db_reset_complete": "Database reset complete",
     "populate_test": "Populate Test Data",
     "test_data_populated": "Test data populated",
     "goods_receiving": "Goods Receiving",
-    "pallet_transfer": "Pallet/Box Transfer",
+    "goods_receiving_desc": "Receive and register incoming shipments with QR/barcode scanning",
+    "pallet_transfer": "Inventory Transfer",
+    "pallet_transfer_desc": "Move items between warehouse locations and organize storage",
     "pending_operations": "Pending Operations",
+    "pending_operations_desc": "View and manage operations waiting for server synchronization",
     "welcome": "Welcome",
     "logout": {
       "title": "Logout",
@@ -33,6 +36,7 @@
       "button": "Logout"
     },
     "inventory_inquiry": "Inventory Inquiry",
+    "inventory_inquiry_desc": "Search and view real-time stock levels across all locations",
     "status": {
       "partially_received": "Partially Received"
     }

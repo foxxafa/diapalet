@@ -19,8 +19,8 @@ class DatabaseHelper {
       // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
       // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
       // GÜNCELLEME: inventory_transfers için incremental sync eklendi
-      // GÜNCELLEME: _sanitizeRecord fonksiyonu düzeltildi - timestamp alanları sadece gerekli tablolar için kaldırılıyor
-      static const _databaseVersion = 38;
+      // GÜNCELLEME: urunler tablosuna created_at ve updated_at alanları eklendi (incremental sync için)
+      static const _databaseVersion = 41;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -85,6 +85,9 @@ class DatabaseHelper {
           ap TEXT,
           branch_id INTEGER,
           warehouse_code TEXT,
+          dia_id INTEGER,
+          branch_code TEXT,
+          _key TEXT,
           created_at TEXT,
           updated_at TEXT
         )
@@ -123,7 +126,9 @@ class DatabaseHelper {
           StokKodu TEXT UNIQUE,
           UrunAdi TEXT,
           Barcode1 TEXT,
-          aktif INTEGER
+          aktif INTEGER,
+          created_at TEXT,
+          updated_at TEXT
         )
       ''');
 
@@ -149,6 +154,7 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           siparis_id INTEGER,
           urun_id INTEGER,
+          StokKodu TEXT,
           miktar REAL,
           ort_son_30 INTEGER,
           ort_son_60 INTEGER,
@@ -158,7 +164,17 @@ class DatabaseHelper {
           invoice TEXT,
           birim TEXT,
           layer INTEGER,
-          notes TEXT
+          notes TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          status INTEGER,
+          good_received REAL,
+          son_7_gun REAL,
+          son_14_gun REAL,
+          son_21_gun REAL,
+          son_1_ay REAL,
+          son_2_ay REAL,
+          son_3_ay REAL
         )
       ''');
 

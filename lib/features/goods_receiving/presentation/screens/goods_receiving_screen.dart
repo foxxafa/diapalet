@@ -433,12 +433,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       if (selectedDate.isBefore(today)) {
         // Bu durum normalde date picker tarafından engellenmelidir
         // Ancak ekstra güvenlik için kontrol ediyoruz
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('goods_receiving_screen.error_expiry_date_past'.tr()),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('goods_receiving_screen.error_expiry_date_past'.tr()),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         return;
       }
 

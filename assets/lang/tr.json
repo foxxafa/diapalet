@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Diapalet"
+    "title": "RowHub DWMS"
   },
   "language": {
     "turkish": "Türkçe",
@@ -15,15 +15,19 @@
     "system": "Sistem Varsayılanı"
   },
   "home": {
-    "title": "Ana Sayfa",
+    "title": "RowHub DWMS",
     "reset_db": "Veritabanını Sıfırla",
     "db_reset_complete": "Veritabanı sıfırlandı",
     "populate_test": "Test Verisi Yükle",
     "test_data_populated": "Test verisi yüklendi",
     "goods_receiving": "Mal Kabul",
-    "pallet_transfer": "Palet Transferi",
+    "goods_receiving_desc": "Gelen sevkiyatları QR/barkod okutarak kaydedin ve kabul edin",
+    "pallet_transfer": "Stok Transferi",
+    "pallet_transfer_desc": "Ürünleri depo lokasyonları arasında taşıyın ve düzenleyin",
     "pending_operations": "Bekleyen İşlemler",
+    "pending_operations_desc": "Sunucu senkronizasyonu bekleyen işlemleri görüntüleyin",
     "inventory_inquiry": "Stok Sorgulama",
+    "inventory_inquiry_desc": "Tüm lokasyonlardaki anlık stok seviyelerini arayın ve görüntüleyin",
     "welcome": "Hoş Geldiniz",
     "logout": {
       "title": "Çıkış Yap",
