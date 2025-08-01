@@ -58,7 +58,10 @@ class SyncService with ChangeNotifier {
   Timer? _periodicTimer;
   SyncStatus _currentStatus = SyncStatus.offline;
 
-  static const _lastSyncTimestampKey = 'last_sync_timestamp';
+  // User-specific timestamp key oluştur
+  String _getUserSyncTimestampKey(int userId) {
+    return 'last_sync_timestamp_user_$userId';
+  }
 
   SyncService({
     required this.dbHelper,
@@ -113,7 +116,7 @@ class SyncService with ChangeNotifier {
 
   void _startPeriodicSync() {
     _periodicTimer?.cancel();
-    _periodicTimer = Timer.periodic(const Duration(minutes: 3), (timer) {
+    _periodicTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       debugPrint("Periyodik senkronizasyon kontrol ediliyor...");
       if (!_userOperationInProgress) {
         performFullSync();
@@ -216,9 +219,20 @@ class SyncService with ChangeNotifier {
     ));
 
     final prefs = await SharedPreferences.getInstance();
-    final lastSync = prefs.getString(_lastSyncTimestampKey);
+    final userId = prefs.getInt('user_id') ?? 0;
+    final userTimestampKey = _getUserSyncTimestampKey(userId);
+    final lastSync = prefs.getString(userTimestampKey);
 
-    final response = await dio.post(
+    debugPrint("🔄 İnkremental Sync Bilgisi:");
+    debugPrint("   User ID: $userId");
+    debugPrint("   Son sync timestamp: $lastSync");
+    debugPrint("   Warehouse ID: $warehouseId");
+
+    if (lastSync != null) {
+      debugPrint("   📅 İnkremental sync yapılıyor (sadece değişenler)");
+    } else {
+      debugPrint("   🔄 İlk sync - tüm veriler çekilecek");
+    }    final response = await dio.post(
       ApiConfig.syncDownload,
       data: {'last_sync_timestamp': lastSync, 'warehouse_id': warehouseId},
     );
@@ -226,6 +240,14 @@ class SyncService with ChangeNotifier {
     if (response.statusCode == 200 && response.data['success'] == true) {
       final data = response.data['data'] as Map<String, dynamic>;
       final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
+
+      // Debug: Gelen veri miktarını göster
+      debugPrint("📊 Sunucudan gelen veri miktarı:");
+      data.forEach((tableName, tableData) {
+        if (tableData is List) {
+          debugPrint("   $tableName: ${tableData.length} kayıt");
+        }
+      });
 
       // Processing stage
       _emitProgress(const SyncProgress(
@@ -242,8 +264,12 @@ class SyncService with ChangeNotifier {
           processedItems: processed,
           totalItems: total,
         ));
-      });      await prefs.setString(_lastSyncTimestampKey, newTimestamp);
+      });
+
+      // User-specific timestamp kaydet
+      await prefs.setString(userTimestampKey, newTimestamp);
       debugPrint("Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
+      debugPrint("💾 Timestamp kaydedildi: $userTimestampKey = $newTimestamp");
     } else {
       throw Exception("Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
     }

@@ -681,6 +681,14 @@ class TerminalController extends Controller
             ->where(['warehouse_code' => $warehouseCode]) // <<<--- İşte sihir burada!
             ->andWhere(['<', 'status', 3]);
 
+        // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
+        if ($lastSyncTimestamp) {
+            $poQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+            Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki siparişler alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm siparişler alınıyor (ilk sync).", __METHOD__);
+        }
+
         $data['satin_alma_siparis_fis'] = $poQuery->all();
         // ########## UYARLAMA BİTTİ ##########
 
@@ -697,7 +705,15 @@ class TerminalController extends Controller
         $data['goods_receipt_items'] = [];
 
         if (!empty($poIds)) {
-            $data['satin_alma_siparis_fis_satir'] = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds])->all();
+            // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
+            $poLineQuery = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds]);
+            if ($lastSyncTimestamp) {
+                $poLineQuery->andWhere(['>', 'updated_at', $lastSyncTimestamp]);
+                Yii::info("İnkremental sync: $lastSyncTimestamp tarihinden sonraki sipariş kalemleri alınıyor.", __METHOD__);
+            } else {
+                Yii::info("Full sync: Tüm sipariş kalemleri alınıyor (ilk sync).", __METHOD__);
+            }
+            $data['satin_alma_siparis_fis_satir'] = $poLineQuery->all();
             $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
 
             $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');

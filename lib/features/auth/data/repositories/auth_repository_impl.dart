@@ -46,8 +46,11 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove('first_name');
     await prefs.remove('last_name');
 
-    // Son senkronizasyon zamanını da temizleyerek bir sonraki girişte
-    // tam senkronizasyon yapılmasını sağla.
+    // User-specific sync timestamp'ini temizle (güvenlik için)
+    final userId = prefs.getInt('user_id') ?? 0;
+    await prefs.remove('last_sync_timestamp_user_$userId');
+    
+    // Eski generic timestamp key'ini de temizle (backward compatibility)
     await prefs.remove('last_sync_timestamp');
 
     debugPrint("Oturum başarıyla sonlandırıldı.");

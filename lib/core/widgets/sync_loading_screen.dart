@@ -26,10 +26,14 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
   late Animation<double> _pulseAnimation;
 
   SyncProgress? _currentProgress;
+  DateTime? _syncStartTime;
+  static const int _minimumDisplayTimeMs = 3000; // Minimum 3 saniye göster
 
   @override
   void initState() {
     super.initState();
+
+    _syncStartTime = DateTime.now(); // Sync başlangıç zamanını kaydet
 
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
@@ -51,14 +55,49 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
           _currentProgress = progress;
         });
 
-        // Handle completion and errors
+        // Handle completion and errors with minimum display time
         if (progress.stage == SyncStage.completed) {
-          widget.onSyncComplete?.call();
+          _handleSyncCompletion();
         } else if (progress.stage == SyncStage.error) {
           widget.onSyncError?.call(progress.message ?? 'Unknown error');
         }
       }
     });
+  }
+
+  void _handleSyncCompletion() {
+    if (_syncStartTime == null) {
+      widget.onSyncComplete?.call();
+      return;
+    }
+
+    final elapsedTime = DateTime.now().difference(_syncStartTime!).inMilliseconds;
+    final remainingTime = _minimumDisplayTimeMs - elapsedTime;
+
+    if (remainingTime > 0) {
+      // Minimum süre henüz dolmadı, bekle
+      debugPrint("⏱️ Sync tamamlandı ama minimum süre için ${remainingTime}ms daha bekleniyor");
+
+      // "Tamamlandı" mesajını göster
+      setState(() {
+        _currentProgress = const SyncProgress(
+          stage: SyncStage.completed,
+          tableName: '',
+          progress: 1.0,
+          message: 'Senkronizasyon tamamlandı ✓',
+        );
+      });
+
+      // Kalan süre kadar bekle
+      Future.delayed(Duration(milliseconds: remainingTime), () {
+        if (mounted) {
+          widget.onSyncComplete?.call();
+        }
+      });
+    } else {
+      // Minimum süre zaten doldu, direkt tamamla
+      widget.onSyncComplete?.call();
+    }
   }
 
   String _getTableDisplayName(String tableName) {
@@ -158,7 +197,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
                     value: _currentProgress?.progress,
                     backgroundColor: Colors.transparent,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).primaryColor,
+                      _currentProgress?.stage == SyncStage.completed
+                        ? Colors.green
+                        : Theme.of(context).primaryColor,
                     ),
                   ),
                 ),
@@ -230,7 +271,9 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
   Widget _buildCurrentStage() {
     String stageText = 'sync.loading_screen.progress_preparing'.tr();
 
-    if (_currentProgress?.tableName != null) {
+    if (_currentProgress?.stage == SyncStage.completed) {
+      stageText = _currentProgress?.message ?? 'sync.loading_screen.progress_complete'.tr();
+    } else if (_currentProgress?.tableName != null && _currentProgress!.tableName.isNotEmpty) {
       final tableName = _currentProgress!.tableName;
       final tableDisplayName = _getTableDisplayName(tableName);
       stageText = 'sync.loading_screen.progress_downloading'
@@ -247,12 +290,18 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
           SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Theme.of(context).primaryColor,
-              ),
-            ),
+            child: _currentProgress?.stage == SyncStage.completed
+                ? Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 20,
+                  )
+                : CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).primaryColor,
+                    ),
+                  ),
           ),
           const SizedBox(width: 12),
           Flexible(

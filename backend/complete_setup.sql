@@ -119,6 +119,8 @@ CREATE TABLE `satin_alma_siparis_fis_satir` (
   `birim` varchar(10) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `layer` tinyint DEFAULT NULL,
   `notes` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `siparis_id` (`siparis_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2108 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;

@@ -426,11 +426,34 @@ class DatabaseHelper {
           }
         }
 
+        // ########## SATIN ALMA SİPARİŞ FİŞ İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('satin_alma_siparis_fis')) {
+          final siparislerData = List<Map<String, dynamic>>.from(data['satin_alma_siparis_fis']);
+          for (final siparis in siparislerData) {
+            final sanitizedSiparis = _sanitizeRecord('satin_alma_siparis_fis', siparis);
+            batch.insert('satin_alma_siparis_fis', sanitizedSiparis, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            onTableProgress?.call('satin_alma_siparis_fis', processedItems, totalItems);
+          }
+        }
+
+        // ########## SATIN ALMA SİPARİŞ FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('satin_alma_siparis_fis_satir')) {
+          final satirlarData = List<Map<String, dynamic>>.from(data['satin_alma_siparis_fis_satir']);
+          for (final satir in satirlarData) {
+            final sanitizedSatir = _sanitizeRecord('satin_alma_siparis_fis_satir', satir);
+            batch.insert('satin_alma_siparis_fis_satir', sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            onTableProgress?.call('satin_alma_siparis_fis_satir', processedItems, totalItems);
+          }
+        }
+
         // Diğer tablolar için eski mantık (full replacement)
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
-          'satin_alma_siparis_fis_satir',
-          'satin_alma_siparis_fis'
+          // 'satin_alma_siparis_fis_satir', 'satin_alma_siparis_fis' artık incremental olarak işleniyor
           // 'urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
         ];
 
@@ -442,7 +465,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock'];
+        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (data[table] is! List) continue;
