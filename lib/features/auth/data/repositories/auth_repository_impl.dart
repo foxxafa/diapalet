@@ -49,7 +49,7 @@ class AuthRepositoryImpl implements AuthRepository {
     // User-specific sync timestamp'ini temizle (güvenlik için)
     final userId = prefs.getInt('user_id') ?? 0;
     await prefs.remove('last_sync_timestamp_user_$userId');
-    
+
     // Eski generic timestamp key'ini de temizle (backward compatibility)
     await prefs.remove('last_sync_timestamp');
 

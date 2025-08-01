@@ -65,14 +65,18 @@ class TerminalController extends Controller
         }
 
         try {
+            // DÜZELTİLMİŞ SORGU
             $userQuery = (new Query())
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
-                    'e.warehouse_id', 'w.warehouse_code', 'w.name as warehouse_name',
-                    'b.id as branch_id', 'b.name as branch_name'
-                ])
-                ->from(['e' => 'employees'])
-                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_id = w.id')
+                    // 'e.warehouse_id' artık yok, onun yerine 'w.id'yi alacağız
+                    'w.id as warehouse_id', // <<<--- DEĞİŞİKLİK 1
+                    'w.warehouse_code', 'w.name as warehouse_name',
+                 'b.id as branch_id', 'b.name as branch_name'
+             ])
+             ->from(['e' => 'employees'])
+                // BİRLEŞTİRME ARTIK 'warehouse_code' ÜZERİNDEN YAPILIYOR
+                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code') // <<<--- DEĞİŞİKLİK 2 (EN ÖNEMLİSİ)
                 ->leftJoin(['b' => 'branches'], 'w.branch_id = b.id')
                 ->where(['e.username' => $username, 'e.password' => $password, 'e.is_active' => 1]);
 

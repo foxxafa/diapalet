@@ -11,7 +11,7 @@ class ApiConfig {
   // ApiEnvironment.staging -> Railway staging ortamı (Test için)
   // ApiEnvironment.production -> Railway production ortamı (Canlı)
   // ******************************************************************
-  static const ApiEnvironment currentEnvironment = ApiEnvironment.staging;
+  static const ApiEnvironment currentEnvironment = ApiEnvironment.production;
 
   // Seçili ortama göre konfigürasyonu al
   static final ApiEnvConfig _config = ApiEnvironments.getEnv(currentEnvironment);
@@ -24,12 +24,12 @@ class ApiConfig {
   static bool get isStaging => currentEnvironment == ApiEnvironment.staging;
   static bool get isLocal => currentEnvironment == ApiEnvironment.local;
 
-  // API Endpoint yolları
-  static const String login = '/api/terminal/login';
-  static const String syncUpload = '/api/terminal/sync-upload';
-  static const String syncDownload = '/api/terminal/sync-download';
-  static const String devReset = '/api/terminal/dev-reset';
-  static const String healthCheck = '/api/terminal/health-check';
+  // API Endpoint yolları - Rowhub formatı
+  static const String login = '/index.php?r=terminal/login';
+  static const String syncUpload = '/index.php?r=terminal/sync-upload';
+  static const String syncDownload = '/index.php?r=terminal/sync-download';
+  static const String devReset = '/index.php?r=terminal/dev-reset';
+  static const String healthCheck = '/index.php?r=terminal/health-check';
 
   static final Dio dio = _createDio();
 

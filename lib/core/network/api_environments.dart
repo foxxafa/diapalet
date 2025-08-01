@@ -20,7 +20,7 @@ class ApiEnvironments {
 
   // Railway ortam URL'leri - Default Railway domain'leri
   static const String _stagingBaseUrl = 'https://diapalet-staging.up.railway.app';
-  static const String _productionBaseUrl = 'https://diapalet-production.up.railway.app';
+  static const String _productionBaseUrl = 'https://enzo.rowhub.net'; //https://diapalet-production.up.railway.app
 
   // Custom domain'ler (gelecekte kullanılabilir)
   // static const String _stagingBaseUrl = 'https://staging-api.diapalet.com';

@@ -64,39 +64,41 @@ class DepoComponent extends Component
         foreach ($subeDepoListesi['result'] as $yetki) {
             if (isset($yetki['subeler'])) {
                 foreach ($yetki['subeler'] as $sube) {
-                    // Şube veritabanında var mı diye kontrol et
+
+                    // GÜNCELLEME: Doğru alan adı 'subeadi' kullanılıyor.
+                    $subeAdi = $sube['subeadi'] ?? 'İsimsiz Şube';
+
                     $existingBranch = (new Query())->select('id')->from('branches')->where(['branch_code' => $sube['subekodu']])->one();
 
                     if ($existingBranch) {
-                        // Varsa güncelle
-                        $db->createCommand()->update('branches', ['name' => $sube['aciklama'], '_key' => $sube['_key']], ['id' => $existingBranch['id']])->execute();
+                        $db->createCommand()->update('branches', ['name' => $subeAdi, '_key' => $sube['_key']], ['id' => $existingBranch['id']])->execute();
                         $branchId = $existingBranch['id'];
                         $branchUpdated++;
                     } else {
-                        // Yoksa yeni ekle
-                        $db->createCommand()->insert('branches', ['name' => $sube['aciklama'], 'branch_code' => $sube['subekodu'], '_key' => $sube['_key']])->execute();
+                        $db->createCommand()->insert('branches', ['name' => $subeAdi, 'branch_code' => $sube['subekodu'], '_key' => $sube['_key']])->execute();
                         $branchId = $db->getLastInsertID();
                         $branchCreated++;
                     }
 
                     if (isset($sube['depolar'])) {
                         foreach ($sube['depolar'] as $depo) {
-                            // Depo veritabanında var mı diye kontrol et
+
+                            // GÜNCELLEME: Doğru alan adı 'depoadi' kullanılıyor.
+                            $depoAdi = $depo['depoadi'] ?? 'İsimsiz Depo';
+
                             $existingWarehouse = (new Query())->select('id')->from('warehouses')->where(['warehouse_code' => $depo['depokodu']])->one();
 
                             $warehouseData = [
-                                'name' => $depo['aciklama'],
+                                'name' => $depoAdi,
                                 'warehouse_code' => $depo['depokodu'],
-                                'branch_id' => $branchId, // En önemli alan
-                                'dia_id' => $depo['_key']  // En önemli alan
+                                'branch_id' => $branchId,
+                                'dia_id' => $depo['_key']
                             ];
 
                             if ($existingWarehouse) {
-                                // Varsa güncelle
                                 $db->createCommand()->update('warehouses', $warehouseData, ['id' => $existingWarehouse['id']])->execute();
                                 $warehouseUpdated++;
                             } else {
-                                // Yoksa yeni ekle
                                 $db->createCommand()->insert('warehouses', $warehouseData)->execute();
                                 $warehouseCreated++;
                             }
@@ -139,26 +141,13 @@ class DepoComponent extends Component
             if (isset($lookup[$dia_warehouse_key])) {
                 $local_warehouse_id = $lookup[$dia_warehouse_key];
 
-                $existingShelf = (new Query())->select('id')->from('shelfs')->where(['dia_key' => $shelf['_key']])->one();
-
-                if ($existingShelf) {
-                    // Varsa güncelle (UPDATE ile updated_at otomatik güncellenir)
-                    $db->createCommand()->update('shelfs', [
-                        'warehouse_id' => $local_warehouse_id,
-                        'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
-                        'code' => $shelf['kod'] ?? 'KODSUZ',
-                        'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
-                    ], ['id' => $existingShelf['id']])->execute();
-                } else {
-                    // Yoksa yeni ekle
-                    $db->createCommand()->insert('shelfs', [
-                        'warehouse_id' => $local_warehouse_id,
-                        'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
-                        'code' => $shelf['kod'] ?? 'KODSUZ',
-                        'dia_key' => $shelf['_key'],
-                        'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
-                    ])->execute();
-                }
+                $db->createCommand()->insert('shelfs', [
+                    'warehouse_id' => $local_warehouse_id,
+                    'name' => $shelf['aciklama'] ?? 'İsimsiz Raf',
+                    'code' => $shelf['kod'] ?? 'KODSUZ',
+                    'dia_key' => $shelf['_key'],
+                    'is_active' => ($shelf['durum'] === 'A') ? 1 : 0,
+                ])->execute();
                 $count++;
             }
         }
