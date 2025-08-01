@@ -52,7 +52,13 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
     widget.progressStream?.listen((progress) {
       if (mounted) {
         setState(() {
-          _currentProgress = progress;
+          // Progress güncellemesi sadece ileri doğru olmalı (geri gitmesin)
+          if (_currentProgress == null || progress.progress >= (_currentProgress?.progress ?? 0.0)) {
+            _currentProgress = progress;
+          } else if (progress.stage != _currentProgress?.stage) {
+            // Stage değişikliklerinde progress'i kabul et
+            _currentProgress = progress;
+          }
         });
 
         // Handle completion and errors with minimum display time

@@ -107,12 +107,11 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Image.asset(
-                  'assets/images/RHt.png',
+                  'assets/images/RHt1.png',
                   width: iconSize,
                   height: iconSize,
                   fit: BoxFit.contain,
-                  color: theme.colorScheme.primary.withValues(alpha: 0.85),
-                  colorBlendMode: BlendMode.modulate,
+                  // color ve colorBlendMode'u kaldırıyoruz - bunlar mavi kaplama yapıyor
                 ),
                 const SizedBox(height: 4),
                 Text(

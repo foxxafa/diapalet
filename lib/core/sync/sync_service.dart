@@ -257,10 +257,14 @@ class SyncService with ChangeNotifier {
       ));
 
       await dbHelper.applyDownloadedData(data, onTableProgress: (tableName, processed, total) {
+        // Progress calculation: 0.5 to 0.9 range (40% of total progress)
+        final progressPercentage = total > 0 ? processed / total : 0.0;
+        final currentProgress = 0.5 + (progressPercentage * 0.4);
+
         _emitProgress(SyncProgress(
           stage: SyncStage.processing,
           tableName: tableName,
-          progress: 0.5 + (processed / total * 0.4), // 0.5 to 0.9
+          progress: currentProgress,
           processedItems: processed,
           totalItems: total,
         ));

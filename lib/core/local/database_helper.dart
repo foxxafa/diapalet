@@ -313,12 +313,24 @@ class DatabaseHelper {
         // Count total items for progress tracking
         int totalItems = 0;
         int processedItems = 0;
+        String? currentTableName;
 
         data.forEach((key, value) {
           if (value is List) {
             totalItems += value.length;
           }
         });
+
+        // Progress güncelleme helper fonksiyonu
+        void updateProgress(String tableName) {
+          // Progress'i sadece her 10 itemde bir veya tablo değişikliğinde güncelle
+          if (processedItems % 10 == 0 || currentTableName != tableName || processedItems == totalItems) {
+            currentTableName = tableName;
+            if (totalItems > 0) {
+              onTableProgress?.call(tableName, processedItems, totalItems);
+            }
+          }
+        }
 
         // ########## İNKREMENTAL SYNC İÇİN YENİ LOJİK ##########
         // Ürünler için özel işlem: aktif=0 olanları sil, diğerlerini güncelle
@@ -339,7 +351,7 @@ class DatabaseHelper {
             }
 
             processedItems++;
-            onTableProgress?.call('urunler', processedItems, totalItems);
+            updateProgress('urunler');
           }
         }
 
@@ -361,7 +373,7 @@ class DatabaseHelper {
             }
 
             processedItems++;
-            onTableProgress?.call('shelfs', processedItems, totalItems);
+            updateProgress('shelfs');
           }
         }
 
@@ -373,7 +385,7 @@ class DatabaseHelper {
             batch.insert('warehouses', sanitizedWarehouse, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('warehouses', processedItems, totalItems);
+            updateProgress('warehouses');
           }
         }
 
@@ -395,7 +407,7 @@ class DatabaseHelper {
             }
 
             processedItems++;
-            onTableProgress?.call('employees', processedItems, totalItems);
+            updateProgress('employees');
           }
         }
 
@@ -407,7 +419,7 @@ class DatabaseHelper {
             batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('goods_receipts', processedItems, totalItems);
+            updateProgress('goods_receipts');
           }
         }
 
@@ -419,7 +431,7 @@ class DatabaseHelper {
             batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('goods_receipt_items', processedItems, totalItems);
+            updateProgress('goods_receipt_items');
           }
         }
 
@@ -431,7 +443,7 @@ class DatabaseHelper {
             batch.insert('wms_putaway_status', sanitizedPutaway, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('wms_putaway_status', processedItems, totalItems);
+            updateProgress('wms_putaway_status');
           }
         }
 
@@ -443,7 +455,7 @@ class DatabaseHelper {
             batch.insert('inventory_stock', sanitizedStock, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('inventory_stock', processedItems, totalItems);
+            updateProgress('inventory_stock');
           }
         }
 
@@ -455,7 +467,7 @@ class DatabaseHelper {
             batch.insert('inventory_transfers', sanitizedTransfer, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('inventory_transfers', processedItems, totalItems);
+            updateProgress('inventory_transfers');
           }
         }
 
@@ -467,7 +479,7 @@ class DatabaseHelper {
             batch.insert('satin_alma_siparis_fis', sanitizedSiparis, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('satin_alma_siparis_fis', processedItems, totalItems);
+            updateProgress('satin_alma_siparis_fis');
           }
         }
 
@@ -479,7 +491,7 @@ class DatabaseHelper {
             batch.insert('satin_alma_siparis_fis_satir', sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call('satin_alma_siparis_fis_satir', processedItems, totalItems);
+            updateProgress('satin_alma_siparis_fis_satir');
           }
         }
 
@@ -510,7 +522,7 @@ class DatabaseHelper {
             batch.insert(table, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            onTableProgress?.call(table, processedItems, totalItems);
+            updateProgress(table);
           }
         }
         // ########## İNKREMENTAL SYNC BİTTİ ##########
