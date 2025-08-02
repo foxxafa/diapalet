@@ -11,50 +11,73 @@ class TransferTypeSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenHeight < 600;
+    
+    // Dinamik değerler küçük ekranlar için
+    final mainPadding = isSmallScreen ? 16.0 : 24.0;
+    final buttonSpacing = isSmallScreen ? 16.0 : 24.0;
+    final buttonVerticalPadding = isSmallScreen ? 24.0 : 40.0;
+    
     return Scaffold(
       appBar: SharedAppBar(
         title: "transfer_type.title".tr(),
         showBackButton: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildSelectionButton(
-              context: context,
-              icon: Icons.receipt_long,
-              label: "transfer_type.order_putaway_operation".tr(),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
-                );
-              },
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height - 
+                        MediaQuery.of(context).padding.top - 
+                        MediaQuery.of(context).padding.bottom - 
+                        kToolbarHeight,
             ),
-            const SizedBox(height: 24),
-            _buildSelectionButton(
-              context: context,
-              icon: Icons.input,
-              label: "transfer_type.free_putaway_operation".tr(),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const DeliveryNoteSelectionScreen()),
-                );
-              },
+            child: Padding(
+              padding: EdgeInsets.all(mainPadding),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildSelectionButton(
+                    context: context,
+                    icon: Icons.receipt_long,
+                    label: "transfer_type.order_putaway_operation".tr(),
+                    verticalPadding: buttonVerticalPadding,
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OrderSelectionScreen()),
+                      );
+                    },
+                  ),
+                  SizedBox(height: buttonSpacing),
+                  _buildSelectionButton(
+                    context: context,
+                    icon: Icons.input,
+                    label: "transfer_type.free_putaway_operation".tr(),
+                    verticalPadding: buttonVerticalPadding,
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const DeliveryNoteSelectionScreen()),
+                      );
+                    },
+                  ),
+                  SizedBox(height: buttonSpacing),
+                  _buildSelectionButton(
+                    context: context,
+                    icon: Icons.swap_horiz,
+                    label: "transfer_type.shelf_to_shelf".tr(),
+                    verticalPadding: buttonVerticalPadding,
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const InventoryTransferScreen(isFreePutAway: false)),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
-            _buildSelectionButton(
-              context: context,
-              icon: Icons.swap_horiz,
-              label: "transfer_type.shelf_to_shelf".tr(),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const InventoryTransferScreen(isFreePutAway: false)),
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -65,6 +88,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
     required IconData icon,
     required String label,
     required VoidCallback onPressed,
+    required double verticalPadding,
   }) {
     final theme = Theme.of(context);
     return ElevatedButton.icon(
@@ -80,7 +104,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: theme.colorScheme.primaryContainer,
         foregroundColor: theme.colorScheme.onPrimaryContainer,
-        padding: const EdgeInsets.symmetric(vertical: 40),
+        padding: EdgeInsets.symmetric(vertical: verticalPadding),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),

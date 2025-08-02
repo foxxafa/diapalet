@@ -950,18 +950,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Widget _buildBottomBar() {
     if (_isLoadingInitialData) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: ElevatedButton.icon(
-        onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
-        icon: _isSaving
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Icon(Icons.check_circle_outline),
-        label: FittedBox(child: Text('inventory_transfer.button_save'.tr())),
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: _borderRadius),
-          textStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: ElevatedButton.icon(
+          onPressed: _isSaving || _productsInContainer.isEmpty ? null : _onConfirmSave,
+          icon: _isSaving
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.check_circle_outline),
+          label: FittedBox(child: Text('inventory_transfer.button_save'.tr())),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: _borderRadius),
+            textStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );
@@ -1192,15 +1194,17 @@ class _InventoryConfirmationPage extends StatelessWidget {
           )),
         ],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 16.0),
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('inventory_transfer.dialog_button_confirm'.tr()),
           ),
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text('inventory_transfer.dialog_button_confirm'.tr()),
         ),
       ),
     );
