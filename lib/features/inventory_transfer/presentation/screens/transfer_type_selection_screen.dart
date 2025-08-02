@@ -13,12 +13,12 @@ class TransferTypeSelectionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenHeight < 600;
-    
+
     // Dinamik değerler küçük ekranlar için
     final mainPadding = isSmallScreen ? 16.0 : 24.0;
     final buttonSpacing = isSmallScreen ? 16.0 : 24.0;
     final buttonVerticalPadding = isSmallScreen ? 24.0 : 40.0;
-    
+
     return Scaffold(
       appBar: SharedAppBar(
         title: "transfer_type.title".tr(),
@@ -28,9 +28,9 @@ class TransferTypeSelectionScreen extends StatelessWidget {
         child: SingleChildScrollView(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - 
-                        MediaQuery.of(context).padding.top - 
-                        MediaQuery.of(context).padding.bottom - 
+              minHeight: MediaQuery.of(context).size.height -
+                        MediaQuery.of(context).padding.top -
+                        MediaQuery.of(context).padding.bottom -
                         kToolbarHeight,
             ),
             child: Padding(

@@ -143,7 +143,7 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final isSmallScreen = screenHeight < 600;
-    
+
     // Dinamik spacing'ler - küçük ekranlarda daha az boşluk
     final iconSize = isSmallScreen ? 60.0 : 80.0;
     final mainSpacing = isSmallScreen ? 16.0 : 32.0;
@@ -156,8 +156,8 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         child: SingleChildScrollView(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - 
-                        MediaQuery.of(context).padding.top - 
+              minHeight: MediaQuery.of(context).size.height -
+                        MediaQuery.of(context).padding.top -
                         MediaQuery.of(context).padding.bottom,
             ),
             child: Padding(
