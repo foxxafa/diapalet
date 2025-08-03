@@ -5,7 +5,6 @@ import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
-import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
@@ -14,6 +13,7 @@ import 'package:diapalet/features/goods_receiving/presentation/screens/goods_rec
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:provider/provider.dart';
 import 'dart:async';
@@ -107,7 +107,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             body: SafeArea(
               child: viewModel.isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : GestureDetector(
+                  : RawKeyboardListener(
+                      focusNode: FocusNode(),
+                      onKey: (RawKeyEvent event) {
+                        // F3 tuşu veya Ctrl+S kombinasyonu ile barkod okuma tetikle
+                        if (event is RawKeyDownEvent) {
+                          if (event.logicalKey == LogicalKeyboardKey.f3 ||
+                              (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyS)) {
+                            _triggerBarcodeScanning(viewModel);
+                          }
+                        }
+                      },
+                      child: GestureDetector(
                       onTap: () => FocusScope.of(context).unfocus(),
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -140,36 +151,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                               _buildPalletIdField(viewModel),
                               const SizedBox(height: _gap),
                             ],
-                            _buildHybridDropdownWithQr<ProductInfo>(
-                              controller: viewModel.productController,
-                              focusNode: viewModel.productFocusNode,
-                              label: viewModel.isOrderBased
-                                  ? 'goods_receiving_screen.label_select_product_in_order'.tr()
-                                  : 'goods_receiving_screen.label_select_product'.tr(),
-                              fieldIdentifier: 'product',
-                              isEnabled: viewModel.areFieldsEnabled,
-                              items: viewModel.isOrderBased
-                                  ? viewModel.orderItems.map((orderItem) => orderItem.product).whereType<ProductInfo>().toList()
-                                  : viewModel.availableProducts,
-                              itemToString: (product) => "${product.name} (${product.stockCode})",
-                              onItemSelected: (product) {
-                                if (product != null) {
-                                  viewModel.selectProduct(product);
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (mounted) {
-                                      _showDatePicker(viewModel);
-                                    }
-                                  });
-                                }
-                              },
-                              filterCondition: (product, query) {
-                                final lowerQuery = query.toLowerCase();
-                                return product.name.toLowerCase().contains(lowerQuery) ||
-                                    product.stockCode.toLowerCase().contains(lowerQuery) ||
-                                    (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
-                              },
-                              validator: viewModel.validateProduct,
-                            ),
+                            _buildProductTextAreaWithScan(viewModel),
                             const SizedBox(height: _gap),
                             _buildExpiryDateField(viewModel),
                             const SizedBox(height: _gap),
@@ -183,11 +165,38 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                         ),
                       ),
                     ),
+                  ),
             ),
           );
         },
       ),
     );
+  }
+
+  void _triggerBarcodeScanning(GoodsReceivingViewModel viewModel) async {
+    // İlk önce manuel scan'i dene (mevcut metni işle)
+    await viewModel.triggerManualScan();
+
+    // Eğer hala bir sonuç yoksa, QR scanner'ı aç
+    await Future.delayed(const Duration(milliseconds: 100)); // Kısa bir gecikme
+
+    if (viewModel.productFocusNode.hasFocus && viewModel.selectedProduct == null) {
+      final result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (context) => const QrScannerScreen())
+      );
+      if (result != null && result.isNotEmpty) {
+        await viewModel.processScannedData('product', result);
+      }
+    } else if (viewModel.palletIdFocusNode.hasFocus && viewModel.palletIdController.text.isEmpty) {
+      final result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (context) => const QrScannerScreen())
+      );
+      if (result != null && result.isNotEmpty) {
+        await viewModel.processScannedData('pallet', result);
+      }
+    }
   }
 
   Widget _buildModeSelector(GoodsReceivingViewModel viewModel) {
@@ -216,6 +225,127 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
+  Widget _buildProductTextAreaWithScan(GoodsReceivingViewModel viewModel) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: viewModel.productController,
+                focusNode: viewModel.productFocusNode,
+                enabled: viewModel.areFieldsEnabled,
+                maxLines: 1, // Tek satır yap
+                decoration: _inputDecoration(
+                  viewModel.isOrderBased
+                      ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                      : 'goods_receiving_screen.label_select_product'.tr(),
+                  enabled: viewModel.areFieldsEnabled,
+                ),
+                onChanged: (value) {
+                  // Auto-search and select product as user types
+                  viewModel.onProductTextChanged(value);
+
+                  // 🎯 KOPYALA-YAPIŞTIR DETECTION:
+                  // Eğer text uzunsa (>5 karakter) ve tam match varsa, otomatik date picker aç
+                  if (value.length > 5 && viewModel.selectedProduct != null) {
+                    // notifyListeners() tamamlandıktan sonra çalıştır
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                        _showDatePicker(viewModel);
+                      }
+                    });
+                  }
+                },
+                onFieldSubmitted: (value) async {
+                  // Enter'a basıldığında ürünü ara ve seç
+                  if (value.isNotEmpty) {
+                    // Eğer search sonuçları varsa ilk sonucu seç
+                    if (viewModel.productSearchResults.isNotEmpty) {
+                      viewModel.selectProduct(
+                        viewModel.productSearchResults.first,
+                        onProductSelected: () {
+                          _showDatePicker(viewModel);
+                        }
+                      );
+                    } else {
+                      // Search sonuçları yoksa barkod olarak işle
+                      await viewModel.processScannedData('product', value);
+                      // UI güncellemesi tamamlandıktan sonra çalıştır
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                          _showDatePicker(viewModel);
+                        }
+                      });
+                    }
+                  }
+                },
+                textInputAction: TextInputAction.search, // Klavyede arama ikonu göster
+                validator: viewModel.validateProduct,
+              ),
+            ),
+            const SizedBox(width: _smallGap),
+            _QrButton(
+              onTap: () async {
+                if (viewModel.areFieldsEnabled) {
+                  // İlk önce manuel scan'i dene
+                  viewModel.triggerManualScan();
+
+                  // Eğer hala sonuç yoksa QR scanner'ı aç
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  if (viewModel.selectedProduct == null) {
+                    final result = await Navigator.push<String>(
+                      context,
+                      MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                    );
+                    if (result != null && result.isNotEmpty) {
+                      await viewModel.processScannedData('product', result);
+                    }
+                  }
+                }
+              },
+              isEnabled: viewModel.areFieldsEnabled,
+            ),
+          ],
+        ),
+        if (viewModel.productSearchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: _borderRadius,
+            ),
+            child: Column(
+              children: viewModel.productSearchResults.take(5).map((product) {
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    product.name,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  subtitle: Text(
+                    "${product.stockCode} ${product.barcode1 != null ? '| ${product.barcode1}' : ''}",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  onTap: () {
+                    viewModel.selectProduct(product);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        _showDatePicker(viewModel);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildPalletIdField(GoodsReceivingViewModel viewModel) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -229,9 +359,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               'goods_receiving_screen.label_pallet_barcode'.tr(),
               enabled: viewModel.areFieldsEnabled,
             ),
-            onFieldSubmitted: (value) {
+            onFieldSubmitted: (value) async {
               if (value.isNotEmpty) {
-                viewModel.processScannedData('pallet', value);
+                await viewModel.processScannedData('pallet', value);
               }
             },
             validator: viewModel.validatePalletId,
@@ -240,66 +370,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         const SizedBox(width: _smallGap),
         _QrButton(
           onTap: () async {
-            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-            if (result != null && result.isNotEmpty) {
-              viewModel.processScannedData('pallet', result);
+            // İlk önce mevcut metni kontrol et
+            final currentText = viewModel.palletIdController.text.trim();
+            if (currentText.isNotEmpty) {
+              await viewModel.processScannedData('pallet', currentText);
+            } else {
+              // Metin yoksa QR scanner'ı aç
+              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+              if (result != null && result.isNotEmpty) {
+                await viewModel.processScannedData('pallet', result);
+              }
             }
           },
           isEnabled: viewModel.areFieldsEnabled,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHybridDropdownWithQr<T>({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String fieldIdentifier,
-    required List<T> items,
-    required String Function(T item) itemToString,
-    required void Function(T? item) onItemSelected,
-    required bool Function(T item, String query) filterCondition,
-    required FormFieldValidator<String>? validator,
-    bool isEnabled = true,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: TextFormField(
-            readOnly: true,
-            controller: controller,
-            focusNode: focusNode,
-            enabled: isEnabled,
-            decoration: _inputDecoration(
-              label,
-              suffixIcon: const Icon(Icons.arrow_drop_down),
-              enabled: isEnabled,
-            ),
-            onTap: items.isEmpty ? null : () async {
-              final T? selectedItem = await _showSearchableDropdownDialog<T>(
-                title: label,
-                items: items,
-                itemToString: itemToString,
-                filterCondition: filterCondition,
-              );
-              if (selectedItem != null) {
-                onItemSelected(selectedItem);
-              }
-            },
-            validator: validator,
-          ),
-        ),
-        const SizedBox(width: _smallGap),
-        _QrButton(
-          onTap: () async {
-            final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-            if (result != null && result.isNotEmpty) {
-              _viewModel.processScannedData(fieldIdentifier, result);
-            }
-          },
-          isEnabled: isEnabled,
         ),
       ],
     );
@@ -406,10 +489,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day); // Today at 00:00:00
-
-    // Debug: Bugünün tarihini konsola yazdır
-    debugPrint('Today is: ${today.toString()}');
-    debugPrint('Current time: ${now.toString()}');
 
     final selectedDate = await showDatePicker(
       context: context,
@@ -607,26 +686,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Future<T?> _showSearchableDropdownDialog<T>({
-    required String title,
-    required List<T> items,
-    required String Function(T) itemToString,
-    required bool Function(T, String) filterCondition,
-  }) {
-    return Navigator.push<T>(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (context) => _FullscreenSearchPage<T>(
-          title: title,
-          items: items,
-          itemToString: itemToString,
-          filterCondition: filterCondition,
-        ),
-      ),
-    );
-  }
-
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
@@ -714,94 +773,6 @@ class _QrButton extends StatelessWidget {
             final iconSize = constraints.maxHeight * 0.6;
             return Icon(Icons.qr_code_scanner, size: iconSize);
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenSearchPage<T> extends StatefulWidget {
-  final String title;
-  final List<T> items;
-  final String Function(T) itemToString;
-  final bool Function(T, String) filterCondition;
-
-  const _FullscreenSearchPage({
-    super.key,
-    required this.title,
-    required this.items,
-    required this.itemToString,
-    required this.filterCondition,
-  });
-
-  @override
-  State<_FullscreenSearchPage<T>> createState() => _FullscreenSearchPageState<T>();
-}
-
-class _FullscreenSearchPageState<T> extends State<_FullscreenSearchPage<T>> {
-  String _searchQuery = '';
-  late List<T> _filteredItems;
-
-  @override
-  void initState() {
-    super.initState();
-    _filteredItems = widget.items;
-  }
-
-  void _filterItems(String query) {
-    setState(() {
-      _searchQuery = query;
-      _filteredItems = widget.items.where((item) => widget.filterCondition(item, _searchQuery)).toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final appBarTheme = theme.appBarTheme;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title, style: appBarTheme.titleTextStyle),
-        backgroundColor: appBarTheme.backgroundColor,
-        foregroundColor: appBarTheme.foregroundColor,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: <Widget>[
-            TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'goods_receiving_screen.dialog_search_hint'.tr(),
-                prefixIcon: const Icon(Icons.search, size: 20),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onChanged: _filterItems,
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _filteredItems.isEmpty
-                  ? Center(child: Text('goods_receiving_screen.dialog_search_no_results'.tr()))
-                  : ListView.separated(
-                      separatorBuilder: (context, index) => const Divider(height: 1),
-                      itemCount: _filteredItems.length,
-                      itemBuilder: (context, index) {
-                        final item = _filteredItems[index];
-                        return ListTile(
-                          title: Text(widget.itemToString(item)),
-                          onTap: () => Navigator.of(context).pop(item),
-                        );
-                      },
-                    ),
-            ),
-          ],
         ),
       ),
     );

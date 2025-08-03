@@ -42,6 +42,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   PurchaseOrder? _selectedOrder;
   List<PurchaseOrderItem> _orderItems = [];
   List<ProductInfo> _availableProducts = [];
+  List<ProductInfo> _productSearchResults = [];
   ProductInfo? _selectedProduct;
   final List<ReceiptItemDraft> _addedItems = [];
 
@@ -70,6 +71,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   PurchaseOrder? get selectedOrder => _selectedOrder;
   List<PurchaseOrderItem> get orderItems => _orderItems;
   List<ProductInfo> get availableProducts => _availableProducts;
+  List<ProductInfo> get productSearchResults => _productSearchResults;
   ProductInfo? get selectedProduct => _selectedProduct;
   List<ReceiptItemDraft> get addedItems => _addedItems;
 
@@ -176,7 +178,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       if (!isOrderBased) {
-        _availableProducts = await _repository.searchProducts('');
+        _availableProducts = await _repository.getAllActiveProducts();
       }
 
       if (_isDisposed) return;
@@ -270,21 +272,54 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   void _handleBarcode(String code) {
     if (_isDisposed) return;
 
+    // Async operasyonu çalıştır ama beklemeden devam et
+    _processScannedDataAsync(code);
+  }
+
+  Future<void> _processScannedDataAsync(String code) async {
     if (palletIdFocusNode.hasFocus) {
-      processScannedData('pallet', code);
+      await processScannedData('pallet', code);
     } else if (productFocusNode.hasFocus) {
-      processScannedData('product', code);
+      await processScannedData('product', code);
     } else {
+      // Eğer palet modundaysak ve palet kodu boşsa, önce palet koduna odaklan
       if (_receivingMode == ReceivingMode.palet && palletIdController.text.isEmpty) {
-        processScannedData('pallet', code);
+        palletIdFocusNode.requestFocus();
+        await processScannedData('pallet', code);
       } else if (_selectedProduct == null) {
+        // Ürün seçilmemişse product field'a odaklan
         productFocusNode.requestFocus();
-        processScannedData('product', code);
+        await processScannedData('product', code);
+      } else {
+        // Diğer durumlarda product field'a odaklan
+        productFocusNode.requestFocus();
+        await processScannedData('product', code);
       }
     }
   }
 
-  void processScannedData(String field, String data) {
+  /// Manuel olarak barkod okuma işlemini tetikle (scan button veya shortcut key için)
+  Future<void> triggerManualScan() async {
+    if (productFocusNode.hasFocus) {
+      // Eğer product field'da metin varsa, bunu barkod olarak işle
+      final currentText = productController.text.trim();
+      if (currentText.isNotEmpty) {
+        await processScannedData('product', currentText);
+        return;
+      }
+    } else if (palletIdFocusNode.hasFocus) {
+      // Eğer pallet field'da metin varsa, bunu barkod olarak işle
+      final currentText = palletIdController.text.trim();
+      if (currentText.isNotEmpty) {
+        await processScannedData('pallet', currentText);
+        return;
+      }
+    }
+
+    // Metin yoksa normal barkod okuma akışı çalışır (intent service'den gelecek)
+  }
+
+  Future<void> processScannedData(String field, String data) async {
     if (data.isEmpty) return;
 
     switch (field) {
@@ -329,12 +364,23 @@ class GoodsReceivingViewModel extends ChangeNotifier {
             : _availableProducts;
 
         ProductInfo? foundProduct;
+
+        // Önce tam eşleşme ara
         try {
           foundProduct = productSource.firstWhere((p) =>
             p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase() ||
             (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
-          foundProduct = null;
+          // Tam eşleşme bulunamazsa database'den ara
+          foundProduct = await _repository.findProductByExactMatch(productCodeToSearch);
+
+          // Database'den bulunan ürün order'da var mı kontrol et
+          if (foundProduct != null && isOrderBased) {
+            final orderProduct = productSource.where((p) => p.id == foundProduct!.id).firstOrNull;
+            if (orderProduct == null) {
+              foundProduct = null; // Order'da yoksa seçilemesin
+            }
+          }
         }
 
         if (foundProduct != null) {
@@ -374,15 +420,64 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectProduct(ProductInfo product) {
+  void selectProduct(ProductInfo product, {VoidCallback? onProductSelected}) {
     _selectedProduct = product;
     productController.text = "${product.name} (${product.stockCode})";
+    _productSearchResults.clear(); // Clear search results when a product is selected
     notifyListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isDisposed) {
         expiryDateFocusNode.requestFocus();
+        // Callback çağır (date picker açmak için)
+        onProductSelected?.call();
       }
     });
+  }
+
+  void onProductTextChanged(String query) {
+    if (query.isEmpty) {
+      _productSearchResults.clear();
+      _selectedProduct = null;
+      notifyListeners();
+      return;
+    }
+
+    // Search for products based on the query
+    final productSource = isOrderBased
+        ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
+        : _availableProducts;
+
+    final lowerQuery = query.toLowerCase();
+    _productSearchResults = productSource.where((product) {
+      return product.name.toLowerCase().contains(lowerQuery) ||
+          product.stockCode.toLowerCase().contains(lowerQuery) ||
+          (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+    }).toList();
+
+    // Check if the current text exactly matches a product
+    ProductInfo? exactMatch;
+    try {
+      exactMatch = productSource.firstWhere((p) =>
+        p.stockCode.toLowerCase() == lowerQuery ||
+        (p.barcode1?.toLowerCase() == lowerQuery));
+    } catch (e) {
+      exactMatch = null;
+    }
+
+    if (exactMatch != null && _selectedProduct?.id != exactMatch.id) {
+      _selectedProduct = exactMatch;
+      productController.text = "${exactMatch.name} (${exactMatch.stockCode})";
+      _productSearchResults.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) {
+          expiryDateFocusNode.requestFocus();
+        }
+      });
+    } else if (exactMatch == null && _selectedProduct != null) {
+      _selectedProduct = null;
+    }
+
+    notifyListeners();
   }
 
   void onExpiryDateEntered() {
@@ -580,6 +675,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     quantityController.clear();
     expiryDateController.clear();
     _selectedProduct = null;
+    _productSearchResults.clear();
     if (clearPallet) {
       palletIdController.clear();
     }

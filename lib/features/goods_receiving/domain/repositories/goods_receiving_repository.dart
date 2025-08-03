@@ -24,6 +24,12 @@ abstract class GoodsReceivingRepository {
   /// Verilen bir sorgu metnine göre ürünleri arar.
   Future<List<ProductInfo>> searchProducts(String query);
 
+  /// Sistemdeki tüm aktif ürünleri getirir.
+  Future<List<ProductInfo>> getAllActiveProducts();
+
+  /// Tam eşleşme ile ürün bulur (StokKodu veya Barcode1).
+  Future<ProductInfo?> findProductByExactMatch(String code);
+
   /// Sistemdeki tüm lokasyonları getirir.
   Future<List<LocationInfo>> getLocations();
 

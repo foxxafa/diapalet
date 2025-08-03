@@ -338,6 +338,55 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<List<ProductInfo>> getAllActiveProducts() async {
+    final db = await dbHelper.database;
+    final maps = await db.query('urunler', where: 'aktif = 1', orderBy: 'UrunAdi ASC');
+    return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
+  }
+
+  @override
+  Future<ProductInfo?> findProductByExactMatch(String code) async {
+    final db = await dbHelper.database;
+    debugPrint("🔍 DEBUG: findProductByExactMatch aranan kod: '$code'");
+
+    // Önce tüm urunler'i görelim
+    final allProducts = await db.query('urunler', limit: 10);
+    debugPrint("📦 DEBUG: Veritabanında ilk 10 ürün:");
+    for (var product in allProducts) {
+      debugPrint("   UrunId: ${product['UrunId']}, StokKodu: '${product['StokKodu']}', Barcode1: '${product['Barcode1']}', aktif: ${product['aktif']}");
+    }
+
+    final maps = await db.query(
+      'urunler',
+      where: 'aktif = 1 AND (StokKodu = ? OR Barcode1 = ?)',
+      whereArgs: [code, code],
+      limit: 1
+    );
+
+    debugPrint("🎯 DEBUG: Sorgu sonucu: ${maps.length} ürün bulundu");
+    if (maps.isNotEmpty) {
+      debugPrint("✅ DEBUG: Bulunan ürün: ${maps.first}");
+    } else {
+      debugPrint("❌ DEBUG: Hiç ürün bulunamadı - aranan kod: '$code'");
+
+      // Benzer kodları arayalım
+      final similarMaps = await db.query(
+        'urunler',
+        where: 'aktif = 1 AND (StokKodu LIKE ? OR Barcode1 LIKE ?)',
+        whereArgs: ['%$code%', '%$code%'],
+        limit: 5
+      );
+      debugPrint("🔎 DEBUG: Benzer kodlar (LIKE arama): ${similarMaps.length} ürün");
+      for (var product in similarMaps) {
+        debugPrint("   StokKodu: '${product['StokKodu']}', Barcode1: '${product['Barcode1']}'");
+      }
+    }
+
+    if (maps.isEmpty) return null;
+    return ProductInfo.fromDbMap(maps.first);
+  }
+
+  @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
     final maps = await db.query('shelfs', where: 'is_active = 1');

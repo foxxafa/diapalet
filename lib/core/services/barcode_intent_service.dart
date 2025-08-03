@@ -26,6 +26,9 @@ class BarcodeIntentService {
     'com.datalogic.decodewedge.decode_action', // Datalogic
     'nlscan.action.SCANNER_RESULT', // Newland
     'android.intent.action.SEND', // Paylaşılan metin
+    'com.handheld.action.BARCODE_SCAN', // Generic handheld
+    'com.cipherlab.barcode.action.SCAN', // CipherLab
+    'com.intermec.datacollection.aidl.datacollection_service.GOOD_READ', // Intermec
   };
 
   static const _payloadKeys = [
@@ -38,6 +41,9 @@ class BarcodeIntentService {
     'barcode',
     'data',
     'android.intent.extra.TEXT',
+    'com.cipherlab.barcode.extra.SCAN_RESULT', // CipherLab
+    'com.intermec.datacollection.aidl.datacollection_service.DATA', // Intermec
+    'SCAN_RESULT', // Generic scan result
   ];
 
   Stream<String> get stream {
@@ -124,4 +130,4 @@ class BarcodeIntentService {
     }
     return null;
   }
-} 
+}
