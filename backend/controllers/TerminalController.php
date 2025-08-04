@@ -72,7 +72,7 @@ class TerminalController extends Controller
                     'e.warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
                     'COALESCE(w.id, 1) as warehouse_id',
-                    'e.branch_code', 
+                    'e.branch_code',
                     'COALESCE(b.name, "Default Branch") as branch_name',
                     'COALESCE(b.id, 1) as branch_id'
                 ])
@@ -240,7 +240,7 @@ class TerminalController extends Controller
             ->from(['e' => 'employees'])
             ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
             ->where(['e.id' => $employeeId]);
-        
+
         $warehouseId = $employeeWarehouseQuery->scalar($db);
 
         if (!$warehouseId) {
