@@ -65,19 +65,21 @@ class TerminalController extends Controller
         }
 
         try {
-            // Railway/Staging ortamı için basitleştirilmiş sorgu
+            // Rowhub uyumlu sorgu - branch_code ve warehouse_code üzerinden JOIN
             $userQuery = (new Query())
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
-                    'e.warehouse_id', 
-                    'COALESCE(w.warehouse_code, "WHS-SLL") as warehouse_code',
+                    // Rowhub'da warehouse_id yok, warehouse_code'dan warehouse_id buluyoruz
+                    'COALESCE(w.id, 1) as warehouse_id',
+                    'COALESCE(e.warehouse_code, w.warehouse_code, "WHS-SLL") as warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
-                    'COALESCE(e.branch_id, 1) as branch_id', 
+                    // Rowhub'da branch_id yok, branch_code'dan branch_id buluyoruz
+                    'COALESCE(b.id, 1) as branch_id',
                     'COALESCE(b.name, "Default Branch") as branch_name'
                 ])
                 ->from(['e' => 'employees'])
-                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_id = w.id')
-                ->leftJoin(['b' => 'branches'], 'e.branch_id = b.id')
+                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
+                ->leftJoin(['b' => 'branches'], 'e.branch_code = b.branch_code')
                 ->where(['e.username' => $username, 'e.password' => $password, 'e.is_active' => 1]);
 
             $user = $userQuery->one();
@@ -232,9 +234,15 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
         }
 
-        // Employee'nin warehouse_id'sini al
+        // Employee'nin warehouse_id'sini al - Rowhub'da warehouse_code üzerinden
         $employeeId = $header['employee_id'];
-        $warehouseId = (new Query())->select('warehouse_id')->from('employees')->where(['id' => $employeeId])->scalar($db);
+        $employeeWarehouseQuery = (new Query())
+            ->select('w.id')
+            ->from(['e' => 'employees'])
+            ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
+            ->where(['e.id' => $employeeId]);
+        
+        $warehouseId = $employeeWarehouseQuery->scalar($db);
 
         if (!$warehouseId) {
             return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı.'];
@@ -683,11 +691,11 @@ class TerminalController extends Controller
         $this->castNumericValues($data['warehouses'], ['id', 'branch_id']);
 
         // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
-        // Production'da employees tablosunda warehouse_id yok, warehouse_code var
-        // Login'deki gibi join yapıyoruz
+        // Rowhub'da employees tablosunda warehouse_id yok, warehouse_code var
+        // branch_id yok, branch_code var - JOIN yapıyoruz
         $employeeColumns = [
             'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
-            'w.id as warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'
+            'COALESCE(w.id, 1) as warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'
         ];
         $employeesQuery = (new Query())
             ->select($employeeColumns)
@@ -923,7 +931,7 @@ class TerminalController extends Controller
                 Yii::info("Force reset dosyası bulundu, çalıştırılıyor...", __METHOD__);
                 $forceResetContent = file_get_contents($forceResetFile);
                 $forceCommands = array_filter(array_map('trim', explode(';', $forceResetContent)));
-                
+
                 foreach ($forceCommands as $command) {
                     if (!empty($command)) {
                         $db->createCommand($command)->execute();

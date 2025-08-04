@@ -88,10 +88,10 @@ class AuthRepositoryImpl implements AuthRepository {
 
       // 2. Login request'i gönder
       final requestData = {
-        'username': username, 
+        'username': username,
         'password': password,
       };
-      
+
       // CSRF token varsa ekle
       if (csrfToken != null) {
         requestData['_csrf'] = csrfToken;
