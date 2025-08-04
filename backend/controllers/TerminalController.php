@@ -70,7 +70,7 @@ class TerminalController extends Controller
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
                     'e.warehouse_id', 
-                    'COALESCE(e.warehouse_code, "WHS-SLL") as warehouse_code',
+                    'COALESCE(w.warehouse_code, "WHS-SLL") as warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
                     'COALESCE(e.branch_id, 1) as branch_id', 
                     'COALESCE(b.name, "Default Branch") as branch_name'
@@ -917,6 +917,22 @@ class TerminalController extends Controller
         $transaction = $db->beginTransaction();
 
         try {
+            // İlk önce force reset
+            $forceResetFile = Yii::getAlias('@app/force_reset.sql');
+            if (file_exists($forceResetFile)) {
+                Yii::info("Force reset dosyası bulundu, çalıştırılıyor...", __METHOD__);
+                $forceResetContent = file_get_contents($forceResetFile);
+                $forceCommands = array_filter(array_map('trim', explode(';', $forceResetContent)));
+                
+                foreach ($forceCommands as $command) {
+                    if (!empty($command)) {
+                        $db->createCommand($command)->execute();
+                    }
+                }
+                Yii::info("Force reset tamamlandı", __METHOD__);
+            }
+
+            // Sonra complete setup
             $sqlFile = Yii::getAlias('@app/complete_setup.sql');
             Yii::info("SQL file path: $sqlFile", __METHOD__);
 
