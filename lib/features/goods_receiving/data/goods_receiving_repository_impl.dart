@@ -400,13 +400,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       SELECT
         sol.id,
         sol.urun_id,
-        sol.quantity as ordered_quantity,
+        sol.miktar as ordered_quantity,
         COALESCE(SUM(gri.quantity_received), 0) as total_received
       FROM satin_alma_siparis_fis_satir sol
       LEFT JOIN goods_receipt_items gri ON gri.urun_id = sol.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.siparis_id
       WHERE sol.siparis_id = ?
-      GROUP BY sol.id, sol.urun_id, sol.quantity
+      GROUP BY sol.id, sol.urun_id, sol.miktar
     ''', [siparisId]);
 
     if (orderLines.isEmpty) return;

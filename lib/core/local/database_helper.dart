@@ -15,7 +15,7 @@ class DatabaseHelper {
       // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
       // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
       // GÜNCELLEME: satin_alma_siparis_fis tablosunda branch_id -> warehouse_code değişikliği
-      // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, warehouses, goods_receipts, goods_receipt_items)
+      // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, goods_receipts, goods_receipt_items)
       // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
       // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
       // GÜNCELLEME: inventory_transfers için incremental sync eklendi
@@ -475,7 +475,7 @@ class DatabaseHelper {
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
           // 'satin_alma_siparis_fis_satir', 'satin_alma_siparis_fis' artık incremental olarak işleniyor
-          // 'urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
+          // 'urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
         ];
 
         // Tablolari belirtilen sirada sil (incremental tablolar hariç)
@@ -487,8 +487,11 @@ class DatabaseHelper {
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
         final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
+        final skippedTables = ['warehouses']; // Kaldırılan tablolar
+
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
+          if (skippedTables.contains(table)) continue; // Kaldırılan tablolar
           if (data[table] is! List) continue;
           final records = List<Map<String, dynamic>>.from(data[table]);
           if (records.isEmpty) continue;
@@ -751,9 +754,6 @@ class DatabaseHelper {
         emp.username as employee_username,
         emp.warehouse_id as employee_warehouse_id,
         emp.role as employee_role,
-        wh.name as warehouse_name,
-        wh.warehouse_code,
-        wh.branch_id as warehouse_branch_id,
         po.po_id,
         po.tarih as order_date,
         po.notlar as order_notes,
@@ -761,7 +761,6 @@ class DatabaseHelper {
         po.warehouse_code as order_warehouse_code
       FROM goods_receipts gr
       LEFT JOIN employees emp ON emp.id = gr.employee_id
-      LEFT JOIN warehouses wh ON wh.id = emp.warehouse_id
       LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
       WHERE gr.goods_receipt_id = ?
     ''';

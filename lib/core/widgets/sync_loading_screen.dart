@@ -110,8 +110,6 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
     switch (tableName) {
       case 'employees':
         return 'sync.tables.employees'.tr();
-      case 'warehouses':
-        return 'sync.tables.warehouses'.tr();
       case 'shelfs':
         return 'sync.tables.shelfs'.tr();
       case 'urunler':
