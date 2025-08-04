@@ -168,6 +168,9 @@ class SyncService with ChangeNotifier {
       await _downloadDataFromServer(warehouseId: warehouseId);
       await dbHelper.cleanupOldSyncedOperations();
 
+      // Ana veritabanı temizliği - eski verileri sil
+      await dbHelper.performMaintenanceCleanup(days: 7);
+
       // Finalizing stage
       _emitProgress(const SyncProgress(
         stage: SyncStage.finalizing,

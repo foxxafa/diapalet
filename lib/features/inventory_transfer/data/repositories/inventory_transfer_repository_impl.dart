@@ -376,7 +376,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final maps = await db.query(
       'satin_alma_siparis_fis',
-      where: 'status IN (1, 2) AND warehouse_code = ?',
+      where: 'status IN (1, 2, 3) AND warehouse_code = ?',
       whereArgs: [warehouseCode],
       orderBy: 'tarih DESC',
     );
@@ -509,45 +509,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<void> checkAndCompletePutaway(int orderId, {Transaction? txn}) async {
-    final db = txn ?? await dbHelper.database;
-
-    final orderLinesQuery = await db.query(
-      'satin_alma_siparis_fis_satir',
-      columns: ['id', 'miktar'],
-      where: 'siparis_id = ?',
-      whereArgs: [orderId],
-    );
-
-    if (orderLinesQuery.isEmpty) return;
-
-    final putawayStatusQuery = await db.query(
-        'wms_putaway_status',
-        columns: ['purchase_order_line_id', 'putaway_quantity'],
-        where: 'purchase_order_line_id IN (${orderLinesQuery.map((e) => e['id']).join(',')})'
-    );
-    final putawayMap = {for (var e in putawayStatusQuery) e['purchase_order_line_id']: (e['putaway_quantity'] as num).toDouble()};
-
-    bool allCompleted = true;
-    for (final line in orderLinesQuery) {
-      final ordered = (line['miktar'] as num).toDouble();
-      final putaway = putawayMap[line['id']] ?? 0.0;
-      if (putaway < ordered - 0.001) {
-        allCompleted = false;
-        break;
-      }
-    }
-
-    if (allCompleted) {
-      await db.update('satin_alma_siparis_fis', {'status': 3}, where: 'id = ?', whereArgs: [orderId]);
-    }
+    // Rafa yerleştirme artık sipariş statusunu değiştirmiyor
+    // Status sadece mal kabul aşamasında belirleniyor (0,1,2,3)
+    // Bu metod artık sadece putaway takibi için kullanılıyor, status güncellemesi yapmıyor
+    debugPrint("Putaway check için orderId: $orderId - Status güncellemesi devre dışı");
   }
 
   @override
   Future<List<ProductInfo>> getProductInfoByBarcode(String barcode) async {
     final db = await dbHelper.database;
+    // DÜZELTME: Pasif ürünlerle de transfer işlemi yapılabilmesi için aktiflik kontrolü kaldırıldı
     final maps = await db.query(
       'urunler',
-      where: 'Barcode1 = ? AND aktif = 1',
+      where: 'Barcode1 = ?',
       whereArgs: [barcode],
     );
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();

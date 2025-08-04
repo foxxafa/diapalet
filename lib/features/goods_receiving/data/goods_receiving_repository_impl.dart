@@ -80,12 +80,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         }
 
         if (payload.header.siparisId != null) {
-          await txn.update(
-            'satin_alma_siparis_fis',
-            {'status': 1}, // Mark order as partially/fully received
-            where: 'id = ?',
-            whereArgs: [payload.header.siparisId],
-          );
+          // Sipariş durumunu kontrol et ve gerekirse status 3 yap
+          await _checkAndUpdateOrderStatus(txn, payload.header.siparisId!);
         }
 
         final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload);
@@ -333,14 +329,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<ProductInfo>> searchProducts(String query) async {
     final db = await dbHelper.database;
-    final maps = await db.query('urunler', where: 'aktif = 1 AND (UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?)', whereArgs: ['%$query%', '%$query%', '%$query%']);
+    // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
+    final maps = await db.query('urunler', where: 'UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?', whereArgs: ['%$query%', '%$query%', '%$query%']);
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
   @override
   Future<List<ProductInfo>> getAllActiveProducts() async {
     final db = await dbHelper.database;
-    final maps = await db.query('urunler', where: 'aktif = 1', orderBy: 'UrunAdi ASC');
+    // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
+    // Metot adı "Active" olmasına rağmen tüm ürünleri getiriyor (geriye uyumluluk için)
+    final maps = await db.query('urunler', orderBy: 'UrunAdi ASC');
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -356,9 +355,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("   UrunId: ${product['UrunId']}, StokKodu: '${product['StokKodu']}', Barcode1: '${product['Barcode1']}', aktif: ${product['aktif']}");
     }
 
+    // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
     final maps = await db.query(
       'urunler',
-      where: 'aktif = 1 AND (StokKodu = ? OR Barcode1 = ?)',
+      where: 'StokKodu = ? OR Barcode1 = ?',
       whereArgs: [code, code],
       limit: 1
     );
@@ -372,7 +372,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       // Benzer kodları arayalım
       final similarMaps = await db.query(
         'urunler',
-        where: 'aktif = 1 AND (StokKodu LIKE ? OR Barcode1 LIKE ?)',
+        where: 'StokKodu LIKE ? OR Barcode1 LIKE ?',
         whereArgs: ['%$code%', '%$code%'],
         limit: 5
       );
@@ -391,5 +391,60 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     final maps = await db.query('shelfs', where: 'is_active = 1');
     return maps.map((map) => LocationInfo.fromMap(map)).toList();
+  }
+
+  /// Sipariş durumunu kontrol eder ve gerekirse status 3 (tamamen kabul edildi) yapar
+  Future<void> _checkAndUpdateOrderStatus(Transaction txn, int siparisId) async {
+    // Sipariş satırlarını al
+    final orderLines = await txn.rawQuery('''
+      SELECT
+        sol.id,
+        sol.urun_id,
+        sol.quantity as ordered_quantity,
+        COALESCE(SUM(gri.quantity_received), 0) as total_received
+      FROM satin_alma_siparis_fis_satir sol
+      LEFT JOIN goods_receipt_items gri ON gri.urun_id = sol.urun_id
+      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.siparis_id
+      WHERE sol.siparis_id = ?
+      GROUP BY sol.id, sol.urun_id, sol.quantity
+    ''', [siparisId]);
+
+    if (orderLines.isEmpty) return;
+
+    bool allLinesCompleted = true;
+    bool anyLineReceived = false;
+
+    for (final line in orderLines) {
+      final orderedQty = (line['ordered_quantity'] as num).toDouble();
+      final receivedQty = (line['total_received'] as num).toDouble();
+
+      if (receivedQty > 0) {
+        anyLineReceived = true;
+      }
+
+      // Tam eşitlik kontrolü - sipariş edilen = kabul edilen
+      if (receivedQty < orderedQty) {
+        allLinesCompleted = false;
+      }
+    }
+
+    int newStatus;
+    if (allLinesCompleted && anyLineReceived) {
+      newStatus = 3; // Tamamen kabul edildi
+      debugPrint("Sipariş #$siparisId tamamen kabul edildi - Status 3");
+    } else if (anyLineReceived) {
+      newStatus = 1; // Kısmi kabul
+      debugPrint("Sipariş #$siparisId kısmi kabul edildi - Status 1");
+    } else {
+      newStatus = 0; // Hiç kabul yapılmamış
+      debugPrint("Sipariş #$siparisId henüz kabul edilmedi - Status 0");
+    }
+
+    await txn.update(
+      'satin_alma_siparis_fis',
+      {'status': newStatus, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [siparisId],
+    );
   }
 }

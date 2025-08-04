@@ -77,21 +77,7 @@ class DatabaseHelper {
 
       batch.execute(SyncLog.createTableQuery);
 
-      batch.execute('''
-        CREATE TABLE IF NOT EXISTS warehouses (
-          id INTEGER PRIMARY KEY,
-          name TEXT,
-          post_code TEXT,
-          ap TEXT,
-          branch_id INTEGER,
-          warehouse_code TEXT,
-          dia_id INTEGER,
-          branch_code TEXT,
-          _key TEXT,
-          created_at TEXT,
-          updated_at TEXT
-        )
-      ''');
+      // Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS shelfs (
@@ -284,7 +270,7 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     const tables = [
-      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status'
@@ -377,17 +363,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
-        if (data.containsKey('warehouses')) {
-          final warehousesData = List<Map<String, dynamic>>.from(data['warehouses']);
-          for (final warehouse in warehousesData) {
-            final sanitizedWarehouse = _sanitizeRecord('warehouses', warehouse);
-            batch.insert('warehouses', sanitizedWarehouse, conflictAlgorithm: ConflictAlgorithm.replace);
-
-            processedItems++;
-            updateProgress('warehouses');
-          }
-        }
+        // Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor
 
         // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
         if (data.containsKey('employees')) {
@@ -510,7 +486,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'warehouses', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (data[table] is! List) continue;
@@ -609,16 +585,7 @@ class DatabaseHelper {
     return result.isNotEmpty ? result.first : null;
   }
 
-  Future<Map<String, dynamic>?> getWarehouseById(int warehouseId) async {
-    final db = await database;
-    final result = await db.query(
-      'warehouses',
-      where: 'id = ?',
-      whereArgs: [warehouseId],
-      limit: 1,
-    );
-    return result.isNotEmpty ? result.first : null;
-  }
+  // getWarehouseById kaldırıldı - SharedPreferences kullanılıyor
 
   Future<Map<String, dynamic>?> getOrderSummary(int siparisId) async {
     final db = await database;
@@ -852,14 +819,6 @@ class DatabaseHelper {
         'branch_name': prefs.getString('branch_name') ?? 'N/A',
       };
 
-      if (employeeInfo != null && employeeInfo['warehouse_id'] != null) {
-        final warehouse = await getWarehouseById(employeeInfo['warehouse_id']);
-        if (warehouse != null) {
-          warehouseInfo['name'] = warehouse['name'] ?? warehouseInfo['name'];
-          warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
-        }
-      }
-
       header['warehouse_info'] = warehouseInfo;
 
       final sourceLocationId = header['source_location_id'];
@@ -949,15 +908,8 @@ class DatabaseHelper {
         'branch_name': prefs.getString('branch_name') ?? 'N/A',
       };
 
-      if (employeeInfo != null) {
-        if (employeeInfo['warehouse_id'] != null) {
-          final warehouse = await getWarehouseById(employeeInfo['warehouse_id']);
-          if (warehouse != null) {
-            warehouseInfo['name'] = warehouse['name'] ?? warehouseInfo['name'];
-            warehouseInfo['warehouse_code'] = warehouse['warehouse_code'] ?? warehouseInfo['warehouse_code'];
-          }
-        }
-      }
+      // Warehouse bilgileri SharedPreferences'tan alındı
+
       header['warehouse_info'] = warehouseInfo;
 
       final enrichedItems = <Map<String, dynamic>>[];
@@ -1279,9 +1231,15 @@ class DatabaseHelper {
 
   Future<Map<String, dynamic>?> getSystemInfo(int warehouseId) async {
     final db = await database;
+    final prefs = await SharedPreferences.getInstance();
 
-    final warehouse = await getWarehouseById(warehouseId);
-    if (warehouse == null) return null;
+    // Warehouse bilgilerini SharedPreferences'tan al
+    final warehouseInfo = {
+      'id': warehouseId,
+      'name': prefs.getString('warehouse_name') ?? 'N/A',
+      'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
+      'branch_name': prefs.getString('branch_name') ?? 'N/A',
+    };
 
     final employeeCount = await db.rawQuery(
         'SELECT COUNT(*) as count FROM employees WHERE warehouse_id = ? AND is_active = 1',
@@ -1294,7 +1252,7 @@ class DatabaseHelper {
     );
 
     return {
-      'warehouse': warehouse,
+      'warehouse': warehouseInfo,
       'employee_count': employeeCount.first['count'],
       'location_count': locationCount.first['count'],
     };
@@ -1487,6 +1445,103 @@ class DatabaseHelper {
     );
     if (count > 0) {
       debugPrint("$count adet eski senkronize edilmiş işlem temizlendi. (Force close işlemleri korundu)");
+    }
+  }
+
+  /// Veritabanı boyutunu küçültmek için eski verileri temizler
+  /// Status 2,3 olan siparişleri ve eski transfer kayıtlarını siler
+  Future<void> cleanupOldData({int days = 7}) async {
+    final db = await database;
+    final cutoffDate = DateTime.now().subtract(Duration(days: days));
+
+    await db.transaction((txn) async {
+      // 1. Eski inventory_transfers kayıtlarını sil
+      final transferCount = await txn.delete(
+        'inventory_transfers',
+        where: 'created_at < ?',
+        whereArgs: [cutoffDate.toIso8601String()]
+      );
+
+      // 2. Status 2,3 olan eski siparişleri ve bağlı kayıtları sil
+      final oldOrders = await txn.query(
+        'satin_alma_siparis_fis',
+        columns: ['id'],
+        where: 'status IN (2,3) AND updated_at < ?',
+        whereArgs: [cutoffDate.toIso8601String()]
+      );
+
+      int orderCount = 0;
+      int receiptCount = 0;
+      int putawayCount = 0;
+
+      for (final order in oldOrders) {
+        final orderId = order['id'] as int;
+
+        // Önce bağlı tabloları temizle
+        final receipts = await txn.delete(
+          'goods_receipts',
+          where: 'siparis_id = ?',
+          whereArgs: [orderId]
+        );
+        receiptCount += receipts;
+
+        final putaways = await txn.delete(
+          'wms_putaway_status',
+          where: 'purchase_order_line_id IN (SELECT id FROM satin_alma_siparis_fis_satir WHERE siparis_id = ?)',
+          whereArgs: [orderId]
+        );
+        putawayCount += putaways;
+
+        await txn.delete(
+          'satin_alma_siparis_fis_satir',
+          where: 'siparis_id = ?',
+          whereArgs: [orderId]
+        );
+
+        await txn.delete(
+          'satin_alma_siparis_fis',
+          where: 'id = ?',
+          whereArgs: [orderId]
+        );
+        orderCount++;
+      }
+
+      debugPrint("Veritabanı temizleme tamamlandı:");
+      debugPrint("- $transferCount adet eski transfer kaydı silindi");
+      debugPrint("- $orderCount adet tamamlanmış sipariş silindi");
+      debugPrint("- $receiptCount adet mal kabul kaydı silindi");
+      debugPrint("- $putawayCount adet yerleştirme kaydı silindi");
+    });
+  }
+
+  /// Warehouse tablosunu kaldırır (SharedPreferences kullanılıyor)
+  Future<void> removeWarehouseTable() async {
+    final db = await database;
+    try {
+      await db.execute('DROP TABLE IF EXISTS warehouses');
+      debugPrint("Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor");
+    } catch (e) {
+      debugPrint("Warehouse tablosu kaldırılırken hata: $e");
+    }
+  }
+
+  /// Ana temizleme metodu - tüm cleanup işlemlerini gerçekleştirir
+  Future<void> performMaintenanceCleanup({int days = 7}) async {
+    debugPrint("🧹 Veritabanı bakımı başlatılıyor...");
+
+    try {
+      // 1. Eski sync edilmiş operasyonları temizle
+      await cleanupOldSyncedOperations(days: days);
+
+      // 2. Eski verileri temizle
+      await cleanupOldData(days: days);
+
+      // 3. Warehouse tablosunu kaldır (tek seferlik)
+      await removeWarehouseTable();
+
+      debugPrint("✅ Veritabanı bakımı tamamlandı!");
+    } catch (e, s) {
+      debugPrint("❌ Veritabanı bakımı sırasında hata: $e\n$s");
     }
   }
 

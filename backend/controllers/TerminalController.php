@@ -538,10 +538,10 @@ class TerminalController extends Controller
         }
 
         $newStatus = null;
-        if ($allLinesCompleted) {
-            $newStatus = 1; // Tamamlandı -> Kısmi Kabul olarak değiştirildi. Asıl tamamlama rafa yerleştirme sonrası olacak.
+        if ($allLinesCompleted && $anyLineReceived) {
+            $newStatus = 3; // Tamamen kabul edildi (sipariş edilen = kabul edilen)
         } elseif ($anyLineReceived) {
-            $newStatus = 1; // Kısmi Kabul
+            $newStatus = 1; // Kısmi kabul (sipariş edilen > kabul edilen)
         }
 
         if ($newStatus !== null) {
@@ -575,10 +575,9 @@ class TerminalController extends Controller
             }
         }
 
-        if ($allLinesCompleted) {
-            // Statü: 3 (Oto. Tamamlandı/Yerleştirildi)
-            $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 3], ['id' => $siparisId])->execute();
-        }
+        // Rafa yerleştirme artık sipariş statusunu değiştirmiyor
+        // Status sadece mal kabul aşamasında belirleniyor (0,1,2,3)
+        // Bu metod sadece putaway takibi için kullanılıyor
     }
 
     private function _forceCloseOrder($data, $db) {
@@ -717,8 +716,8 @@ class TerminalController extends Controller
         // 2. Siparişleri `branch_id` yerine `warehouse_code`'a göre arıyoruz.
         $poQuery = (new Query())
             ->from('satin_alma_siparis_fis')
-            ->where(['warehouse_code' => $warehouseCode]) // <<<--- İşte sihir burada!
-            ->andWhere(['<', 'status', 3]);
+            ->where(['warehouse_code' => $warehouseCode])
+            ->andWhere(['in', 'status', [0, 1, 2, 3]]); // Status 4,5 yok, 0,1,2,3 aktif durumlar
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
