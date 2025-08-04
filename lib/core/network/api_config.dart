@@ -11,7 +11,7 @@ class ApiConfig {
   // ApiEnvironment.staging -> Railway staging ortamı (Test için)
   // ApiEnvironment.production -> Railway production ortamı (Canlı)
   // ******************************************************************
-  static const ApiEnvironment currentEnvironment = ApiEnvironment.staging;
+  static const ApiEnvironment currentEnvironment = ApiEnvironment.production;
 
   // Seçili ortama göre konfigürasyonu al
   static final ApiEnvConfig _config = ApiEnvironments.getEnv(currentEnvironment);

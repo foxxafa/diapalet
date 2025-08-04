@@ -1,4 +1,4 @@
-# RowHub DWMS
+# RowHub WMS
 
 **Digital Warehouse Management System**
 
@@ -59,7 +59,7 @@ A comprehensive Flutter-based warehouse management application that streamlines 
 1. Clone the repository
 ```bash
 git clone <repository-url>
-cd rowhub-dwms
+cd rowhub-wms
 ```
 
 2. Install dependencies

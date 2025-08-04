@@ -16,7 +16,7 @@
     "system": "System Default"
   },
   "home": {
-    "title": "RowHub DWMS",
+    "title": "RowHub WMS",
     "reset_db": "Reset Database",
     "db_reset_complete": "Database reset complete",
     "populate_test": "Populate Test Data",

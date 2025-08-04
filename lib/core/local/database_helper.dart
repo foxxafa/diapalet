@@ -1346,10 +1346,9 @@ class DatabaseHelper {
   Future<List<PendingOperation>> getSyncedOperations() async {
     final db = await database;
     final maps = await db.query('pending_operation',
-        where: "status = ? AND type != ?",
-        whereArgs: ['synced', 'forceCloseOrder'],
-        orderBy: 'synced_at DESC',
-        limit: 100);
+        where: "status = ?",
+        whereArgs: ['synced'],
+        orderBy: 'synced_at DESC');
 
     final enrichedMaps = <Map<String, dynamic>>[];
     for (final map in maps) {
@@ -1439,11 +1438,11 @@ class DatabaseHelper {
     final cutoffDate = DateTime.now().subtract(Duration(days: days));
     final count = await db.delete(
       'pending_operation',
-      where: "status = ? AND synced_at < ? AND type != ?",
-      whereArgs: ['synced', cutoffDate.toIso8601String(), 'forceCloseOrder'],
+      where: "status = ? AND synced_at < ?",
+      whereArgs: ['synced', cutoffDate.toIso8601String()],
     );
     if (count > 0) {
-      debugPrint("$count adet eski senkronize edilmiş işlem temizlendi. (Force close işlemleri korundu)");
+      debugPrint("$count adet eski senkronize edilmiş işlem temizlendi.");
     }
   }
 
@@ -1471,12 +1470,23 @@ class DatabaseHelper {
 
       int orderCount = 0;
       int receiptCount = 0;
+      int receiptItemCount = 0;
       int putawayCount = 0;
 
       for (final order in oldOrders) {
         final orderId = order['id'] as int;
 
-        // Önce bağlı tabloları temizle
+        // Doğru silme sırası: Child tabloları önce sil
+
+        // 1. goods_receipt_items (en child tablo)
+        final receiptItems = await txn.delete(
+          'goods_receipt_items',
+          where: 'receipt_id IN (SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ?)',
+          whereArgs: [orderId]
+        );
+        receiptItemCount += receiptItems;
+
+        // 2. goods_receipts (parent tablo)
         final receipts = await txn.delete(
           'goods_receipts',
           where: 'siparis_id = ?',
@@ -1484,6 +1494,7 @@ class DatabaseHelper {
         );
         receiptCount += receipts;
 
+        // 3. wms_putaway_status (sipariş satırına bağlı)
         final putaways = await txn.delete(
           'wms_putaway_status',
           where: 'purchase_order_line_id IN (SELECT id FROM satin_alma_siparis_fis_satir WHERE siparis_id = ?)',
@@ -1491,12 +1502,14 @@ class DatabaseHelper {
         );
         putawayCount += putaways;
 
+        // 4. satin_alma_siparis_fis_satir (sipariş satırları)
         await txn.delete(
           'satin_alma_siparis_fis_satir',
           where: 'siparis_id = ?',
           whereArgs: [orderId]
         );
 
+        // 5. satin_alma_siparis_fis (ana sipariş - en son)
         await txn.delete(
           'satin_alma_siparis_fis',
           where: 'id = ?',
@@ -1509,6 +1522,7 @@ class DatabaseHelper {
       debugPrint("- $transferCount adet eski transfer kaydı silindi");
       debugPrint("- $orderCount adet tamamlanmış sipariş silindi");
       debugPrint("- $receiptCount adet mal kabul kaydı silindi");
+      debugPrint("- $receiptItemCount adet mal kabul detayı silindi");
       debugPrint("- $putawayCount adet yerleştirme kaydı silindi");
     });
   }

@@ -109,7 +109,7 @@ class MyApp extends StatelessWidget {
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
       locale: context.locale, // DÜZELTME: EasyLocalization'dan gelen locale kullanılıyor.
-      title: 'RowHub DWMS',
+      title: 'RowHub WMS',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
