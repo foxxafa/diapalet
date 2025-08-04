@@ -65,17 +65,16 @@ class TerminalController extends Controller
         }
 
         try {
-            // Rowhub uyumlu sorgu - branch_code ve warehouse_code üzerinden JOIN
+            // Rowhub formatında login sorgusu
             $userQuery = (new Query())
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
-                    // Rowhub'da warehouse_id yok, warehouse_code'dan warehouse_id buluyoruz
-                    'COALESCE(w.id, 1) as warehouse_id',
-                    'COALESCE(e.warehouse_code, w.warehouse_code, "WHS-SLL") as warehouse_code',
+                    'e.warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
-                    // Rowhub'da branch_id yok, branch_code'dan branch_id buluyoruz
-                    'COALESCE(b.id, 1) as branch_id',
-                    'COALESCE(b.name, "Default Branch") as branch_name'
+                    'COALESCE(w.id, 1) as warehouse_id',
+                    'e.branch_code', 
+                    'COALESCE(b.name, "Default Branch") as branch_name',
+                    'COALESCE(b.id, 1) as branch_id'
                 ])
                 ->from(['e' => 'employees'])
                 ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
@@ -234,7 +233,7 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
         }
 
-        // Employee'nin warehouse_id'sini al - Rowhub'da warehouse_code üzerinden
+        // Employee'nin warehouse_id'sini al - Rowhub formatında
         $employeeId = $header['employee_id'];
         $employeeWarehouseQuery = (new Query())
             ->select('w.id')
@@ -691,8 +690,7 @@ class TerminalController extends Controller
         $this->castNumericValues($data['warehouses'], ['id', 'branch_id']);
 
         // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
-        // Rowhub'da employees tablosunda warehouse_id yok, warehouse_code var
-        // branch_id yok, branch_code var - JOIN yapıyoruz
+        // Rowhub formatında employee sorgusu
         $employeeColumns = [
             'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
             'COALESCE(w.id, 1) as warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'

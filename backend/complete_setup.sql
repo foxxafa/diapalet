@@ -46,7 +46,7 @@ CREATE TABLE `employees` (
   `id` int NOT NULL AUTO_INCREMENT,
   `first_name` varchar(100) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `last_name` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
-  `branch_id` int DEFAULT NULL,
+  `branch_code` varchar(20) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `role` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
   `username` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
   `password` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci DEFAULT NULL,
@@ -56,12 +56,12 @@ CREATE TABLE `employees` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `photo` varchar(150) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
-  `warehouse_id` int DEFAULT NULL,
+  `diakey` int DEFAULT NULL,
   `warehouse_code` varchar(20) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
-  KEY `branch_id` (`branch_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
+  KEY `location_id` (`branch_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
 
 CREATE TABLE `warehouses` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -288,10 +288,10 @@ INSERT INTO `shelfs` (`id`, `warehouse_id`, `name`, `code`, `is_active`) VALUES
 (3, 1, '10B21', '10B21', 1),
 (4, 2, '10B22', '10B22', 1);
 
-INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `warehouse_code`, `branch_id`) VALUES
-(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 'WHS-SLL', 1),
-(2, 'test', 'test', 'test', '123', 1, 'WHS-SLL', 1),
-(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 'WHS-MNC', 2);
+INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_code`, `branch_code`) VALUES
+(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 'WHS-SLL', 'LON-C'),
+(2, 'test', 'test', 'test', '123', 'WHS-SLL', 'LON-C'),
+(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 'WHS-MNC', 'MAN-N');
 
 INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VALUES
 (1, 'KOL-001', 'Kola 2.5 LT', '8690001123456', 1),
