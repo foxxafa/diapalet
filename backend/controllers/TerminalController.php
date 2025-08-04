@@ -65,19 +65,19 @@ class TerminalController extends Controller
         }
 
         try {
-            // DÜZELTİLMİŞ SORGU
+            // Railway/Staging ortamı için basitleştirilmiş sorgu
             $userQuery = (new Query())
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
-                    // 'e.warehouse_id' artık yok, onun yerine 'w.id'yi alacağız
-                    'w.id as warehouse_id', // <<<--- DEĞİŞİKLİK 1
-                    'w.warehouse_code', 'w.name as warehouse_name',
-                 'b.id as branch_id', 'b.name as branch_name'
-             ])
-             ->from(['e' => 'employees'])
-                // BİRLEŞTİRME ARTIK 'warehouse_code' ÜZERİNDEN YAPILIYOR
-                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code') // <<<--- DEĞİŞİKLİK 2 (EN ÖNEMLİSİ)
-                ->leftJoin(['b' => 'branches'], 'w.branch_id = b.id')
+                    'e.warehouse_id', 
+                    'COALESCE(e.warehouse_code, "WHS-SLL") as warehouse_code',
+                    'COALESCE(w.name, "Default Warehouse") as warehouse_name',
+                    'COALESCE(e.branch_id, 1) as branch_id', 
+                    'COALESCE(b.name, "Default Branch") as branch_name'
+                ])
+                ->from(['e' => 'employees'])
+                ->leftJoin(['w' => 'warehouses'], 'e.warehouse_id = w.id')
+                ->leftJoin(['b' => 'branches'], 'e.branch_id = b.id')
                 ->where(['e.username' => $username, 'e.password' => $password, 'e.is_active' => 1]);
 
             $user = $userQuery->one();
@@ -89,10 +89,10 @@ class TerminalController extends Controller
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
                     'username' => $user['username'],
-                    'warehouse_id' => (int)($user['warehouse_id'] ?? 0),
+                    'warehouse_id' => (int)($user['warehouse_id'] ?? 1),
                     'warehouse_name' => $user['warehouse_name'],
                     'warehouse_code' => $user['warehouse_code'],
-                    'branch_id' => (int)($user['branch_id'] ?? 0),
+                    'branch_id' => (int)($user['branch_id'] ?? 1),
                     'branch_name' => $user['branch_name'],
                 ];
                 return $this->asJson([
@@ -106,7 +106,11 @@ class TerminalController extends Controller
         } catch (\yii\db\Exception $e) {
             Yii::error("Login DB Hatası: " . $e->getMessage(), __METHOD__);
             Yii::$app->response->statusCode = 500;
-            return $this->asJson(['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu.']);
+            return $this->asJson(['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu: ' . $e->getMessage()]);
+        } catch (\Exception $e) {
+            Yii::error("Login Genel Hatası: " . $e->getMessage(), __METHOD__);
+            Yii::$app->response->statusCode = 500;
+            return $this->asJson(['status' => 500, 'message' => 'Beklenmeyen hata: ' . $e->getMessage()]);
         }
     }
 
