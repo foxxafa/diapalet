@@ -60,9 +60,46 @@ class AuthRepositoryImpl implements AuthRepository {
     try {
       debugPrint("Online login denemesi yapılıyor: $username");
 
+      // 1. CSRF token'ı al (sadece production ortamında)
+      String? csrfToken;
+      if (ApiConfig.isProduction) {
+        try {
+          final csrfResponse = await dio.get(ApiConfig.login);
+          final cookies = csrfResponse.headers['set-cookie'];
+          if (cookies != null) {
+            for (final cookie in cookies) {
+              if (cookie.contains('_csrf=')) {
+                // CSRF token'ı cookie'den çıkar
+                final csrfMatch = RegExp(r'_csrf=([^;]+)').firstMatch(cookie);
+                if (csrfMatch != null) {
+                  csrfToken = Uri.decodeComponent(csrfMatch.group(1)!);
+                  debugPrint("CSRF token alındı");
+                  break;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint("CSRF token alınamadı, token'sız deneniyor: $e");
+        }
+      } else {
+        debugPrint("Staging/Local ortamında CSRF token atlanıyor");
+      }
+
+      // 2. Login request'i gönder
+      final requestData = {
+        'username': username, 
+        'password': password,
+      };
+      
+      // CSRF token varsa ekle
+      if (csrfToken != null) {
+        requestData['_csrf'] = csrfToken;
+      }
+
       final response = await dio.post(
         ApiConfig.login,
-        data: {'username': username, 'password': password},
+        data: requestData,
         options: Options(contentType: Headers.jsonContentType),
       );
 

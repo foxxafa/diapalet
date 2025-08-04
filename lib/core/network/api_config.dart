@@ -11,7 +11,7 @@ class ApiConfig {
   // ApiEnvironment.staging -> Railway staging ortamı (Test için)
   // ApiEnvironment.production -> Railway production ortamı (Canlı)
   // ******************************************************************
-  static const ApiEnvironment currentEnvironment = ApiEnvironment.production;
+  static const ApiEnvironment currentEnvironment = ApiEnvironment.staging;
 
   // Seçili ortama göre konfigürasyonu al
   static final ApiEnvConfig _config = ApiEnvironments.getEnv(currentEnvironment);
@@ -24,12 +24,23 @@ class ApiConfig {
   static bool get isStaging => currentEnvironment == ApiEnvironment.staging;
   static bool get isLocal => currentEnvironment == ApiEnvironment.local;
 
-  // API Endpoint yolları - Rowhub formatı
-  static const String login = '/index.php?r=terminal/login';
-  static const String syncUpload = '/index.php?r=terminal/sync-upload';
-  static const String syncDownload = '/index.php?r=terminal/sync-download';
-  static const String devReset = '/index.php?r=terminal/dev-reset';
-  static const String healthCheck = '/index.php?r=terminal/health-check';
+  // API Endpoint yolları - Ortama göre otomatik format seçimi
+  static String get login => _getEndpoint('login');
+  static String get syncUpload => _getEndpoint('sync-upload');
+  static String get syncDownload => _getEndpoint('sync-download');
+  static String get devReset => _getEndpoint('dev-reset');
+  static String get healthCheck => _getEndpoint('health-check');
+
+  // Endpoint formatını ortama göre belirle
+  static String _getEndpoint(String action) {
+    if (isProduction) {
+      // Rowhub formatı
+      return '/index.php?r=terminal/$action';
+    } else {
+      // Railway formatı (staging ve local)
+      return '/api/terminal/$action';
+    }
+  }
 
   static final Dio dio = _createDio();
 

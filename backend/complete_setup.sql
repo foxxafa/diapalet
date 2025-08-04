@@ -57,6 +57,7 @@ CREATE TABLE `employees` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `photo` varchar(150) CHARACTER SET utf8mb3 COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   `warehouse_id` int DEFAULT NULL,
+  `warehouse_code` varchar(20) COLLATE utf8mb3_turkish_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   KEY `branch_id` (`branch_id`)
@@ -287,10 +288,10 @@ INSERT INTO `shelfs` (`id`, `warehouse_id`, `name`, `code`, `is_active`) VALUES
 (3, 1, '10B21', '10B21', 1),
 (4, 2, '10B22', '10B22', 1);
 
-INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `branch_id`) VALUES
-(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 1),
-(2, 'test', 'test', 'test', '123', 1, 1),
-(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 2);
+INSERT INTO `employees` (`id`, `first_name`, `last_name`, `username`, `password`, `warehouse_id`, `warehouse_code`, `branch_id`) VALUES
+(1, 'Yusuf', 'KAHRAMAN', 'foxxafa', '123', 1, 'WHS-SLL', 1),
+(2, 'test', 'test', 'test', '123', 1, 'WHS-SLL', 1),
+(3, 'Zeynep', 'Celik', 'zeynep.celik', 'zeynep123', 2, 'WHS-MNC', 2);
 
 INSERT INTO `urunler` (`UrunId`, `StokKodu`, `UrunAdi`, `Barcode1`, `aktif`) VALUES
 (1, 'KOL-001', 'Kola 2.5 LT', '8690001123456', 1),
