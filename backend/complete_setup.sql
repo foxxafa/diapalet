@@ -279,9 +279,9 @@ INSERT INTO `branches` (`id`, `name`, `branch_code`, `address`) VALUES
 (1, 'London Central', 'LON-C', '123 Oxford Street, London'),
 (2, 'Manchester North', 'MAN-N', '456 Deansgate, Manchester');
 
-INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `branch_id`) VALUES
-(1, 'SOUTHALL WAREHOUSE', 'WHS-SLL', 1),
-(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 2);
+INSERT INTO `warehouses` (`id`, `name`, `warehouse_code`, `branch_id`, `receiving_mode`) VALUES
+(1, 'SOUTHALL WAREHOUSE', 'WHS-SLL', 1, 1),  -- Product Only
+(2, 'MANCHESTER WAREHOUSE', 'WHS-MNC', 2, 2); -- Mixed
 
 INSERT INTO `shelfs` (`id`, `warehouse_id`, `name`, `code`, `is_active`) VALUES
 (1, 1, '10A21', '10A21', 1),

@@ -262,8 +262,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         } else {
           // Product mode - search by product code or barcode in container items
           foundItem = _availableContainers.where((container) {
-            return container.items.any((item) => 
-              item.product.stockCode.toLowerCase() == cleanData.toLowerCase() || 
+            return container.items.any((item) =>
+              item.product.stockCode.toLowerCase() == cleanData.toLowerCase() ||
               (item.product.barcode1?.toLowerCase() == cleanData.toLowerCase()));
           }).firstOrNull;
         }
@@ -623,7 +623,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       if (item is String) return item.toLowerCase().contains(lowerQuery);
                       if (item is TransferableContainer) {
                         return item.displayName.toLowerCase().contains(lowerQuery) ||
-                            item.items.any((transferableItem) => 
+                            item.items.any((transferableItem) =>
                               transferableItem.product.name.toLowerCase().contains(lowerQuery) ||
                               transferableItem.product.stockCode.toLowerCase().contains(lowerQuery) ||
                               (transferableItem.product.barcode1?.toLowerCase().contains(lowerQuery) ?? false));

@@ -4,6 +4,7 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
@@ -131,8 +132,21 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                               OrderInfoCard(order: viewModel.selectedOrder!),
                               const SizedBox(height: _gap),
                             ],
-                            _buildModeSelector(viewModel),
-                            const SizedBox(height: _gap),
+                            // Mode selector sadece mixed modda göster
+                            FutureBuilder<bool>(
+                              future: viewModel.shouldShowModeSelector,
+                              builder: (context, snapshot) {
+                                if (snapshot.data == true) {
+                                  return Column(
+                                    children: [
+                                      _buildModeSelector(viewModel),
+                                      const SizedBox(height: _gap),
+                                    ],
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
                             // Delivery note number for free receipt
                             if (!viewModel.isOrderBased) ...[
                               TextFormField(

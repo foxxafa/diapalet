@@ -200,7 +200,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final query = '''
-      SELECT 
+      SELECT
         s.id as stock_id,
         u.UrunId as product_id,
         u.UrunAdi as product_name,

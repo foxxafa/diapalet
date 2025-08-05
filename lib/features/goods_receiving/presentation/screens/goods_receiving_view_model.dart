@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
+import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -78,6 +79,19 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   String? get error => _error;
   String? get successMessage => _successMessage;
   bool get navigateBack => _navigateBack;
+
+  /// Warehouse receiving mode kontrolü
+  Future<WarehouseReceivingMode> get warehouseReceivingMode async {
+    final prefs = await SharedPreferences.getInstance();
+    final modeValue = prefs.getInt('receiving_mode') ?? 2;
+    return WarehouseReceivingMode.fromValue(modeValue);
+  }
+
+  /// Mode selector görünür mü?
+  Future<bool> get shouldShowModeSelector async {
+    final mode = await warehouseReceivingMode;
+    return mode == WarehouseReceivingMode.mixed;
+  }
 
   /// Validates the delivery note number for free receipt
   String? validateDeliveryNote(String? value) {
@@ -177,6 +191,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      // Warehouse receiving mode'a göre varsayılan modu ayarla
+      final mode = await warehouseReceivingMode;
+      final availableModes = mode.availableModes;
+      if (availableModes.isNotEmpty && !availableModes.contains(_receivingMode)) {
+        _receivingMode = availableModes.first;
+      }
+
       if (!isOrderBased) {
         _availableProducts = await _repository.getAllActiveProducts();
       }
@@ -244,8 +265,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     });
   }
 
-  void changeReceivingMode(ReceivingMode newMode) {
+  void changeReceivingMode(ReceivingMode newMode) async {
     if (_isSaving) return;
+    
+    // Check if the new mode is supported by the warehouse
+    final warehouseMode = await warehouseReceivingMode;
+    if (!warehouseMode.availableModes.contains(newMode)) {
+      return; // Don't change mode if not supported by warehouse
+    }
+    
     _clearEntryFields(clearPallet: true);
     _receivingMode = newMode;
     _setInitialFocus();

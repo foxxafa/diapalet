@@ -15,7 +15,7 @@ abstract class InventoryTransferRepository {
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
     Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
     Future<List<ProductStockItem>> getProductsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
-    
+
     /// @deprecated Use getProductsAtLocation instead
     @Deprecated('Use getProductsAtLocation instead')
     Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
@@ -50,7 +50,7 @@ abstract class InventoryTransferRepository {
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 
     Future<ProductStockItem?> findProductByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
-    
+
     /// @deprecated Use findProductByCodeAtLocation instead
     @Deprecated('Use findProductByCodeAtLocation instead')
     Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
