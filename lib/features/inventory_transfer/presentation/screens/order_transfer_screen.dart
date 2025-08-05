@@ -153,7 +153,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
       // GÜNCELLEME: Mevcut olmayan modda başladıysak geçerli moda geç
       if (!_isModeAvailable(_selectedMode)) {
-        _selectedMode = _hasPalletContainers ? AssignmentMode.pallet : AssignmentMode.box;
+        _selectedMode = _hasPalletContainers ? AssignmentMode.pallet : AssignmentMode.product;
       }
 
       _filterContainersByMode();
@@ -197,8 +197,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     switch (mode) {
       case AssignmentMode.pallet:
         return _hasPalletContainers;
-      case AssignmentMode.box:
-      case AssignmentMode.boxFromPallet:
+      case AssignmentMode.product:
+      case AssignmentMode.productFromPallet:
         return _hasBoxContainers;
     }
   }
@@ -455,7 +455,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
           ),
           ButtonSegment(
-            value: AssignmentMode.box,
+            value: AssignmentMode.product,
             label: Text('order_transfer.mode_box'.tr()),
             icon: const Icon(Icons.inventory_2_outlined),
             enabled: _hasBoxContainers, // GÜNCELLEME: Dinamik enable/disable
@@ -576,8 +576,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
 
     final finalOperationMode = _selectedMode == AssignmentMode.pallet
-        ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
-        : AssignmentMode.box;
+        ? (_isPalletOpening ? AssignmentMode.productFromPallet : AssignmentMode.pallet)
+        : AssignmentMode.product;
 
     final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
     if (confirm != true) return;

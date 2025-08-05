@@ -15,7 +15,8 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -207,7 +208,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _isBoxModeAvailable = results[1];
 
         if (!_isModeAvailable(_selectedMode)) {
-          _selectedMode = _isPalletModeAvailable ? AssignmentMode.pallet : AssignmentMode.box;
+          _selectedMode = _isPalletModeAvailable ? AssignmentMode.pallet : AssignmentMode.product;
         }
       }
     } catch (e) {
@@ -221,8 +222,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     switch (mode) {
       case AssignmentMode.pallet:
         return _isPalletModeAvailable;
-      case AssignmentMode.box:
-      case AssignmentMode.boxFromPallet:
+      case AssignmentMode.product:
+      case AssignmentMode.productFromPallet:
         return _isBoxModeAvailable;
     }
   }
@@ -259,7 +260,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (_selectedMode == AssignmentMode.pallet) {
           foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
         } else {
-          foundItem = _availableContainers.cast<BoxItem?>().firstWhere((box) => box?.productCode.toLowerCase() == cleanData.toLowerCase() || box?.barcode1?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
+          // Product mode - search by product code or barcode in container items
+          foundItem = _availableContainers.where((container) {
+            return container.items.any((item) => 
+              item.product.stockCode.toLowerCase() == cleanData.toLowerCase() || 
+              (item.product.barcode1?.toLowerCase() == cleanData.toLowerCase()));
+          }).firstOrNull;
         }
 
         if (foundItem != null) {
@@ -289,8 +295,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (selectedItem == null) return;
     setState(() {
       _selectedContainer = selectedItem;
-      _scannedContainerIdController.text = (selectedItem is BoxItem)
-          ? '${selectedItem.productName} (${selectedItem.productCode})'
+      _scannedContainerIdController.text = selectedItem is TransferableContainer
+          ? selectedItem.displayName
           : selectedItem.toString();
     });
     await _fetchContainerContents();
@@ -408,8 +414,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           siparisId: widget.selectedOrder?.id,
           deliveryNoteNumber: widget.isFreePutAway ? widget.selectedDeliveryNote : null,
         );
-      } else if (_selectedMode == AssignmentMode.box && container is BoxItem) {
-        contents = [ProductItem.fromBoxItem(container)];
+      } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
+        contents = container.items.map((transferableItem) => ProductItem(
+          id: transferableItem.product.id,
+          name: transferableItem.product.name,
+          productCode: transferableItem.product.stockCode,
+          currentQuantity: transferableItem.quantity,
+          expiryDate: transferableItem.expiryDate,
+        )).toList();
       }
 
       if (!mounted) return;
@@ -464,8 +476,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
 
     final finalOperationMode = _selectedMode == AssignmentMode.pallet
-        ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
-        : AssignmentMode.box;
+        ? (_isPalletOpening ? AssignmentMode.productFromPallet : AssignmentMode.pallet)
+        : AssignmentMode.product;
 
     final confirm = await _showConfirmationDialog(itemsToTransfer, finalOperationMode);
     if (confirm != true) return;
@@ -488,7 +500,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         operationType: finalOperationMode,
         sourceLocationName: _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
-        containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as BoxItem?)?.productCode,
+        containerId: (_selectedContainer is String) ? _selectedContainer : (_selectedContainer as TransferableContainer?)?.id,
         transferDate: DateTime.now(),
         siparisId: widget.selectedOrder?.id,
         deliveryNoteNumber: widget.selectedDeliveryNote,
@@ -602,17 +614,19 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     items: _availableContainers,
                     itemToString: (item) {
                       if (item is String) return item;
-                      if (item is BoxItem) return '${item.productName} (${item.productCode})';
+                      if (item is TransferableContainer) return item.displayName;
                       return '';
                     },
                     onItemSelected: _handleContainerSelection,
                     filterCondition: (item, query) {
                       final lowerQuery = query.toLowerCase();
                       if (item is String) return item.toLowerCase().contains(lowerQuery);
-                      if (item is BoxItem) {
-                        return item.productName.toLowerCase().contains(lowerQuery) ||
-                            item.productCode.toLowerCase().contains(lowerQuery) ||
-                            (item.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+                      if (item is TransferableContainer) {
+                        return item.displayName.toLowerCase().contains(lowerQuery) ||
+                            item.items.any((transferableItem) => 
+                              transferableItem.product.name.toLowerCase().contains(lowerQuery) ||
+                              transferableItem.product.stockCode.toLowerCase().contains(lowerQuery) ||
+                              (transferableItem.product.barcode1?.toLowerCase().contains(lowerQuery) ?? false));
                       }
                       return false;
                     },
@@ -737,7 +751,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               enabled: _isPalletModeAvailable
           ),
           ButtonSegment(
-              value: AssignmentMode.box,
+              value: AssignmentMode.product,
               label: Text('inventory_transfer.mode_box'.tr()),
               icon: const Icon(Icons.inventory_2_outlined),
               enabled: _isBoxModeAvailable

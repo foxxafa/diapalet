@@ -208,7 +208,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               label: Text('goods_receiving_screen.mode_pallet'.tr()),
               icon: const Icon(Icons.pallet)),
           ButtonSegment(
-              value: ReceivingMode.kutu,
+              value: ReceivingMode.product,
               label: Text('goods_receiving_screen.mode_box'.tr()),
               icon: const Icon(Icons.inventory_2_outlined)),
         ],

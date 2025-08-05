@@ -124,6 +124,7 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
           await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
           await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
+          await prefs.setInt('receiving_mode', user['receiving_mode'] as int? ?? 2);
           await prefs.setString('branch_name', user['branch_name'] as String? ?? 'N/A');
           await prefs.setString('apikey', apiKey);
           await prefs.setString('first_name', user['first_name'] as String);

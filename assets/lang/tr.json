@@ -39,20 +39,20 @@
   },
   "receive_mode": {
     "palet": "Palet",
-    "kutu": "Kutu"
+    "product": "Ürün"
   },
   "assignment_mode": {
-    "palet": "Palet",
-    "kutu": "Kutu",
+    "palet": "Palet", 
+    "product": "Ürün",
     "pallet": "Palet",
-    "box": "Kutu"
+    "box": "Ürün"
   },
   "goods_receiving": {
     "title": "Mal Kabul",
     "select_invoice": "İrsaliye Seç",
     "select_order": "Sipariş Seç",
     "select_pallet": "Palet Seç",
-    "select_box": "Kutu Seç",
+    "select_box": "Ürün Seç",
     "select_product": "Ürün Seç",
     "enter_qty": "Miktar Girin",
     "add_to_list": "Listeye Ekle",
@@ -67,9 +67,9 @@
     "save_and_confirm": "Kaydet ve Onayla",
     "errors": {
       "load_initial": "Başlangıç verileri yüklenirken hata: {error}",
-      "required_fields": "Lütfen ürün eklemek için tüm zorunlu alanları (Palet/Kutu, Ürün, Miktar) doğru doldurun.",
-      "invalid_pallet": "Lütfen geçerli bir Palet/Kutu seçin veya okutun (seçim yapılmamış).",
-      "empty_pallet": "Palet/Kutu ID boş olamaz.",
+      "required_fields": "Lütfen ürün eklemek için tüm zorunlu alanları (Palet/Ürün, Ürün, Miktar) doğru doldurun.",
+      "invalid_pallet": "Lütfen geçerli bir Palet/Ürün seçin veya okutun (seçim yapılmamış).",
+      "empty_pallet": "Palet/Ürün ID boş olamaz.",
       "invalid_product": "Lütfen geçerli bir Ürün seçin veya okutun (seçim yapılmamış).",
       "invalid_qty": "Miktar geçersiz veya sayısal değil.",
       "no_items": "Kaydedilecek ürün bulunmuyor.",
@@ -78,7 +78,7 @@
       "save_error": "Kaydetme sırasında hata: {error}",
       "invalid_qr_pallet": "Taranan QR ({qr}) geçerli bir {mode} seçeneği değil.",
       "invalid_qr_product": "Taranan QR ({qr}) geçerli bir ürün seçeneği değil.",
-      "already_received": "{id} ID'li palet/kutu zaten alınmış."
+      "already_received": "{id} ID'li palet/ürün zaten alınmış."
     },
     "success": {
       "item_added": "{product} listeye eklendi.",
@@ -100,7 +100,7 @@
     "error_loading_order_details": "Sipariş detayları yükleniyor, lütfen bekleyin.",
     "error_product_not_in_order": "Bu ürün seçili siparişte bulunmuyor.",
     "error_quantity_exceeds_order": "Sipariş miktarını aşıyorsunuz! Kalan: {remainingQuantity} {unit}",
-    "error_box_mode_single_product": "Kutu modunda sadece tek çeşit ürün ekleyebilirsiniz.",
+    "error_box_mode_single_product": "Ürün modunda sadece tek çeşit ürün ekleyebilirsiniz.",
     "error_at_least_one_item": "Kaydetmek için listeye en az bir ürün eklemelisiniz.",
     "error_select_order": "Lütfen bir sipariş seçin.",
     "error_saving": "Kaydetme hatası: {error}",
@@ -108,7 +108,7 @@
     "success_item_removed": "{removedItemName} listeden kaldırıldı.",
     "success_receipt_saved": "Mal kabul başarıyla kaydedildi!",
     "mode_pallet": "Palet",
-    "mode_box": "Kutu",
+    "mode_box": "Ürün",
     "error_change_mode": "Modu değiştirmek için önce mevcut işlemi tamamlayın veya sıfırlayın.",
     "label_select_order": "Sipariş Seç",
     "label_delivery_note": "İrsaliye Numarası",

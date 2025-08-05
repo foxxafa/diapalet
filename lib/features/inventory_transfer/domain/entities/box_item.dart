@@ -2,7 +2,10 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 
+/// @deprecated BoxItem is deprecated. Use ProductStockItem instead.
+/// BoxItem represented products in stock, not actual boxes.
 @immutable
+@Deprecated('Use ProductStockItem instead. BoxItem will be removed in future versions.')
 class BoxItem extends Equatable {
   final int? boxId;
   final int productId;

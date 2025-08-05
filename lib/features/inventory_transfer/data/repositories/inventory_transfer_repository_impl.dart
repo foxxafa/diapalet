@@ -7,6 +7,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
@@ -166,6 +167,55 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final maps = await db.rawQuery(query, whereArgs);
     return maps.map((map) => BoxItem.fromJson(map)).toList();
+  }
+
+  @override
+  Future<List<ProductStockItem>> getProductsAtLocation(
+    int? locationId, {
+    List<String> stockStatuses = const ['available'],
+    String? deliveryNoteNumber,
+  }) async {
+    final db = await dbHelper.database;
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
+
+    if (locationId == null) {
+      whereClauses.add('s.location_id IS NULL');
+    } else {
+      whereClauses.add('s.location_id = ?');
+      whereArgs.add(locationId);
+    }
+
+    if (stockStatuses.isNotEmpty) {
+      final placeholders = stockStatuses.map((_) => '?').join(', ');
+      whereClauses.add('s.stock_status IN ($placeholders)');
+      whereArgs.addAll(stockStatuses);
+    }
+
+    String joinClause = '';
+    if (deliveryNoteNumber != null) {
+      joinClause = 'JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id';
+      whereClauses.add('gr.delivery_note_number = ?');
+      whereArgs.add(deliveryNoteNumber);
+    }
+
+    final query = '''
+      SELECT 
+        s.id as stock_id,
+        u.UrunId as product_id,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as barcode1,
+        SUM(s.quantity) as quantity
+      FROM inventory_stock s
+      JOIN urunler u ON s.urun_id = u.UrunId
+      $joinClause
+      WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
+    ''';
+
+    final maps = await db.rawQuery(query, whereArgs);
+    return maps.map((map) => ProductStockItem.fromJson(map)).toList();
   }
 
   @override
@@ -569,6 +619,53 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final maps = await db.rawQuery(query, whereArgs);
     if (maps.isNotEmpty) {
       return BoxItem.fromJson(maps.first);
+    }
+    return null;
+  }
+
+  @override
+  Future<ProductStockItem?> findProductByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
+    final db = await dbHelper.database;
+
+    final whereParts = <String>[];
+    final whereArgs = <dynamic>[];
+
+    if (locationId == null) {
+      whereParts.add('s.location_id IS NULL');
+    } else {
+      whereParts.add('s.location_id = ?');
+      whereArgs.add(locationId);
+    }
+
+    if (stockStatuses.isNotEmpty) {
+      whereParts.add('s.stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
+      whereArgs.addAll(stockStatuses);
+    }
+
+    whereParts.add('(u.StokKodu = ? OR u.Barcode1 = ?)');
+    whereArgs.add(productCodeOrBarcode);
+    whereArgs.add(productCodeOrBarcode);
+
+    whereParts.add('s.pallet_barcode IS NULL');
+
+    final query = '''
+      SELECT
+        s.id as stock_id,
+        u.UrunId as product_id,
+        u.UrunAdi as product_name,
+        u.StokKodu as product_code,
+        u.Barcode1 as barcode1,
+        SUM(s.quantity) as quantity
+      FROM inventory_stock s
+      JOIN urunler u ON s.urun_id = u.UrunId
+      WHERE ${whereParts.join(' AND ')}
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
+      LIMIT 1
+    ''';
+
+    final maps = await db.rawQuery(query, whereArgs);
+    if (maps.isNotEmpty) {
+      return ProductStockItem.fromJson(maps.first);
     }
     return null;
   }

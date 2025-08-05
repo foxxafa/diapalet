@@ -46,7 +46,7 @@
     "select_invoice": "Select Invoice",
     "select_order": "Select Order",
     "select_pallet": "Select Pallet",
-    "select_box": "Select Box",
+    "select_box": "Select Product",
     "select_product": "Select Product",
     "enter_qty": "Enter Quantity",
     "add_to_list": "Add to List",
@@ -61,9 +61,9 @@
     "save_and_confirm": "Save and Confirm",
     "errors": {
       "load_initial": "Error loading initial data: {error}",
-      "required_fields": "Please fill all required fields (Pallet/Box, Product, Quantity).",
-      "invalid_pallet": "Select a valid Pallet/Box (none selected).",
-      "empty_pallet": "Pallet/Box ID cannot be empty.",
+      "required_fields": "Please fill all required fields (Pallet/Product, Product, Quantity).",
+      "invalid_pallet": "Select a valid Pallet/Product (none selected).",
+      "empty_pallet": "Pallet/Product ID cannot be empty.",
       "invalid_product": "Select a valid Product (none selected).",
       "invalid_qty": "Invalid quantity entered.",
       "no_items": "No items to save.",
@@ -84,7 +84,7 @@
   },
   "goods_receiving_screen": {
     "mode_pallet": "Pallet",
-    "mode_box": "Box",
+    "mode_box": "Product",
     "button_review_items": "Review Items",
     "dialog_search_no_results": "No results found.",
     "success_item_added": "Item added to list.",
@@ -143,17 +143,17 @@
     "amount_positive": "Amount must be > 0",
     "amount_max": "Max {max}",
     "mode_switched": "{mode} mode activated.",
-    "transfer_saved_box": "{product} box transfer recorded",
+    "transfer_saved_product": "{product} product transfer recorded",
     "transfer_saved": "{mode} transfer saved successfully!",
     "mode": {
       "pallet": "Pallet",
-      "box": "Box"
+      "product": "Product"
     },
     "source_location": "Source Location",
     "target_location": "Target Location",
     "container_id": {
       "pallet": "Pallet ID",
-      "box": "Product (Box)"
+      "product": "Product"
     },
     "scan_prompt": "Scan or Select...",
     "scan_button": "Scan ID",
@@ -323,7 +323,7 @@
       "putaway_operation": "Put-away Operation",
       "shelf_transfer": "Shelf to Shelf Transfer",
       "pallet_transfer": "Pallet Transfer",
-      "box_transfer": "Box Transfer",
+      "product_transfer": "Product Transfer",
       "stock_transfer": "Stock Transfer"
     },
     "operation_labels": {
@@ -372,11 +372,11 @@
     "validator_delivery_note_number": "Please enter delivery note number.",
     "delivery_note_info_title": "Delivery Note Information",
     "mode_pallet": "Pallet",
-    "mode_box": "Box",
+    "mode_box": "Product",
     "label_source_location": "Source Location",
     "label_target_location": "Target Location",
     "label_pallet": "Pallet",
-    "label_product": "Product / Box",
+    "label_product": "Product",
     "label_pallet_barcode": "Pallet Barcode",
     "label_pallet_barcode_display": "Pallet: {barcode}",
     "label_pallet_barcode_display_short": "Pallet: {barcode}",
@@ -460,7 +460,7 @@
     "title": "Put-away Operation",
     "order_title": "ORDER",
     "mode_pallet": "Pallet",
-    "mode_box": "Box",
+    "mode_box": "Product",
     "label_source_location": "Source Location (Goods Receiving)",
     "label_pallet": "Pallet ID",
     "label_product": "Product",
@@ -482,7 +482,7 @@
     "error_location_id_not_found": "Location ID not found.",
     "error_saving": "Error saving: {error}",
     "all_items_transferred": "All items for this order have been transferred.",
-    "no_pallets_available": "No pallets are available for transfer in this order. Please try Box mode.",
+    "no_pallets_available": "No pallets are available for transfer in this order. Please try Product mode.",
     "no_boxes_available": "No individual items are available for transfer in this order. Please try Pallet mode.",
     "validator_required_field": "This field is required.",
     "validator_required": "Required",

@@ -5,11 +5,11 @@ enum AssignmentMode {
   /// Tam bir paletin bir lokasyondan diğerine taşınması.
   pallet,
 
-  /// Paletlenmemiş (kutulu) ürünlerin taşınması.
-  box,
+  /// Paletlenmemiş (ürün bazlı) transferler.
+  product,
 
-  /// Bir paletin içinden kısmi ürünlerin alınıp kutu olarak taşınması.
-  boxFromPallet,
+  /// Bir paletin içinden kısmi ürünlerin alınıp ürün olarak taşınması.
+  productFromPallet,
 }
 
 extension AssignmentModeExtension on AssignmentMode {
@@ -18,10 +18,10 @@ extension AssignmentModeExtension on AssignmentMode {
     switch (this) {
       case AssignmentMode.pallet:
         return 'pallet_transfer';
-      case AssignmentMode.box:
-        return 'box_transfer';
-      case AssignmentMode.boxFromPallet:
-        return 'boxFromPallet';
+      case AssignmentMode.product:
+        return 'product_transfer';
+      case AssignmentMode.productFromPallet:
+        return 'productFromPallet';
     }
   }
 }

@@ -88,8 +88,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   AssignmentMode get finalOperationMode => _selectedMode == AssignmentMode.pallet
-      ? (_isPalletOpening ? AssignmentMode.boxFromPallet : AssignmentMode.pallet)
-      : AssignmentMode.box;
+      ? (_isPalletOpening ? AssignmentMode.productFromPallet : AssignmentMode.pallet)
+      : AssignmentMode.product;
 
   String? get error => _error;
   String? get successMessage => _successMessage;

@@ -72,6 +72,7 @@ class TerminalController extends Controller
                     'e.warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
                     'COALESCE(w.id, 1) as warehouse_id',
+                    'COALESCE(w.receiving_mode, 2) as receiving_mode',
                     'e.branch_code',
                     'COALESCE(b.name, "Default Branch") as branch_name',
                     'COALESCE(b.id, 1) as branch_id'
@@ -93,6 +94,7 @@ class TerminalController extends Controller
                     'warehouse_id' => (int)($user['warehouse_id'] ?? 1),
                     'warehouse_name' => $user['warehouse_name'],
                     'warehouse_code' => $user['warehouse_code'],
+                    'receiving_mode' => (int)($user['receiving_mode'] ?? 2),
                     'branch_id' => (int)($user['branch_id'] ?? 1),
                     'branch_name' => $user['branch_name'],
                 ];
@@ -285,7 +287,7 @@ class TerminalController extends Controller
 
         $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
         $targetLocationId = $header['target_location_id'];
-        $operationType = $header['operation_type'] ?? 'box_transfer';
+        $operationType = $header['operation_type'] ?? 'product_transfer';
         $siparisId = $header['siparis_id'] ?? null;
         $goodsReceiptId = $header['goods_receipt_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;

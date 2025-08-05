@@ -1,5 +1,4 @@
 // lib/features/inventory_transfer/domain/entities/product_item.dart
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:flutter/material.dart';
 
 @immutable
@@ -20,7 +19,9 @@ class ProductItem {
     this.expiryDate,
   });
 
-  factory ProductItem.fromBoxItem(BoxItem box) {
+  /// @deprecated This method is deprecated. Use ProductItem constructor directly with TransferableItem data.
+  @Deprecated('Use ProductItem constructor directly with TransferableItem data')
+  factory ProductItem.fromBoxItem(dynamic box) {
     return ProductItem(
       id: box.productId,
       name: box.productName,

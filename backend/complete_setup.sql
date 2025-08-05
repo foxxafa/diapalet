@@ -71,6 +71,7 @@ CREATE TABLE `warehouses` (
   `dia_id` INT NULL,
   `post_code` varchar(10) DEFAULT NULL,
   `ap` char(1) DEFAULT NULL,
+  `receiving_mode` TINYINT DEFAULT 2 COMMENT '0=Palet Only, 1=Product Only, 2=Mixed',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)

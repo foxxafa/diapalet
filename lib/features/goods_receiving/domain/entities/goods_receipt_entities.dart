@@ -69,7 +69,7 @@ class GoodsReceiptItemPayload {
 // --- Arayüzde kullanılan geçici veri sınıfları ---
 
 /// Mal kabul ekranındaki modları temsil eder.
-enum ReceivingMode { palet, kutu }
+enum ReceivingMode { palet, product }
 
 /// Arayüzde listeye eklenen her bir kalemi temsil eden taslak sınıf.
 @immutable

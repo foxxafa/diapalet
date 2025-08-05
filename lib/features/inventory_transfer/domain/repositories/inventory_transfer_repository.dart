@@ -1,7 +1,8 @@
 // lib/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
+import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart'; // Backward compatibility
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
@@ -13,6 +14,10 @@ abstract class InventoryTransferRepository {
 
     // GÜNCELLEME: Bu iki metod yerine daha genel bir metod kullanılacak.
     Future<List<String>> getPalletIdsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
+    Future<List<ProductStockItem>> getProductsAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
+    
+    /// @deprecated Use getProductsAtLocation instead
+    @Deprecated('Use getProductsAtLocation instead')
     Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
 
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
@@ -44,6 +49,10 @@ abstract class InventoryTransferRepository {
 
     Future<List<ProductInfo>> getProductInfoByBarcode(String barcode);
 
+    Future<ProductStockItem?> findProductByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
+    
+    /// @deprecated Use findProductByCodeAtLocation instead
+    @Deprecated('Use findProductByCodeAtLocation instead')
     Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
 
     /// Serbest mal kabullerin delivery note numberlarını getirir
