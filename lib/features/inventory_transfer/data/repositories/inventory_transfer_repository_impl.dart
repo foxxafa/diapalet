@@ -119,7 +119,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<BoxItem>> getBoxesAtLocation(
+  Future<List<ProductStockItem>> getBoxesAtLocation(
     int? locationId, {
     List<String> stockStatuses = const ['available'],
     String? deliveryNoteNumber,
@@ -166,7 +166,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
-    return maps.map((map) => BoxItem.fromJson(map)).toList();
+    return maps.map((map) => ProductStockItem.fromJson(map)).toList();
   }
 
   @override
@@ -817,7 +817,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<bool> hasOrderReceivedWithBoxes(int orderId) async {
+  Future<bool> hasOrderReceivedWithProducts(int orderId) async {
     final db = await dbHelper.database;
     const query = '''
       SELECT COUNT(*) as count

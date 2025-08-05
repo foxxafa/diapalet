@@ -1,4 +1,5 @@
 // lib/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart
+import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
@@ -15,7 +16,6 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -185,7 +185,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (widget.selectedOrder == null) return;
     await _updateModeAvailability(
       palletCheck: () => _repo.hasOrderReceivedWithPallets(widget.selectedOrder!.id),
-      boxCheck: () => _repo.hasOrderReceivedWithBoxes(widget.selectedOrder!.id),
+      boxCheck: () => _repo.hasOrderReceivedWithProducts(widget.selectedOrder!.id),
     );
   }
 
@@ -193,7 +193,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (!widget.isFreePutAway || widget.selectedDeliveryNote == null) return;
     await _updateModeAvailability(
       palletCheck: () async => (await _repo.getPalletIdsAtLocation(null, stockStatuses: ['receiving'], deliveryNoteNumber: widget.selectedDeliveryNote)).isNotEmpty,
-      boxCheck: () async => (await _repo.getBoxesAtLocation(null, stockStatuses: ['receiving'], deliveryNoteNumber: widget.selectedDeliveryNote)).isNotEmpty,
+      boxCheck: () async => (await _repo.getProductsAtLocation(null, stockStatuses: ['receiving'], deliveryNoteNumber: widget.selectedDeliveryNote)).isNotEmpty,
     );
   }
 
@@ -354,7 +354,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           deliveryNoteNumber: deliveryNoteNumber,
         );
       } else {
-        containers = await repo.getBoxesAtLocation(
+        containers = await repo.getProductsAtLocation(
           isReceivingArea ? null : locationId,
           stockStatuses: statusesToQuery,
           deliveryNoteNumber: deliveryNoteNumber,
@@ -741,23 +741,31 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   Widget _buildModeSelector() {
-    return Center(
-      child: SegmentedButton<AssignmentMode>(
-        segments: [
-          ButtonSegment(
-              value: AssignmentMode.pallet,
-              label: Text('inventory_transfer.mode_pallet'.tr()),
-              icon: const Icon(Icons.pallet),
-              enabled: _isPalletModeAvailable
-          ),
-          ButtonSegment(
-              value: AssignmentMode.product,
-              label: Text('inventory_transfer.mode_box'.tr()),
-              icon: const Icon(Icons.inventory_2_outlined),
-              enabled: _isBoxModeAvailable
-          ),
-        ],
-        selected: {_selectedMode},
+    return FutureBuilder<bool>(
+      future: _shouldShowModeSelector(),
+      builder: (context, snapshot) {
+        // Eğer warehouse mixed mode değilse, mode selector'ü gösterme
+        if (snapshot.hasData && !snapshot.data!) {
+          return const SizedBox.shrink();
+        }
+
+        return Center(
+          child: SegmentedButton<AssignmentMode>(
+            segments: [
+              ButtonSegment(
+                  value: AssignmentMode.pallet,
+                  label: Text('inventory_transfer.mode_pallet'.tr()),
+                  icon: const Icon(Icons.pallet),
+                  enabled: _isPalletModeAvailable
+              ),
+              ButtonSegment(
+                  value: AssignmentMode.product,
+                  label: Text('inventory_transfer.mode_product'.tr()),
+                  icon: const Icon(Icons.inventory_2_outlined),
+                  enabled: _isBoxModeAvailable
+              ),
+            ],
+            selected: {_selectedMode},
         onSelectionChanged: (newSelection) {
           final newMode = newSelection.first;
           if (_isModeAvailable(newMode)) {
@@ -778,8 +786,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           selectedBackgroundColor: Theme.of(context).colorScheme.primary,
           selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
         ),
-      ),
+          ),
+        );
+      },
     );
+  }
+
+  /// Warehouse mode'unu SharedPreferences'dan okuyup mode selector gösterilmeli mi kontrol eder
+  Future<bool> _shouldShowModeSelector() async {
+    final prefs = await SharedPreferences.getInstance();
+    final receivingMode = prefs.getInt('receiving_mode') ?? 2; // Default: mixed
+    final warehouseMode = WarehouseReceivingMode.fromValue(receivingMode);
+    return warehouseMode == WarehouseReceivingMode.mixed;
   }
 
   Widget _buildPalletOpeningSwitch() {

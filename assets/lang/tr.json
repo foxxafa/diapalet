@@ -253,7 +253,7 @@
   "inventory_transfer": {
     "title": "Palet ve Koli Transferi",
     "mode_pallet": "Palet",
-    "mode_box": "Koli",
+    "mode_product": "Ürün",
     "label_source_location": "Kaynak Raf",
     "label_pallet": "Palet ID",
     "label_product": "Ürün",

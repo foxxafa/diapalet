@@ -905,6 +905,7 @@ class DatabaseHelper {
         'name': prefs.getString('warehouse_name') ?? 'N/A',
         'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
         'branch_name': prefs.getString('branch_name') ?? 'N/A',
+        'receiving_mode': prefs.getInt('receiving_mode') ?? 2, // Default: mixed
       };
 
       // Warehouse bilgileri SharedPreferences'tan alındı
@@ -949,19 +950,19 @@ class DatabaseHelper {
               debugPrint('DEBUG - Looking for receipt with date: $receiptDateStr (truncated from ${actualReceiptDate.toUtc().toIso8601String()})');
 
               final currentReceiptQuery = await db.rawQuery(
-                  'SELECT id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
+                  'SELECT receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
                   [siparisId, receiptDateStr]
               );
               if (currentReceiptQuery.isNotEmpty) {
-                currentReceiptId = currentReceiptQuery.first['id'] as int?;
+                currentReceiptId = currentReceiptQuery.first['receipt_id'] as int?;
                 debugPrint('DEBUG - Found current receipt ID to exclude: $currentReceiptId for date: $receiptDateStr');
               } else {
                 final likeQuery = await db.rawQuery(
-                    'SELECT id FROM goods_receipts WHERE siparis_id = ? AND receipt_date LIKE ?',
+                    'SELECT receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date LIKE ?',
                     [siparisId, '$receiptDateStr%']
                 );
                 if (likeQuery.isNotEmpty) {
-                  currentReceiptId = likeQuery.first['id'] as int?;
+                  currentReceiptId = likeQuery.first['receipt_id'] as int?;
                   debugPrint('DEBUG - Found current receipt ID via LIKE: $currentReceiptId for date pattern: $receiptDateStr%');
                 } else {
                   debugPrint('DEBUG - No receipt found to exclude for date: $receiptDateStr (tried exact and LIKE)');

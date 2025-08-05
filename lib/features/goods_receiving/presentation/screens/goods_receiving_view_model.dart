@@ -267,13 +267,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   void changeReceivingMode(ReceivingMode newMode) async {
     if (_isSaving) return;
-    
+
     // Check if the new mode is supported by the warehouse
     final warehouseMode = await warehouseReceivingMode;
     if (!warehouseMode.availableModes.contains(newMode)) {
       return; // Don't change mode if not supported by warehouse
     }
-    
+
     _clearEntryFields(clearPallet: true);
     _receivingMode = newMode;
     _setInitialFocus();

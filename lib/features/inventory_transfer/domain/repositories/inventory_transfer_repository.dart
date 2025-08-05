@@ -18,7 +18,7 @@ abstract class InventoryTransferRepository {
 
     /// @deprecated Use getProductsAtLocation instead
     @Deprecated('Use getProductsAtLocation instead')
-    Future<List<BoxItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
+    Future<List<ProductStockItem>> getBoxesAtLocation(int? locationId, {List<String> stockStatuses = const ['available'], String? deliveryNoteNumber});
 
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
     Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber});
@@ -61,8 +61,8 @@ abstract class InventoryTransferRepository {
     /// Belirli bir sipariş için palet ile kabul edilmiş ürün var mı kontrol eder
     Future<bool> hasOrderReceivedWithPallets(int orderId);
 
-    /// Belirli bir sipariş için kutular ile kabul edilmiş ürün var mı kontrol eder
-    Future<bool> hasOrderReceivedWithBoxes(int orderId);
+    /// Belirli bir sipariş için ürün olarak kabul edilmiş ürün var mı kontrol eder
+    Future<bool> hasOrderReceivedWithProducts(int orderId);
 
     /// İrsaliye numarasına göre mal kabul ID'sini getirir.
     Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber);

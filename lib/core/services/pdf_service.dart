@@ -116,6 +116,7 @@ class PdfService {
     final warehouseName = warehouseInfo?['name'] ?? 'N/A';
     final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
     final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
+    final warehouseReceivingMode = warehouseInfo?['receiving_mode'] ?? 2; // Default: mixed
     final poId = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
     final deliveryNoteNumber = header['delivery_note_number']?.toString();
     final invoiceNumber = header['invoice_number']?.toString() ?? 'N/A';
@@ -179,7 +180,7 @@ class PdfService {
               boldFont: boldFont,
             ),
             pw.SizedBox(height: 20),
-            _buildDetailedGoodsReceiptItemsTable(items, isOrderBased, font, boldFont),
+            _buildDetailedGoodsReceiptItemsTable(items, isOrderBased, warehouseReceivingMode, font, boldFont),
             pw.SizedBox(height: 30),
             _buildFooter(font),
           ];
@@ -485,7 +486,7 @@ class PdfService {
   }) {
     final infoTitle = isPutawayOperation ? 'Putaway Information' : 'Transfer Information';
     final operationTypeText = isPutawayOperation ? 'Putaway Operation' : 'Stock Transfer';
-    final transferModeText = operationType == 'pallet_transfer' ? 'Pallet Transfer' : 'Box Transfer';
+    final transferModeText = operationType == 'pallet_transfer' ? 'Pallet Transfer' : 'Product Transfer';
 
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
@@ -632,7 +633,7 @@ class PdfService {
               final productCode = item['product_code'] ?? 'N/A';
               final productBarcode = item['product_barcode'] ?? '';
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
-              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Box';
+              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Product';
 
               // Product Name + Code birleştirme
               final productNameAndCode = productCode != 'N/A' ? '$productName ($productCode)' : productName;
@@ -740,6 +741,7 @@ class PdfService {
   static pw.Widget _buildDetailedGoodsReceiptItemsTable(
     List<dynamic> items,
     bool isOrderBased,
+    int warehouseReceivingMode,
     pw.Font font,
     pw.Font boldFont,
   ) {
@@ -754,6 +756,11 @@ class PdfService {
     }
     final totalOrdered = uniqueOrderedQuantities.values.fold(0.0, (sum, qty) => sum + qty);
 
+    final isMixedMode = warehouseReceivingMode == 2;
+
+    // Debug log
+    debugPrint('PDF DEBUG: warehouseReceivingMode = $warehouseReceivingMode, isMixedMode = $isMixedMode');
+
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -761,24 +768,38 @@ class PdfService {
         pw.SizedBox(height: 10),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
-          // Sütun genişlikleri - sipariş bazlı olup olmadığına göre
-          columnWidths: isOrderBased ? const {
-            0: pw.FlexColumnWidth(1.5), // Barcode
-            1: pw.FlexColumnWidth(2), // Product Name
-            2: pw.FlexColumnWidth(1.0), // Ordered
-            3: pw.FlexColumnWidth(1.1), // Total Received
-            4: pw.FlexColumnWidth(1.0), // This Receipt
-            5: pw.FlexColumnWidth(1.2), // Expiry Date
-            6: pw.FlexColumnWidth(1.5), // Container
-          } : const {
-            0: pw.FlexColumnWidth(2), // Barcode
-            1: pw.FlexColumnWidth(2.5), // Product Name
-            2: pw.FlexColumnWidth(1.5), // Quantity
-            3: pw.FlexColumnWidth(1.5), // Expiry Date
-            4: pw.FlexColumnWidth(2), // Container
-          },
+          // Sütun genişlikleri - sipariş bazlı olup olmadığına ve mixed mode olup olmadığına göre
+          columnWidths: isOrderBased
+            ? (isMixedMode ? const {
+                0: pw.FlexColumnWidth(1.5), // Barcode
+                1: pw.FlexColumnWidth(2), // Product Name
+                2: pw.FlexColumnWidth(1.0), // Ordered
+                3: pw.FlexColumnWidth(1.1), // Total Received
+                4: pw.FlexColumnWidth(1.0), // This Receipt
+                5: pw.FlexColumnWidth(1.2), // Expiry Date
+                6: pw.FlexColumnWidth(1.5), // Container
+              } : const {
+                0: pw.FlexColumnWidth(1.8), // Barcode
+                1: pw.FlexColumnWidth(2.5), // Product Name
+                2: pw.FlexColumnWidth(1.0), // Ordered
+                3: pw.FlexColumnWidth(1.1), // Total Received
+                4: pw.FlexColumnWidth(1.0), // This Receipt
+                5: pw.FlexColumnWidth(1.6), // Expiry Date
+              })
+            : (isMixedMode ? const {
+                0: pw.FlexColumnWidth(2), // Barcode
+                1: pw.FlexColumnWidth(2.5), // Product Name
+                2: pw.FlexColumnWidth(1.5), // Quantity
+                3: pw.FlexColumnWidth(1.5), // Expiry Date
+                4: pw.FlexColumnWidth(2), // Container
+              } : const {
+                0: pw.FlexColumnWidth(2.5), // Barcode
+                1: pw.FlexColumnWidth(3), // Product Name
+                2: pw.FlexColumnWidth(1.5), // Quantity
+                3: pw.FlexColumnWidth(2), // Expiry Date
+              }),
           children: [
-            // Header row - sipariş bazlı olup olmadığına göre farklı
+            // Header row - sipariş bazlı olup olmadığına ve mixed mode olup olmadığına göre farklı
             if (isOrderBased)
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
@@ -789,7 +810,7 @@ class PdfService {
                   _buildTableCell('Total Received', boldFont, isHeader: true),
                   _buildTableCell('This Receipt', boldFont, isHeader: true),
                   _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                  _buildTableCell('Container', boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('Container', boldFont, isHeader: true),
                 ],
               )
             else
@@ -800,7 +821,7 @@ class PdfService {
                   _buildTableCell('Product Name', boldFont, isHeader: true),
                   _buildTableCell('Quantity', boldFont, isHeader: true),
                   _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                  _buildTableCell('Container', boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('Container', boldFont, isHeader: true),
                 ],
               ),
             ...items.map((item) {
@@ -844,7 +865,7 @@ class PdfService {
                     _buildTableCell(totalReceivedDisplay, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
                     _buildTableCell(expiryDisplay, font),
-                    _buildTableCell(containerDisplay, font),
+                    if (isMixedMode) _buildTableCell(containerDisplay, font),
                   ],
                 );
               } else {
@@ -857,12 +878,12 @@ class PdfService {
                     _buildTableCell(productNameAndCode, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
                     _buildTableCell(expiryDisplay, font),
-                    _buildTableCell(containerDisplay, font),
+                    if (isMixedMode) _buildTableCell(containerDisplay, font),
                   ],
                 );
               }
             }),
-            // Total row - sipariş bazlı olup olmadığına göre farklı
+            // Total row - sipariş bazlı olup olmadığına ve mixed mode olup olmadığına göre farklı
             if (isOrderBased)
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.blue50),
@@ -873,7 +894,7 @@ class PdfService {
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell('', boldFont, isHeader: true),
-                  _buildTableCell('', boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('', boldFont, isHeader: true),
                 ],
               )
             else
@@ -884,7 +905,7 @@ class PdfService {
                   _buildTableCell('TOTAL', boldFont, isHeader: true),
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell('', boldFont, isHeader: true),
-                  _buildTableCell('', boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('', boldFont, isHeader: true),
                 ],
               ),
           ],

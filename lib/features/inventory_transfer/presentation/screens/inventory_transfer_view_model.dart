@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -82,6 +83,19 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
   bool get isPutawayMode => _initialOrder != null;
   String? get deliveryNoteNumber => _deliveryNoteNumber;
+
+  /// Warehouse receiving mode'unu SharedPreferences'dan okur
+  Future<WarehouseReceivingMode> get warehouseReceivingMode async {
+    final prefs = await SharedPreferences.getInstance();
+    final receivingMode = prefs.getInt('receiving_mode') ?? 2; // Default: mixed
+    return WarehouseReceivingMode.fromValue(receivingMode);
+  }
+
+  /// UI'de mode selector'ü gösterilmeli mi kontrol eder
+  Future<bool> get shouldShowModeSelector async {
+    final warehouseMode = await warehouseReceivingMode;
+    return warehouseMode == WarehouseReceivingMode.mixed;
+  }
 
   void setDeliveryNote(String? deliveryNote) {
     _deliveryNoteNumber = deliveryNote;
@@ -302,8 +316,28 @@ class InventoryTransferViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void changeAssignmentMode(AssignmentMode newMode) {
+  void changeAssignmentMode(AssignmentMode newMode) async {
     if (_selectedMode == newMode) return;
+
+    // Check if the new mode is supported by the warehouse
+    final warehouseMode = await warehouseReceivingMode;
+
+    // AssignmentMode'u ReceivingMode'a dönüştür
+    final bool isNewModeSupported;
+    switch (newMode) {
+      case AssignmentMode.pallet:
+        isNewModeSupported = warehouseMode.isPaletEnabled;
+        break;
+      case AssignmentMode.product:
+      case AssignmentMode.productFromPallet:
+        isNewModeSupported = warehouseMode.isProductEnabled;
+        break;
+    }
+
+    if (!isNewModeSupported) {
+      return; // Don't change mode if not supported by warehouse
+    }
+
     _selectedMode = newMode;
     _resetContainerAndProducts();
     _loadContainers();

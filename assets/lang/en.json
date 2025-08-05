@@ -372,7 +372,7 @@
     "validator_delivery_note_number": "Please enter delivery note number.",
     "delivery_note_info_title": "Delivery Note Information",
     "mode_pallet": "Pallet",
-    "mode_box": "Product",
+    "mode_product": "Product",
     "label_source_location": "Source Location",
     "label_target_location": "Target Location",
     "label_pallet": "Pallet",
