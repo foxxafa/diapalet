@@ -2,7 +2,6 @@
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart'; // Backward compatibility
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
@@ -53,10 +52,13 @@ abstract class InventoryTransferRepository {
 
     /// @deprecated Use findProductByCodeAtLocation instead
     @Deprecated('Use findProductByCodeAtLocation instead')
-    Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
+    Future<ProductStockItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']});
 
     /// Serbest mal kabullerin delivery note numberlarını getirir
     Future<List<String>> getFreeReceiptDeliveryNotes();
+
+    /// Free receipt'lerin detaylı bilgilerini getirir (put-away için)
+    Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway();
 
     /// Belirli bir sipariş için palet ile kabul edilmiş ürün var mı kontrol eder
     Future<bool> hasOrderReceivedWithPallets(int orderId);

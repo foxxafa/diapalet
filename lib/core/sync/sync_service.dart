@@ -230,6 +230,8 @@ class SyncService with ChangeNotifier {
     debugPrint("   User ID: $userId");
     debugPrint("   Son sync timestamp: $lastSync");
     debugPrint("   Warehouse ID: $warehouseId");
+    debugPrint("   📱 Cihaz zamanı (UTC): ${DateTime.now().toUtc().toIso8601String()}");
+    debugPrint("   📱 Cihaz zamanı (Local): ${DateTime.now().toIso8601String()}");
 
     if (lastSync != null) {
       debugPrint("   📅 İnkremental sync yapılıyor (sadece değişenler)");
@@ -244,13 +246,28 @@ class SyncService with ChangeNotifier {
       final data = response.data['data'] as Map<String, dynamic>;
       final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
 
+      debugPrint("📥 Sunucudan gelen response:");
+      debugPrint("   🕐 Server timestamp: ${response.data['timestamp']}");
+      debugPrint("   📱 Yeni timestamp UTC: $newTimestamp");
+
       // Debug: Gelen veri miktarını göster
       debugPrint("📊 Sunucudan gelen veri miktarı:");
       data.forEach((tableName, tableData) {
         if (tableData is List) {
           debugPrint("   $tableName: ${tableData.length} kayıt");
+          if (tableData.isNotEmpty && tableName == 'products') {
+            final firstProduct = tableData.first;
+            debugPrint("   İlk ürün tarihi: ${firstProduct['updated_at'] ?? firstProduct['created_at']}");
+          }
         }
       });
+
+      if (data.isEmpty || data.values.every((list) => (list as List).isEmpty)) {
+        debugPrint("⚠️  Sunucudan hiç veri gelmedi!");
+        debugPrint("   📅 Sorguladığımız timestamp: $lastSync");
+        debugPrint("   🕐 Server'ın timestamp'i: ${response.data['timestamp']}");
+        debugPrint("   ❓ Muhtemel sorun: Timestamp formatı veya timezone farkı");
+      }
 
       // Processing stage
       _emitProgress(const SyncProgress(

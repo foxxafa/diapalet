@@ -5,6 +5,7 @@ import 'package:diapalet/features/inventory_transfer/presentation/screens/invent
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 class DeliveryNoteSelectionScreen extends StatefulWidget {
   const DeliveryNoteSelectionScreen({super.key});
@@ -15,9 +16,9 @@ class DeliveryNoteSelectionScreen extends StatefulWidget {
 
 class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScreen> {
   late InventoryTransferRepository _repo;
-  Future<List<String>>? _deliveryNotesFuture;
-  List<String> _allDeliveryNotes = [];
-  List<String> _filteredDeliveryNotes = [];
+  Future<List<Map<String, dynamic>>>? _deliveryNotesFuture;
+  List<Map<String, dynamic>> _allDeliveryNotes = [];
+  List<Map<String, dynamic>> _filteredDeliveryNotes = [];
   final _searchController = TextEditingController();
 
   @override
@@ -41,9 +42,9 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
     });
   }
 
-  Future<List<String>> _fetchDeliveryNotes() async {
+  Future<List<Map<String, dynamic>>> _fetchDeliveryNotes() async {
     try {
-      final notes = await _repo.getFreeReceiptDeliveryNotes();
+      final notes = await _repo.getFreeReceiptsForPutaway();
       if (mounted) {
         setState(() {
           _allDeliveryNotes = notes;
@@ -71,7 +72,9 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
     }
     setState(() {
       _filteredDeliveryNotes = _allDeliveryNotes.where((note) {
-        return note.toLowerCase().contains(query);
+        final deliveryNoteNumber = (note['delivery_note_number'] as String? ?? '').toLowerCase();
+        final employeeName = (note['employee_name'] as String? ?? '').toLowerCase();
+        return deliveryNoteNumber.contains(query) || employeeName.contains(query);
       }).toList();
     });
   }
@@ -99,7 +102,7 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
             ),
           ),
           Expanded(
-            child: FutureBuilder<List<String>>(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _deliveryNotesFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -118,18 +121,31 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                     itemCount: _filteredDeliveryNotes.length,
                     itemBuilder: (context, index) {
                       final deliveryNote = _filteredDeliveryNotes[index];
+                      final deliveryNoteNumber = deliveryNote['delivery_note_number'] as String? ?? '';
+                      final receiptDate = deliveryNote['receipt_date'] as String?;
+
+                      String formattedDate = '';
+                      if (receiptDate != null) {
+                        try {
+                          final date = DateTime.parse(receiptDate);
+                          formattedDate = DateFormat('dd.MM.yyyy').format(date);
+                        } catch (e) {
+                          formattedDate = 'Invalid Date';
+                        }
+                      }
+
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                         child: ListTile(
-                          title: Text(deliveryNote),
-                          subtitle: Text("delivery_note_selection.tap_to_continue".tr()),
+                          title: Text(deliveryNoteNumber),
+                          subtitle: Text(formattedDate.isNotEmpty ? formattedDate : 'delivery_note_selection.no_date'.tr()),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
                             final result = await Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => InventoryTransferScreen(
                                   isFreePutAway: true,
-                                  selectedDeliveryNote: deliveryNote,
+                                  selectedDeliveryNote: deliveryNoteNumber,
                                 ),
                               ),
                             );

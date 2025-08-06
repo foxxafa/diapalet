@@ -119,6 +119,19 @@ class DatabaseHelper {
       ''');
 
       batch.execute('''
+        CREATE TABLE IF NOT EXISTS tedarikci (
+          id INTEGER PRIMARY KEY,
+          tedarikci_kodu TEXT,
+          tedarikci_adi TEXT,
+          user INTEGER,
+          created_at TEXT,
+          updated_at TEXT,
+          _key TEXT,
+          Aktif INTEGER DEFAULT 1
+        )
+      ''');
+
+      batch.execute('''
         CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis (
           id INTEGER PRIMARY KEY,
           tarih TEXT,
@@ -273,7 +286,7 @@ class DatabaseHelper {
       'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
       'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
-      'wms_putaway_status'
+      'wms_putaway_status', 'tedarikci'
     ];
     await db.transaction((txn) async {
       for (final table in tables) {
@@ -387,6 +400,28 @@ class DatabaseHelper {
           }
         }
 
+        // ########## TEDARİKCİ İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('tedarikci')) {
+          final tedarikciData = List<Map<String, dynamic>>.from(data['tedarikci']);
+
+          for (final tedarikci in tedarikciData) {
+            final tedarikciId = tedarikci['id'];
+            final aktif = tedarikci['Aktif'];
+
+            if (aktif == 0) {
+              // Aktif olmayan tedarikçiyi sil
+              batch.delete('tedarikci', where: 'id = ?', whereArgs: [tedarikciId]);
+            } else {
+              // Aktif tedarikçiyi güncelle/ekle
+              final sanitizedTedarikci = _sanitizeRecord('tedarikci', tedarikci);
+              batch.insert('tedarikci', sanitizedTedarikci, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+
+            processedItems++;
+            updateProgress('tedarikci');
+          }
+        }
+
         // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
         if (data.containsKey('goods_receipts')) {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
@@ -486,7 +521,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir'];
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'tedarikci'];
         final skippedTables = ['warehouses']; // Kaldırılan tablolar
 
         for (var table in data.keys) {

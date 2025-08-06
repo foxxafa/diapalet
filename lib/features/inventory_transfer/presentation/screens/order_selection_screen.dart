@@ -140,7 +140,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                         child: ListTile(
                           title: Text(order.poId ?? 'common_labels.unknown_order'.tr()),
                           subtitle: Text(
-                            "${'orders.no_supplier'.tr()}\n"
+                            "${order.supplierName ?? 'orders.no_supplier'.tr()}\n"
                                 "${order.date != null ? DateFormat('dd.MM.yyyy').format(order.date!) : 'order_selection.no_date'.tr()}",
                           ),
                           isThreeLine: true,

@@ -383,6 +383,14 @@
     "confirm_button": "Onayla ve Kaydet",
     "scan_target_shelf": "Hedef Raf QR Tara"
   },
+  "delivery_note_selection": {
+    "title": "Yerleştirme İçin İrsaliye Seçin",
+    "search_hint": "İrsaliye Numarası Ara...",
+    "no_results": "Yerleştirme için uygun kabul bulunamadı.",
+    "error_loading": "İrsaliyeler yüklenirken hata: {error}",
+    "tap_to_continue": "Bu irsaliye ile devam etmek için dokunun",
+    "no_date": "Tarih Bilgisi Yok"
+  },
   "pdf_report": {
     "goods_receipt": {
       "title": "Mal Kabul Raporu",

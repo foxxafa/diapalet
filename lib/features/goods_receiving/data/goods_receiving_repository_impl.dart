@@ -203,21 +203,25 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         o.warehouse_code,
         o.status,
         o.created_at,
-        o.updated_at
+        o.updated_at,
+        t.tedarikci_adi as supplierName
       FROM satin_alma_siparis_fis o
+      LEFT JOIN satin_alma_siparis_fis_satir s ON s.siparis_id = o.id
+      LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
       WHERE o.status IN (0, 1)
         AND o.warehouse_code = ?
         AND EXISTS (
           SELECT 1
-          FROM satin_alma_siparis_fis_satir s
-          WHERE s.siparis_id = o.id
-            AND s.miktar > COALESCE((
+          FROM satin_alma_siparis_fis_satir s2
+          WHERE s2.siparis_id = o.id
+            AND s2.miktar > COALESCE((
               SELECT SUM(gri.quantity_received)
               FROM goods_receipt_items gri
               JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-              WHERE gr.siparis_id = o.id AND gri.urun_id = s.urun_id
+              WHERE gr.siparis_id = o.id AND gri.urun_id = s2.urun_id
             ), 0) + 0.001
         )
+      GROUP BY o.id, o.po_id, o.tarih, o.notlar, o.warehouse_code, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
     ''', [warehouseCode]);
 

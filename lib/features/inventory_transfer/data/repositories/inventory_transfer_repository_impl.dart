@@ -6,7 +6,6 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/box_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -119,54 +118,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
+  @Deprecated('Use getProductsAtLocation instead')
   Future<List<ProductStockItem>> getBoxesAtLocation(
     int? locationId, {
     List<String> stockStatuses = const ['available'],
     String? deliveryNoteNumber,
   }) async {
-    final db = await dbHelper.database;
-    final whereClauses = <String>[];
-    final whereArgs = <dynamic>[];
-
-    if (locationId == null) {
-      whereClauses.add('s.location_id IS NULL');
-    } else {
-      whereClauses.add('s.location_id = ?');
-      whereArgs.add(locationId);
-    }
-
-    if (stockStatuses.isNotEmpty) {
-      whereClauses.add('s.stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
-      whereArgs.addAll(stockStatuses);
-    }
-
-    // DÜZELTME: Eğer deliveryNoteNumber varsa, goods_receipts tablosuyla INNER JOIN yapmak daha güvenilirdir.
-    // Bu, stok kaydının kesinlikle geçerli bir mal kabule bağlı olmasını sağlar.
-    final joinClause = deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty
-        ? 'INNER JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id'
-        : '';
-
-    if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
-      whereClauses.add('gr.delivery_note_number = ?');
-      whereArgs.add(deliveryNoteNumber);
-    }
-
-    final query = '''
-      SELECT
-        u.UrunId as productId,
-        u.UrunAdi as productName,
-        u.StokKodu as productCode,
-        u.Barcode1 as barcode1,
-        SUM(s.quantity) as quantity
-      FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.UrunId
-      $joinClause
-      WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
-    ''';
-
-    final maps = await db.rawQuery(query, whereArgs);
-    return maps.map((map) => ProductStockItem.fromJson(map)).toList();
+    // Delegate to the new method
+    return getProductsAtLocation(locationId, stockStatuses: stockStatuses, deliveryNoteNumber: deliveryNoteNumber);
   }
 
   @override
@@ -424,12 +383,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final prefs = await SharedPreferences.getInstance();
     final warehouseCode = prefs.getString('warehouse_code');
 
-    final maps = await db.query(
-      'satin_alma_siparis_fis',
-      where: 'status IN (1, 2, 3) AND warehouse_code = ?',
-      whereArgs: [warehouseCode],
-      orderBy: 'tarih DESC',
-    );
+    final maps = await db.rawQuery('''
+      SELECT DISTINCT
+        o.id,
+        o.po_id,
+        o.tarih,
+        o.notlar,
+        o.warehouse_code,
+        o.status,
+        o.created_at,
+        o.updated_at,
+        t.tedarikci_adi as supplierName
+      FROM satin_alma_siparis_fis o
+      LEFT JOIN satin_alma_siparis_fis_satir s ON s.siparis_id = o.id
+      LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
+      WHERE o.status IN (1, 2, 3) AND o.warehouse_code = ?
+      GROUP BY o.id, o.po_id, o.tarih, o.notlar, o.warehouse_code, o.status, o.created_at, o.updated_at, t.tedarikci_adi
+      ORDER BY o.tarih DESC
+    ''', [warehouseCode]);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -578,49 +549,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<BoxItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
-    final db = await dbHelper.database;
-
-    final whereParts = <String>[];
-    final whereArgs = <dynamic>[];
-
-    if (locationId == null) {
-      whereParts.add('s.location_id IS NULL');
-    } else {
-      whereParts.add('s.location_id = ?');
-      whereArgs.add(locationId);
-    }
-
-    if (stockStatuses.isNotEmpty) {
-      whereParts.add('s.stock_status IN (${List.filled(stockStatuses.length, '?').join(',')})');
-      whereArgs.addAll(stockStatuses);
-    }
-
-    whereParts.add('(u.StokKodu = ? OR u.Barcode1 = ?)');
-    whereArgs.add(productCodeOrBarcode);
-    whereArgs.add(productCodeOrBarcode);
-
-    whereParts.add('s.pallet_barcode IS NULL');
-
-    final query = '''
-      SELECT
-        u.UrunId as productId,
-        u.UrunAdi as productName,
-        u.StokKodu as productCode,
-        u.Barcode1 as barcode1,
-        SUM(s.quantity) as quantity
-      FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.UrunId
-      WHERE ${whereParts.join(' AND ')}
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
-      LIMIT 1
-    ''';
-
-    final maps = await db.rawQuery(query, whereArgs);
-    if (maps.isNotEmpty) {
-      return BoxItem.fromJson(maps.first);
-    }
-    return null;
+  @Deprecated('Use findProductByCodeAtLocation instead')
+  Future<ProductStockItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
+    // Delegate to the new method
+    return findProductByCodeAtLocation(productCodeOrBarcode, locationId, stockStatuses: stockStatuses);
   }
 
   @override
@@ -799,6 +731,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final maps = await db.rawQuery(query);
     return maps.map((map) => map['delivery_note_number'] as String).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
+    return await dbHelper.getFreeReceiptsForPutaway();
   }
 
   @override

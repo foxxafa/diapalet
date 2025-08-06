@@ -620,33 +620,26 @@ class TerminalController extends Controller
     }
     $warehouseId = (int)$warehouseId;
 
-    // ########## TIMEZONE DÖNÜŞÜMÜ ##########
-    $syncTimestampForDb = null;
+    // ########## UTC TIMESTAMP KULLANIMI ##########
+    // Global kullanım için UTC timestamp'leri direkt karşılaştır
+    $serverSyncTimestamp = $lastSyncTimestamp; // UTC timestamp'i doğrudan kullan
     if ($lastSyncTimestamp) {
-        // UTC timestamp'i yerel saate dönüştür
-        $utcTime = new \DateTime($lastSyncTimestamp, new \DateTimeZone('UTC'));
-        $utcTime->setTimezone(new \DateTimeZone('Europe/Istanbul')); // Türkiye saati
-        $syncTimestampForDb = $utcTime->format('Y-m-d H:i:s');
-        Yii::info("UTC timestamp '$lastSyncTimestamp' yerel saate dönüştürüldü: '$syncTimestampForDb'", __METHOD__);
+        Yii::info("İnkremental sync: UTC timestamp '$lastSyncTimestamp' kullanılıyor", __METHOD__);
+    } else {
+        Yii::info("Full sync: Tüm veriler alınacak (ilk sync)", __METHOD__);
+    }
+    $serverSyncTimestamp = $lastSyncTimestamp; // UTC timestamp'i olduğu gibi kullan
+
+    if ($lastSyncTimestamp) {
+        Yii::info("İnkremental sync: UTC timestamp '$lastSyncTimestamp' kullanılıyor", __METHOD__);
+    } else {
+        Yii::info("Full sync: Tüm veriler alınacak (ilk sync)", __METHOD__);
     }
 
     try {
         $data = [];
 
-        // ########## TIMESTAMP TIMEZONE DÖNÜŞTÜRMESİ ##########
-        // Flutter'dan gelen UTC timestamp'i sunucu saat dilimine çevir
-        $serverSyncTimestamp = $lastSyncTimestamp;
-        if ($lastSyncTimestamp) {
-            try {
-                $utcTime = new \DateTime($lastSyncTimestamp, new \DateTimeZone('UTC'));
-                $serverTime = $utcTime->setTimezone(new \DateTimeZone('Europe/Istanbul'));
-                $serverSyncTimestamp = $serverTime->format('Y-m-d H:i:s');
-                Yii::info("Timestamp dönüştürüldü: UTC($lastSyncTimestamp) -> Server($serverSyncTimestamp)", __METHOD__);
-            } catch (\Exception $e) {
-                Yii::warning("Timestamp dönüştürme hatası: " . $e->getMessage(), __METHOD__);
-                $serverSyncTimestamp = $lastSyncTimestamp;
-            }
-        }
+        // Timestamp hazır, direkt kullan
 
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
         $urunlerQuery = (new Query())
@@ -656,7 +649,7 @@ class TerminalController extends Controller
         // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
         if ($serverSyncTimestamp) {
             $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki ürünler alınıyor.", __METHOD__);
+            Yii::info("İnkremental sync: $serverSyncTimestamp (UTC) tarihinden sonraki ürünler alınıyor.", __METHOD__);
         } else {
             // İlk sync ise tüm aktif ürünleri al
             Yii::info("Full sync: Tüm ürünler alınıyor (ilk sync).", __METHOD__);
@@ -668,6 +661,27 @@ class TerminalController extends Controller
 
         Yii::info("Ürün sync: " . count($urunlerData) . " ürün gönderiliyor.", __METHOD__);
         // ########## İNKREMENTAL SYNC BİTTİ ##########
+
+        // ########## TEDARİKÇİ İÇİN İNKREMENTAL SYNC ##########
+        $tedarikciQuery = (new Query())
+            ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
+            ->from('tedarikci');
+
+        // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen tedarikçileri al
+        if ($serverSyncTimestamp) {
+            $tedarikciQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki tedarikçiler alınıyor.", __METHOD__);
+        } else {
+            // İlk sync ise tüm tedarikçileri al
+            Yii::info("Full sync: Tüm tedarikçiler alınıyor (ilk sync).", __METHOD__);
+        }
+
+        $tedarikciData = $tedarikciQuery->all();
+        $this->castNumericValues($tedarikciData, ['id', 'Aktif']);
+        $data['tedarikci'] = $tedarikciData;
+
+        Yii::info("Tedarikçi sync: " . count($tedarikciData) . " tedarikçi gönderiliyor.", __METHOD__);
+        // ########## TEDARİKÇİ İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
         $shelfsQuery = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId]);
@@ -883,6 +897,7 @@ class TerminalController extends Controller
             'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z'),
             'stats' => [
                 'urunler_count' => count($data['urunler'] ?? []),
+                'tedarikci_count' => count($data['tedarikci'] ?? []),
                 'inventory_stock_count' => count($data['inventory_stock'] ?? []),
                 'inventory_transfers_count' => count($data['inventory_transfers'] ?? []),
                 'is_incremental' => !empty($lastSyncTimestamp),

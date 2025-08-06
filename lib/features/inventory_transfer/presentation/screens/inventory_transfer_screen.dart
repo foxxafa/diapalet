@@ -65,6 +65,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   String? _selectedTargetLocationName;
   final _targetLocationController = TextEditingController();
   final _targetLocationFocusNode = FocusNode();
+  bool _isTargetLocationValid = false;
+  bool _isSourceLocationValid = false;
 
   List<dynamic> _availableContainers = [];
   dynamic _selectedContainer;
@@ -85,6 +87,29 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _sourceLocationFocusNode.addListener(_onFocusChange);
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
+
+    // Target location controller listener to reset validity when text changes
+    _targetLocationController.addListener(() {
+      // Only reset validity if the controller is not being updated programmatically
+      // and the text is empty but validation was previously true
+      if (_targetLocationController.text.isEmpty &&
+          _isTargetLocationValid &&
+          _targetLocationFocusNode.hasFocus) {
+        setState(() => _isTargetLocationValid = false);
+      }
+    });
+
+    // Source location controller listener to reset validity when text changes
+    _sourceLocationController.addListener(() {
+      // Only reset validity if the controller is not being updated programmatically
+      // and the text is empty but validation was previously true
+      if (_sourceLocationController.text.isEmpty &&
+          _isSourceLocationValid &&
+          _sourceLocationFocusNode.hasFocus) {
+        setState(() => _isSourceLocationValid = false);
+      }
+    });
+
     _barcodeService = BarcodeIntentService();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -147,6 +172,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (widget.selectedOrder != null || widget.isFreePutAway) {
         _selectedSourceLocationName = '000';
         _sourceLocationController.text = '000';
+        _isSourceLocationValid = true; // Mark as valid for order/free putaway
         if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
           // FIX: Fetch the goods_receipt_id for the free receipt to use in the transfer payload.
           _goodsReceiptId = await _repo.getGoodsReceiptIdByDeliveryNote(widget.selectedDeliveryNote!);
@@ -246,11 +272,31 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           } else if (isValidTarget) {
             _handleTargetSelection(location.key);
           } else {
-            _showErrorSnackBar('inventory_transfer.error_invalid_location_for_operation'.tr(namedArgs: {'location': location.key, 'field': field}));
+            // Invalid for this operation: clear previous selection and mark invalid
+            if (field == 'source') {
+              _selectedSourceLocationName = null;
+              _sourceLocationController.text = cleanData;
+              setState(() => _isSourceLocationValid = false);
+              FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+            }
+            if (field == 'target') {
+              _selectedTargetLocationName = null;
+              _targetLocationController.text = cleanData;
+              setState(() => _isTargetLocationValid = false);
+              FocusScope.of(context).requestFocus(_targetLocationFocusNode);
+            }
+            _showErrorSnackBar('inventory_transfer.error_invalid_location_for_operation'
+              .tr(namedArgs: {'location': location.key, 'field': field}));
           }
         } else {
-          if (field == 'source') _sourceLocationController.clear();
-          if (field == 'target') _targetLocationController.clear();
+          if (field == 'source') {
+            _sourceLocationController.text = cleanData;
+            setState(() => _isSourceLocationValid = false);
+          }
+          if (field == 'target') {
+            _targetLocationController.text = cleanData;
+            setState(() => _isTargetLocationValid = false);
+          }
           _showErrorSnackBar('inventory_transfer.error_invalid_location_code'.tr(namedArgs: {'code': cleanData}));
         }
         break;
@@ -260,10 +306,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (_selectedMode == AssignmentMode.pallet) {
           foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
         } else {
-          // Product mode - search by product code or barcode in container items
+          // Product mode - search by barcode only (barcode1)
           foundItem = _availableContainers.where((container) {
             return container.items.any((item) =>
-              item.product.stockCode.toLowerCase() == cleanData.toLowerCase() ||
               (item.product.barcode1?.toLowerCase() == cleanData.toLowerCase()));
           }).firstOrNull;
         }
@@ -279,13 +324,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   void _handleSourceSelection(String? locationName) {
-    if (locationName == null || locationName == _selectedSourceLocationName) return;
+    if (locationName == null) return;
+    // Always apply selection to ensure validity is updated, even if same as before
     setState(() {
       _selectedSourceLocationName = locationName;
       _sourceLocationController.text = locationName;
+      _isSourceLocationValid = true; // Mark as valid when location is found
       _resetContainerAndProducts();
       _selectedTargetLocationName = null;
       _targetLocationController.clear();
+      _isTargetLocationValid = false; // Reset target validity when source changes
     });
     _loadContainersForLocation();
     _containerFocusNode.requestFocus();
@@ -308,6 +356,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() {
       _selectedTargetLocationName = locationName;
       _targetLocationController.text = locationName;
+      _isTargetLocationValid = true; // Mark as valid when location is found
     });
     FocusScope.of(context).unfocus();
   }
@@ -354,11 +403,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           deliveryNoteNumber: deliveryNoteNumber,
         );
       } else {
-        containers = await repo.getProductsAtLocation(
+        // DÜZELTME: Product mode için getTransferableContainers kullan
+        final transferableContainers = await repo.getTransferableContainers(
           isReceivingArea ? null : locationId,
-          stockStatuses: statusesToQuery,
+          orderId: widget.selectedOrder?.id,
           deliveryNoteNumber: deliveryNoteNumber,
         );
+        // Sadece palet olmayan container'ları filtrele
+        containers = transferableContainers.where((container) => !container.isPallet).toList();
       }
 
       if(mounted) {
@@ -547,11 +599,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _resetContainerAndProducts();
       _selectedTargetLocationName = null;
       _targetLocationController.clear();
+      _isTargetLocationValid = false;
 
       if (resetAll) {
         if (!widget.isFreePutAway && widget.selectedOrder == null) {
           _selectedSourceLocationName = null;
           _sourceLocationController.clear();
+          _isSourceLocationValid = false;
         }
       }
 
@@ -593,44 +647,78 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     _buildPalletOpeningSwitch(),
                     const SizedBox(height: _gap),
                   ],
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _sourceLocationController,
-                    focusNode: _sourceLocationFocusNode,
-                    label: 'inventory_transfer.label_source_location'.tr(),
-                    fieldIdentifier: 'source',
-                    items: _availableSourceLocations.keys.toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleSourceSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                    enabled: !(widget.selectedOrder != null || widget.isFreePutAway),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _sourceLocationController,
+                          focusNode: _sourceLocationFocusNode,
+                          enabled: !(widget.selectedOrder != null || widget.isFreePutAway),
+                          decoration: _inputDecoration(
+                            'inventory_transfer.label_source_location'.tr(),
+                            isValid: _isSourceLocationValid,
+                          ),
+                          validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                          onFieldSubmitted: (value) async {
+                            if (value.trim().isNotEmpty) {
+                              await _processScannedData('source', value.trim());
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: _smallGap),
+                      SizedBox(
+                        height: 56,
+                        child: !(widget.selectedOrder != null || widget.isFreePutAway) ? _QrButton(
+                          onTap: () async {
+                            final result = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                            );
+                            if (result != null && result.isNotEmpty) {
+                              await _processScannedData('source', result);
+                            }
+                          },
+                        ) : const SizedBox.shrink(),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: _gap),
-                  _buildHybridDropdownWithQr<dynamic>(
-                    controller: _scannedContainerIdController,
-                    focusNode: _containerFocusNode,
-                    label: _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
-                    fieldIdentifier: 'container',
-                    items: _availableContainers,
-                    itemToString: (item) {
-                      if (item is String) return item;
-                      if (item is TransferableContainer) return item.displayName;
-                      return '';
-                    },
-                    onItemSelected: _handleContainerSelection,
-                    filterCondition: (item, query) {
-                      final lowerQuery = query.toLowerCase();
-                      if (item is String) return item.toLowerCase().contains(lowerQuery);
-                      if (item is TransferableContainer) {
-                        return item.displayName.toLowerCase().contains(lowerQuery) ||
-                            item.items.any((transferableItem) =>
-                              transferableItem.product.name.toLowerCase().contains(lowerQuery) ||
-                              transferableItem.product.stockCode.toLowerCase().contains(lowerQuery) ||
-                              (transferableItem.product.barcode1?.toLowerCase().contains(lowerQuery) ?? false));
-                      }
-                      return false;
-                    },
-                    validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _scannedContainerIdController,
+                          focusNode: _containerFocusNode,
+                          decoration: _inputDecoration(
+                            _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr()
+                          ),
+                          validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                          onFieldSubmitted: (value) async {
+                            if (value.trim().isNotEmpty) {
+                              await _processScannedData('container', value.trim());
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: _smallGap),
+                      SizedBox(
+                        height: 56,
+                        child: _QrButton(
+                          onTap: () async {
+                            final result = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                            );
+                            if (result != null && result.isNotEmpty) {
+                              await _processScannedData('container', result);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: _gap),
                   if (_isLoadingContainerContents)
@@ -638,25 +726,47 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   else if (_productsInContainer.isNotEmpty)
                     _buildProductsList(),
                   const SizedBox(height: _gap),
-                  _buildHybridDropdownWithQr<String>(
-                    controller: _targetLocationController,
-                    focusNode: _targetLocationFocusNode,
-                    label: 'inventory_transfer.label_target_location'.tr(),
-                    fieldIdentifier: 'target',
-                    items: _availableTargetLocations.keys.where((location) {
-                      // Exclude the selected source location from target options
-                      return location != _selectedSourceLocationName;
-                    }).toList(),
-                    itemToString: (item) => item,
-                    onItemSelected: _handleTargetSelection,
-                    filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
-                      if (val == _sourceLocationController.text) {
-                        return 'inventory_transfer.validator_target_cannot_be_source'.tr();
-                      }
-                      return null;
-                    },
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _targetLocationController,
+                          focusNode: _targetLocationFocusNode,
+                          decoration: _inputDecoration(
+                            'inventory_transfer.label_target_location'.tr(),
+                            isValid: _isTargetLocationValid,
+                          ),
+                          validator: (val) {
+                            if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
+                            if (val == _sourceLocationController.text) {
+                              return 'inventory_transfer.validator_target_cannot_be_source'.tr();
+                            }
+                            return null;
+                          },
+                          onFieldSubmitted: (value) async {
+                            if (value.trim().isNotEmpty) {
+                              await _processScannedData('target', value.trim());
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: _smallGap),
+                      SizedBox(
+                        height: 56,
+                        child: _QrButton(
+                          onTap: () async {
+                            final result = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                            );
+                            if (result != null && result.isNotEmpty) {
+                              await _processScannedData('target', result);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: _gap),
                 ],
@@ -772,6 +882,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             setState(() {
               _selectedMode = newMode;
               _isPalletOpening = false;
+
+              // Clear all input fields and validity flags when switching between pallet/product modes
+              _sourceLocationController.clear();
+              _isSourceLocationValid = false;
+              _scannedContainerIdController.clear();
+              _clearProductControllers();
+              _productsInContainer.clear();
+              _targetLocationController.clear();
+              _isTargetLocationValid = false;
+
+              // Reset form state and load containers
               _resetForm(resetAll: false);
               if (_selectedSourceLocationName != null) {
                 _loadContainersForLocation();
@@ -829,69 +950,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  Widget _buildHybridDropdownWithQr<T>({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String fieldIdentifier,
-    required List<T> items,
-    required String Function(T item) itemToString,
-    required void Function(T? item) onItemSelected,
-    required bool Function(T item, String query) filterCondition,
-    required FormFieldValidator<String>? validator,
-    bool enabled = true,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextFormField(
-            readOnly: true,
-            enabled: enabled,
-            controller: controller,
-            focusNode: focusNode,
-            decoration: _inputDecoration(
-              label,
-              suffixIcon: const Icon(Icons.arrow_drop_down),
-            ),
-            onTap: enabled ? () async {
-              FocusScope.of(context).unfocus();
 
-              final T? selectedItem = await _showSearchableDropdownDialog<T>(
-                title: label,
-                items: items,
-                itemToString: itemToString,
-                filterCondition: filterCondition,
-              );
-              if (selectedItem != null) {
-                onItemSelected(selectedItem);
-              }
-            } : null,
-            validator: validator,
-          ),
-        ),
-        const SizedBox(width: _smallGap),
-        SizedBox(
-          height: 56,
-          child: enabled ? _QrButton(
-            onTap: () async {
-              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-              if (result != null && result.isNotEmpty) {
-                _processScannedData(fieldIdentifier, result);
-              }
-            },
-          ) : Container(
-            width: 56,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(12.0),
-            ),
-            child: const Icon(Icons.qr_code_scanner, color: Colors.grey),
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildProductsList() {
     return Container(
@@ -1001,15 +1060,19 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false}) {
     final theme = Theme.of(context);
+    final borderColor = isValid ? Colors.green : theme.dividerColor;
+    final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
+    final borderWidth = isValid ? 2.5 : 1.0; // Kalın yeşil border
+
     return InputDecoration(
       labelText: label,
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor)),
-      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: borderColor, width: borderWidth)),
+      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1019,29 +1082,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       suffixIcon: suffixIcon,
       errorStyle: const TextStyle(height: 0.8, fontSize: 11),
     );
-  }
-
-  Future<T?> _showSearchableDropdownDialog<T>({
-    required String title,
-    required List<T> items,
-    required String Function(T) itemToString,
-    required bool Function(T, String) filterCondition,
-  }) {
-    return Navigator.push<T>(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (context) => _InventorySearchPage<T>(
-          title: title,
-          items: items,
-          itemToString: itemToString,
-          filterCondition: filterCondition,
-        ),
-      ),
-    );
-  }
-
-  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
+  }  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -1090,91 +1131,6 @@ class _QrButton extends StatelessWidget {
             final iconSize = constraints.maxHeight * 0.6;
             return Icon(Icons.qr_code_scanner, size: iconSize);
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _InventorySearchPage<T> extends StatefulWidget {
-  final String title;
-  final List<T> items;
-  final String Function(T) itemToString;
-  final bool Function(T, String) filterCondition;
-
-  const _InventorySearchPage({
-    required this.title,
-    required this.items,
-    required this.itemToString,
-    required this.filterCondition,
-  });
-
-  @override
-  State<_InventorySearchPage<T>> createState() => _InventorySearchPageState<T>();
-}
-
-class _InventorySearchPageState<T> extends State<_InventorySearchPage<T>> {
-  String _searchQuery = '';
-  late List<T> _filteredItems;
-
-  @override
-  void initState() {
-    super.initState();
-    _filteredItems = widget.items;
-  }
-
-  void _filterItems(String query) {
-    setState(() {
-      _searchQuery = query;
-      _filteredItems = widget.items
-          .where((item) => widget.filterCondition(item, _searchQuery))
-          .toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title, style: theme.appBarTheme.titleTextStyle),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: <Widget>[
-            TextField(
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'inventory_transfer.dialog_search_hint'.tr(),
-                prefixIcon: const Icon(Icons.search, size: 20),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onChanged: _filterItems,
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _filteredItems.isEmpty
-                  ? Center(child: Text('inventory_transfer.dialog_search_no_results'.tr()))
-                  : ListView.separated(
-                separatorBuilder: (context, index) => const Divider(height: 1),
-                itemCount: _filteredItems.length,
-                itemBuilder: (context, index) {
-                  final item = _filteredItems[index];
-                  return ListTile(
-                    title: Text(widget.itemToString(item)),
-                    onTap: () => Navigator.of(context).pop(item),
-                  );
-                },
-              ),
-            ),
-          ],
         ),
       ),
     );
