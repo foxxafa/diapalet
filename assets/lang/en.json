@@ -236,7 +236,8 @@
       "error_message": "Failed to mark order as complete: {error}"
     },
     "title": "Purchase Orders",
-    "search_hint": "Search Purchase Orders...",
+  "search_hint": "Search Purchase Orders...",
+  "search_by_po": "Search by PO number...",
     "no_results": "No matching orders found.",
     "error_loading": "Failed to load orders: {error}",
     "no_supplier": "Unknown Supplier",
@@ -444,7 +445,7 @@
   },
   "order_selection": {
     "title": "Select Order for Put-away",
-    "search_hint": "Search by Order ID...",
+  "search_hint": "Search by order name...",
     "error_loading": "Error loading orders: {error}",
     "no_results": "No open orders found for putaway.",
     "order_date": "Date",

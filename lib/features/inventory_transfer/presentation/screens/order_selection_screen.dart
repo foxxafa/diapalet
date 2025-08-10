@@ -88,7 +88,9 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
     }
     setState(() {
       _filteredOrders = _allOrders.where((order) {
-        return (order.poId?.toLowerCase().contains(query) ?? false);
+        final name = order.supplierName?.toLowerCase() ?? '';
+        // Sadece sipariş adı (supplierName) ile arama
+        return name.contains(query);
       }).toList();
     });
   }
@@ -107,6 +109,7 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
+                // Arama placeholder'ı adı bazlı olduğunu yansıtsın
                 labelText: "order_selection.search_hint".tr(),
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(

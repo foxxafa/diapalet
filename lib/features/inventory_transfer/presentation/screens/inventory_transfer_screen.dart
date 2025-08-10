@@ -262,7 +262,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     switch (field) {
       case 'source':
       case 'target':
-        final location = await _repo.findLocationByCode(cleanData);
+  final location = await _repo.findLocationByCode(cleanData);
+  if (!mounted) return; // Async gap sonrası context kullanımı için güvenlik
         if (location != null) {
           final bool isValidSource = field == 'source' && _availableSourceLocations.containsKey(location.key);
           final bool isValidTarget = field == 'target' && _availableTargetLocations.containsKey(location.key);
@@ -944,7 +945,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           });
         } : null,
         secondary: const Icon(Icons.inventory_2_outlined),
-        activeThumbColor: Theme.of(context).colorScheme.primary,
+  // Flutter M3'te activeThumbColor kaldırıldı; yerine activeColor/thumbColor kullanılır.
+  activeColor: Theme.of(context).colorScheme.primary,
         shape: RoundedRectangleBorder(borderRadius: _borderRadius),
       ),
     );

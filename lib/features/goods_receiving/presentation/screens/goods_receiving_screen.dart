@@ -4,7 +4,6 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
-import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
@@ -108,17 +107,18 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             body: SafeArea(
               child: viewModel.isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : RawKeyboardListener(
-                      focusNode: FocusNode(),
-                      onKey: (RawKeyEvent event) {
-                        // F3 tuşu veya Ctrl+S kombinasyonu ile barkod okuma tetikle
-                        if (event is RawKeyDownEvent) {
-                          if (event.logicalKey == LogicalKeyboardKey.f3 ||
-                              (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyS)) {
-                            _triggerBarcodeScanning(viewModel);
-                          }
-                        }
-                      },
+                  : KeyboardListener(
+                          focusNode: FocusNode(),
+                          onKeyEvent: (KeyEvent event) {
+                            // F3 tuşu veya Ctrl+S kombinasyonu ile barkod okuma tetikle
+                            if (event is KeyDownEvent) {
+                              final isCtrl = HardwareKeyboard.instance.isControlPressed;
+                              if (event.logicalKey == LogicalKeyboardKey.f3 ||
+                                  (isCtrl && event.logicalKey == LogicalKeyboardKey.keyS)) {
+                                _triggerBarcodeScanning(viewModel);
+                              }
+                            }
+                          },
                       child: GestureDetector(
                       onTap: () => FocusScope.of(context).unfocus(),
                       child: SingleChildScrollView(
@@ -195,19 +195,21 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     await Future.delayed(const Duration(milliseconds: 100)); // Kısa bir gecikme
 
     if (viewModel.productFocusNode.hasFocus && viewModel.selectedProduct == null) {
-      final result = await Navigator.push<String>(
+  final result = await Navigator.push<String>(
         context,
         MaterialPageRoute(builder: (context) => const QrScannerScreen())
       );
-      if (result != null && result.isNotEmpty) {
+  if (!mounted) return;
+  if (result != null && result.isNotEmpty) {
         await viewModel.processScannedData('product', result);
       }
     } else if (viewModel.palletIdFocusNode.hasFocus && viewModel.palletIdController.text.isEmpty) {
-      final result = await Navigator.push<String>(
+  final result = await Navigator.push<String>(
         context,
         MaterialPageRoute(builder: (context) => const QrScannerScreen())
       );
-      if (result != null && result.isNotEmpty) {
+  if (!mounted) return;
+  if (result != null && result.isNotEmpty) {
         await viewModel.processScannedData('pallet', result);
       }
     }
@@ -314,6 +316,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                       context,
                       MaterialPageRoute(builder: (context) => const QrScannerScreen())
                     );
+                    if (!mounted) return;
                     if (result != null && result.isNotEmpty) {
                       await viewModel.processScannedData('product', result);
                     }
@@ -391,6 +394,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             } else {
               // Metin yoksa QR scanner'ı aç
               final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+              if (!mounted) return;
               if (result != null && result.isNotEmpty) {
                 await viewModel.processScannedData('pallet', result);
               }

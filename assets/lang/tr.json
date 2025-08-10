@@ -294,7 +294,8 @@
   },
   "orders": {
     "title": "Satınalma Siparişleri",
-    "search_hint": "Sipariş Ara...",
+  "search_hint": "Sipariş Ara...",
+  "search_by_po": "PO numarasına göre ara...",
     "no_results": "Uygun sipariş bulunamadı.",
     "error_loading": "Siparişler yüklenemedi: {error}",
     "no_supplier": "Tedarikçi Bilinmiyor",
@@ -325,7 +326,7 @@
   },
   "order_selection": {
     "title": "Transfer için Sipariş Seç",
-    "search_hint": "Sipariş Numarası veya Tedarikçi Ara...",
+  "search_hint": "Sipariş adına göre ara...",
     "no_results": "Transfer edilebilir sipariş bulunamadı.",
     "error_loading": "Siparişler yüklenemedi: {error}",
     "no_date": "Tarih Yok"

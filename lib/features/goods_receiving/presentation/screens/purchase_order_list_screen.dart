@@ -63,8 +63,8 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
     setState(() {
       _filteredOrders = _allOrders.where((order) {
         final poId = order.poId?.toLowerCase() ?? '';
-        final supplier = order.supplierName?.toLowerCase() ?? '';
-        return poId.contains(query) || supplier.contains(query);
+        // Sadece PO numarasına göre filtrele
+        return poId.contains(query);
       }).toList();
     });
   }
@@ -98,7 +98,7 @@ class _PurchaseOrderListScreenState extends State<PurchaseOrderListScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'orders.search_hint'.tr(),
+                hintText: 'orders.search_by_po'.tr(),
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 isDense: true,
