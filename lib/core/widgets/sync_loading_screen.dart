@@ -86,11 +86,11 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
 
       // "Tamamlandı" mesajını göster
       setState(() {
-        _currentProgress = const SyncProgress(
+        _currentProgress = SyncProgress(
           stage: SyncStage.completed,
           tableName: '',
           progress: 1.0,
-          message: 'Senkronizasyon tamamlandı ✓',
+          message: 'sync.loading_screen.progress_complete'.tr(),
         );
       });
 
