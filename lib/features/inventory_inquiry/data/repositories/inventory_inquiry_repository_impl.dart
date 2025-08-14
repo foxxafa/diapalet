@@ -1,5 +1,6 @@
 
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
@@ -38,8 +39,8 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
 
     // 1. Barkod, ürün adı veya stok koduna göre ürünü bul
     final productQuery = await db.query(
-      'urunler',
-      where: 'Barcode1 IN ($placeholders) OR UrunAdi IN ($placeholders) OR StokKodu IN ($placeholders)',
+      DbTables.products,
+      where: '${DbColumns.productsBarcode} IN ($placeholders) OR ${DbColumns.productsName} IN ($placeholders) OR ${DbColumns.productsCode} IN ($placeholders)',
       whereArgs: [...whereArgs, ...whereArgs, ...whereArgs],
       limit: 1,
     );
@@ -47,25 +48,25 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     if (productQuery.isEmpty) {
       return [];
     }
-    final productId = productQuery.first['UrunId'] as int;
+    final productId = productQuery.first[DbColumns.productsId] as int;
 
-    // 2. Ürün ID'sine göre stok lokasyonlarını bul
-    const sql = '''
+    // 2. Ürün lokasyonları - iş mantığına özel kompleks sorgu
+    final sql = '''
       SELECT
-        s.urun_id,
-        u.UrunAdi,
-        u.StokKodu,
-        s.quantity,
-        s.pallet_barcode,
-        s.expiry_date,
-        s.location_id,
-        sh.name as location_name,
-        sh.code as location_code
-      FROM inventory_stock s
-      JOIN urunler u ON u.UrunId = s.urun_id
-      LEFT JOIN shelfs sh ON sh.id = s.location_id
-      WHERE s.urun_id = ? AND s.stock_status = 'available'
-      ORDER BY s.expiry_date ASC, s.updated_at ASC
+        s.${DbColumns.stockProductId},
+        u.${DbColumns.productsName},
+        u.${DbColumns.productsCode},
+        s.${DbColumns.stockQuantity},
+        s.${DbColumns.stockPalletBarcode},
+        s.${DbColumns.stockExpiryDate},
+        s.${DbColumns.stockLocationId},
+        sh.${DbColumns.locationsName} as location_name,
+        sh.${DbColumns.locationsCode} as location_code
+      FROM ${DbTables.inventoryStock} s
+      JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.stockProductId}
+      LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+      WHERE s.${DbColumns.stockProductId} = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+      ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
     ''';
 
     final results = await db.rawQuery(sql, [productId]);

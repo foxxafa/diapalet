@@ -1,6 +1,7 @@
 // lib/features/auth/data/repositories/auth_repository_impl.dart
 import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
@@ -154,11 +155,11 @@ class AuthRepositoryImpl implements AuthRepository {
       final db = await dbHelper.database;
 
       // Employee bilgilerini al (warehouse bilgileri employees tablosunda mevcut)
-      const sql = '''
+      final sql = '''
         SELECT e.*, e.warehouse_code,
                COALESCE(e.warehouse_name, 'N/A') as warehouse_name
-        FROM employees e
-        WHERE e.username = ? AND e.password = ? AND e.is_active = 1
+        FROM ${DbTables.employees} e
+        WHERE e.${DbColumns.employeesUsername} = ? AND e.${DbColumns.employeesPassword} = ? AND e.${DbColumns.isActive} = 1
         LIMIT 1
       ''';
 

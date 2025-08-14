@@ -412,7 +412,7 @@ class TerminalController extends Controller
 
             // 6. Update putaway status for order-based operations
             if ($isPutawayOperation && $siparisId) {
-                 $orderLine = (new Query())->from('satin_alma_siparis_fis_satir')->where(['siparis_id' => $siparisId, 'urun_id' => $productId])->one($db);
+                 $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'urun_id' => $productId, 'turu' => '1'])->one($db);
                  if ($orderLine) {
                      $orderLineId = $orderLine['id'];
                      $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
@@ -522,14 +522,14 @@ class TerminalController extends Controller
         $sql = "
             SELECT
                 s.id,
-                s.miktar,
+                s.anamiktar,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
                  JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
                  WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id
                 ) as received_quantity
-            FROM satin_alma_siparis_fis_satir s
-            WHERE s.siparis_id = :siparis_id
+            FROM siparis_ayrintili s
+            WHERE s.siparisler_id = :siparis_id AND s.turu = '1'
         ";
         $lines = $db->createCommand($sql, [':siparis_id' => $siparisId])->queryAll();
 
@@ -539,7 +539,7 @@ class TerminalController extends Controller
         $anyLineReceived = false;
 
         foreach ($lines as $line) {
-            $ordered = (float)$line['miktar'];
+            $ordered = (float)$line['anamiktar'];
             $received = (float)$line['received_quantity'];
 
             if ($received > 0.001) {
@@ -558,9 +558,9 @@ class TerminalController extends Controller
         }
 
         if ($newStatus !== null) {
-            $currentStatus = (new Query())->select('status')->from('satin_alma_siparis_fis')->where(['id' => $siparisId])->scalar($db);
+            $currentStatus = (new Query())->select('status')->from('siparisler')->where(['id' => $siparisId])->scalar($db);
             if ($currentStatus != $newStatus) {
-                $db->createCommand()->update('satin_alma_siparis_fis', ['status' => $newStatus], ['id' => $siparisId])->execute();
+                $db->createCommand()->update('siparisler', ['status' => $newStatus], ['id' => $siparisId])->execute();
             }
         }
     }
@@ -570,17 +570,17 @@ class TerminalController extends Controller
 
         // Sipariş satırlarını ve yerleştirilmiş miktarları wms_putaway_status'tan al
         $orderLines = (new Query())
-            ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
-            ->from(['s' => 'satin_alma_siparis_fis_satir'])
+            ->select(['s.id', 's.anamiktar', 'w.putaway_quantity'])
+            ->from(['s' => 'siparis_ayrintili'])
             ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.purchase_order_line_id')
-            ->where(['s.siparis_id' => $siparisId])
+            ->where(['s.siparisler_id' => $siparisId, 's.turu' => '1'])
             ->all($db);
 
         if (empty($orderLines)) return;
 
         $allLinesCompleted = true;
         foreach ($orderLines as $line) {
-            $ordered = (float)$line['miktar'];
+            $ordered = (float)$line['anamiktar'];
             $putaway = (float)($line['putaway_quantity'] ?? 0);
             if ($putaway < $ordered - 0.001) { // Kayan nokta hataları için tolerans
                 $allLinesCompleted = false;
@@ -599,7 +599,7 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
         // Statü: 2 (Manuel Kapatıldı)
-        $count = $db->createCommand()->update('satin_alma_siparis_fis', ['status' => 2], ['id' => $siparisId])->execute();
+        $count = $db->createCommand()->update('siparisler', ['status' => 2], ['id' => $siparisId])->execute();
 
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];
@@ -728,22 +728,30 @@ class TerminalController extends Controller
 
         // ########## ROWHUB'A ÖZEL UYARLAMA BAŞLIYOR ##########
 
-        // 1. Gelen warehouseId'ye ait `warehouse_code`'u buluyoruz.
-        $warehouseCode = (new Query())
-            ->select('warehouse_code')
+        // 1. Gelen warehouseId'ye ait warehouse bilgilerini buluyoruz.
+        $warehouseInfo = (new Query())
+            ->select(['warehouse_code', 'name'])
             ->from('warehouses')
             ->where(['id' => $warehouseId])
-            ->scalar();
+            ->one();
 
-        if (!$warehouseCode) {
-            throw new \Exception("Warehouse ID $warehouseId için warehouse_code bulunamadı. Siparişler indirilemiyor.");
+        if (!$warehouseInfo) {
+            throw new \Exception("Warehouse ID $warehouseId bulunamadı. Siparişler indirilemiyor.");
         }
 
-        // 2. Siparişleri `branch_id` yerine `warehouse_code`'a göre arıyoruz.
+        $warehouseCode = $warehouseInfo['warehouse_code'];
+        $warehouseName = $warehouseInfo['name'];
+
+        // 2. Siparişleri warehouse name'e göre arıyoruz (geçici çözüm).
+        // Sadece gerekli alanları seç - minimal field selection
         $poQuery = (new Query())
-            ->from('satin_alma_siparis_fis')
-            ->where(['warehouse_code' => $warehouseCode])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]]); // Status 4,5 yok, 0,1,2,3 aktif durumlar
+            ->select([
+                'id', 'fisno', 'tarih', 'status', '__sourcedepoadi', 
+                'notlar', 'created_at', 'updated_at'
+            ])
+            ->from('siparisler')
+            ->where(['__sourcedepoadi' => $warehouseName])
+            ->andWhere(['in', 'status', [0, 1, 2, 3]]); // Aktif durumlar
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
@@ -753,34 +761,34 @@ class TerminalController extends Controller
             Yii::info("Full sync: Tüm siparişler alınıyor (ilk sync).", __METHOD__);
         }
 
-        $data['satin_alma_siparis_fis'] = $poQuery->all();
+        $data['siparisler'] = $poQuery->all();
         // ########## UYARLAMA BİTTİ ##########
 
-        Yii::info("Warehouse $warehouseId (Code: $warehouseCode) için " . count($data['satin_alma_siparis_fis']) . " adet sipariş bulundu.", __METHOD__);
+        Yii::info("Warehouse $warehouseId (Name: $warehouseName, Code: $warehouseCode) için " . count($data['siparisler']) . " adet sipariş bulundu.", __METHOD__);
 
-        $this->castNumericValues($data['satin_alma_siparis_fis'], ['id', 'status']); // `branch_id` artık bu tabloda olmadığı için cast'ten çıkarıldı.
+        $this->castNumericValues($data['siparisler'], ['id', 'status']); // `branch_id` artık bu tabloda olmadığı için cast'ten çıkarıldı.
 
         // Fonksiyonun geri kalanı aynı, çünkü diğer tablolarımız zaten uyumlu.
-        $poIds = array_column($data['satin_alma_siparis_fis'], 'id');
+        $poIds = array_column($data['siparisler'], 'id');
 
-        $data['satin_alma_siparis_fis_satir'] = [];
+        $data['siparis_ayrintili'] = [];
         $data['wms_putaway_status'] = [];
         $data['goods_receipts'] = [];
         $data['goods_receipt_items'] = [];
 
         if (!empty($poIds)) {
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
-            $poLineQuery = (new Query())->from('satin_alma_siparis_fis_satir')->where(['in', 'siparis_id', $poIds]);
+            $poLineQuery = (new Query())->from('siparis_ayrintili')->where(['in', 'siparisler_id', $poIds, 'turu' => '1']);
             if ($serverSyncTimestamp) {
                 $poLineQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
                 Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki sipariş kalemleri alınıyor.", __METHOD__);
             } else {
                 Yii::info("Full sync: Tüm sipariş kalemleri alınıyor (ilk sync).", __METHOD__);
             }
-            $data['satin_alma_siparis_fis_satir'] = $poLineQuery->all();
-            $this->castNumericValues($data['satin_alma_siparis_fis_satir'], ['id', 'siparis_id', 'urun_id'], ['miktar']);
+            $data['siparis_ayrintili'] = $poLineQuery->all();
+            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'urun_id', 'status'], ['anamiktar']);
 
-            $poLineIds = array_column($data['satin_alma_siparis_fis_satir'], 'id');
+            $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {
                 // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
                 $putawayQuery = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds]);

@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -27,13 +28,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<Map<String, int?>> getSourceLocations({bool includeReceivingArea = true}) async {
     final db = await dbHelper.database;
 
-    // Sadece stokta ürün bulunan lokasyonları getir
-    const query = '''
-      SELECT DISTINCT s.id, s.name
-      FROM shelfs s
-      INNER JOIN inventory_stock i ON s.id = i.location_id
-      WHERE s.is_active = 1 AND i.stock_status = 'available' AND i.quantity > 0
-      ORDER BY s.name
+    // Stoklu lokasyonları getir - iş mantığına özel kompleks sorgu
+    final query = '''
+      SELECT DISTINCT s.${DbColumns.id}, s.${DbColumns.locationsName}
+      FROM ${DbTables.locations} s
+      INNER JOIN inventory_stock i ON s.${DbColumns.id} = i.${DbColumns.stockLocationId}
+      WHERE s.${DbColumns.isActive} = 1 AND i.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}' AND i.${DbColumns.stockQuantity} > 0
+      ORDER BY s.${DbColumns.locationsName}
     ''';
 
     final maps = await db.rawQuery(query);
@@ -42,9 +43,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (includeReceivingArea) {
       // Mal kabul alanında stok var mı kontrol et
       final receivingStockQuery = await db.query(
-        'inventory_stock',
-        where: 'location_id IS NULL AND stock_status = ? AND quantity > 0',
-        whereArgs: ['receiving']
+        DbTables.inventoryStock,
+        where: '${DbColumns.stockLocationId} IS NULL AND ${DbColumns.stockStatus} = ? AND ${DbColumns.stockQuantity} > 0',
+        whereArgs: [DbColumns.stockStatusReceiving]
       );
       if (receivingStockQuery.isNotEmpty) {
         result['000'] = null; // Artık direkt null kullanıyoruz
@@ -52,7 +53,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     for (var map in maps) {
-      result[map['name'] as String] = map['id'] as int;
+      result[map[DbColumns.locationsName] as String] = map[DbColumns.id] as int;
     }
     return result;
   }
@@ -60,7 +61,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<Map<String, int?>> getTargetLocations({bool excludeReceivingArea = false}) async {
     final db = await dbHelper.database;
-    final maps = await db.query('shelfs', where: 'is_active = 1');
+    final maps = await db.query(DbTables.locations, where: '${DbColumns.isActive} = 1');
     final result = <String, int?>{};
 
     if (!excludeReceivingArea) {
@@ -68,7 +69,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     for (var map in maps) {
-      result[map['name'] as String] = map['id'] as int;
+      result[map[DbColumns.locationsName] as String] = map[DbColumns.id] as int;
     }
     return result;
   }
@@ -302,7 +303,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             expiryDateForAddition: item.expiryDate,
           );
 
-          await txn.insert('inventory_transfers', {
+          await txn.insert(DbTables.inventoryTransfers, {
             'urun_id': item.productId,
             'from_location_id': sourceLocationId, // Artık null ise null kalıyor
             'to_location_id': targetLocationId,
@@ -315,10 +316,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
           if (sourceLocationId == null && header.siparisId != null) {
             final orderLine = await txn.query(
-              'satin_alma_siparis_fis_satir',
+              DbTables.orderLines,
               columns: ['id'],
-              where: 'siparis_id = ? AND urun_id = ?',
-              whereArgs: [header.siparisId, item.productId],
+              where: 'siparisler_id = ? AND urun_id = ? AND turu = ?',
+              whereArgs: [header.siparisId, item.productId, '1'],
               limit: 1,
             );
             if (orderLine.isNotEmpty) {
@@ -339,20 +340,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         String? poId;
         if (header.siparisId != null) {
           final maps = await txn.query(
-            'satin_alma_siparis_fis',
-            columns: ['po_id'],
+            DbTables.orders,
+            columns: ['fisno'],
             where: 'id = ?',
             whereArgs: [header.siparisId],
             limit: 1,
           );
           if (maps.isNotEmpty) {
-            poId = maps.first['po_id'] as String?;
+            poId = maps.first['fisno'] as String?;
           }
         }
 
         final headerJson = header.toApiJson(sourceLocationId ?? 0, targetLocationId);
         if (poId != null) {
-          headerJson['po_id'] = poId;
+          headerJson['fisno'] = poId;
         }
 
         final pendingOp = PendingOperation(
@@ -365,7 +366,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           createdAt: DateTime.now(),
         );
 
-        await txn.insert('pending_operation', pendingOp.toDbMap());
+        await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
 
         if (header.siparisId != null) {
           await checkAndCompletePutaway(header.siparisId!, txn: txn);
@@ -383,24 +384,44 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final prefs = await SharedPreferences.getInstance();
     final warehouseCode = prefs.getString('warehouse_code');
 
+    // Get warehouse name from warehouse code using warehouses table
+    String? warehouseName;
+    if (warehouseCode != null) {
+      final warehouseQuery = await db.query(
+        DbTables.warehouses,
+        columns: ['name'],
+        where: 'warehouse_code = ?',
+        whereArgs: [warehouseCode],
+        limit: 1,
+      );
+      if (warehouseQuery.isNotEmpty) {
+        warehouseName = warehouseQuery.first['name'] as String?;
+      }
+    }
+    
+    // If warehouse not found, don't filter by warehouse (temporary solution)
+    if (warehouseName == null) {
+      debugPrint("WARNING: Warehouse name not found for code $warehouseCode, getting all orders");
+    }
+
     final maps = await db.rawQuery('''
       SELECT DISTINCT
         o.id,
-        o.po_id,
+        o.fisno,
         o.tarih,
         o.notlar,
-        o.warehouse_code,
+        o.__sourcedepoadi as warehouse_name,
         o.status,
         o.created_at,
         o.updated_at,
         t.tedarikci_adi as supplierName
-      FROM satin_alma_siparis_fis o
-      LEFT JOIN satin_alma_siparis_fis_satir s ON s.siparis_id = o.id
+      FROM siparisler o
+      LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
-      WHERE o.status IN (1, 2, 3) AND o.warehouse_code = ?
-      GROUP BY o.id, o.po_id, o.tarih, o.notlar, o.warehouse_code, o.status, o.created_at, o.updated_at, t.tedarikci_adi
+      WHERE o.status IN (1, 2, 3) AND (? IS NULL OR o.__sourcedepoadi = ?)
+      GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.__sourcedepoadi, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
-    ''', [warehouseCode]);
+    ''', [warehouseName, warehouseName]);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 
@@ -414,22 +435,22 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (isPutaway) {
       if (orderId != null) {
         // Order-based putaway
-        stockMaps = await db.query('inventory_stock', where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
       } else if (deliveryNoteNumber != null) {
         // Free receipt putaway - find stocks by delivery note
         final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
         if (goodsReceiptId == null) {
           return [];
         }
-        stockMaps = await db.query('inventory_stock', where: 'goods_receipt_id = ? AND stock_status = ?', whereArgs: [goodsReceiptId, 'receiving']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ?', whereArgs: [goodsReceiptId, 'receiving']);
       } else {
         stockMaps = [];
       }
     } else {
       if (locationId == null) {
-        stockMaps = await db.query('inventory_stock', where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);
       } else {
-        stockMaps = await db.query('inventory_stock', where: 'location_id = ? AND stock_status = ?', whereArgs: [locationId, 'available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ?', whereArgs: [locationId, 'available']);
       }
     }
 
@@ -438,7 +459,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final productIds = stockMaps.map((e) => e['urun_id'] as int).toSet();
-    final productsQuery = await db.query('urunler', where: 'UrunId IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
+    final productsQuery = await db.query(DbTables.products, where: 'UrunId IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
     final productDetails = {for (var p in productsQuery) p['UrunId'] as int: ProductInfo.fromDbMap(p)};
 
     final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
@@ -660,15 +681,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         if (currentQty >= remainingToDecrement) {
           final newQty = currentQty - remainingToDecrement;
           if (newQty > 0.001) {
-            await txn.update('inventory_stock', {'quantity': newQty}, where: 'id = ?', whereArgs: [stockId]);
+            await txn.update(DbTables.inventoryStock, {'quantity': newQty}, where: 'id = ?', whereArgs: [stockId]);
           } else {
-            await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stockId]);
+            await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
           }
           remainingToDecrement = 0;
           break;
         } else {
           remainingToDecrement -= currentQty;
-          await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [stockId]);
+          await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
         }
       }
 
@@ -698,7 +719,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           whereArgs: [existing.first['id']],
         );
       } else {
-        await txn.insert('inventory_stock', {
+        await txn.insert(DbTables.inventoryStock, {
           'urun_id': productId,
           'location_id': locationId, // Artık null ise null kalıyor
           'quantity': quantityChange,

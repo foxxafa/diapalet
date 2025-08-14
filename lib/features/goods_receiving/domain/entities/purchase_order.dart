@@ -5,7 +5,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 @immutable
 class PurchaseOrder {
   final int id;
-  final String? poId; // Purchase Order ID
+  final String? poId; // Purchase Order ID (fisno)
   final DateTime? date;
   final String? notes;
   final int? status;
@@ -26,7 +26,7 @@ class PurchaseOrder {
   factory PurchaseOrder.fromMap(Map<String, dynamic> map) {
     return PurchaseOrder(
       id: map['id'] as int,
-      poId: map['po_id'] as String?,
+      poId: map['fisno'] as String?,
       date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
       notes: map['notlar'] as String?,
       // ANA DÜZELTME: Sunucudan gelen `status` alanı burada doğru bir şekilde okunuyor.

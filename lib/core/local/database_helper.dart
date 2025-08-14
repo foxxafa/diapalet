@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
+import 'package:diapalet/core/local/database_constants.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,13 +15,13 @@ class DatabaseHelper {
       // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
       // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
       // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
-      // GÜNCELLEME: satin_alma_siparis_fis tablosunda branch_id -> warehouse_code değişikliği
+      // GÜNCELLEME: siparisler tablosunda branch_id -> warehouse_code değişikliği
       // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, goods_receipts, goods_receipt_items)
       // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
       // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
       // GÜNCELLEME: inventory_transfers için incremental sync eklendi
       // GÜNCELLEME: urunler tablosuna created_at ve updated_at alanları eklendi (incremental sync için)
-      static const _databaseVersion = 41;
+      static const _databaseVersion = 43;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -132,7 +133,7 @@ class DatabaseHelper {
       ''');
 
       batch.execute('''
-        CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis (
+        CREATE TABLE IF NOT EXISTS siparisler (
           id INTEGER PRIMARY KEY,
           tarih TEXT,
           notlar TEXT,
@@ -141,19 +142,28 @@ class DatabaseHelper {
           updated_at TEXT,
           gun INTEGER DEFAULT 0,
           warehouse_code TEXT,
+          __sourcedepoadi TEXT,
           invoice TEXT,
           delivery INTEGER,
           po_id TEXT,
-          status INTEGER DEFAULT 0
+          status INTEGER DEFAULT 0,
+          fisno TEXT,
+          depokodu TEXT,
+          subekodu TEXT,
+          onay TEXT,
+          siparisdurum TEXT,
+          kullaniciadi TEXT,
+          turu TEXT
         )
       ''');
 
       batch.execute('''
-        CREATE TABLE IF NOT EXISTS satin_alma_siparis_fis_satir (
+        CREATE TABLE IF NOT EXISTS siparis_ayrintili (
           id INTEGER PRIMARY KEY,
-          siparis_id INTEGER,
+          siparisler_id INTEGER,
           urun_id INTEGER,
-          StokKodu TEXT,
+          kartkodu TEXT,
+          anamiktar REAL,
           miktar REAL,
           ort_son_30 INTEGER,
           ort_son_60 INTEGER,
@@ -161,6 +171,7 @@ class DatabaseHelper {
           tedarikci_id INTEGER,
           tedarikci_fis_id INTEGER,
           invoice TEXT,
+          anabirimi TEXT,
           birim TEXT,
           layer INTEGER,
           notes TEXT,
@@ -173,7 +184,8 @@ class DatabaseHelper {
           son_21_gun REAL,
           son_1_ay REAL,
           son_2_ay REAL,
-          son_3_ay REAL
+          son_3_ay REAL,
+          turu TEXT
         )
       ''');
 
@@ -238,7 +250,7 @@ class DatabaseHelper {
           UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
           FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
           FOREIGN KEY(location_id) REFERENCES shelfs(id),
-          FOREIGN KEY(siparis_id) REFERENCES satin_alma_siparis_fis(id),
+          FOREIGN KEY(siparis_id) REFERENCES siparisler(id),
           FOREIGN KEY(goods_receipt_id) REFERENCES goods_receipts(goods_receipt_id)
         )
       ''');
@@ -249,8 +261,8 @@ class DatabaseHelper {
 
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON satin_alma_siparis_fis_satir(siparis_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON satin_alma_siparis_fis_satir(urun_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON siparis_ayrintili(siparisler_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_id)');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
@@ -284,7 +296,7 @@ class DatabaseHelper {
   Future<void> _dropAllTables(Database db) async {
     const tables = [
       'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
-      'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'goods_receipts',
+      'siparisler', 'siparis_ayrintili', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status', 'tedarikci'
     ];
@@ -342,11 +354,11 @@ class DatabaseHelper {
 
             if (aktif == 0) {
               // Silinmiş ürün: local'den sil
-              batch.delete('urunler', where: 'id = ?', whereArgs: [urunId]);
+              batch.delete(DbTables.products, where: 'id = ?', whereArgs: [urunId]);
             } else {
               // Aktif ürün: güncelle veya ekle
               final sanitizedRecord = _sanitizeRecord('urunler', urun);
-              batch.insert('urunler', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+              batch.insert(DbTables.products, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
             }
 
             processedItems++;
@@ -364,11 +376,11 @@ class DatabaseHelper {
 
             if (isActive == 0) {
               // Aktif olmayan rafı sil
-              batch.delete('shelfs', where: 'id = ?', whereArgs: [shelfId]);
+              batch.delete(DbTables.locations, where: 'id = ?', whereArgs: [shelfId]);
             } else {
               // Aktif rafı güncelle/ekle
               final sanitizedShelf = _sanitizeRecord('shelfs', shelf);
-              batch.insert('shelfs', sanitizedShelf, conflictAlgorithm: ConflictAlgorithm.replace);
+              batch.insert(DbTables.locations, sanitizedShelf, conflictAlgorithm: ConflictAlgorithm.replace);
             }
 
             processedItems++;
@@ -388,11 +400,11 @@ class DatabaseHelper {
 
             if (isActive == 0) {
               // Aktif olmayan çalışanı sil
-              batch.delete('employees', where: 'id = ?', whereArgs: [employeeId]);
+              batch.delete(DbTables.employees, where: 'id = ?', whereArgs: [employeeId]);
             } else {
               // Aktif çalışanı güncelle/ekle
               final sanitizedEmployee = _sanitizeRecord('employees', employee);
-              batch.insert('employees', sanitizedEmployee, conflictAlgorithm: ConflictAlgorithm.replace);
+              batch.insert(DbTables.employees, sanitizedEmployee, conflictAlgorithm: ConflictAlgorithm.replace);
             }
 
             processedItems++;
@@ -482,34 +494,37 @@ class DatabaseHelper {
           }
         }
 
-        // ########## SATIN ALMA SİPARİŞ FİŞ İÇİN İNKREMENTAL SYNC ##########
-        if (data.containsKey('satin_alma_siparis_fis')) {
-          final siparislerData = List<Map<String, dynamic>>.from(data['satin_alma_siparis_fis']);
+        // ########## SİPARİŞLER İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('siparisler')) {
+          final siparislerData = List<Map<String, dynamic>>.from(data['siparisler']);
           for (final siparis in siparislerData) {
-            final sanitizedSiparis = _sanitizeRecord('satin_alma_siparis_fis', siparis);
-            batch.insert('satin_alma_siparis_fis', sanitizedSiparis, conflictAlgorithm: ConflictAlgorithm.replace);
+            final sanitizedSiparis = _sanitizeRecord('siparisler', siparis);
+            batch.insert(DbTables.orders, sanitizedSiparis, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
-            updateProgress('satin_alma_siparis_fis');
+            updateProgress('siparisler');
           }
         }
 
-        // ########## SATIN ALMA SİPARİŞ FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
-        if (data.containsKey('satin_alma_siparis_fis_satir')) {
-          final satirlarData = List<Map<String, dynamic>>.from(data['satin_alma_siparis_fis_satir']);
+        // ########## SİPARİŞ AYRINTILI İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('siparis_ayrintili')) {
+          final satirlarData = List<Map<String, dynamic>>.from(data['siparis_ayrintili']);
           for (final satir in satirlarData) {
-            final sanitizedSatir = _sanitizeRecord('satin_alma_siparis_fis_satir', satir);
-            batch.insert('satin_alma_siparis_fis_satir', sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
+            // Sadece turu = '1' olanları kabul et
+            if (satir['turu'] == '1' || satir['turu'] == 1) {
+              final sanitizedSatir = _sanitizeRecord('siparis_ayrintili', satir);
+              batch.insert(DbTables.orderLines, sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
 
-            processedItems++;
-            updateProgress('satin_alma_siparis_fis_satir');
+              processedItems++;
+              updateProgress('siparis_ayrintili');
+            }
           }
         }
 
         // Diğer tablolar için eski mantık (full replacement)
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
-          // 'satin_alma_siparis_fis_satir', 'satin_alma_siparis_fis' artık incremental olarak işleniyor
+          // 'siparis_ayrintili', 'siparisler' artık incremental olarak işleniyor
           // 'urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
         ];
 
@@ -521,8 +536,8 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'satin_alma_siparis_fis', 'satin_alma_siparis_fis_satir', 'tedarikci'];
-        final skippedTables = ['warehouses']; // Kaldırılan tablolar
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci', 'warehouses'];
+        final skippedTables = []; // Kaldırılan tablolar
 
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
@@ -567,6 +582,50 @@ class DatabaseHelper {
           newRecord.remove('id');
         }
         break;
+        
+      case 'siparisler':
+        // Map server fields to local schema - only keep fields that exist in local table
+        final localRecord = <String, dynamic>{};
+        
+        // Local table columns based on CREATE TABLE statement
+        final localColumns = [
+          'id', 'tarih', 'notlar', 'user', 'created_at', 'updated_at', 
+          'gun', 'warehouse_code', '__sourcedepoadi', 'invoice', 'delivery', 'po_id', 
+          'status', 'fisno', 'depokodu', 'subekodu', 'onay', 
+          'siparisdurum', 'kullaniciadi', 'turu'
+        ];
+        
+        // Copy only existing local columns
+        for (String column in localColumns) {
+          if (newRecord.containsKey(column)) {
+            localRecord[column] = newRecord[column];
+          }
+        }
+        
+        // Map specific server fields to local fields
+        if (newRecord.containsKey('_user')) {
+          localRecord['user'] = newRecord['_user'];
+        }
+        
+        return localRecord;
+
+      case 'siparis_ayrintili':
+        // Only keep fields that exist in local schema
+        final localRecord = <String, dynamic>{};
+        final localColumns = [
+          'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
+          'birimfiyat', 'tutaranamiktar', 'tutar', 'kdvoran', 'kdvtutar',
+          'tedarikci_id', 'tedarikci_kodu', 'tedarikci_adi', 'created_at',
+          'updated_at', 'status', 'turu'
+        ];
+        
+        for (String column in localColumns) {
+          if (newRecord.containsKey(column)) {
+            localRecord[column] = newRecord[column];
+          }
+        }
+        
+        return localRecord;
     }
 
     // SQLite will automatically ignore unknown columns during INSERT
@@ -579,13 +638,13 @@ class DatabaseHelper {
   Future<String?> getPoIdBySiparisId(int siparisId) async {
     final db = await database;
     final result = await db.query(
-      'satin_alma_siparis_fis',
-      columns: ['po_id'],
+      'siparisler',
+      columns: ['fisno'],
       where: 'id = ?',
       whereArgs: [siparisId],
       limit: 1,
     );
-    return result.isNotEmpty ? result.first['po_id'] as String? : null;
+    return result.isNotEmpty ? result.first['fisno'] as String? : null;
   }
 
 
@@ -629,7 +688,7 @@ class DatabaseHelper {
     final db = await database;
 
     final order = await db.query(
-      'satin_alma_siparis_fis',
+      'siparisler',
       where: 'id = ?',
       whereArgs: [siparisId],
       limit: 1,
@@ -639,16 +698,16 @@ class DatabaseHelper {
 
     const sql = '''
       SELECT
-        sol.id,
-        sol.urun_id,
-        sol.miktar as ordered_quantity,
+        sa.id,
+        sa.urun_id,
+        sa.anamiktar as ordered_quantity,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         u.Barcode1 as product_barcode,
         COALESCE(received.total_received, 0) as received_quantity,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
-      FROM satin_alma_siparis_fis_satir sol
-      LEFT JOIN urunler u ON u.UrunId = sol.urun_id
+      FROM siparis_ayrintili sa
+      LEFT JOIN urunler u ON u.UrunId = sa.urun_id
       LEFT JOIN (
         SELECT
           gri.urun_id,
@@ -657,9 +716,9 @@ class DatabaseHelper {
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_id
-      ) received ON received.urun_id = sol.urun_id
-      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sol.id
-      WHERE sol.siparis_id = ?
+      ) received ON received.urun_id = sa.urun_id
+      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
+      WHERE sa.siparisler_id = ? AND sa.turu = '1'
     ''';
 
     final lines = await db.rawQuery(sql, [siparisId, siparisId]);
@@ -688,14 +747,14 @@ class DatabaseHelper {
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         u.Barcode1 as product_barcode,
-        sol.miktar as ordered_quantity,
+        sa.anamiktar as ordered_quantity,
         sol.birim as unit,
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-      LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
+      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_id = gri.urun_id
       LEFT JOIN (
         SELECT
           gri2.urun_id,
@@ -789,14 +848,14 @@ class DatabaseHelper {
         emp.username as employee_username,
         emp.warehouse_id as employee_warehouse_id,
         emp.role as employee_role,
-        po.po_id,
+        po.fisno,
         po.tarih as order_date,
         po.notlar as order_notes,
         po.status as order_status,
         po.warehouse_code as order_warehouse_code
       FROM goods_receipts gr
       LEFT JOIN employees emp ON emp.id = gr.employee_id
-      LEFT JOIN satin_alma_siparis_fis po ON po.id = gr.siparis_id
+      LEFT JOIN siparisler po ON po.id = gr.siparis_id
       WHERE gr.goods_receipt_id = ?
     ''';
 
@@ -815,14 +874,14 @@ class DatabaseHelper {
         u.Barcode1 as product_barcode,
         u.Birim1 as product_unit,
         u.qty as product_box_qty,
-        sol.miktar as ordered_quantity,
-        sol.birim as order_unit,
-        sol.notes as order_line_notes,
+        sa.anamiktar as ordered_quantity,
+        sa.anabirimi as order_unit,
+        sa.notes as order_line_notes,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-      LEFT JOIN satin_alma_siparis_fis_satir sol ON sol.siparis_id = gr.siparis_id AND sol.urun_id = gri.urun_id
+      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_id = gri.urun_id
       LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sol.id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
@@ -880,7 +939,7 @@ class DatabaseHelper {
       if (siparisId != null) {
         final poId = await getPoIdBySiparisId(siparisId);
         if (poId != null) {
-          header['po_id'] = poId;
+          header['fisno'] = poId;
         }
       }
 
@@ -1256,7 +1315,7 @@ class DatabaseHelper {
 
     final result = await db.rawQuery('''
       SELECT status
-      FROM satin_alma_siparis_fis
+      FROM siparisler
       WHERE id = ?
     ''', [siparisId]);
 
@@ -1429,7 +1488,7 @@ class DatabaseHelper {
         if (siparisId != null) {
           final poId = await getPoIdBySiparisId(siparisId);
           if (poId != null) {
-            header['po_id'] = poId;
+            header['fisno'] = poId;
           }
         }
         if (header['delivery_note_number'] != null) {
@@ -1498,7 +1557,7 @@ class DatabaseHelper {
 
       // 2. Status 2,3 olan eski siparişleri ve bağlı kayıtları sil
       final oldOrders = await txn.query(
-        'satin_alma_siparis_fis',
+        'siparisler',
         columns: ['id'],
         where: 'status IN (2,3) AND updated_at < ?',
         whereArgs: [cutoffDate.toIso8601String()]
@@ -1533,21 +1592,21 @@ class DatabaseHelper {
         // 3. wms_putaway_status (sipariş satırına bağlı)
         final putaways = await txn.delete(
           'wms_putaway_status',
-          where: 'purchase_order_line_id IN (SELECT id FROM satin_alma_siparis_fis_satir WHERE siparis_id = ?)',
+          where: 'purchase_order_line_id IN (SELECT id FROM siparis_ayrintili WHERE siparisler_id = ?)',
           whereArgs: [orderId]
         );
         putawayCount += putaways;
 
-        // 4. satin_alma_siparis_fis_satir (sipariş satırları)
+        // 4. siparis_ayrintili (sipariş satırları)
         await txn.delete(
-          'satin_alma_siparis_fis_satir',
+          'siparis_ayrintili',
           where: 'siparis_id = ?',
           whereArgs: [orderId]
         );
 
-        // 5. satin_alma_siparis_fis (ana sipariş - en son)
+        // 5. siparisler (ana sipariş - en son)
         await txn.delete(
-          'satin_alma_siparis_fis',
+          'siparisler',
           where: 'id = ?',
           whereArgs: [orderId]
         );
@@ -1567,7 +1626,23 @@ class DatabaseHelper {
   Future<void> removeWarehouseTable() async {
     final db = await database;
     try {
-      await db.execute('DROP TABLE IF EXISTS warehouses');
+      // Create warehouses table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS warehouses (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          post_code TEXT,
+          ap TEXT,
+          receiving_mode INTEGER DEFAULT 2,
+          branch_code TEXT,
+          warehouse_code TEXT,
+          branch_id INTEGER,
+          dia_id INTEGER,
+          _key TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
       debugPrint("Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor");
     } catch (e) {
       debugPrint("Warehouse tablosu kaldırılırken hata: $e");

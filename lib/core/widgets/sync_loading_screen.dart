@@ -122,10 +122,12 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         return 'sync.tables.inventory_stock'.tr();
       case 'wms_putaway_status':
         return 'sync.tables.wms_putaway_status'.tr();
-      case 'satin_alma_siparis_fis':
-        return 'sync.tables.satin_alma_siparis_fis'.tr();
-      case 'satin_alma_siparis_fis_satir':
-        return 'sync.tables.satin_alma_siparis_fis_satir'.tr();
+      case 'siparisler':
+        return 'sync.tables.siparisler'.tr();
+      case 'siparis_ayrintili':
+        return 'sync.tables.siparis_ayrintili'.tr();
+      case 'warehouses':
+        return 'sync.tables.warehouses'.tr();
       default:
         return tableName; // Fallback to table name if translation not found
     }

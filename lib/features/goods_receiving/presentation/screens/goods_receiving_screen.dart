@@ -817,26 +817,26 @@ class _DateInputFormatter extends TextInputFormatter {
     if (text.length == 1) {
       // Single digit: 0./../....
       return newValue.copyWith(
-        text: '${text}./../....',
-        selection: TextSelection.collapsed(offset: 1),
+        text: text + './../....',
+        selection: const TextSelection.collapsed(offset: 1),
       );
     } else if (text.length == 2) {
       // Two digits: 05/../....
       return newValue.copyWith(
-        text: '${text}/../....',
-        selection: TextSelection.collapsed(offset: 2),
+        text: text + '/../....',
+        selection: const TextSelection.collapsed(offset: 2),
       );
     } else if (text.length == 3) {
       // Three digits: 05/0./....
       return newValue.copyWith(
-        text: '${text.substring(0, 2)}/${text.substring(2)}./../....',
-        selection: TextSelection.collapsed(offset: 4),
+        text: text.substring(0, 2) + '/' + text.substring(2) + './../....',
+        selection: const TextSelection.collapsed(offset: 4),
       );
     } else if (text.length == 4) {
       // Four digits: 05/08/....
       return newValue.copyWith(
-        text: '${text.substring(0, 2)}/${text.substring(2, 4)}/....',
-        selection: TextSelection.collapsed(offset: 6),
+        text: text.substring(0, 2) + '/' + text.substring(2, 4) + '/....',
+        selection: const TextSelection.collapsed(offset: 6),
       );
     } else if (text.length <= 8) {
       // More than 4 digits: 05/08/2024 (progressive year)

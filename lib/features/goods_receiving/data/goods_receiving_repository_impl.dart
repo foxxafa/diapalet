@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
@@ -47,9 +48,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           'delivery_note_number': payload.header.deliveryNoteNumber,
           'employee_id': payload.header.employeeId,
           'receipt_date': payload.header.receiptDate.toIso8601String(),
-          'created_at': DateTime.now().toIso8601String(),
+          DbColumns.createdAt: DateTime.now().toIso8601String(),
         };
-        final receiptId = await txn.insert('goods_receipts', receiptHeaderData);
+        final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
 
         // FIX: All received goods, regardless of type (order-based or free),
         // should have a 'receiving' status initially. They become 'available'
@@ -57,12 +58,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         const stockStatus = 'receiving';
 
         for (final item in payload.items) {
-          await txn.insert('goods_receipt_items', {
+          await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
-            'urun_id': item.urunId,
+            DbColumns.orderLinesProductId: item.urunId,
             'quantity_received': item.quantity,
-            'pallet_barcode': item.palletBarcode,
-            'expiry_date': item.expiryDate?.toIso8601String(),
+            DbColumns.stockPalletBarcode: item.palletBarcode,
+            DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
           });
           // FIX: Pass the new receiptId to _updateStock so the stock record
           // is correctly linked to the goods_receipts entry. This is crucial
@@ -91,7 +92,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           data: jsonEncode(enrichedData),
           createdAt: DateTime.now(),
         );
-        await txn.insert('pending_operation', pendingOp.toDbMap());
+        await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
       });
       debugPrint("Mal kabul işlemi ve sipariş durumu başarıyla lokale kaydedildi.");
     } catch (e, s) {
@@ -105,14 +106,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     if (payload.header.siparisId != null) {
       final poResult = await txn.query(
-        'satin_alma_siparis_fis',
-        columns: ['po_id'],
-        where: 'id = ?',
+        DbTables.orders,
+        columns: [DbColumns.ordersFisno],
+        where: '${DbColumns.id} = ?',
         whereArgs: [payload.header.siparisId],
         limit: 1,
       );
       if (poResult.isNotEmpty) {
-        apiData['header']['po_id'] = poResult.first['po_id'];
+        apiData['header']['fisno'] = poResult.first[DbColumns.ordersFisno];
       }
     }
 
@@ -121,15 +122,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       for (final item in payload.items) {
         final itemData = item.toJson();
         final productResult = await txn.query(
-          'urunler',
-          columns: ['UrunAdi', 'StokKodu'],
-          where: 'UrunId = ?',
+          DbTables.products,
+          columns: [DbColumns.productsName, DbColumns.productsCode],
+          where: '${DbColumns.productsId} = ?',
           whereArgs: [item.urunId],
           limit: 1,
         );
         if (productResult.isNotEmpty) {
-          itemData['product_name'] = productResult.first['UrunAdi'];
-          itemData['product_code'] = productResult.first['StokKodu'];
+          itemData['product_name'] = productResult.first[DbColumns.productsName];
+          itemData['product_code'] = productResult.first[DbColumns.productsCode];
         }
         enrichedItems.add(itemData);
       }
@@ -192,38 +193,91 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     debugPrint("DEBUG: Warehouse Code from SharedPreferences: $warehouseCode");
 
-    // Optimized query: Single SQL query to get only open orders
-    // Uses JOIN and GROUP BY to calculate received vs expected quantities in one go
+    // Get warehouse name from warehouse code using warehouses table
+    String? warehouseName;
+    if (warehouseCode != null) {
+      // First check what warehouses we have
+      final allWarehouses = await db.query(DbTables.warehouses);
+      debugPrint("DEBUG: Available warehouses count: ${allWarehouses.length}");
+      if (allWarehouses.isNotEmpty) {
+        for (var warehouse in allWarehouses) {
+          debugPrint("  - Code: '${warehouse[DbColumns.warehousesCode]}' -> Name: '${warehouse[DbColumns.warehousesName]}'");
+        }
+      } else {
+        debugPrint("  - No warehouses found in database");
+      }
+      
+      final warehouseQuery = await db.query(
+        DbTables.warehouses,
+        columns: [DbColumns.warehousesName],
+        where: '${DbColumns.warehousesCode} = ?',
+        whereArgs: [warehouseCode],
+        limit: 1,
+      );
+      if (warehouseQuery.isNotEmpty) {
+        warehouseName = warehouseQuery.first[DbColumns.warehousesName] as String?;
+      }
+    }
+
+    debugPrint("DEBUG: Warehouse Name for code $warehouseCode: $warehouseName");
+
+    if (warehouseName == null) {
+      debugPrint("WARNING: Could not find warehouse name for code $warehouseCode");
+      // GEÇICI ÇÖZÜM: Warehouse bulunamazsa tüm siparişleri getir
+      debugPrint("TEMPORARY: Getting all orders without warehouse filter");
+      
+      final openOrdersMaps = await db.rawQuery(DbQueries.getOpenOrders(null));
+
+      debugPrint("DEBUG: Found ${openOrdersMaps.length} orders without warehouse filter");
+      
+      // Show warehouse names in orders for debugging
+      final uniqueWarehouses = openOrdersMaps.map((o) => o['warehouse_name']).toSet();
+      debugPrint("DEBUG: Order warehouse names: ${uniqueWarehouses.join(', ')}");
+      
+      final openOrders = openOrdersMaps.map((orderMap) => PurchaseOrder.fromMap(orderMap)).toList();
+      
+      for (int i = 0; i < openOrders.length; i++) {
+        final order = openOrders[i];
+        final orderMap = openOrdersMaps[i];
+        debugPrint("DEBUG: Order ID: ${order.id}, PO ID: ${order.poId}, Warehouse: ${orderMap['warehouse_name']}");
+      }
+      
+      return openOrders;
+    }
+
+    // İş mantığına özel kompleks sorgu - repository'de kalıyor
+    // Açık siparişleri ve alınan/beklenen miktarları hesaplar
     final openOrdersMaps = await db.rawQuery('''
       SELECT DISTINCT
-        o.id,
-        o.po_id,
-        o.tarih,
-        o.notlar,
-        o.warehouse_code,
-        o.status,
-        o.created_at,
-        o.updated_at,
+        o.${DbColumns.id},
+        o.${DbColumns.ordersFisno},
+        o.${DbColumns.ordersDate},
+        o.${DbColumns.ordersNotes},
+        o.${DbColumns.ordersWarehouseName} as warehouse_name,
+        o.${DbColumns.status},
+        o.${DbColumns.createdAt},
+        o.${DbColumns.updatedAt},
         t.tedarikci_adi as supplierName
-      FROM satin_alma_siparis_fis o
-      LEFT JOIN satin_alma_siparis_fis_satir s ON s.siparis_id = o.id
-      LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
-      WHERE o.status IN (0, 1)
-        AND o.warehouse_code = ?
+      FROM ${DbTables.orders} o
+      LEFT JOIN ${DbTables.orderLines} s ON s.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
+      LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.id} = s.tedarikci_id
+      WHERE o.${DbColumns.status} IN (0, 1)
+        AND o.${DbColumns.ordersWarehouseName} = ?
         AND EXISTS (
           SELECT 1
-          FROM satin_alma_siparis_fis_satir s2
-          WHERE s2.siparis_id = o.id
-            AND s2.miktar > COALESCE((
+          FROM ${DbTables.orderLines} s2
+          WHERE s2.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
+            AND s2.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
+            AND s2.${DbColumns.orderLinesQuantity} > COALESCE((
               SELECT SUM(gri.quantity_received)
-              FROM goods_receipt_items gri
-              JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-              WHERE gr.siparis_id = o.id AND gri.urun_id = s2.urun_id
+              FROM ${DbTables.goodsReceiptItems} gri
+              JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
+              WHERE gr.siparis_id = o.${DbColumns.id} AND gri.${DbColumns.orderLinesProductId} = s2.${DbColumns.orderLinesProductId}
             ), 0) + 0.001
         )
-      GROUP BY o.id, o.po_id, o.tarih, o.notlar, o.warehouse_code, o.status, o.created_at, o.updated_at, t.tedarikci_adi
-      ORDER BY o.tarih DESC
-    ''', [warehouseCode]);
+      GROUP BY o.${DbColumns.id}, o.${DbColumns.ordersFisno}, o.${DbColumns.ordersDate}, o.${DbColumns.ordersNotes}, o.${DbColumns.ordersWarehouseName}, o.${DbColumns.status}, o.${DbColumns.createdAt}, o.${DbColumns.updatedAt}, t.tedarikci_adi
+      ORDER BY o.${DbColumns.ordersDate} DESC
+    ''', [warehouseName]);
 
     debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders with optimized query");
 
@@ -241,22 +295,23 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
+    // Sipariş detayları için kompleks sorgu - iş mantığı burada
     final maps = await db.rawQuery('''
         SELECT
           s.*,
-          u.UrunAdi,
-          u.StokKodu,
-          u.Barcode1,
-          u.aktif,
+          u.${DbColumns.productsName},
+          u.${DbColumns.productsCode},
+          u.${DbColumns.productsBarcode},
+          u.${DbColumns.productsActive},
           COALESCE((SELECT SUM(gri.quantity_received)
-                     FROM goods_receipt_items gri
-                     JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                     WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id), 0) as receivedQuantity,
+                     FROM ${DbTables.goodsReceiptItems} gri
+                     JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
+                     WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = s.${DbColumns.orderLinesProductId}), 0) as receivedQuantity,
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
-        FROM satin_alma_siparis_fis_satir s
-        JOIN urunler u ON u.UrunId = s.urun_id
-        LEFT JOIN wms_putaway_status wps ON wps.purchase_order_line_id = s.id
-        WHERE s.siparis_id = ?
+        FROM ${DbTables.orderLines} s
+        JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.orderLinesProductId}
+        LEFT JOIN ${DbTables.putawayStatus} wps ON wps.purchase_order_line_id = s.${DbColumns.id}
+        WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
     ''', [orderId]);
     debugPrint("DEBUG: Found ${maps.length} items for order $orderId");
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
@@ -265,11 +320,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrder>> getReceivablePurchaseOrders() async {
     final db = await dbHelper.database;
+    // Basit sorgu - constants kullanıyoruz
     final maps = await db.query(
-      'satin_alma_siparis_fis',
-      where: 'status = ?',
+      DbTables.orders,
+      where: '${DbColumns.status} = ?',
       whereArgs: [1], // Partially received
-      orderBy: 'tarih DESC',
+      orderBy: '${DbColumns.ordersDate} DESC',
     );
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
@@ -278,18 +334,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<void> updatePurchaseOrderStatus(int orderId, int newStatus) async {
     final db = await dbHelper.database;
     await db.transaction((txn) async {
-      final poResult = await txn.query('satin_alma_siparis_fis',
-          columns: ['po_id'], where: 'id = ?', limit: 1, whereArgs: [orderId]);
-      final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
+      final poResult = await txn.query('siparisler',
+          columns: ['fisno'], where: 'id = ?', limit: 1, whereArgs: [orderId]);
+      final fisno = poResult.isNotEmpty ? poResult.first[DbColumns.ordersFisno] as String? : null;
 
       final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
-          data: jsonEncode({'siparis_id': orderId, 'po_id': poId, 'status': newStatus}),
+          data: jsonEncode({'siparis_id': orderId, 'fisno': fisno, 'status': newStatus}),
           createdAt: DateTime.now());
       await txn.insert('pending_operation', pendingOp.toDbMap());
 
       await txn.update(
-        'satin_alma_siparis_fis',
+        'siparisler',
         {'status': newStatus},
         where: 'id = ?',
         whereArgs: [orderId],
@@ -304,23 +360,23 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     await db.transaction((txn) async {
       final poResult = await txn.query(
-          'satin_alma_siparis_fis',
-          columns: ['po_id'],
+          'siparisler',
+          columns: ['fisno'],
           where: 'id = ?',
           limit: 1,
           whereArgs: [orderId]
       );
-      final poId = poResult.isNotEmpty ? poResult.first['po_id'] as String? : null;
+      final fisno = poResult.isNotEmpty ? poResult.first[DbColumns.ordersFisno] as String? : null;
 
       final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
-          data: jsonEncode({'siparis_id': orderId, 'po_id': poId}),
+          data: jsonEncode({'siparis_id': orderId, 'fisno': fisno}),
           createdAt: DateTime.now()
       );
       await txn.insert('pending_operation', pendingOp.toDbMap());
 
       await txn.update(
-        'satin_alma_siparis_fis',
+        'siparisler',
         {'status': 2}, // Status 2: Manually Closed
         where: 'id = ?',
         whereArgs: [orderId],
@@ -334,7 +390,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<ProductInfo>> searchProducts(String query) async {
     final db = await dbHelper.database;
     // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
-    final maps = await db.query('urunler', where: 'UrunAdi LIKE ? OR StokKodu LIKE ? OR Barcode1 LIKE ?', whereArgs: ['%$query%', '%$query%', '%$query%']);
+    final maps = await db.query(DbTables.products, where: '${DbColumns.productsName} LIKE ? OR ${DbColumns.productsCode} LIKE ? OR ${DbColumns.productsBarcode} LIKE ?', whereArgs: ['%$query%', '%$query%', '%$query%']);
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -343,7 +399,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
     // Metot adı "Active" olmasına rağmen tüm ürünleri getiriyor (geriye uyumluluk için)
-    final maps = await db.query('urunler', orderBy: 'UrunAdi ASC');
+    final maps = await db.query(DbTables.products, orderBy: '${DbColumns.productsName} ASC');
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -353,7 +409,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     debugPrint("🔍 DEBUG: findProductByExactMatch aranan kod: '$code'");
 
     // Önce tüm urunler'i görelim
-    final allProducts = await db.query('urunler', limit: 10);
+    final allProducts = await db.query(DbTables.products, limit: 10);
     debugPrint("📦 DEBUG: Veritabanında ilk 10 ürün:");
     for (var product in allProducts) {
       debugPrint("   UrunId: ${product['UrunId']}, StokKodu: '${product['StokKodu']}', Barcode1: '${product['Barcode1']}', aktif: ${product['aktif']}");
@@ -361,8 +417,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
     final maps = await db.query(
-      'urunler',
-      where: 'StokKodu = ? OR Barcode1 = ?',
+      DbTables.products,
+      where: '${DbColumns.productsCode} = ? OR ${DbColumns.productsBarcode} = ?',
       whereArgs: [code, code],
       limit: 1
     );
@@ -375,8 +431,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       // Benzer kodları arayalım
       final similarMaps = await db.query(
-        'urunler',
-        where: 'StokKodu LIKE ? OR Barcode1 LIKE ?',
+        DbTables.products,
+        where: '${DbColumns.productsCode} LIKE ? OR ${DbColumns.productsBarcode} LIKE ?',
         whereArgs: ['%$code%', '%$code%'],
         limit: 5
       );
@@ -393,24 +449,24 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
-    final maps = await db.query('shelfs', where: 'is_active = 1');
+    final maps = await db.query(DbTables.locations, where: '${DbColumns.isActive} = 1');
     return maps.map((map) => LocationInfo.fromMap(map)).toList();
   }
 
   /// Sipariş durumunu kontrol eder ve gerekirse status 3 (tamamen kabul edildi) yapar
   Future<void> _checkAndUpdateOrderStatus(Transaction txn, int siparisId) async {
-    // Sipariş satırlarını al
+    // Sipariş satırları ve alınan miktarları hesapla - iş mantığı
     final orderLines = await txn.rawQuery('''
       SELECT
-        sol.id,
-        sol.urun_id,
-        sol.miktar as ordered_quantity,
+        sol.${DbColumns.id},
+        sol.${DbColumns.orderLinesProductId},
+        sol.${DbColumns.orderLinesQuantity} as ordered_quantity,
         COALESCE(SUM(gri.quantity_received), 0) as total_received
-      FROM satin_alma_siparis_fis_satir sol
-      LEFT JOIN goods_receipt_items gri ON gri.urun_id = sol.urun_id
-      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.siparis_id
-      WHERE sol.siparis_id = ?
-      GROUP BY sol.id, sol.urun_id, sol.miktar
+      FROM ${DbTables.orderLines} sol
+      LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.${DbColumns.orderLinesProductId} = sol.${DbColumns.orderLinesProductId}
+      LEFT JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.${DbColumns.orderLinesOrderId}
+      WHERE sol.${DbColumns.orderLinesOrderId} = ? AND sol.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
+      GROUP BY sol.${DbColumns.id}, sol.${DbColumns.orderLinesProductId}, sol.${DbColumns.orderLinesQuantity}
     ''', [siparisId]);
 
     if (orderLines.isEmpty) return;
@@ -445,9 +501,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
 
     await txn.update(
-      'satin_alma_siparis_fis',
-      {'status': newStatus, 'updated_at': DateTime.now().toIso8601String()},
-      where: 'id = ?',
+      DbTables.orders,
+      {DbColumns.status: newStatus, DbColumns.updatedAt: DateTime.now().toIso8601String()},
+      where: '${DbColumns.id} = ?',
       whereArgs: [siparisId],
     );
   }
