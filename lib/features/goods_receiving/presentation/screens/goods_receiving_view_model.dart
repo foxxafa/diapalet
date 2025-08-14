@@ -741,14 +741,24 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
 
     try {
-      final parts = value.split('/');
-      if (parts.length != 3) {
+      // DD/MM/YYYY formatını kontrol et
+      if (value.length != 10 || !RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(value)) {
         return 'goods_receiving_screen.validator_expiry_date_format'.tr();
       }
 
+      final parts = value.split('/');
       final day = int.parse(parts[0]);
       final month = int.parse(parts[1]);
       final year = int.parse(parts[2]);
+
+      // Tarih geçerliliğini kontrol et
+      if (month < 1 || month > 12) {
+        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      }
+      
+      if (day < 1 || day > 31) {
+        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
+      }
 
       final date = DateTime(year, month, day);
       final now = DateTime.now();

@@ -167,7 +167,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             ],
                             _buildProductTextAreaWithScan(viewModel),
                             const SizedBox(height: _gap),
-                            _buildExpiryDateField(viewModel),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildExpiryDateField(viewModel),
+                                if (viewModel.selectedProduct != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4.0, top: 4.0),
+                                    child: Text(
+                                      'day month year',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).hintColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                             const SizedBox(height: _gap),
                             if (viewModel.selectedProduct != null) ...[
                               _buildQuantityAndStatusRow(viewModel),
@@ -491,14 +507,24 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       controller: viewModel.expiryDateController,
       focusNode: viewModel.expiryDateFocusNode,
       enabled: viewModel.isExpiryDateEnabled,
-      readOnly: true, // Klavyeyi engelle, sadece tarih seçicisi açılsın
+      readOnly: false, // Text girişi aktif
+      keyboardType: TextInputType.number,
+      inputFormatters: [
+        _DateInputFormatter(), // Otomatik formatlamak için özel formatter
+      ],
       decoration: _inputDecoration(
         'goods_receiving_screen.label_expiry_date'.tr(),
         enabled: viewModel.isExpiryDateEnabled,
-        suffixIcon: const Icon(Icons.calendar_today_outlined),
+        suffixIcon: const Icon(Icons.date_range),
+        hintText: 'day month year',
       ),
       validator: viewModel.validateExpiryDate,
-      onTap: () => _showDatePicker(viewModel),
+      onChanged: (value) {
+        // DD/MM/YYYY formatı tamamlandıysa quantity field'a geç
+        if (value.length == 10 && RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(value)) {
+          viewModel.onExpiryDateEntered();
+        }
+      },
     );
   }
 
@@ -665,10 +691,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, String? hintText}) {
     final theme = Theme.of(context);
     return InputDecoration(
       labelText: label,
+      hintText: hintText,
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
@@ -767,6 +794,71 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
 
+}
+
+class _DateInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // Only extract digits from the input
+    final text = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    // Handle empty or invalid input
+    if (text.isEmpty) {
+      return newValue.copyWith(
+        text: '',
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    }
+    
+    // Format based on length with progressive placeholders
+    if (text.length == 1) {
+      // Single digit: 0./../....
+      return newValue.copyWith(
+        text: '${text}./../....',
+        selection: TextSelection.collapsed(offset: 1),
+      );
+    } else if (text.length == 2) {
+      // Two digits: 05/../....
+      return newValue.copyWith(
+        text: '${text}/../....',
+        selection: TextSelection.collapsed(offset: 2),
+      );
+    } else if (text.length == 3) {
+      // Three digits: 05/0./....
+      return newValue.copyWith(
+        text: '${text.substring(0, 2)}/${text.substring(2)}./../....',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+    } else if (text.length == 4) {
+      // Four digits: 05/08/....
+      return newValue.copyWith(
+        text: '${text.substring(0, 2)}/${text.substring(2, 4)}/....',
+        selection: TextSelection.collapsed(offset: 6),
+      );
+    } else if (text.length <= 8) {
+      // More than 4 digits: 05/08/2024 (progressive year)
+      final year = text.substring(4);
+      String formattedYear = year;
+      if (year.length < 4) {
+        formattedYear = year + '.'.padRight(4 - year.length, '.');
+      }
+      return newValue.copyWith(
+        text: '${text.substring(0, 2)}/${text.substring(2, 4)}/$formattedYear',
+        selection: TextSelection.collapsed(offset: text.length + 2),
+      );
+    } else {
+      // Limit to 8 digits max (DDMMYYYY)
+      final truncated = text.substring(0, 8);
+      final formatted = '${truncated.substring(0, 2)}/${truncated.substring(2, 4)}/${truncated.substring(4)}';
+      return newValue.copyWith(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+  }
 }
 
 class _QrButton extends StatelessWidget {
