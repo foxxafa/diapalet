@@ -175,7 +175,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(left: 4.0, top: 4.0),
                                     child: Text(
-                                      'day month year',
+                                      'goods_receiving_screen.date_input_helper'.tr(),
                                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         color: Theme.of(context).hintColor,
                                         fontSize: 12,
@@ -280,13 +280,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   // Auto-search and select product as user types
                   viewModel.onProductTextChanged(value);
 
-                  // 🎯 KOPYALA-YAPIŞTIR DETECTION:
-                  // Eğer text uzunsa (>5 karakter) ve tam match varsa, otomatik date picker aç
+                  // Focus expiry date field when product is selected
                   if (value.length > 5 && viewModel.selectedProduct != null) {
-                    // notifyListeners() tamamlandıktan sonra çalıştır
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
-                        _showDatePicker(viewModel);
+                        viewModel.expiryDateFocusNode.requestFocus();
                       }
                     });
                   }
@@ -296,19 +294,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   if (value.isNotEmpty) {
                     // Eğer search sonuçları varsa ilk sonucu seç
                     if (viewModel.productSearchResults.isNotEmpty) {
-                      viewModel.selectProduct(
-                        viewModel.productSearchResults.first,
-                        onProductSelected: () {
-                          _showDatePicker(viewModel);
+                      viewModel.selectProduct(viewModel.productSearchResults.first);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                          viewModel.expiryDateFocusNode.requestFocus();
                         }
-                      );
+                      });
                     } else {
                       // Search sonuçları yoksa barkod olarak işle
                       await viewModel.processScannedData('product', value);
                       // UI güncellemesi tamamlandıktan sonra çalıştır
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
-                          _showDatePicker(viewModel);
+                          viewModel.expiryDateFocusNode.requestFocus();
                         }
                       });
                     }
@@ -365,8 +363,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   onTap: () {
                     viewModel.selectProduct(product);
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        _showDatePicker(viewModel);
+                      if (mounted && viewModel.isExpiryDateEnabled) {
+                        viewModel.expiryDateFocusNode.requestFocus();
                       }
                     });
                   },
@@ -503,27 +501,64 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildExpiryDateField(GoodsReceivingViewModel viewModel) {
-    return TextFormField(
-      controller: viewModel.expiryDateController,
-      focusNode: viewModel.expiryDateFocusNode,
-      enabled: viewModel.isExpiryDateEnabled,
-      readOnly: false, // Text girişi aktif
-      keyboardType: TextInputType.number,
-      inputFormatters: [
-        _DateInputFormatter(), // Otomatik formatlamak için özel formatter
-      ],
-      decoration: _inputDecoration(
-        'goods_receiving_screen.label_expiry_date'.tr(),
-        enabled: viewModel.isExpiryDateEnabled,
-        suffixIcon: const Icon(Icons.date_range),
-        hintText: 'day month year',
-      ),
-      validator: viewModel.validateExpiryDate,
-      onChanged: (value) {
-        // DD/MM/YYYY formatı tamamlandıysa quantity field'a geç
-        if (value.length == 10 && RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(value)) {
-          viewModel.onExpiryDateEntered();
-        }
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return TextFormField(
+          controller: viewModel.expiryDateController,
+          focusNode: viewModel.expiryDateFocusNode,
+          enabled: viewModel.isExpiryDateEnabled,
+          readOnly: false,
+          keyboardType: const TextInputType.numberWithOptions(decimal: false),
+          inputFormatters: [
+            _DateInputFormatter(),
+          ],
+          decoration: _inputDecoration(
+            'goods_receiving_screen.label_expiry_date'.tr(),
+            enabled: viewModel.isExpiryDateEnabled,
+            suffixIcon: viewModel.expiryDateController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: viewModel.isExpiryDateEnabled
+                        ? () {
+                            viewModel.expiryDateController.clear();
+                            setState(() {}); // Rebuild to update suffix icon
+                            viewModel.expiryDateFocusNode.requestFocus();
+                          }
+                        : null,
+                  )
+                : const Icon(Icons.edit_calendar_outlined),
+            hintText: 'DD/MM/YYYY',
+          ),
+          validator: viewModel.validateExpiryDate,
+          onChanged: (value) {
+            setState(() {}); // Rebuild to update suffix icon
+            // DD/MM/YYYY formatı tamamlandıysa ve geçerli tarihse quantity field'a geç
+            if (value.length == 10) {
+              bool isValid = _isValidDate(value);
+              print('Date: $value, IsValid: $isValid'); // Debug
+              if (isValid) {
+                viewModel.onExpiryDateEntered();
+              }
+            }
+          },
+          onFieldSubmitted: (value) {
+            if (value.length == 10) {
+              if (_isValidDate(value)) {
+                viewModel.onExpiryDateEntered();
+              } else {
+                // Check if it's a past date or invalid date
+                String errorMessage = _getDateErrorMessage(value);
+                print('Error for $value: $errorMessage'); // Debug
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(errorMessage),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+        );
       },
     );
   }
@@ -802,62 +837,192 @@ class _DateInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    // Only extract digits from the input
+    // Handle deletion - if user deletes a slash, delete the preceding digit too
+    if (newValue.text.length < oldValue.text.length) {
+      if (newValue.text.length > 0 && oldValue.text.length > newValue.text.length) {
+        final deletedChar = oldValue.text[newValue.text.length];
+        if (deletedChar == '/' && newValue.text.isNotEmpty) {
+          return TextEditingValue(
+            text: newValue.text.substring(0, newValue.text.length - 1),
+            selection: TextSelection.collapsed(offset: newValue.text.length - 1),
+          );
+        }
+      }
+      return newValue;
+    }
+    
+    // Only allow digits
     final text = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     
-    // Handle empty or invalid input
     if (text.isEmpty) {
-      return newValue.copyWith(
-        text: '',
-        selection: const TextSelection.collapsed(offset: 0),
-      );
+      return const TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
     }
     
-    // Format based on length with progressive placeholders
-    if (text.length == 1) {
-      // Single digit: 0./../....
-      return newValue.copyWith(
-        text: text + './../....',
-        selection: const TextSelection.collapsed(offset: 1),
-      );
-    } else if (text.length == 2) {
-      // Two digits: 05/../....
-      return newValue.copyWith(
-        text: text + '/../....',
-        selection: const TextSelection.collapsed(offset: 2),
-      );
-    } else if (text.length == 3) {
-      // Three digits: 05/0./....
-      return newValue.copyWith(
-        text: text.substring(0, 2) + '/' + text.substring(2) + './../....',
-        selection: const TextSelection.collapsed(offset: 4),
-      );
-    } else if (text.length == 4) {
-      // Four digits: 05/08/....
-      return newValue.copyWith(
-        text: text.substring(0, 2) + '/' + text.substring(2, 4) + '/....',
-        selection: const TextSelection.collapsed(offset: 6),
-      );
-    } else if (text.length <= 8) {
-      // More than 4 digits: 05/08/2024 (progressive year)
-      final year = text.substring(4);
-      String formattedYear = year;
-      if (year.length < 4) {
-        formattedYear = year + '.'.padRight(4 - year.length, '.');
+    if (text.length > 8) return oldValue;
+    
+    // Smart formatting with validation
+    String formatted = _smartFormatDate(text);
+    
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+  
+  String _smartFormatDate(String digits) {
+    String result = '';
+    
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 2 || i == 4) result += '/';
+      
+      // Add digit with smart validation
+      String digit = digits[i];
+      
+      // Day validation (position 0-1)
+      if (i < 2) {
+        if (i == 0 && int.parse(digit) > 3) {
+          digit = '3'; // Max day starts with 3
+        } else if (i == 1 && result.isNotEmpty) {
+          int firstDigit = int.parse(result[0]);
+          int dayValue = firstDigit * 10 + int.parse(digit);
+          if (dayValue > 31) {
+            digit = '1'; // 31 max
+          } else if (dayValue == 0) {
+            digit = '1'; // Min 01
+          }
+        }
       }
-      return newValue.copyWith(
-        text: '${text.substring(0, 2)}/${text.substring(2, 4)}/$formattedYear',
-        selection: TextSelection.collapsed(offset: text.length + 2),
-      );
-    } else {
-      // Limit to 8 digits max (DDMMYYYY)
-      final truncated = text.substring(0, 8);
-      final formatted = '${truncated.substring(0, 2)}/${truncated.substring(2, 4)}/${truncated.substring(4)}';
-      return newValue.copyWith(
-        text: formatted,
-        selection: TextSelection.collapsed(offset: formatted.length),
-      );
+      // Month validation (position 2-3)
+      else if (i < 4) {
+        int monthPos = i - 2;
+        if (monthPos == 0 && int.parse(digit) > 1) {
+          digit = '1'; // Max month starts with 1
+        } else if (monthPos == 1) {
+          String monthFirstDigit = result.split('/')[1];
+          int firstDigit = int.parse(monthFirstDigit);
+          int monthValue = firstDigit * 10 + int.parse(digit);
+          if (monthValue > 12) {
+            digit = '2'; // 12 max
+          } else if (monthValue == 0) {
+            digit = '1'; // Min 01
+          }
+        }
+      }
+      
+      result += digit;
     }
+    
+    // Final validation when we have complete date (8 digits)
+    if (digits.length == 8) {
+      result = _validateCompleteDate(result);
+    }
+    
+    return result;
+  }
+  
+  String _validateCompleteDate(String dateStr) {
+    try {
+      final parts = dateStr.split('/');
+      if (parts.length != 3) return dateStr;
+      
+      int day = int.parse(parts[0]);
+      int month = int.parse(parts[1]);
+      int year = int.parse(parts[2]);
+      
+      // Create DateTime to check validity
+      final date = DateTime(year, month, day);
+      
+      // If date was adjusted, use the adjusted values
+      if (date.day != day || date.month != month) {
+        // DateTime adjusted it, which means original was invalid
+        // Use last day of the intended month
+        final lastDay = DateTime(year, month + 1, 0).day;
+        day = day > lastDay ? lastDay : day;
+        
+        return '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/${year.toString().padLeft(4, '0')}';
+      }
+      
+      return dateStr;
+    } catch (e) {
+      return dateStr;
+    }
+  }
+}
+
+// Helper function to get specific error message for date validation
+String _getDateErrorMessage(String dateString) {
+  if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
+    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
+  }
+  
+  try {
+    final parts = dateString.split('/');
+    final day = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+    final year = int.parse(parts[2]);
+    
+    // First check if it's a valid date structure
+    if (month < 1 || month > 12 || day < 1) {
+      return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
+    }
+    
+    // Create DateTime to check if date is valid
+    final date = DateTime(year, month, day);
+    
+    // Check if date was adjusted (invalid date like Feb 30)
+    if (date.day != day || date.month != month || date.year != year) {
+      // This means the date doesn't exist (like 30/02 or 31/04)
+      return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
+    }
+    
+    // Now check if date is in the past
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    
+    if (date.isBefore(todayDate)) {
+      return 'goods_receiving_screen.error_expiry_date_past'.tr();
+    }
+    
+    // If we reach here, the date should be valid
+    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
+  } catch (e) {
+    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
+  }
+}
+
+// Helper function to validate date - using DateTime's built-in validation
+bool _isValidDate(String dateString) {
+  if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
+    return false;
+  }
+  
+  try {
+    final parts = dateString.split('/');
+    final day = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+    final year = int.parse(parts[2]);
+    
+    // Basic year check - must be current year or later
+    final currentYear = DateTime.now().year;
+    if (year < currentYear) {
+      return false;
+    }
+    
+    // Create DateTime - it will adjust invalid dates automatically
+    final date = DateTime(year, month, day);
+    
+    // DateTime constructor adjusts invalid dates, so check if it's still the same
+    if (date.day != day || date.month != month || date.year != year) {
+      return false;
+    }
+    
+    // Check if date is not in the past
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    
+    return !date.isBefore(todayDate);
+  } catch (e) {
+    return false;
   }
 }
 

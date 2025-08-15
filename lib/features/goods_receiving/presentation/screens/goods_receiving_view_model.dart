@@ -740,35 +740,87 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       return 'goods_receiving_screen.validator_expiry_date_required'.tr();
     }
 
-    try {
-      // DD/MM/YYYY formatını kontrol et
-      if (value.length != 10 || !RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(value)) {
-        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-      }
+    // Use the comprehensive validation helper
+    bool isValid = _isValidDateString(value);
+    debugPrint('ViewModel validation - Date: $value, IsValid: $isValid'); // Debug
+    if (!isValid) {
+      // Give specific error message based on the problem
+      return _getDateValidationError(value);
+    }
 
-      final parts = value.split('/');
+    return null;
+  }
+
+  // Helper function to validate date strings
+  bool _isValidDateString(String dateString) {
+    if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
+      return false;
+    }
+    
+    try {
+      final parts = dateString.split('/');
       final day = int.parse(parts[0]);
       final month = int.parse(parts[1]);
       final year = int.parse(parts[2]);
+      
+      // Basic year check - must be current year or later
+      final currentYear = DateTime.now().year;
+      if (year < currentYear) {
+        return false;
+      }
+      
+      // Create DateTime - it will adjust invalid dates automatically
+      final date = DateTime(year, month, day);
+      
+      // DateTime constructor adjusts invalid dates, so check if it's still the same
+      if (date.day != day || date.month != month || date.year != year) {
+        return false;
+      }
+      
+      // Check if date is not in the past
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      
+      return !date.isBefore(todayDate);
+    } catch (e) {
+      return false;
+    }
+  }
 
-      // Tarih geçerliliğini kontrol et
-      if (month < 1 || month > 12) {
+  // Helper function to get specific validation error message
+  String _getDateValidationError(String dateString) {
+    if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
+      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
+    }
+    
+    try {
+      final parts = dateString.split('/');
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+      
+      // Basic structure check
+      if (month < 1 || month > 12 || day < 1) {
         return 'goods_receiving_screen.validator_expiry_date_format'.tr();
       }
       
-      if (day < 1 || day > 31) {
+      // Create DateTime to check if date is valid
+      final date = DateTime(year, month, day);
+      
+      // Check if date was adjusted (invalid date like Feb 30)
+      if (date.day != day || date.month != month || date.year != year) {
         return 'goods_receiving_screen.validator_expiry_date_format'.tr();
       }
-
-      final date = DateTime(year, month, day);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-
-      if (date.isBefore(today)) {
+      
+      // Check if date is in the past
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      
+      if (date.isBefore(todayDate)) {
         return 'goods_receiving_screen.validator_expiry_date_future'.tr();
       }
-
-      return null;
+      
+      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
     } catch (e) {
       return 'goods_receiving_screen.validator_expiry_date_format'.tr();
     }
