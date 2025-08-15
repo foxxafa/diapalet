@@ -12,16 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-      // ANA GÜNCELLEME: dia_key kolonu eklendi shelfs tablosuna.
-      // GÜNCELLEME: goods_receipts tablosundaki 'id' alanı 'goods_receipt_id' olarak değiştirildi.
-      // GÜNCELLEME: Veritabanı sürümü artırıldı ve sanitize fonksiyonu düzeltildi.
-      // GÜNCELLEME: siparisler tablosunda branch_id -> warehouse_code değişikliği
-      // GÜNCELLEME: İnkremental sync için updated_at sütunları eklendi (shelfs, goods_receipts, goods_receipt_items)
-      // GÜNCELLEME: İnkremental sync inventory_stock ve wms_putaway_status tablolarına da eklendi
-      // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
-      // GÜNCELLEME: inventory_transfers için incremental sync eklendi
-      // GÜNCELLEME: urunler tablosuna created_at ve updated_at alanları eklendi (incremental sync için)
-      static const _databaseVersion = 49;
+  static const _databaseVersion = 51;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -79,29 +70,11 @@ class DatabaseHelper {
       batch.execute(SyncLog.createTableQuery);
 
       batch.execute('''
-        CREATE TABLE IF NOT EXISTS warehouses (
-          id INTEGER PRIMARY KEY,
-          name TEXT,
-          post_code TEXT,
-          ap TEXT,
-          receiving_mode INTEGER DEFAULT 2,
-          branch_code TEXT,
-          warehouse_code TEXT,
-          branch_id INTEGER,
-          dia_id INTEGER,
-          _key TEXT,
-          created_at TEXT,
-          updated_at TEXT
-        )
-      ''');
-
-      batch.execute('''
         CREATE TABLE IF NOT EXISTS shelfs (
           id INTEGER PRIMARY KEY,
           warehouse_id INTEGER,
           name TEXT,
           code TEXT,
-          dia_key TEXT,
           is_active INTEGER DEFAULT 1,
           created_at TEXT,
           updated_at TEXT
@@ -128,6 +101,9 @@ class DatabaseHelper {
           StokKodu TEXT UNIQUE,
           UrunAdi TEXT,
           Barcode1 TEXT,
+          Barcode2 TEXT,
+          Barcode3 TEXT,
+          Barcode4 TEXT,
           aktif INTEGER,
           created_at TEXT,
           updated_at TEXT
@@ -156,20 +132,10 @@ class DatabaseHelper {
           created_at TEXT,
           updated_at TEXT,
           gun INTEGER DEFAULT 0,
-          warehouse_code TEXT,
           _key_sis_depo_source TEXT,
           __carikodu TEXT,
-          invoice TEXT,
-          delivery INTEGER,
-          po_id TEXT,
           status INTEGER DEFAULT 0,
-          fisno TEXT,
-          depokodu TEXT,
-          subekodu TEXT,
-          onay TEXT,
-          siparisdurum TEXT,
-          kullaniciadi TEXT,
-          turu TEXT
+          fisno TEXT
         )
       ''');
 
@@ -181,26 +147,15 @@ class DatabaseHelper {
           kartkodu TEXT,
           anamiktar REAL,
           miktar REAL,
-          ort_son_30 INTEGER,
-          ort_son_60 INTEGER,
-          ort_son_90 INTEGER,
           tedarikci_id INTEGER,
           tedarikci_fis_id INTEGER,
           invoice TEXT,
           anabirimi TEXT,
           birim TEXT,
-          layer INTEGER,
-          notes TEXT,
           created_at TEXT,
           updated_at TEXT,
           status INTEGER,
           good_received REAL,
-          son_7_gun REAL,
-          son_14_gun REAL,
-          son_21_gun REAL,
-          son_1_ay REAL,
-          son_2_ay REAL,
-          son_3_ay REAL,
           turu TEXT
         )
       ''');
@@ -245,11 +200,7 @@ class DatabaseHelper {
         )
       ''');
 
-      // ANA GÜNCELLEME: `inventory_stock` tablosu güncellendi.
-      // - location_id artık NULL olabilir (mal kabul alanı için).
-      // - siparis_id eklendi.
-      // - stock_status 'receiving' ve 'available' durumlarını içerir.
-      // - UNIQUE constraint güncellendi.
+      // Inventory stock table with receiving/available status support
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,6 +230,15 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON siparis_ayrintili(siparisler_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_id)');
+      
+      // Yeni performans indexleri
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_date ON goods_receipts(receipt_date)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_pending_operation_status ON pending_operation(status)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_barcode1 ON urunler(Barcode1)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
@@ -311,7 +271,7 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     const tables = [
-      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
       'siparisler', 'siparis_ayrintili', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status', 'tedarikci'
@@ -359,7 +319,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## İNKREMENTAL SYNC İÇİN YENİ LOJİK ##########
+        // Incremental sync logic
         // Ürünler için özel işlem: aktif=0 olanları sil, diğerlerini güncelle
         if (data.containsKey('urunler')) {
           final urunlerData = List<Map<String, dynamic>>.from(data['urunler']);
@@ -382,7 +342,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
+        // Shelfs incremental sync
         if (data.containsKey('shelfs')) {
           final shelfsData = List<Map<String, dynamic>>.from(data['shelfs']);
 
@@ -404,9 +364,7 @@ class DatabaseHelper {
           }
         }
 
-        // Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor
-
-        // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
+        // Employees incremental sync
         if (data.containsKey('employees')) {
           final employeesData = List<Map<String, dynamic>>.from(data['employees']);
 
@@ -428,7 +386,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## TEDARİKCİ İÇİN İNKREMENTAL SYNC ##########
+        // Suppliers incremental sync
         if (data.containsKey('tedarikci')) {
           final tedarikciData = List<Map<String, dynamic>>.from(data['tedarikci']);
 
@@ -450,19 +408,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
-        if (data.containsKey('warehouses')) {
-          final warehousesData = List<Map<String, dynamic>>.from(data['warehouses']);
-          for (final warehouse in warehousesData) {
-            final sanitizedWarehouse = _sanitizeRecord('warehouses', warehouse);
-            batch.insert('warehouses', sanitizedWarehouse, conflictAlgorithm: ConflictAlgorithm.replace);
-
-            processedItems++;
-            updateProgress('warehouses');
-          }
-        }
-
-        // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
+        // Goods receipts incremental sync
         if (data.containsKey('goods_receipts')) {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
           for (final receipt in goodsReceiptsData) {
@@ -474,7 +420,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
+        // Goods receipt items incremental sync
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
@@ -486,7 +432,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
+        // WMS putaway status incremental sync
         if (data.containsKey('wms_putaway_status')) {
           final putawayStatusData = List<Map<String, dynamic>>.from(data['wms_putaway_status']);
           for (final putaway in putawayStatusData) {
@@ -498,7 +444,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
+        // Inventory stock incremental sync
         if (data.containsKey('inventory_stock')) {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
@@ -510,7 +456,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
+        // Inventory transfers incremental sync
         if (data.containsKey('inventory_transfers')) {
           final inventoryTransfersData = List<Map<String, dynamic>>.from(data['inventory_transfers']);
           for (final transfer in inventoryTransfersData) {
@@ -522,7 +468,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## SİPARİŞLER İÇİN İNKREMENTAL SYNC ##########
+        // Orders incremental sync
         if (data.containsKey('siparisler')) {
           final siparislerData = List<Map<String, dynamic>>.from(data['siparisler']);
           for (final siparis in siparislerData) {
@@ -534,7 +480,7 @@ class DatabaseHelper {
           }
         }
 
-        // ########## SİPARİŞ AYRINTILI İÇİN İNKREMENTAL SYNC ##########
+        // Order lines incremental sync
         if (data.containsKey('siparis_ayrintili')) {
           final satirlarData = List<Map<String, dynamic>>.from(data['siparis_ayrintili']);
           for (final satir in satirlarData) {
@@ -564,8 +510,8 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci', 'warehouses'];
-        final skippedTables = []; // Kaldırılan tablolar
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci'];
+        final skippedTables = ['warehouses']; // Kaldırılan tablolar
 
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
@@ -582,7 +528,7 @@ class DatabaseHelper {
             updateProgress(table);
           }
         }
-        // ########## İNKREMENTAL SYNC BİTTİ ##########
+        // End of incremental sync
 
         await batch.commit(noResult: true);
       });
@@ -590,7 +536,9 @@ class DatabaseHelper {
       // Foreign key constraint'leri yeniden etkinleştir
       await db.execute('PRAGMA foreign_keys = ON');
     }
-  }  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
+  }
+
+  Map<String, dynamic> _sanitizeRecord(String table, Map<String, dynamic> record) {
     final newRecord = Map<String, dynamic>.from(record);
 
     // Only handle critical field mappings - let SQLite ignore unknown fields
@@ -615,12 +563,11 @@ class DatabaseHelper {
         // Map server fields to local schema - only keep fields that exist in local table
         final localRecord = <String, dynamic>{};
         
-        // Local table columns based on CREATE TABLE statement
+        // Local table columns based on optimized CREATE TABLE statement
         final localColumns = [
           'id', 'tarih', 'notlar', 'user', 'created_at', 'updated_at', 
-          'gun', 'warehouse_code', '_key_sis_depo_source', '__carikodu', 'invoice', 'delivery', 'po_id', 
-          'status', 'fisno', 'depokodu', 'subekodu', 'onay', 
-          'siparisdurum', 'kullaniciadi', 'turu'
+          'gun', '_key_sis_depo_source', '__carikodu', 
+          'status', 'fisno'
         ];
         
         // Copy only existing local columns
@@ -638,13 +585,12 @@ class DatabaseHelper {
         return localRecord;
 
       case 'siparis_ayrintili':
-        // Only keep fields that exist in local schema
+        // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
           'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
-          'birimfiyat', 'tutaranamiktar', 'tutar', 'kdvoran', 'kdvtutar',
-          'tedarikci_id', 'tedarikci_kodu', 'tedarikci_adi', 'created_at',
-          'updated_at', 'status', 'turu'
+          'tedarikci_id', 'tedarikci_fis_id', 'invoice', 'anabirimi', 'birim',
+          'created_at', 'updated_at', 'status', 'good_received', 'turu'
         ];
         
         for (String column in localColumns) {
@@ -910,7 +856,7 @@ class DatabaseHelper {
       LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_id = gri.urun_id
-      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sol.id
+      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
@@ -1628,7 +1574,7 @@ class DatabaseHelper {
         // 4. siparis_ayrintili (sipariş satırları)
         await txn.delete(
           'siparis_ayrintili',
-          where: 'siparis_id = ?',
+          where: 'siparisler_id = ?',
           whereArgs: [orderId]
         );
 
@@ -1650,32 +1596,6 @@ class DatabaseHelper {
     });
   }
 
-  /// Warehouse tablosunu kaldırır (SharedPreferences kullanılıyor)
-  Future<void> removeWarehouseTable() async {
-    final db = await database;
-    try {
-      // Create warehouses table
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS warehouses (
-          id INTEGER PRIMARY KEY,
-          name TEXT,
-          post_code TEXT,
-          ap TEXT,
-          receiving_mode INTEGER DEFAULT 2,
-          branch_code TEXT,
-          warehouse_code TEXT,
-          branch_id INTEGER,
-          dia_id INTEGER,
-          _key TEXT,
-          created_at TEXT,
-          updated_at TEXT
-        )
-      ''');
-      debugPrint("Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor");
-    } catch (e) {
-      debugPrint("Warehouse tablosu kaldırılırken hata: $e");
-    }
-  }
 
   /// Ana temizleme metodu - tüm cleanup işlemlerini gerçekleştirir
   Future<void> performMaintenanceCleanup({int days = 7}) async {

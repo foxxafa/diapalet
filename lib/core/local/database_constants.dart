@@ -6,7 +6,7 @@ class DbTables {
   static const String orders = 'siparisler';
   static const String orderLines = 'siparis_ayrintili';
   static const String products = 'urunler';
-  static const String warehouses = 'warehouses';
+  // Warehouse table removed - using SharedPreferences
   static const String employees = 'employees';
   static const String locations = 'shelfs';
   static const String suppliers = 'tedarikci';
@@ -52,11 +52,11 @@ class DbColumns {
   static const String productsBarcode = 'Barcode1';
   static const String productsActive = 'aktif';
   
-  // Warehouses table
-  static const String warehousesCode = 'warehouse_code';
-  static const String warehousesName = 'name';
-  static const String warehousesBranchId = 'branch_id';
-  static const String warehousesKey = '_key';
+  // Warehouse fields moved to SharedPreferences
+  // static const String warehousesCode = 'warehouse_code';
+  // static const String warehousesName = 'name';
+  // static const String warehousesBranchId = 'branch_id';
+  // static const String warehousesKey = '_key';
   
   // Employees table
   static const String employeesFirstName = 'first_name';
@@ -126,41 +126,34 @@ class DbMinimalFields {
     DbColumns.updatedAt,
   ];
   
-  // Warehouses minimal fields
-  static const List<String> warehousesMinimal = [
-    DbColumns.id,
-    DbColumns.warehousesCode,
-    DbColumns.warehousesName,
-    DbColumns.createdAt,
-    DbColumns.updatedAt,
-  ];
+  // Warehouses minimal fields - REMOVED (using SharedPreferences)
+  // static const List<String> warehousesMinimal = [
+  //   DbColumns.id,
+  //   DbColumns.warehousesCode,
+  //   DbColumns.warehousesName,
+  //   DbColumns.createdAt,
+  //   DbColumns.updatedAt,
+  // ];
 }
 
 /// SQL Query templates - sorgular da buradan yönetilir
 class DbQueries {
-  // Get open orders
-  static String getOpenOrders(String? warehouseNameFilter) {
-    final whereClause = warehouseNameFilter != null 
-        ? 'AND w.${DbColumns.warehousesName} = ?'
-        : '';
-    
+  // Get open orders - Warehouse info from SharedPreferences
+  static String getOpenOrders() {
     return '''
       SELECT DISTINCT
         o.${DbColumns.id},
         o.${DbColumns.ordersFisno},
         o.${DbColumns.ordersDate},
         o.${DbColumns.ordersNotes},
-        w.${DbColumns.warehousesName} as warehouse_name,
         o.${DbColumns.status},
         o.${DbColumns.createdAt},
         o.${DbColumns.updatedAt},
         t.tedarikci_adi as supplierName
       FROM ${DbTables.orders} o
-      LEFT JOIN ${DbTables.warehouses} w ON w.${DbColumns.warehousesKey} = o.${DbColumns.ordersWarehouseKey}
       LEFT JOIN ${DbTables.orderLines} s ON s.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
       LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.id} = s.tedarikci_id
       WHERE o.${DbColumns.status} IN (0, 1)
-        $whereClause
         AND EXISTS (
           SELECT 1
           FROM ${DbTables.orderLines} s2
@@ -173,7 +166,7 @@ class DbQueries {
               WHERE gr.siparis_id = o.${DbColumns.id} AND gri.${DbColumns.orderLinesProductId} = s2.${DbColumns.orderLinesProductId}
             ), 0) + 0.001
         )
-      GROUP BY o.${DbColumns.id}, o.${DbColumns.ordersFisno}, o.${DbColumns.ordersDate}, o.${DbColumns.ordersNotes}, w.${DbColumns.warehousesName}, o.${DbColumns.status}, o.${DbColumns.createdAt}, o.${DbColumns.updatedAt}, t.tedarikci_adi
+      GROUP BY o.${DbColumns.id}, o.${DbColumns.ordersFisno}, o.${DbColumns.ordersDate}, o.${DbColumns.ordersNotes}, o.${DbColumns.status}, o.${DbColumns.createdAt}, o.${DbColumns.updatedAt}, t.tedarikci_adi
       ORDER BY o.${DbColumns.ordersDate} DESC
     ''';
   }
@@ -199,13 +192,5 @@ class DbQueries {
     ''';
   }
   
-  // Get warehouse by code
-  static String getWarehouseByCode() {
-    return '''
-      SELECT ${DbColumns.warehousesName}
-      FROM ${DbTables.warehouses}
-      WHERE ${DbColumns.warehousesCode} = ?
-      LIMIT 1
-    ''';
-  }
+  // Warehouse queries removed - using SharedPreferences
 }

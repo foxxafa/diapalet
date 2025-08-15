@@ -535,7 +535,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             // DD/MM/YYYY formatı tamamlandıysa ve geçerli tarihse quantity field'a geç
             if (value.length == 10) {
               bool isValid = _isValidDate(value);
-              print('Date: $value, IsValid: $isValid'); // Debug
+              // Debug: Date: $value, IsValid: $isValid
               if (isValid) {
                 viewModel.onExpiryDateEntered();
               }
@@ -548,7 +548,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               } else {
                 // Check if it's a past date or invalid date
                 String errorMessage = _getDateErrorMessage(value);
-                print('Error for $value: $errorMessage'); // Debug
+                // Debug: Error for $value: $errorMessage
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(errorMessage),
@@ -563,50 +563,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  Future<void> _showDatePicker(GoodsReceivingViewModel viewModel) async {
-    if (!viewModel.isExpiryDateEnabled) return; // Don't show picker if disabled
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day); // Today at 00:00:00
-
-    final selectedDate = await showDatePicker(
-      context: context,
-      initialDate: today, // Bugünden başla, 30 gün sonra değil
-      firstDate: today, // Bugünün başlangıcından itibaren seçim yapılabilir
-      lastDate: today.add(const Duration(days: 3650)), // 10 years from now
-      helpText: 'goods_receiving_screen.label_expiry_date'.tr(),
-      // Ekstra parametreler ekleyelim
-      currentDate: today, // Bugünü vurgula
-      selectableDayPredicate: (DateTime day) {
-        // Sadece bugün ve sonraki günler seçilebilir
-        return !day.isBefore(today);
-      },
-    );
-
-    if (selectedDate != null) {
-      // Ekstra güvenlik kontrolü: Seçilen tarih bugünden önce mi?
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-
-      if (selectedDate.isBefore(today)) {
-        // Bu durum normalde date picker tarafından engellenmelidir
-        // Ancak ekstra güvenlik için kontrol ediyoruz
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('goods_receiving_screen.error_expiry_date_past'.tr()),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      final formattedDate = DateFormat('dd/MM/yyyy').format(selectedDate);
-      viewModel.expiryDateController.text = formattedDate;
-      viewModel.onExpiryDateEntered(); // Trigger the next field enable
-    }
-  }
 
   Widget _buildAddedItemsSection(GoodsReceivingViewModel viewModel, TextTheme textTheme, ColorScheme colorScheme) {
     if (viewModel.addedItems.isEmpty) {
@@ -839,7 +795,7 @@ class _DateInputFormatter extends TextInputFormatter {
   ) {
     // Handle deletion - if user deletes a slash, delete the preceding digit too
     if (newValue.text.length < oldValue.text.length) {
-      if (newValue.text.length > 0 && oldValue.text.length > newValue.text.length) {
+      if (newValue.text.isNotEmpty && oldValue.text.length > newValue.text.length) {
         final deletedChar = oldValue.text[newValue.text.length];
         if (deletedChar == '/' && newValue.text.isNotEmpty) {
           return TextEditingValue(

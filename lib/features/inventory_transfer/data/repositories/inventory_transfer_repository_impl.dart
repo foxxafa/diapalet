@@ -384,20 +384,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final prefs = await SharedPreferences.getInstance();
     final warehouseCode = prefs.getString('warehouse_code');
 
-    // Get warehouse name from warehouse code using warehouses table
-    String? warehouseName;
-    if (warehouseCode != null) {
-      final warehouseQuery = await db.query(
-        DbTables.warehouses,
-        columns: ['name'],
-        where: 'warehouse_code = ?',
-        whereArgs: [warehouseCode],
-        limit: 1,
-      );
-      if (warehouseQuery.isNotEmpty) {
-        warehouseName = warehouseQuery.first['name'] as String?;
-      }
-    }
+    // Get warehouse name from SharedPreferences
+    final warehouseName = prefs.getString('warehouse_name');
     
     // If warehouse not found, don't filter by warehouse (temporary solution)
     if (warehouseName == null) {
@@ -410,19 +398,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.fisno,
         o.tarih,
         o.notlar,
-        w.name as warehouse_name,
+        ? as warehouse_name,
         o.status,
         o.created_at,
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
-      LEFT JOIN warehouses w ON w._key = o._key_sis_depo_source
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
-      WHERE o.status IN (1, 2, 3) AND (? IS NULL OR w.name = ?)
-      GROUP BY o.id, o.fisno, o.tarih, o.notlar, w.name, o.status, o.created_at, o.updated_at, t.tedarikci_adi
+      WHERE o.status IN (1, 2, 3)
+      GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
-    ''', [warehouseName, warehouseName]);
+    ''', [warehouseName ?? 'N/A']);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }
 

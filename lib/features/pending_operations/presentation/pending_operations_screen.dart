@@ -5,13 +5,9 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/local/database_helper.dart';
-import 'package:diapalet/core/network/api_config.dart';
-import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:diapalet/features/auth/presentation/login_screen.dart';
 import 'package:diapalet/core/services/pdf_service.dart';
 
 

@@ -6,6 +6,9 @@ class ProductInfo extends Equatable {
   final String name;
   final String stockCode;
   final String? barcode1;
+  final String? barcode2;
+  final String? barcode3;
+  final String? barcode4;
   final bool isActive;
 
   const ProductInfo({
@@ -13,6 +16,9 @@ class ProductInfo extends Equatable {
     required this.name,
     required this.stockCode,
     this.barcode1,
+    this.barcode2,
+    this.barcode3,
+    this.barcode4,
     required this.isActive,
   });
 
@@ -28,6 +34,9 @@ class ProductInfo extends Equatable {
       name: map['UrunAdi'] as String? ?? '',
       stockCode: map['StokKodu'] as String? ?? '',
       barcode1: map['Barcode1'] as String?,
+      barcode2: map['Barcode2'] as String?,
+      barcode3: map['Barcode3'] as String?,
+      barcode4: map['Barcode4'] as String?,
       isActive: (map['aktif'] as int? ?? 1) == 1,
     );
   }
@@ -40,6 +49,9 @@ class ProductInfo extends Equatable {
       name: json['name'] as String,
       stockCode: json['stockCode'] as String? ?? json['code'] as String? ?? '',
       barcode1: json['barcode1'] as String?,
+      barcode2: json['barcode2'] as String?,
+      barcode3: json['barcode3'] as String?,
+      barcode4: json['barcode4'] as String?,
       isActive: (json['isActive'] as bool? ?? true),
     );
   }
@@ -51,10 +63,13 @@ class ProductInfo extends Equatable {
       'name': name,
       'stockCode': stockCode,
       'barcode1': barcode1,
+      'barcode2': barcode2,
+      'barcode3': barcode3,
+      'barcode4': barcode4,
       'isActive': isActive,
     };
   }
 
   @override
-  List<Object?> get props => [id, name, stockCode, barcode1, isActive];
+  List<Object?> get props => [id, name, stockCode, barcode1, barcode2, barcode3, barcode4, isActive];
 }

@@ -399,10 +399,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
         ProductInfo? foundProduct;
 
-        // Önce tam eşleşme ara - SADECE BARKOD
+        // Önce tam eşleşme ara - TÜM BARKOD ALANLARI
         try {
           foundProduct = productSource.firstWhere((p) =>
-            (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()));
+            (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
+            (p.barcode2?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
+            (p.barcode3?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
+            (p.barcode4?.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
           // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD
           foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch);
@@ -482,8 +485,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
     final lowerQuery = query.toLowerCase();
     _productSearchResults = productSource.where((product) {
-      // Sadece barkod alanında LIKE arama yap (barkod içinde geçen)
-      return (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+      // Sadece barkod alanlarında LIKE arama yap (Barcode1, Barcode2, Barcode3, Barcode4)
+      return (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false) ||
+             (product.barcode2?.toLowerCase().contains(lowerQuery) ?? false) ||
+             (product.barcode3?.toLowerCase().contains(lowerQuery) ?? false) ||
+             (product.barcode4?.toLowerCase().contains(lowerQuery) ?? false);
     }).toList();
 
     // Check if we have search results and auto-select if only one result

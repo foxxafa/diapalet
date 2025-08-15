@@ -193,90 +193,33 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     debugPrint("DEBUG: Warehouse Code from SharedPreferences: $warehouseCode");
 
-    // Get warehouse _key from warehouse code using warehouses table
-    String? warehouseKey;
-    if (warehouseCode != null) {
-      // First check what warehouses we have
-      final allWarehouses = await db.query(DbTables.warehouses);
-      debugPrint("DEBUG: Available warehouses count: ${allWarehouses.length}");
-      if (allWarehouses.isNotEmpty) {
-        for (var warehouse in allWarehouses) {
-          debugPrint("  - Code: '${warehouse[DbColumns.warehousesCode]}' -> Key: '${warehouse[DbColumns.warehousesKey]}' -> Name: '${warehouse[DbColumns.warehousesName]}'");
-        }
-      } else {
-        debugPrint("  - No warehouses found in database");
-      }
-      
-      final warehouseQuery = await db.query(
-        DbTables.warehouses,
-        columns: [DbColumns.warehousesKey],
-        where: '${DbColumns.warehousesCode} = ?',
-        whereArgs: [warehouseCode],
-        limit: 1,
-      );
-      if (warehouseQuery.isNotEmpty) {
-        warehouseKey = warehouseQuery.first[DbColumns.warehousesKey] as String?;
-      }
-    }
+    // Warehouse bilgileri SharedPreferences'ta tutuluyor, tablo sorgusu gerek yok
+    // Tüm açık siparişleri getir - warehouse filtreleme backend'de yapılıyor
+    debugPrint("DEBUG: Getting all open orders (warehouse filtering done by backend)");
 
-    debugPrint("DEBUG: Warehouse Key for code $warehouseCode: $warehouseKey");
-
-    if (warehouseKey == null) {
-      debugPrint("WARNING: Could not find warehouse key for code $warehouseCode");
-      // GEÇICI ÇÖZÜM: Warehouse bulunamazsa tüm siparişleri getir
-      debugPrint("TEMPORARY: Getting all orders without warehouse filter");
-      
-      final openOrdersMaps = await db.rawQuery(DbQueries.getOpenOrders(null));
-
-      debugPrint("DEBUG: Found ${openOrdersMaps.length} orders without warehouse filter");
-      
-      // Show warehouse names in orders for debugging
-      final uniqueWarehouses = openOrdersMaps.map((o) => o['warehouse_name']).toSet();
-      debugPrint("DEBUG: Order warehouse names: ${uniqueWarehouses.join(', ')}");
-      
-      final openOrders = openOrdersMaps.map((orderMap) => PurchaseOrder.fromMap(orderMap)).toList();
-      
-      for (int i = 0; i < openOrders.length; i++) {
-        final order = openOrders[i];
-        final orderMap = openOrdersMaps[i];
-        debugPrint("DEBUG: Order ID: ${order.id}, PO ID: ${order.poId}, Warehouse: ${orderMap['warehouse_name']}");
-      }
-      
-      return openOrders;
-    }
-
-    // İş mantığına özel kompleks sorgu - repository'de kalıyor
-    // Açık siparişleri ve alınan/beklenen miktarları hesaplar
-    // DÜZELTME: Basit sorgu - supplier bilgisi ile birlikte
+    // Basit sorgu - warehouse join kaldırıldı
     final openOrdersMaps = await db.rawQuery('''
       SELECT DISTINCT
         o.${DbColumns.id},
         o.${DbColumns.ordersFisno},
         o.${DbColumns.ordersDate},
         o.${DbColumns.ordersNotes},
-        w.${DbColumns.warehousesName} as warehouse_name,
         o.${DbColumns.status},
         o.${DbColumns.createdAt},
         o.${DbColumns.updatedAt},
         t.${DbColumns.suppliersName} as supplierName
       FROM ${DbTables.orders} o
-      LEFT JOIN ${DbTables.warehouses} w ON w.${DbColumns.warehousesKey} = o.${DbColumns.ordersWarehouseKey}
       LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.suppliersCode} = o.${DbColumns.ordersSupplierCode}
       WHERE o.${DbColumns.status} IN (0, 1)
-        AND o.${DbColumns.ordersWarehouseKey} = ?
       ORDER BY o.${DbColumns.ordersDate} DESC
-    ''', [warehouseKey]);
+    ''');
 
-    debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders with optimized query");
+    debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders");
     
-    // DEBUG: Basit sipariş sayımı (filtresiz)
+    // DEBUG: Basit sipariş sayımı
     final allOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders}');
     final allCount = Sqflite.firstIntValue(allOrdersCount) ?? 0;
     debugPrint("DEBUG: Toplam sipariş sayısı (tüm status): $allCount");
-    
-    final warehouseOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders} WHERE ${DbColumns.ordersWarehouseKey} = ?', [warehouseKey]);
-    final warehouseCount = Sqflite.firstIntValue(warehouseOrdersCount) ?? 0;
-    debugPrint("DEBUG: Warehouse $warehouseKey için sipariş sayısı: $warehouseCount");
     
     final statusOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders} WHERE ${DbColumns.status} IN (0, 1)');
     final statusCount = Sqflite.firstIntValue(statusOrdersCount) ?? 0;
@@ -288,7 +231,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("DEBUG: Open Order ID: ${order.id}, PO ID: ${order.poId}, Status: ${order.status}");
     }
 
-    debugPrint("Mal kabul için açık siparişler (Warehouse Code: $warehouseCode): ${openOrders.length} adet bulundu");
+    debugPrint("Mal kabul için açık siparişler: ${openOrders.length} adet bulundu");
     return openOrders;
   }
 
@@ -412,8 +355,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<ProductInfo>> searchProducts(String query) async {
     final db = await dbHelper.database;
-    // SADECE BARKOD alanıyla arama yap
-    final maps = await db.query(DbTables.products, where: '${DbColumns.productsBarcode} LIKE ?', whereArgs: ['%$query%']);
+    // SADECE BARKOD alanlarıyla arama yap (Barcode1, Barcode2, Barcode3, Barcode4)
+    final maps = await db.query(
+      DbTables.products, 
+      where: 'Barcode1 LIKE ? OR Barcode2 LIKE ? OR Barcode3 LIKE ? OR Barcode4 LIKE ?', 
+      whereArgs: ['%$query%', '%$query%', '%$query%', '%$query%']
+    );
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -455,8 +402,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       // Benzer kodları arayalım
       final similarMaps = await db.query(
         DbTables.products,
-        where: '${DbColumns.productsCode} LIKE ? OR ${DbColumns.productsBarcode} LIKE ?',
-        whereArgs: ['%$code%', '%$code%'],
+        where: '${DbColumns.productsCode} LIKE ? OR Barcode1 LIKE ? OR Barcode2 LIKE ? OR Barcode3 LIKE ? OR Barcode4 LIKE ?',
+        whereArgs: ['%$code%', '%$code%', '%$code%', '%$code%', '%$code%'],
         limit: 5
       );
       debugPrint("🔎 DEBUG: Benzer kodlar (LIKE arama): ${similarMaps.length} ürün");
@@ -474,11 +421,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode'");
 
-    // SADECE BARKOD alanında tam eşleşme arama
+    // TÜM BARKOD alanlarında tam eşleşme arama
     final maps = await db.query(
       DbTables.products,
-      where: '${DbColumns.productsBarcode} = ?',
-      whereArgs: [barcode],
+      where: 'Barcode1 = ? OR Barcode2 = ? OR Barcode3 = ? OR Barcode4 = ?',
+      whereArgs: [barcode, barcode, barcode, barcode],
       limit: 1
     );
 

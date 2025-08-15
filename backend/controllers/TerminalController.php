@@ -647,7 +647,7 @@ class TerminalController extends Controller
 
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
         $urunlerQuery = (new Query())
-            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'aktif', 'updated_at'])
+            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'Barcode2', 'Barcode3', 'Barcode4', 'aktif', 'updated_at'])
             ->from('urunler');
 
         // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
@@ -688,7 +688,10 @@ class TerminalController extends Controller
         // ########## TEDARİKÇİ İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
-        $shelfsQuery = (new Query())->from('shelfs')->where(['warehouse_id' => $warehouseId]);
+        $shelfsQuery = (new Query())
+            ->select(['id', 'warehouse_id', 'name', 'code', 'is_active', 'created_at', 'updated_at'])
+            ->from('shelfs')
+            ->where(['warehouse_id' => $warehouseId]);
         if ($serverSyncTimestamp) {
             $shelfsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
             Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki raflar alınıyor.", __METHOD__);
@@ -698,16 +701,8 @@ class TerminalController extends Controller
         $data['shelfs'] = $shelfsQuery->all();
         $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
 
-        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
-        $warehousesQuery = (new Query())->from('warehouses');
-        if ($serverSyncTimestamp) {
-            $warehousesQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki depolar alınıyor.", __METHOD__);
-        } else {
-            Yii::info("Full sync: Tüm depolar alınıyor (ilk sync).", __METHOD__);
-        }
-        $data['warehouses'] = $warehousesQuery->all();
-        $this->castNumericValues($data['warehouses'], ['id', 'branch_id']);
+        // warehouse tablosu kaldırıldı - mobil uygulama SharedPreferences kullanıyor
+        $data['warehouses'] = []; // Boş array gönder
 
         // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
         // Rowhub formatında employee sorgusu
@@ -748,11 +743,11 @@ class TerminalController extends Controller
         $warehouseKey = $warehouseInfo['_key'];
 
         // 2. Siparişleri warehouse _key ile eşleştiriyoruz.
-        // Sadece gerekli alanları seç - minimal field selection
+        // Optimize edilmiş alanları seç - gereksiz alanlar kaldırıldı
         $poQuery = (new Query())
             ->select([
                 'id', 'fisno', 'tarih', 'status', 
-                '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'
+                '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at', 'gun'
             ])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
@@ -809,7 +804,15 @@ class TerminalController extends Controller
 
         if (!empty($poIds)) {
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
-            $poLineQuery = (new Query())->from('siparis_ayrintili')->where(['in', 'siparisler_id', $poIds, 'turu' => '1']);
+            $poLineQuery = (new Query())
+                ->select([
+                    'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
+                    'tedarikci_id', 'tedarikci_fis_id', 'invoice', 'anabirimi', 'birim',
+                    'created_at', 'updated_at', 'status', 'good_received', 'turu'
+                ])
+                ->from('siparis_ayrintili')
+                ->where(['in', 'siparisler_id', $poIds])
+                ->andWhere(['turu' => '1']);
             if ($serverSyncTimestamp) {
                 $poLineQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
                 Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki sipariş kalemleri alınıyor.", __METHOD__);
