@@ -236,6 +236,12 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
     try {
       _orderItems = await _repository.getPurchaseOrderItems(orderId);
+      
+      // Debug: Sipariş ürünlerinin barkodlarını kontrol et
+      debugPrint("DEBUG: Order items loaded for order $orderId:");
+      for (var item in _orderItems) {
+        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Barcode: '${item.product?.barcode1}'");
+      }
 
       if (_isDisposed) return;
     } catch (e) {

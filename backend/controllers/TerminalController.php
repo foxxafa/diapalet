@@ -16,8 +16,7 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
-        // DÜZELTME: 'dev-reset' endpoint'i API anahtarı kontrolünden muaf tutuldu.
-        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs' && $action->id !== 'dev-reset') {
+        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') {
             $this->checkApiKey();
         }
 
@@ -628,16 +627,15 @@ class TerminalController extends Controller
 
     // ########## UTC TIMESTAMP KULLANIMI ##########
     // Global kullanım için UTC timestamp'leri direkt karşılaştır
-    $serverSyncTimestamp = $lastSyncTimestamp; // UTC timestamp'i doğrudan kullan
+    $serverSyncTimestamp = $lastSyncTimestamp;
+    
+    // ÇÖZÜM: ON UPDATE CURRENT_TIMESTAMP sorunu için 30 saniye buffer ekle
     if ($lastSyncTimestamp) {
-        Yii::info("İnkremental sync: UTC timestamp '$lastSyncTimestamp' kullanılıyor", __METHOD__);
-    } else {
-        Yii::info("Full sync: Tüm veriler alınacak (ilk sync)", __METHOD__);
-    }
-    $serverSyncTimestamp = $lastSyncTimestamp; // UTC timestamp'i olduğu gibi kullan
-
-    if ($lastSyncTimestamp) {
-        Yii::info("İnkremental sync: UTC timestamp '$lastSyncTimestamp' kullanılıyor", __METHOD__);
+        $syncDateTime = new \DateTime($lastSyncTimestamp);
+        $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
+        $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+        
+        Yii::info("İnkremental sync: Orijinal timestamp '$lastSyncTimestamp', Buffer ile kullanılan: '$serverSyncTimestamp'", __METHOD__);
     } else {
         Yii::info("Full sync: Tüm veriler alınacak (ilk sync)", __METHOD__);
     }
@@ -964,120 +962,6 @@ class TerminalController extends Controller
         return $this->asJson($result);
     }
 
-    /**
-     * 🔧 DEVELOPMENT ONLY: Database'i temizleyip test verileriyle yeniden yükler
-     * ⚠️ SADECE DEVELOPMENT/TEST ORTAMLARINDA KULLANILMALIDIR!
-     */
-    public function actionDevReset()
-    {
-        // YII_ENV kontrolü, geliştiricinin isteği üzerine kaldırılmıştır.
-        /* if (YII_ENV_PROD) {
-            throw new \yii\web\ForbiddenHttpException('Bu endpoint production ortamında kullanılamaz.');
-        } */
-
-        Yii::info("DevReset başlatılıyor...", __METHOD__);
-
-        $db = Yii::$app->db;
-        $transaction = $db->beginTransaction();
-
-        try {
-            // İlk önce force reset
-            $forceResetFile = Yii::getAlias('@app/force_reset.sql');
-            if (file_exists($forceResetFile)) {
-                Yii::info("Force reset dosyası bulundu, çalıştırılıyor...", __METHOD__);
-                $forceResetContent = file_get_contents($forceResetFile);
-                $forceCommands = array_filter(array_map('trim', explode(';', $forceResetContent)));
-
-                foreach ($forceCommands as $command) {
-                    if (!empty($command)) {
-                        $db->createCommand($command)->execute();
-                    }
-                }
-                Yii::info("Force reset tamamlandı", __METHOD__);
-            }
-
-            // Sonra complete setup
-            $sqlFile = Yii::getAlias('@app/complete_setup.sql');
-            Yii::info("SQL file path: $sqlFile", __METHOD__);
-
-            if (!file_exists($sqlFile)) {
-                throw new \yii\web\ServerErrorHttpException('Kurulum SQL dosyası bulunamadı. Aranan konum: @app/complete_setup.sql (Gerçek yol: ' . $sqlFile . ')');
-            }
-
-            Yii::info("SQL dosyası bulundu, okunuyor...", __METHOD__);
-            $sqlContent = file_get_contents($sqlFile);
-
-            // Improved SQL parsing to handle multi-line statements properly
-            // Remove comments but preserve newlines for proper statement separation
-            $sqlContent = preg_replace('!/\*.*?\*/!s', '', $sqlContent); // Multi-line comments
-            $sqlContent = preg_replace('/--[^\r\n]*/', '', $sqlContent); // Single-line comments
-
-            // Split by semicolon but be careful about CREATE TABLE statements
-            $commands = [];
-            $currentCommand = '';
-            $lines = explode("\n", $sqlContent);
-
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line)) continue;
-
-                $currentCommand .= $line . "\n";
-
-                // If line ends with semicolon and we're not in a complex statement
-                if (substr($line, -1) === ';') {
-                    $commands[] = trim($currentCommand);
-                    $currentCommand = '';
-                }
-            }
-
-            // Add any remaining command
-            if (!empty(trim($currentCommand))) {
-                $commands[] = trim($currentCommand);
-            }
-
-            $executedCommands = 0;
-            $failedCommands = [];
-
-            foreach ($commands as $i => $command) {
-                $command = trim($command);
-                if (empty($command)) continue;
-
-                try {
-                    Yii::info("Executing command " . ($i + 1) . ": " . substr($command, 0, 100) . "...", __METHOD__);
-                    $db->createCommand($command)->execute();
-                    $executedCommands++;
-                } catch (\Exception $cmdException) {
-                    $failedCommands[] = [
-                        'command' => substr($command, 0, 200),
-                        'error' => $cmdException->getMessage()
-                    ];
-                    Yii::error("Failed to execute command " . ($i + 1) . ": " . $cmdException->getMessage(), __METHOD__);
-                    // Continue with other commands instead of failing completely
-                }
-            }
-
-            if (!empty($failedCommands)) {
-                Yii::warning("Some commands failed during DevReset: " . json_encode($failedCommands), __METHOD__);
-            }
-
-            $transaction->commit();
-
-            Yii::info("DevReset başarıyla tamamlandı. Çalıştırılan komut sayısı: $executedCommands", __METHOD__);
-
-            return $this->asJson([
-                'status' => 'success',
-                'message' => "Veritabanı başarıyla sıfırlandı ve test verileri yüklendi. $executedCommands komut çalıştırıldı.",
-                'executed_commands' => $executedCommands,
-                'failed_commands' => count($failedCommands),
-                'failures' => $failedCommands
-            ]);
-
-        } catch (\Exception $e) {
-            $transaction->rollBack();
-            Yii::error("Database reset işlemi başarısız: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
-            throw new \yii\web\ServerErrorHttpException('Veritabanı sıfırlanırken bir hata oluştu: ' . $e->getMessage(), 0, $e);
-        }
-    }
 
     public function actionGetFreeReceiptsForPutaway()
     {

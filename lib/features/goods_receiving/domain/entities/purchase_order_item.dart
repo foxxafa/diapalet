@@ -37,9 +37,9 @@ class PurchaseOrderItem {
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
     return PurchaseOrderItem(
       id: map['id'] as int,
-      orderId: map['siparis_id'] as int,
+      orderId: map['siparisler_id'] as int,  // DÜZELTME: Correct field name
       productId: map['urun_id'] as int,
-      expectedQuantity: (map['miktar'] as num? ?? 0).toDouble(),
+      expectedQuantity: (map['anamiktar'] as num? ?? 0).toDouble(),  // DÜZELTME: Correct field name
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: map['birim'] as String?,
