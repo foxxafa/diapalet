@@ -117,6 +117,7 @@
     "date_input_helper": "Day/Month/Year (e.g., 15/12/2024)",
     "error_expiry_date_past": "Expiry date cannot be in the past",
     "error_expiry_date_invalid": "Please enter a valid date (DD/MM/YYYY)",
+    "error_loading_details": "Error loading order details: {error}",
     "validator_expiry_date_required": "Expiry date is required",
     "validator_expiry_date_format": "Please enter a valid date (DD/MM/YYYY)",
     "validator_expiry_date_future": "Expiry date cannot be in the past",

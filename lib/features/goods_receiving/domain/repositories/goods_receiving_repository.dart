@@ -30,6 +30,9 @@ abstract class GoodsReceivingRepository {
   /// Tam eşleşme ile ürün bulur (StokKodu veya Barcode1).
   Future<ProductInfo?> findProductByExactMatch(String code);
 
+  /// Sadece barkod ile tam eşleşme yaparak ürün bulur.
+  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode);
+
   /// Sistemdeki tüm lokasyonları getirir.
   Future<List<LocationInfo>> getLocations();
 

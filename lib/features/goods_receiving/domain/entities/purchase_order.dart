@@ -28,7 +28,7 @@ class PurchaseOrder {
       id: map['id'] as int,
       poId: map['fisno'] as String?,
       date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
-      notes: map['notlar'] as String?,
+      notes: map.containsKey('notlar') ? map['notlar'] as String? : null,
       // ANA DÜZELTME: Sunucudan gelen `status` alanı burada doğru bir şekilde okunuyor.
       status: map['status'] as int?,
       supplierName: map['supplierName'] as String?,

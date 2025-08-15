@@ -223,6 +223,7 @@
     "created": "Oluşturulma:",
     "data": "Veri:",
     "error_loading": "Veri yüklenirken hata oluştu: {error}",
+    "error_loading_details": "Sipariş detayları yüklenirken hata: {error}",
     "unknown_error": "Bilinmeyen hata",
     "tooltip": {
       "refresh": "Listeyi Yenile",

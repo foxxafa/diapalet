@@ -412,11 +412,15 @@ class TerminalController extends Controller
 
             // 6. Update putaway status for order-based operations
             if ($isPutawayOperation && $siparisId) {
-                 $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'urun_id' => $productId, 'turu' => '1'])->one($db);
-                 if ($orderLine) {
-                     $orderLineId = $orderLine['id'];
-                     $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
-                     $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
+                 // kartkodu ile ürün bulup sipariş satırını bul  
+                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['UrunId' => $productId])->scalar($db);
+                 if ($productCode) {
+                     $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
+                     if ($orderLine) {
+                         $orderLineId = $orderLine['id'];
+                         $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
+                         $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
+                     }
                  }
             }
         }
@@ -523,12 +527,14 @@ class TerminalController extends Controller
             SELECT
                 s.id,
                 s.anamiktar,
+                u.UrunId,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
                  JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                 WHERE gr.siparis_id = s.siparis_id AND gri.urun_id = s.urun_id
+                 WHERE gr.siparis_id = :siparis_id AND gri.urun_id = u.UrunId
                 ) as received_quantity
             FROM siparis_ayrintili s
+            JOIN urunler u ON u.StokKodu = s.kartkodu
             WHERE s.siparisler_id = :siparis_id AND s.turu = '1'
         ";
         $lines = $db->createCommand($sql, [':siparis_id' => $siparisId])->queryAll();
@@ -730,7 +736,7 @@ class TerminalController extends Controller
 
         // 1. Gelen warehouseId'ye ait warehouse bilgilerini buluyoruz.
         $warehouseInfo = (new Query())
-            ->select(['warehouse_code', 'name'])
+            ->select(['warehouse_code', 'name', '_key'])
             ->from('warehouses')
             ->where(['id' => $warehouseId])
             ->one();
@@ -741,16 +747,17 @@ class TerminalController extends Controller
 
         $warehouseCode = $warehouseInfo['warehouse_code'];
         $warehouseName = $warehouseInfo['name'];
+        $warehouseKey = $warehouseInfo['_key'];
 
-        // 2. Siparişleri warehouse name'e göre arıyoruz (geçici çözüm).
+        // 2. Siparişleri warehouse _key ile eşleştiriyoruz.
         // Sadece gerekli alanları seç - minimal field selection
         $poQuery = (new Query())
             ->select([
-                'id', 'fisno', 'tarih', 'status', '__sourcedepoadi', 
-                'notlar', 'created_at', 'updated_at'
+                'id', 'fisno', 'tarih', 'status', 
+                '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'
             ])
             ->from('siparisler')
-            ->where(['__sourcedepoadi' => $warehouseName])
+            ->where(['_key_sis_depo_source' => $warehouseKey])
             ->andWhere(['in', 'status', [0, 1, 2, 3]]); // Aktif durumlar
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
@@ -762,9 +769,35 @@ class TerminalController extends Controller
         }
 
         $data['siparisler'] = $poQuery->all();
+        
+        // notlar alanını null olarak ekle çünkü server DB'de yok ama client'da kullanılıyor
+        foreach ($data['siparisler'] as &$siparis) {
+            $siparis['notlar'] = null;
+        }
         // ########## UYARLAMA BİTTİ ##########
 
-        Yii::info("Warehouse $warehouseId (Name: $warehouseName, Code: $warehouseCode) için " . count($data['siparisler']) . " adet sipariş bulundu.", __METHOD__);
+        Yii::info("Warehouse $warehouseId (Name: $warehouseName, Code: $warehouseCode, Key: $warehouseKey) için " . count($data['siparisler']) . " adet sipariş bulundu.", __METHOD__);
+        
+        // DEBUG: Sipariş olmadığında debug bilgisi
+        if (empty($data['siparisler'])) {
+            Yii::info("DEBUG: Sipariş bulunamadı. Kontrol için tüm siparişleri sorguluyoruz...", __METHOD__);
+            $allOrdersQuery = (new Query())->select(['count(*) as total'])->from('siparisler');
+            $allOrdersCount = $allOrdersQuery->scalar();
+            Yii::info("DEBUG: Toplam sipariş sayısı: $allOrdersCount", __METHOD__);
+            
+            $ordersWithKeyQuery = (new Query())->select(['count(*) as total'])->from('siparisler')->where(['_key_sis_depo_source' => $warehouseKey]);
+            $ordersWithKeyCount = $ordersWithKeyQuery->scalar();
+            Yii::info("DEBUG: Warehouse key '$warehouseKey' ile eşleşen sipariş sayısı: $ordersWithKeyCount", __METHOD__);
+            
+            // Eğer _key_sis_depo_source sütunu yoksa hata atacak
+            try {
+                $sampleOrderQuery = (new Query())->select(['id', '_key_sis_depo_source'])->from('siparisler')->limit(5);
+                $sampleOrders = $sampleOrderQuery->all();
+                Yii::info("DEBUG: Örnek siparişlerin _key_sis_depo_source değerleri: " . json_encode($sampleOrders), __METHOD__);
+            } catch (\Exception $e) {
+                Yii::info("DEBUG: _key_sis_depo_source sütunu bulunamadı: " . $e->getMessage(), __METHOD__);
+            }
+        }
 
         $this->castNumericValues($data['siparisler'], ['id', 'status']); // `branch_id` artık bu tabloda olmadığı için cast'ten çıkarıldı.
 

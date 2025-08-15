@@ -193,15 +193,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     debugPrint("DEBUG: Warehouse Code from SharedPreferences: $warehouseCode");
 
-    // Get warehouse name from warehouse code using warehouses table
-    String? warehouseName;
+    // Get warehouse _key from warehouse code using warehouses table
+    String? warehouseKey;
     if (warehouseCode != null) {
       // First check what warehouses we have
       final allWarehouses = await db.query(DbTables.warehouses);
       debugPrint("DEBUG: Available warehouses count: ${allWarehouses.length}");
       if (allWarehouses.isNotEmpty) {
         for (var warehouse in allWarehouses) {
-          debugPrint("  - Code: '${warehouse[DbColumns.warehousesCode]}' -> Name: '${warehouse[DbColumns.warehousesName]}'");
+          debugPrint("  - Code: '${warehouse[DbColumns.warehousesCode]}' -> Key: '${warehouse[DbColumns.warehousesKey]}' -> Name: '${warehouse[DbColumns.warehousesName]}'");
         }
       } else {
         debugPrint("  - No warehouses found in database");
@@ -209,20 +209,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       
       final warehouseQuery = await db.query(
         DbTables.warehouses,
-        columns: [DbColumns.warehousesName],
+        columns: [DbColumns.warehousesKey],
         where: '${DbColumns.warehousesCode} = ?',
         whereArgs: [warehouseCode],
         limit: 1,
       );
       if (warehouseQuery.isNotEmpty) {
-        warehouseName = warehouseQuery.first[DbColumns.warehousesName] as String?;
+        warehouseKey = warehouseQuery.first[DbColumns.warehousesKey] as String?;
       }
     }
 
-    debugPrint("DEBUG: Warehouse Name for code $warehouseCode: $warehouseName");
+    debugPrint("DEBUG: Warehouse Key for code $warehouseCode: $warehouseKey");
 
-    if (warehouseName == null) {
-      debugPrint("WARNING: Could not find warehouse name for code $warehouseCode");
+    if (warehouseKey == null) {
+      debugPrint("WARNING: Could not find warehouse key for code $warehouseCode");
       // GEÇICI ÇÖZÜM: Warehouse bulunamazsa tüm siparişleri getir
       debugPrint("TEMPORARY: Getting all orders without warehouse filter");
       
@@ -247,39 +247,40 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     // İş mantığına özel kompleks sorgu - repository'de kalıyor
     // Açık siparişleri ve alınan/beklenen miktarları hesaplar
+    // DÜZELTME: Basit sorgu - supplier bilgisi ile birlikte
     final openOrdersMaps = await db.rawQuery('''
       SELECT DISTINCT
         o.${DbColumns.id},
         o.${DbColumns.ordersFisno},
         o.${DbColumns.ordersDate},
         o.${DbColumns.ordersNotes},
-        o.${DbColumns.ordersWarehouseName} as warehouse_name,
+        w.${DbColumns.warehousesName} as warehouse_name,
         o.${DbColumns.status},
         o.${DbColumns.createdAt},
         o.${DbColumns.updatedAt},
-        t.tedarikci_adi as supplierName
+        t.${DbColumns.suppliersName} as supplierName
       FROM ${DbTables.orders} o
-      LEFT JOIN ${DbTables.orderLines} s ON s.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
-      LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.id} = s.tedarikci_id
+      LEFT JOIN ${DbTables.warehouses} w ON w.${DbColumns.warehousesKey} = o.${DbColumns.ordersWarehouseKey}
+      LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.suppliersCode} = o.${DbColumns.ordersSupplierCode}
       WHERE o.${DbColumns.status} IN (0, 1)
-        AND o.${DbColumns.ordersWarehouseName} = ?
-        AND EXISTS (
-          SELECT 1
-          FROM ${DbTables.orderLines} s2
-          WHERE s2.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
-            AND s2.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
-            AND s2.${DbColumns.orderLinesQuantity} > COALESCE((
-              SELECT SUM(gri.quantity_received)
-              FROM ${DbTables.goodsReceiptItems} gri
-              JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
-              WHERE gr.siparis_id = o.${DbColumns.id} AND gri.${DbColumns.orderLinesProductId} = s2.${DbColumns.orderLinesProductId}
-            ), 0) + 0.001
-        )
-      GROUP BY o.${DbColumns.id}, o.${DbColumns.ordersFisno}, o.${DbColumns.ordersDate}, o.${DbColumns.ordersNotes}, o.${DbColumns.ordersWarehouseName}, o.${DbColumns.status}, o.${DbColumns.createdAt}, o.${DbColumns.updatedAt}, t.tedarikci_adi
+        AND o.${DbColumns.ordersWarehouseKey} = ?
       ORDER BY o.${DbColumns.ordersDate} DESC
-    ''', [warehouseName]);
+    ''', [warehouseKey]);
 
     debugPrint("DEBUG: Found ${openOrdersMaps.length} open orders with optimized query");
+    
+    // DEBUG: Basit sipariş sayımı (filtresiz)
+    final allOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders}');
+    final allCount = Sqflite.firstIntValue(allOrdersCount) ?? 0;
+    debugPrint("DEBUG: Toplam sipariş sayısı (tüm status): $allCount");
+    
+    final warehouseOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders} WHERE ${DbColumns.ordersWarehouseKey} = ?', [warehouseKey]);
+    final warehouseCount = Sqflite.firstIntValue(warehouseOrdersCount) ?? 0;
+    debugPrint("DEBUG: Warehouse $warehouseKey için sipariş sayısı: $warehouseCount");
+    
+    final statusOrdersCount = await db.rawQuery('SELECT COUNT(*) as count FROM ${DbTables.orders} WHERE ${DbColumns.status} IN (0, 1)');
+    final statusCount = Sqflite.firstIntValue(statusOrdersCount) ?? 0;
+    debugPrint("DEBUG: Status 0,1 olan sipariş sayısı: $statusCount");
 
     final openOrders = openOrdersMaps.map((orderMap) => PurchaseOrder.fromMap(orderMap)).toList();
 
@@ -295,10 +296,32 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
+    
+    // Debug: Önce sipariş ayrıntılı tablosunu kontrol et
+    final orderLinesCheck = await db.query(
+      DbTables.orderLines, 
+      where: '${DbColumns.orderLinesOrderId} = ?', 
+      whereArgs: [orderId]
+    );
+    debugPrint("DEBUG: Order lines count for order $orderId: ${orderLinesCheck.length}");
+    if (orderLinesCheck.isNotEmpty) {
+      for (var line in orderLinesCheck) {
+        debugPrint("  - Line ID: ${line['id']}, kartkodu: '${line['kartkodu']}', turu: '${line['turu']}'");
+      }
+    }
+    
+    // Debug: Ürünler tablosunu kontrol et  
+    final productsCheck = await db.query(DbTables.products, limit: 3);
+    debugPrint("DEBUG: Sample products:");
+    for (var product in productsCheck) {
+      debugPrint("  - Product ID: ${product['UrunId']}, StokKodu: '${product['StokKodu']}'");
+    }
+    
     // Sipariş detayları için kompleks sorgu - iş mantığı burada
     final maps = await db.rawQuery('''
         SELECT
           s.*,
+          u.${DbColumns.productsId} as urun_id,
           u.${DbColumns.productsName},
           u.${DbColumns.productsCode},
           u.${DbColumns.productsBarcode},
@@ -306,14 +329,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           COALESCE((SELECT SUM(gri.quantity_received)
                      FROM ${DbTables.goodsReceiptItems} gri
                      JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
-                     WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = s.${DbColumns.orderLinesProductId}), 0) as receivedQuantity,
+                     WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = u.${DbColumns.productsId}), 0) as receivedQuantity,
           COALESCE(wps.putaway_quantity, 0) as transferredQuantity
         FROM ${DbTables.orderLines} s
-        JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.orderLinesProductId}
+        JOIN ${DbTables.products} u ON u.${DbColumns.productsCode} = s.${DbColumns.orderLinesProductCode}
         LEFT JOIN ${DbTables.putawayStatus} wps ON wps.purchase_order_line_id = s.${DbColumns.id}
         WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
     ''', [orderId]);
-    debugPrint("DEBUG: Found ${maps.length} items for order $orderId");
+    debugPrint("DEBUG: Found ${maps.length} items for order $orderId with JOIN");
     return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
   }
 
@@ -389,8 +412,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<ProductInfo>> searchProducts(String query) async {
     final db = await dbHelper.database;
-    // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
-    final maps = await db.query(DbTables.products, where: '${DbColumns.productsName} LIKE ? OR ${DbColumns.productsCode} LIKE ? OR ${DbColumns.productsBarcode} LIKE ?', whereArgs: ['%$query%', '%$query%', '%$query%']);
+    // SADECE BARKOD alanıyla arama yap
+    final maps = await db.query(DbTables.products, where: '${DbColumns.productsBarcode} LIKE ?', whereArgs: ['%$query%']);
     return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -447,6 +470,30 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
+  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode) async {
+    final db = await dbHelper.database;
+    debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode'");
+
+    // SADECE BARKOD alanında tam eşleşme arama
+    final maps = await db.query(
+      DbTables.products,
+      where: '${DbColumns.productsBarcode} = ?',
+      whereArgs: [barcode],
+      limit: 1
+    );
+
+    debugPrint("🎯 DEBUG: Barkod sorgu sonucu: ${maps.length} ürün bulundu");
+    if (maps.isNotEmpty) {
+      debugPrint("✅ DEBUG: Barkod ile bulunan ürün: ${maps.first}");
+    } else {
+      debugPrint("❌ DEBUG: Barkod ile ürün bulunamadı: '$barcode'");
+    }
+
+    if (maps.isEmpty) return null;
+    return ProductInfo.fromDbMap(maps.first);
+  }
+
+  @override
   Future<List<LocationInfo>> getLocations() async {
     final db = await dbHelper.database;
     final maps = await db.query(DbTables.locations, where: '${DbColumns.isActive} = 1');
@@ -459,14 +506,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final orderLines = await txn.rawQuery('''
       SELECT
         sol.${DbColumns.id},
-        sol.${DbColumns.orderLinesProductId},
+        u.${DbColumns.productsId} as product_id,
         sol.${DbColumns.orderLinesQuantity} as ordered_quantity,
         COALESCE(SUM(gri.quantity_received), 0) as total_received
       FROM ${DbTables.orderLines} sol
-      LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.${DbColumns.orderLinesProductId} = sol.${DbColumns.orderLinesProductId}
+      JOIN ${DbTables.products} u ON u.${DbColumns.productsCode} = sol.${DbColumns.orderLinesProductCode}
+      LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.${DbColumns.orderLinesProductId} = u.${DbColumns.productsId}
       LEFT JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.${DbColumns.orderLinesOrderId}
       WHERE sol.${DbColumns.orderLinesOrderId} = ? AND sol.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
-      GROUP BY sol.${DbColumns.id}, sol.${DbColumns.orderLinesProductId}, sol.${DbColumns.orderLinesQuantity}
+      GROUP BY sol.${DbColumns.id}, u.${DbColumns.productsId}, sol.${DbColumns.orderLinesQuantity}
     ''', [siparisId]);
 
     if (orderLines.isEmpty) return;

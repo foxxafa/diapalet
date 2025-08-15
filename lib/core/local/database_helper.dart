@@ -21,7 +21,7 @@ class DatabaseHelper {
       // GÜNCELLEME: inventory_stock tablosuna created_at alanı, inventory_transfers tablosuna updated_at alanı eklendi
       // GÜNCELLEME: inventory_transfers için incremental sync eklendi
       // GÜNCELLEME: urunler tablosuna created_at ve updated_at alanları eklendi (incremental sync için)
-      static const _databaseVersion = 43;
+      static const _databaseVersion = 49;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -78,7 +78,22 @@ class DatabaseHelper {
 
       batch.execute(SyncLog.createTableQuery);
 
-      // Warehouse tablosu kaldırıldı - SharedPreferences kullanılıyor
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS warehouses (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          post_code TEXT,
+          ap TEXT,
+          receiving_mode INTEGER DEFAULT 2,
+          branch_code TEXT,
+          warehouse_code TEXT,
+          branch_id INTEGER,
+          dia_id INTEGER,
+          _key TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS shelfs (
@@ -142,7 +157,8 @@ class DatabaseHelper {
           updated_at TEXT,
           gun INTEGER DEFAULT 0,
           warehouse_code TEXT,
-          __sourcedepoadi TEXT,
+          _key_sis_depo_source TEXT,
+          __carikodu TEXT,
           invoice TEXT,
           delivery INTEGER,
           po_id TEXT,
@@ -295,7 +311,7 @@ class DatabaseHelper {
 
   Future<void> _dropAllTables(Database db) async {
     const tables = [
-      'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
+      'pending_operation', 'sync_log', 'warehouses', 'shelfs', 'employees', 'urunler',
       'siparisler', 'siparis_ayrintili', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
       'wms_putaway_status', 'tedarikci'
@@ -431,6 +447,18 @@ class DatabaseHelper {
 
             processedItems++;
             updateProgress('tedarikci');
+          }
+        }
+
+        // ########## WAREHOUSES İÇİN İNKREMENTAL SYNC ##########
+        if (data.containsKey('warehouses')) {
+          final warehousesData = List<Map<String, dynamic>>.from(data['warehouses']);
+          for (final warehouse in warehousesData) {
+            final sanitizedWarehouse = _sanitizeRecord('warehouses', warehouse);
+            batch.insert('warehouses', sanitizedWarehouse, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            updateProgress('warehouses');
           }
         }
 
@@ -590,7 +618,7 @@ class DatabaseHelper {
         // Local table columns based on CREATE TABLE statement
         final localColumns = [
           'id', 'tarih', 'notlar', 'user', 'created_at', 'updated_at', 
-          'gun', 'warehouse_code', '__sourcedepoadi', 'invoice', 'delivery', 'po_id', 
+          'gun', 'warehouse_code', '_key_sis_depo_source', '__carikodu', 'invoice', 'delivery', 'po_id', 
           'status', 'fisno', 'depokodu', 'subekodu', 'onay', 
           'siparisdurum', 'kullaniciadi', 'turu'
         ];
@@ -1659,9 +1687,6 @@ class DatabaseHelper {
 
       // 2. Eski verileri temizle
       await cleanupOldData(days: days);
-
-      // 3. Warehouse tablosunu kaldır (tek seferlik)
-      await removeWarehouseTable();
 
       debugPrint("✅ Veritabanı bakımı tamamlandı!");
     } catch (e, s) {

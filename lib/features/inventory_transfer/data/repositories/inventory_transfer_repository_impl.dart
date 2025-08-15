@@ -410,16 +410,17 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.fisno,
         o.tarih,
         o.notlar,
-        o.__sourcedepoadi as warehouse_name,
+        w.name as warehouse_name,
         o.status,
         o.created_at,
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
+      LEFT JOIN warehouses w ON w._key = o._key_sis_depo_source
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
-      WHERE o.status IN (1, 2, 3) AND (? IS NULL OR o.__sourcedepoadi = ?)
-      GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.__sourcedepoadi, o.status, o.created_at, o.updated_at, t.tedarikci_adi
+      WHERE o.status IN (1, 2, 3) AND (? IS NULL OR w.name = ?)
+      GROUP BY o.id, o.fisno, o.tarih, o.notlar, w.name, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
     ''', [warehouseName, warehouseName]);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();

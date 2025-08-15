@@ -357,7 +357,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   subtitle: Text(
-                    "${product.stockCode} ${product.barcode1 != null ? '| ${product.barcode1}' : ''}",
+                    "Barkod: ${product.barcode1 ?? 'N/A'} | Stok Kodu: ${product.stockCode}",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   onTap: () {

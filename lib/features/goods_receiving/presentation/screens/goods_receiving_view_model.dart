@@ -393,14 +393,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
         ProductInfo? foundProduct;
 
-        // Önce tam eşleşme ara
+        // Önce tam eşleşme ara - SADECE BARKOD
         try {
           foundProduct = productSource.firstWhere((p) =>
-            p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase() ||
             (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
-          // Tam eşleşme bulunamazsa database'den ara
-          foundProduct = await _repository.findProductByExactMatch(productCodeToSearch);
+          // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD
+          foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch);
 
           // Database'den bulunan ürün order'da var mı kontrol et
           if (foundProduct != null && isOrderBased) {
@@ -470,38 +469,41 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       return;
     }
 
-    // Search for products based on the query
+    // Search for products based on the query - SADECE BARKOD ARAMA
     final productSource = isOrderBased
         ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
         : _availableProducts;
 
     final lowerQuery = query.toLowerCase();
     _productSearchResults = productSource.where((product) {
-      return product.name.toLowerCase().contains(lowerQuery) ||
-          product.stockCode.toLowerCase().contains(lowerQuery) ||
-          (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
+      // Sadece barkod alanında LIKE arama yap (barkod içinde geçen)
+      return (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false);
     }).toList();
 
-    // Check if the current text exactly matches a product
-    ProductInfo? exactMatch;
-    try {
-      exactMatch = productSource.firstWhere((p) =>
-        p.stockCode.toLowerCase() == lowerQuery ||
-        (p.barcode1?.toLowerCase() == lowerQuery));
-    } catch (e) {
-      exactMatch = null;
+    // Check if we have search results and auto-select if only one result
+    ProductInfo? autoSelectProduct;
+    if (_productSearchResults.length == 1) {
+      autoSelectProduct = _productSearchResults.first;
+    } else if (_productSearchResults.isNotEmpty) {
+      // İlk sonucu otomatik seç eğer barkod tam eşleşiyorsa
+      try {
+        autoSelectProduct = _productSearchResults.firstWhere((p) =>
+          (p.barcode1?.toLowerCase() == lowerQuery));
+      } catch (e) {
+        autoSelectProduct = null;
+      }
     }
 
-    if (exactMatch != null && _selectedProduct?.id != exactMatch.id) {
-      _selectedProduct = exactMatch;
-      productController.text = "${exactMatch.name} (${exactMatch.stockCode})";
+    if (autoSelectProduct != null && _selectedProduct?.id != autoSelectProduct.id) {
+      _selectedProduct = autoSelectProduct;
+      productController.text = "${autoSelectProduct.name} (${autoSelectProduct.stockCode})";
       _productSearchResults.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_isDisposed) {
           expiryDateFocusNode.requestFocus();
         }
       });
-    } else if (exactMatch == null && _selectedProduct != null) {
+    } else if (autoSelectProduct == null && _selectedProduct != null && _productSearchResults.isEmpty) {
       _selectedProduct = null;
     }
 
