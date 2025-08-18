@@ -44,6 +44,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   static const double _smallGap = 8.0;
   final _borderRadius = BorderRadius.circular(12.0);
 
+  // SharedPreferences keys
+  static const String _prefSourceKey = 'it_source_loc';
+  static const String _prefTargetKey = 'it_target_loc';
+  static const String _prefContainerKey = 'it_container_id';
+  static const String _prefProductQtyPrefix = 'it_qty_';
+
   // --- State ve Controller'lar ---
   final _formKey = GlobalKey<FormState>();
   late InventoryTransferRepository _repo;
@@ -119,9 +125,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     _barcodeService = BarcodeIntentService();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
-      _loadInitialData();
+      await _loadSavedData();
+      await _loadInitialData();
       _initBarcode();
     });
   }
@@ -132,6 +139,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _sourceLocationFocusNode.removeListener(_onFocusChange);
     _containerFocusNode.removeListener(_onFocusChange);
     _targetLocationFocusNode.removeListener(_onFocusChange);
+    _saveCurrentState();
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
@@ -161,6 +169,60 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _productQuantityFocusNodes.forEach((_, focusNode) => focusNode.dispose());
     _productQuantityControllers.clear();
     _productQuantityFocusNodes.clear();
+  }
+
+  Future<void> _loadSavedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final source = prefs.getString(_prefSourceKey) ?? '';
+    final target = prefs.getString(_prefTargetKey) ?? '';
+    final container = prefs.getString(_prefContainerKey) ?? '';
+
+    if (source.isNotEmpty) {
+      _sourceLocationController.text = source;
+      _selectedSourceLocationName = source;
+    }
+    if (target.isNotEmpty) {
+      _targetLocationController.text = target;
+      _selectedTargetLocationName = target;
+    }
+    if (container.isNotEmpty) {
+      _scannedContainerIdController.text = container;
+    }
+  }
+
+  Future<void> _loadSavedProductQuantities() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (var product in _productsInContainer) {
+      final saved = prefs.getString('$_prefProductQtyPrefix${product.id}');
+      if (saved != null) {
+        _productQuantityControllers[product.id]?.text = saved;
+      }
+    }
+  }
+
+  Future<void> _saveCurrentState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final allEmpty = _sourceLocationController.text.isEmpty &&
+        _targetLocationController.text.isEmpty &&
+        _scannedContainerIdController.text.isEmpty &&
+        _productQuantityControllers.values.every((c) => c.text.isEmpty);
+    if (allEmpty) return;
+    await prefs.setString(_prefSourceKey, _sourceLocationController.text);
+    await prefs.setString(_prefTargetKey, _targetLocationController.text);
+    await prefs.setString(_prefContainerKey, _scannedContainerIdController.text);
+    for (var entry in _productQuantityControllers.entries) {
+      await prefs.setString('$_prefProductQtyPrefix${entry.key}', entry.value.text);
+    }
+  }
+
+  Future<void> _clearSavedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefSourceKey);
+    await prefs.remove(_prefTargetKey);
+    await prefs.remove(_prefContainerKey);
+    for (var id in _productQuantityControllers.keys) {
+      await prefs.remove('$_prefProductQtyPrefix$id');
+    }
   }
 
   // DÜZELTME: Veri yükleme akışı daha sıralı ve güvenilir hale getirildi.
@@ -578,6 +640,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _productQuantityFocusNodes[product.id] = FocusNode();
         }
       });
+      await _loadSavedProductQuantities();
     } catch (e, s) {
       debugPrint('Error fetching container contents: $e\n$s');
       if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
@@ -660,12 +723,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             backgroundColor: Colors.green,
           ),
         );
-
+        await _clearSavedData();
+        _resetForm(resetAll: true);
         // If it was a free put away, pop with a result to refresh the previous screen
         if(widget.isFreePutAway){
           Navigator.of(context).pop(true);
-        } else {
-          _resetForm(resetAll: true);
         }
       }
     } catch (e, s) {
@@ -688,6 +750,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   void _resetForm({bool resetAll = false}) {
+    _clearSavedData();
     setState(() {
       _resetContainerAndProducts();
       _selectedTargetLocationName = null;
