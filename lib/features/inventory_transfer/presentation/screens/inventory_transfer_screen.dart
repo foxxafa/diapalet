@@ -20,6 +20,7 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transferabl
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -77,6 +78,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final Map<int, TextEditingController> _productQuantityControllers = {};
   final Map<int, FocusNode> _productQuantityFocusNodes = {};
 
+  // Product search state
+  List<ProductInfo> _productSearchResults = [];
+  bool _isSearchingProducts = false;
+  final _productSearchController = TextEditingController();
+  final _productSearchFocusNode = FocusNode();
+
   // Barcode service
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -128,9 +135,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
+    _productSearchController.dispose();
     _sourceLocationFocusNode.dispose();
     _targetLocationFocusNode.dispose();
     _containerFocusNode.dispose();
+    _productSearchFocusNode.dispose();
     _clearProductControllers();
     super.dispose();
   }
@@ -321,6 +330,86 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _showErrorSnackBar('inventory_transfer.error_item_not_found'.tr(namedArgs: {'data': cleanData}));
         }
         break;
+    }
+  }
+
+  // Product search functionality
+  Future<void> _searchProductsForTransfer(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _productSearchResults = [];
+        _isSearchingProducts = false;
+      });
+      return;
+    }
+
+    setState(() => _isSearchingProducts = true);
+
+    try {
+      // Determine search context based on current state
+      int? orderId;
+      String? deliveryNoteNumber;
+      int? locationId;
+      List<String> stockStatuses = ['available', 'receiving'];
+
+      if (widget.selectedOrder != null) {
+        // Order-based transfer (putaway from order)
+        orderId = widget.selectedOrder!.id;
+        stockStatuses = ['receiving']; // Only search receiving items for putaway
+      } else if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
+        // Free receipt transfer (putaway from delivery note)
+        deliveryNoteNumber = widget.selectedDeliveryNote;
+        stockStatuses = ['receiving']; // Only search receiving items for putaway
+      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+        // Shelf-to-shelf transfer
+        locationId = _availableSourceLocations[_selectedSourceLocationName];
+        stockStatuses = ['available']; // Only search available items for shelf transfer
+      }
+
+      final results = await _repo.searchProductsForTransfer(
+        query,
+        orderId: orderId,
+        deliveryNoteNumber: deliveryNoteNumber,
+        locationId: locationId,
+        stockStatuses: stockStatuses,
+      );
+
+      if (mounted) {
+        setState(() {
+          _productSearchResults = results;
+          _isSearchingProducts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _productSearchResults = [];
+          _isSearchingProducts = false;
+        });
+        _showErrorSnackBar('inventory_transfer.error_searching_products'.tr(namedArgs: {'error': e.toString()}));
+      }
+    }
+  }
+
+  void _selectProductFromSearch(ProductInfo product) {
+    // Create a synthetic container from the selected product
+    _scannedContainerIdController.text = '${product.name} (${product.stockCode})';
+    setState(() {
+      _productSearchResults = [];
+    });
+    
+    // Find the matching container in available containers or create one
+    final foundContainer = _availableContainers.where((container) {
+      if (container is TransferableContainer) {
+        return container.items.any((item) => item.product.id == product.id);
+      }
+      return false;
+    }).cast<TransferableContainer?>().firstWhere((element) => element != null, orElse: () => null);
+    
+    if (foundContainer != null) {
+      _handleContainerSelection(foundContainer);
+    } else {
+      _showErrorSnackBar('inventory_transfer.error_product_not_in_containers'.tr());
     }
   }
 
@@ -589,6 +678,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   void _resetContainerAndProducts() {
     _scannedContainerIdController.clear();
+    _productSearchController.clear();
+    _productSearchResults = [];
+    _isSearchingProducts = false;
     _productsInContainer = [];
     _selectedContainer = null;
     _clearProductControllers();
@@ -686,41 +778,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     ],
                   ),
                   const SizedBox(height: _gap),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _scannedContainerIdController,
-                          focusNode: _containerFocusNode,
-                          decoration: _inputDecoration(
-                            _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr()
-                          ),
-                          validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
-                          onFieldSubmitted: (value) async {
-                            if (value.trim().isNotEmpty) {
-                              await _processScannedData('container', value.trim());
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: _smallGap),
-                      SizedBox(
-                        height: 56,
-                        child: _QrButton(
-                          onTap: () async {
-                            final result = await Navigator.push<String>(
-                              context,
-                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
-                            );
-                            if (result != null && result.isNotEmpty) {
-                              await _processScannedData('container', result);
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildContainerOrProductField(),
                   const SizedBox(height: _gap),
                   if (_isLoadingContainerContents)
                     const Padding(padding: EdgeInsets.symmetric(vertical: _gap), child: Center(child: CircularProgressIndicator()))
@@ -888,6 +946,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               _sourceLocationController.clear();
               _isSourceLocationValid = false;
               _scannedContainerIdController.clear();
+              _productSearchController.clear();
+              _productSearchResults = [];
+              _isSearchingProducts = false;
               _clearProductControllers();
               _productsInContainer.clear();
               _targetLocationController.clear();
@@ -1110,6 +1171,105 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       margin: const EdgeInsets.all(20),
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
+  }
+
+  Widget _buildContainerOrProductField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _selectedMode == AssignmentMode.product ? _productSearchController : _scannedContainerIdController,
+                focusNode: _selectedMode == AssignmentMode.product ? _productSearchFocusNode : _containerFocusNode,
+                decoration: _inputDecoration(
+                  _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
+                  suffixIcon: _selectedMode == AssignmentMode.product && _isSearchingProducts
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                ),
+                validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                onChanged: _selectedMode == AssignmentMode.product 
+                    ? (value) {
+                        if (value.isEmpty) {
+                          setState(() {
+                            _productSearchResults = [];
+                          });
+                        } else {
+                          _searchProductsForTransfer(value);
+                        }
+                      }
+                    : null,
+                onFieldSubmitted: (value) async {
+                  if (value.trim().isNotEmpty) {
+                    if (_selectedMode == AssignmentMode.product && _productSearchResults.isNotEmpty) {
+                      _selectProductFromSearch(_productSearchResults.first);
+                    } else {
+                      await _processScannedData('container', value.trim());
+                    }
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: _smallGap),
+            SizedBox(
+              height: 56,
+              child: _QrButton(
+                onTap: () async {
+                  final result = await Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                  );
+                  if (result != null && result.isNotEmpty) {
+                    if (_selectedMode == AssignmentMode.product) {
+                      _productSearchController.text = result;
+                      _searchProductsForTransfer(result);
+                    } else {
+                      await _processScannedData('container', result);
+                    }
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        // Product search results dropdown
+        if (_selectedMode == AssignmentMode.product && _productSearchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: _borderRadius,
+            ),
+            child: Column(
+              children: _productSearchResults.take(5).map((product) {
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    product.name,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  subtitle: Text(
+                    'Barkod: ${product.barcode1 ?? 'N/A'} | Stok Kodu: ${product.stockCode}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  onTap: () {
+                    _selectProductFromSearch(product);
+                    _productSearchFocusNode.unfocus();
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 

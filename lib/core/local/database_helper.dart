@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 51;
+  static const _databaseVersion = 53;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -131,7 +131,6 @@ class DatabaseHelper {
           user TEXT,
           created_at TEXT,
           updated_at TEXT,
-          gun INTEGER DEFAULT 0,
           _key_sis_depo_source TEXT,
           __carikodu TEXT,
           status INTEGER DEFAULT 0,
@@ -147,15 +146,10 @@ class DatabaseHelper {
           kartkodu TEXT,
           anamiktar REAL,
           miktar REAL,
-          tedarikci_id INTEGER,
-          tedarikci_fis_id INTEGER,
-          invoice TEXT,
           anabirimi TEXT,
-          birim TEXT,
           created_at TEXT,
           updated_at TEXT,
           status INTEGER,
-          good_received REAL,
           turu TEXT
         )
       ''');
@@ -231,15 +225,6 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON siparis_ayrintili(siparisler_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_id)');
       
-      // Yeni performans indexleri
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_date ON goods_receipts(receipt_date)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_pending_operation_status ON pending_operation(status)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_barcode1 ON urunler(Barcode1)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
-
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           id INTEGER PRIMARY KEY,
@@ -262,6 +247,15 @@ class DatabaseHelper {
           FOREIGN KEY(employee_id) REFERENCES employees(id)
         )
       ''');
+
+      // Performance indexes - created after all tables
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_date ON goods_receipts(receipt_date)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_pending_operation_status ON pending_operation(status)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_barcode1 ON urunler(Barcode1)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
 
       await batch.commit(noResult: true);
     });
@@ -487,6 +481,22 @@ class DatabaseHelper {
             // Sadece turu = '1' olanları kabul et
             if (satir['turu'] == '1' || satir['turu'] == 1) {
               final sanitizedSatir = _sanitizeRecord('siparis_ayrintili', satir);
+              
+              // Derive urun_id from kartkodu if needed
+              if (sanitizedSatir.containsKey('kartkodu') && sanitizedSatir['kartkodu'] != null) {
+                final kartkodu = sanitizedSatir['kartkodu'];
+                final urunQuery = await txn.query(
+                  'urunler', 
+                  columns: ['UrunId'], 
+                  where: 'StokKodu = ?', 
+                  whereArgs: [kartkodu],
+                  limit: 1
+                );
+                if (urunQuery.isNotEmpty) {
+                  sanitizedSatir['urun_id'] = urunQuery.first['UrunId'];
+                }
+              }
+              
               batch.insert(DbTables.orderLines, sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
 
               processedItems++;
@@ -566,7 +576,7 @@ class DatabaseHelper {
         // Local table columns based on optimized CREATE TABLE statement
         final localColumns = [
           'id', 'tarih', 'notlar', 'user', 'created_at', 'updated_at', 
-          'gun', '_key_sis_depo_source', '__carikodu', 
+          '_key_sis_depo_source', '__carikodu', 
           'status', 'fisno'
         ];
         
@@ -588,15 +598,20 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
-          'tedarikci_id', 'tedarikci_fis_id', 'invoice', 'anabirimi', 'birim',
-          'created_at', 'updated_at', 'status', 'good_received', 'turu'
+          'id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
+          'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
         for (String column in localColumns) {
           if (newRecord.containsKey(column)) {
             localRecord[column] = newRecord[column];
           }
+        }
+        
+        // Derive urun_id from kartkodu using urunler table
+        if (localRecord.containsKey('kartkodu') && localRecord['kartkodu'] != null) {
+          // This will be handled by a separate lookup during data processing
+          localRecord['urun_id'] = null; // Will be filled later
         }
         
         return localRecord;
@@ -722,7 +737,7 @@ class DatabaseHelper {
         u.StokKodu as product_code,
         u.Barcode1 as product_barcode,
         sa.anamiktar as ordered_quantity,
-        sol.birim as unit,
+        sa.anabirimi as unit,
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri

@@ -702,19 +702,17 @@ class TerminalController extends Controller
         $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
 
         // warehouse tablosu kaldırıldı - mobil uygulama SharedPreferences kullanıyor
-        $data['warehouses'] = []; // Boş array gönder
 
         // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
         // Rowhub formatında employee sorgusu
         $employeeColumns = [
             'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
-            'COALESCE(w.id, 1) as warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'
+            'e.warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'
         ];
         $employeesQuery = (new Query())
             ->select($employeeColumns)
             ->from(['e' => 'employees'])
-            ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
-            ->where(['e.is_active' => 1, 'w.id' => $warehouseId]);
+            ->where(['e.is_active' => 1, 'e.warehouse_id' => $warehouseId]);
 
         if ($serverSyncTimestamp) {
             $employeesQuery->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
@@ -747,7 +745,7 @@ class TerminalController extends Controller
         $poQuery = (new Query())
             ->select([
                 'id', 'fisno', 'tarih', 'status', 
-                '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at', 'gun'
+                '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'
             ])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
@@ -806,9 +804,8 @@ class TerminalController extends Controller
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
             $poLineQuery = (new Query())
                 ->select([
-                    'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
-                    'tedarikci_id', 'tedarikci_fis_id', 'invoice', 'anabirimi', 'birim',
-                    'created_at', 'updated_at', 'status', 'good_received', 'turu'
+                    'id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
+                    'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
                 ])
                 ->from('siparis_ayrintili')
                 ->where(['in', 'siparisler_id', $poIds])
@@ -820,7 +817,7 @@ class TerminalController extends Controller
                 Yii::info("Full sync: Tüm sipariş kalemleri alınıyor (ilk sync).", __METHOD__);
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
-            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'urun_id', 'status'], ['anamiktar']);
+            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['anamiktar']);
 
             $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {

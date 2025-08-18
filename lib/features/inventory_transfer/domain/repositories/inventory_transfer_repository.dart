@@ -68,4 +68,16 @@ abstract class InventoryTransferRepository {
 
     /// İrsaliye numarasına göre mal kabul ID'sini getirir.
     Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber);
+
+    /// Context-aware product search for transfers
+    /// - If orderId provided: Search products related to that order
+    /// - If deliveryNoteNumber provided: Search products from that delivery note
+    /// - If locationId provided: Search products at that location
+    /// - Otherwise: Search all available products
+    Future<List<ProductInfo>> searchProductsForTransfer(String query, {
+      int? orderId,
+      String? deliveryNoteNumber, 
+      int? locationId,
+      List<String> stockStatuses = const ['available', 'receiving']
+    });
 }

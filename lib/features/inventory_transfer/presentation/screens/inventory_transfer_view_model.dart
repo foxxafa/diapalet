@@ -3,6 +3,7 @@ import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
@@ -619,5 +620,74 @@ class InventoryTransferViewModel extends ChangeNotifier {
     return items;
   }
 
+  // Product Search State and Methods
+  List<ProductInfo> _searchResults = [];
+  bool _isSearching = false;
+  String _lastSearchQuery = '';
 
+  List<ProductInfo> get searchResults => _searchResults;
+  bool get isSearching => _isSearching;
+  String get lastSearchQuery => _lastSearchQuery;
+
+  /// Context-aware product search for transfer operations
+  Future<void> searchProductsForTransfer(String query) async {
+    if (query.trim().isEmpty) {
+      _searchResults = [];
+      _lastSearchQuery = '';
+      notifyListeners();
+      return;
+    }
+
+    if (query == _lastSearchQuery) return; // Avoid duplicate searches
+
+    _isSearching = true;
+    _lastSearchQuery = query;
+    notifyListeners();
+
+    try {
+      // Determine search context based on current state
+      int? orderId;
+      String? deliveryNoteNumber;
+      int? locationId;
+      List<String> stockStatuses = ['available', 'receiving'];
+
+      if (_selectedOrder != null) {
+        // Order-based transfer (putaway from order)
+        orderId = _selectedOrder!.id;
+        stockStatuses = ['receiving']; // Only search receiving items for putaway
+      } else if (_deliveryNoteNumber != null && _deliveryNoteNumber!.isNotEmpty) {
+        // Free receipt transfer (putaway from delivery note)
+        deliveryNoteNumber = _deliveryNoteNumber;
+        stockStatuses = ['receiving']; // Only search receiving items for putaway
+      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+        // Shelf-to-shelf transfer
+        locationId = _availableSourceLocationsMap[_selectedSourceLocationName];
+        stockStatuses = ['available']; // Only search available items for shelf transfer
+      }
+      // Otherwise search all available products
+
+      _searchResults = await _repo.searchProductsForTransfer(
+        query,
+        orderId: orderId,
+        deliveryNoteNumber: deliveryNoteNumber,
+        locationId: locationId,
+        stockStatuses: stockStatuses,
+      );
+
+      debugPrint('Product search completed: ${_searchResults.length} results found');
+    } catch (e) {
+      _setError('inventory_transfer.error_searching_products', e);
+      _searchResults = [];
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
+  }
+
+  void clearProductSearch() {
+    _searchResults = [];
+    _lastSearchQuery = '';
+    _isSearching = false;
+    notifyListeners();
+  }
 }

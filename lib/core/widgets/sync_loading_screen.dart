@@ -126,8 +126,6 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         return 'sync.tables.siparisler'.tr();
       case 'siparis_ayrintili':
         return 'sync.tables.siparis_ayrintili'.tr();
-      case 'warehouses':
-        return 'sync.tables.warehouses'.tr();
       default:
         return tableName; // Fallback to table name if translation not found
     }

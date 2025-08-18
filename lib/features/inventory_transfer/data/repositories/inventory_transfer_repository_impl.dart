@@ -405,7 +405,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         t.tedarikci_adi as supplierName
       FROM siparisler o
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
-      LEFT JOIN tedarikci t ON t.id = s.tedarikci_id
+      LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.status IN (1, 2, 3)
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
@@ -791,5 +791,67 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       return result.first['goods_receipt_id'] as int?;
     }
     return null;
+  }
+
+  @override
+  Future<List<ProductInfo>> searchProductsForTransfer(String query, {
+    int? orderId,
+    String? deliveryNoteNumber, 
+    int? locationId,
+    List<String> stockStatuses = const ['available', 'receiving']
+  }) async {
+    final db = await dbHelper.database;
+    
+    // Build WHERE clauses based on context
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
+    
+    // Always search by barcodes (like in goods receiving)
+    whereClauses.add('(u.Barcode1 LIKE ? OR u.Barcode2 LIKE ? OR u.Barcode3 LIKE ? OR u.Barcode4 LIKE ?)');
+    whereArgs.addAll(['%$query%', '%$query%', '%$query%', '%$query%']);
+    
+    // Add stock status filter
+    if (stockStatuses.isNotEmpty) {
+      whereClauses.add('s.stock_status IN (${stockStatuses.map((_) => '?').join(',')})');
+      whereArgs.addAll(stockStatuses);
+    }
+    
+    // Add context-specific filters
+    if (orderId != null) {
+      // Search products related to specific order
+      whereClauses.add('s.siparis_id = ?');
+      whereArgs.add(orderId);
+    } else if (deliveryNoteNumber != null) {
+      // Search products from specific delivery note
+      whereClauses.add('gr.delivery_note_number = ?');
+      whereArgs.add(deliveryNoteNumber);
+    } else if (locationId != null) {
+      // Search products at specific location
+      whereClauses.add('s.location_id = ?');
+      whereArgs.add(locationId);
+    } else {
+      // Search all available products (no additional filter)
+    }
+    
+    final sql = '''
+      SELECT DISTINCT
+        u.UrunId,
+        u.UrunAdi,
+        u.StokKodu,
+        u.Barcode1,
+        u.Barcode2,
+        u.Barcode3,
+        u.Barcode4,
+        u.aktif
+      FROM urunler u
+      INNER JOIN inventory_stock s ON s.urun_id = u.UrunId
+      ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
+      WHERE ${whereClauses.join(' AND ')} AND s.quantity > 0
+      ORDER BY u.UrunAdi ASC
+    ''';
+    
+    final maps = await db.rawQuery(sql, whereArgs);
+    final results = maps.map((map) => ProductInfo.fromDbMap(map)).toList();
+    return results;
   }
 }
