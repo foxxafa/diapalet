@@ -5,21 +5,18 @@ class ProductInfo extends Equatable {
   final int id;
   final String name;
   final String stockCode;
-  final String? barcode1;
-  final String? barcode2;
-  final String? barcode3;
-  final String? barcode4;
   final bool isActive;
+  // Barcode bilgileri artık barkodlar tablosundan gelecek
+  final Map<String, dynamic>? birimInfo;
+  final Map<String, dynamic>? barkodInfo;
 
   const ProductInfo({
     required this.id,
     required this.name,
     required this.stockCode,
-    this.barcode1,
-    this.barcode2,
-    this.barcode3,
-    this.barcode4,
     required this.isActive,
+    this.birimInfo,
+    this.barkodInfo,
   });
 
   // GÜNCELLEME BAŞLANGIÇ
@@ -29,15 +26,12 @@ class ProductInfo extends Equatable {
     final dynamic idValue = map['id'] ?? map['urun_id'] ?? map['UrunId'];
 
     return ProductInfo(
-      // ÇÖKME BURADAYDI: 'UrunId' yerine 'id' kullanılmalı ve null kontrolü yapılmalı.
       id: (idValue as num?)?.toInt() ?? 0,
       name: map['UrunAdi'] as String? ?? '',
       stockCode: map['StokKodu'] as String? ?? '',
-      barcode1: map['Barcode1'] as String?,
-      barcode2: map['Barcode2'] as String?,
-      barcode3: map['Barcode3'] as String?,
-      barcode4: map['Barcode4'] as String?,
       isActive: (map['aktif'] as int? ?? 1) == 1,
+      birimInfo: map['birim_info'] as Map<String, dynamic>?,
+      barkodInfo: map['barkod_info'] as Map<String, dynamic>?,
     );
   }
   // GÜNCELLEME SONU
@@ -48,11 +42,9 @@ class ProductInfo extends Equatable {
       id: json['id'] as int,
       name: json['name'] as String,
       stockCode: json['stockCode'] as String? ?? json['code'] as String? ?? '',
-      barcode1: json['barcode1'] as String?,
-      barcode2: json['barcode2'] as String?,
-      barcode3: json['barcode3'] as String?,
-      barcode4: json['barcode4'] as String?,
       isActive: (json['isActive'] as bool? ?? true),
+      birimInfo: json['birimInfo'] as Map<String, dynamic>?,
+      barkodInfo: json['barkodInfo'] as Map<String, dynamic>?,
     );
   }
 
@@ -62,14 +54,12 @@ class ProductInfo extends Equatable {
       'id': id,
       'name': name,
       'stockCode': stockCode,
-      'barcode1': barcode1,
-      'barcode2': barcode2,
-      'barcode3': barcode3,
-      'barcode4': barcode4,
       'isActive': isActive,
+      'birimInfo': birimInfo,
+      'barkodInfo': barkodInfo,
     };
   }
 
   @override
-  List<Object?> get props => [id, name, stockCode, barcode1, barcode2, barcode3, barcode4, isActive];
+  List<Object?> get props => [id, name, stockCode, isActive, birimInfo, barkodInfo];
 }

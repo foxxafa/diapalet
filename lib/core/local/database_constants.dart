@@ -49,8 +49,8 @@ class DbColumns {
   static const String productsId = 'UrunId'; // Special case
   static const String productsCode = 'StokKodu';
   static const String productsName = 'UrunAdi';
-  static const String productsBarcode = 'Barcode1';
   static const String productsActive = 'aktif';
+  // Barcode artık barkodlar tablosundan gelecek
   
   // Warehouse fields moved to SharedPreferences
   // static const String warehousesCode = 'warehouse_code';
@@ -120,7 +120,6 @@ class DbMinimalFields {
     DbColumns.productsId,
     DbColumns.productsCode,
     DbColumns.productsName,
-    DbColumns.productsBarcode,
     DbColumns.productsActive,
     DbColumns.createdAt,
     DbColumns.updatedAt,
@@ -178,7 +177,6 @@ class DbQueries {
         s.*,
         u.${DbColumns.productsName},
         u.${DbColumns.productsCode},
-        u.${DbColumns.productsBarcode},
         u.${DbColumns.productsActive},
         COALESCE((SELECT SUM(gri.quantity_received)
                    FROM ${DbTables.goodsReceiptItems} gri

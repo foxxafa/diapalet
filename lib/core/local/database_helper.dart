@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 53;
+  static const _databaseVersion = 54;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -54,7 +54,7 @@ class DatabaseHelper {
     await db.transaction((txn) async {
       final batch = txn.batch();
 
-      batch.execute('''
+            batch.execute('''
         CREATE TABLE IF NOT EXISTS pending_operation (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           unique_id TEXT NOT NULL UNIQUE,
@@ -100,11 +100,43 @@ class DatabaseHelper {
           UrunId INTEGER PRIMARY KEY,
           StokKodu TEXT UNIQUE,
           UrunAdi TEXT,
-          Barcode1 TEXT,
-          Barcode2 TEXT,
-          Barcode3 TEXT,
-          Barcode4 TEXT,
           aktif INTEGER,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
+
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS birimler (
+          id INTEGER PRIMARY KEY,
+          birimadi TEXT,
+          birimkod TEXT,
+          carpan REAL,
+          fiyat1 REAL,
+          fiyat2 REAL,
+          fiyat3 REAL,
+          fiyat4 REAL,
+          fiyat5 REAL,
+          fiyat6 REAL,
+          fiyat7 REAL,
+          fiyat8 REAL,
+          fiyat9 REAL,
+          fiyat10 REAL,
+          _key TEXT,
+          _key_scf_stokkart TEXT,
+          StokKodu TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        )
+      ''');
+
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS barkodlar (
+          id INTEGER PRIMARY KEY,
+          _key TEXT UNIQUE,
+          _key_scf_stokkart_birimleri TEXT,
+          barkod TEXT,
+          turu TEXT,
           created_at TEXT,
           updated_at TEXT
         )
@@ -254,8 +286,11 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_barcode1 ON urunler(Barcode1)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_key ON birimler(_key)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_stokkodu ON birimler(StokKodu)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_barkod ON barkodlar(barkod)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_key_birimler ON barkodlar(_key_scf_stokkart_birimleri)');
 
       await batch.commit(noResult: true);
     });
@@ -268,7 +303,7 @@ class DatabaseHelper {
       'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
       'siparisler', 'siparis_ayrintili', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
-      'wms_putaway_status', 'tedarikci'
+      'wms_putaway_status', 'tedarikci', 'birimler', 'barkodlar'
     ];
     await db.transaction((txn) async {
       for (final table in tables) {
@@ -505,6 +540,30 @@ class DatabaseHelper {
           }
         }
 
+        // Birimler incremental sync
+        if (data.containsKey('birimler')) {
+          final birimlerData = List<Map<String, dynamic>>.from(data['birimler']);
+          for (final birim in birimlerData) {
+            final sanitizedBirim = _sanitizeRecord('birimler', birim);
+            batch.insert('birimler', sanitizedBirim, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            updateProgress('birimler');
+          }
+        }
+
+        // Barkodlar incremental sync
+        if (data.containsKey('barkodlar')) {
+          final barkodlarData = List<Map<String, dynamic>>.from(data['barkodlar']);
+          for (final barkod in barkodlarData) {
+            final sanitizedBarkod = _sanitizeRecord('barkodlar', barkod);
+            batch.insert('barkodlar', sanitizedBarkod, conflictAlgorithm: ConflictAlgorithm.replace);
+
+            processedItems++;
+            updateProgress('barkodlar');
+          }
+        }
+
         // Diğer tablolar için eski mantık (full replacement)
         // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
@@ -520,7 +579,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci'];
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci', 'birimler', 'barkodlar'];
         final skippedTables = ['warehouses']; // Kaldırılan tablolar
 
         for (var table in data.keys) {
@@ -624,6 +683,83 @@ class DatabaseHelper {
 
   // --- YARDIMCI FONKSİYONLAR ---
 
+  /// Barkod ile ürün arama - Yeni barkodlar tablosunu kullanır
+  Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
+    final db = await database;
+    
+    // Önce barkodlar tablosunda barkodu ara
+    final barkodResult = await db.query(
+      'barkodlar',
+      where: 'barkod = ?',
+      whereArgs: [barcode],
+      limit: 1,
+    );
+
+    if (barkodResult.isEmpty) return null;
+
+    // Barkod bulundu, ilgili birim bilgisini al
+    final barkodInfo = barkodResult.first;
+    final birimKey = barkodInfo['_key_scf_stokkart_birimleri'] as String?;
+    
+    if (birimKey == null) return null;
+
+    // Birim bilgisi ile ürün bilgisini getir
+    final birimResult = await db.query(
+      'birimler',
+      where: '_key = ?',
+      whereArgs: [birimKey],
+      limit: 1,
+    );
+
+    if (birimResult.isEmpty) return null;
+
+    final birimInfo = birimResult.first;
+    final stokKodu = birimInfo['StokKodu'] as String?;
+    
+    if (stokKodu == null) return null;
+
+    // StokKodu ile ürün bilgisini getir
+    final urunResult = await db.query(
+      'urunler',
+      where: 'StokKodu = ?',
+      whereArgs: [stokKodu],
+      limit: 1,
+    );
+
+    if (urunResult.isEmpty) return null;
+
+    final urunInfo = Map<String, dynamic>.from(urunResult.first);
+    // Birim bilgilerini de ekle
+    urunInfo['birim_info'] = birimInfo;
+    urunInfo['barkod_info'] = barkodInfo;
+    
+    return urunInfo;
+  }
+
+  /// Barkod ile ürün arama (LIKE) - Yeni barkodlar tablosunu kullanır  
+  Future<List<Map<String, dynamic>>> searchProductsByBarcode(String query) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT DISTINCT 
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b.carpan,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key
+      FROM barkodlar bark
+      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+      JOIN urunler u ON b.StokKodu = u.StokKodu
+      WHERE bark.barkod LIKE ? 
+        AND u.aktif = 1
+      ORDER BY u.UrunAdi ASC
+    ''';
+
+    return await db.rawQuery(sql, ['%$query%']);
+  }
+
   Future<String?> getPoIdBySiparisId(int siparisId) async {
     final db = await database;
     final result = await db.query(
@@ -692,7 +828,6 @@ class DatabaseHelper {
         sa.anamiktar as ordered_quantity,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode,
         COALESCE(received.total_received, 0) as received_quantity,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM siparis_ayrintili sa
@@ -735,7 +870,6 @@ class DatabaseHelper {
         gri.pallet_barcode,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode,
         sa.anamiktar as ordered_quantity,
         sa.anabirimi as unit,
         COALESCE(previous.previous_received, 0) as previous_received,
@@ -769,7 +903,6 @@ class DatabaseHelper {
         gri.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u.UrunId = gri.urun_id
       WHERE gri.receipt_id = ?
@@ -787,7 +920,6 @@ class DatabaseHelper {
         it.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode,
         source_loc.name as source_location_name,
         source_loc.code as source_location_code,
         target_loc.name as target_location_name,
@@ -814,7 +946,6 @@ class DatabaseHelper {
         ints.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode,
         loc.name as location_name,
         loc.code as location_code
       FROM inventory_stock ints
@@ -860,7 +991,6 @@ class DatabaseHelper {
         gri.*,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode,
         u.Birim1 as product_unit,
         u.qty as product_box_qty,
         sa.anamiktar as ordered_quantity,
@@ -941,7 +1071,36 @@ class DatabaseHelper {
           if (product != null) {
             enrichedItem['product_name'] = product['UrunAdi'];
             enrichedItem['product_code'] = product['StokKodu'];
-            enrichedItem['product_barcode'] = product['Barcode1'];
+            
+            // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
+            String productBarcode = '';
+            try {
+              // Ürünün StokKodu ile birimler tablosundan birimlerini bul
+              final birimResults = await database.query(
+                'birimler',
+                where: 'StokKodu = ?',
+                whereArgs: [product['StokKodu']],
+              );
+              
+              if (birimResults.isNotEmpty) {
+                // İlk birimin barkodunu al
+                final birimKey = birimResults.first['_key'];
+                final barkodResults = await database.query(
+                  'barkodlar',
+                  where: '_key_scf_stokkart_birimleri = ?',
+                  whereArgs: [birimKey],
+                  limit: 1,
+                );
+                
+                if (barkodResults.isNotEmpty) {
+                  productBarcode = barkodResults.first['barkod'] as String? ?? '';
+                }
+              }
+            } catch (e) {
+              debugPrint('Transfer PDF için barkod alınırken hata: $e');
+            }
+            
+            enrichedItem['product_barcode'] = productBarcode;
           }
         }
         enrichedItems.add(enrichedItem);
@@ -1007,7 +1166,36 @@ class DatabaseHelper {
           if (product != null) {
             mutableItem['product_name'] = product['UrunAdi'];
             mutableItem['product_code'] = product['StokKodu'];
-            mutableItem['product_barcode'] = product['Barcode1'];
+            
+            // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
+            String productBarcode = '';
+            try {
+              // Ürünün StokKodu ile birimler tablosundan birimlerini bul
+              final birimResults = await db.query(
+                'birimler',
+                where: 'StokKodu = ?',
+                whereArgs: [product['StokKodu']],
+              );
+              
+              if (birimResults.isNotEmpty) {
+                // İlk birimin barkodunu al
+                final birimKey = birimResults.first['_key'];
+                final barkodResults = await db.query(
+                  'barkodlar',
+                  where: '_key_scf_stokkart_birimleri = ?',
+                  whereArgs: [birimKey],
+                  limit: 1,
+                );
+                
+                if (barkodResults.isNotEmpty) {
+                  productBarcode = barkodResults.first['barkod'] as String? ?? '';
+                }
+              }
+            } catch (e) {
+              debugPrint('PDF için barkod alınırken hata: $e');
+            }
+            
+            mutableItem['product_barcode'] = productBarcode;
           }
         }
 
@@ -1397,7 +1585,6 @@ class DatabaseHelper {
         ist.expiry_date,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as product_barcode
       FROM inventory_stock ist
       LEFT JOIN urunler u ON u.UrunId = ist.urun_id
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id

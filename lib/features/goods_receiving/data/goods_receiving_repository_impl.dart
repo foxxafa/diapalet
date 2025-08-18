@@ -354,14 +354,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<ProductInfo>> searchProducts(String query) async {
-    final db = await dbHelper.database;
-    // SADECE BARKOD alanlarıyla arama yap (Barcode1, Barcode2, Barcode3, Barcode4)
-    final maps = await db.query(
-      DbTables.products, 
-      where: 'Barcode1 LIKE ? OR Barcode2 LIKE ? OR Barcode3 LIKE ? OR Barcode4 LIKE ?', 
-      whereArgs: ['%$query%', '%$query%', '%$query%', '%$query%']
-    );
-    return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
+    // Yeni barkodlar tablosunu kullanarak arama yap
+    final results = await dbHelper.searchProductsByBarcode(query);
+    return results.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
   @override
@@ -418,26 +413,18 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode) async {
-    final db = await dbHelper.database;
     debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode'");
 
-    // TÜM BARKOD alanlarında tam eşleşme arama
-    final maps = await db.query(
-      DbTables.products,
-      where: 'Barcode1 = ? OR Barcode2 = ? OR Barcode3 = ? OR Barcode4 = ?',
-      whereArgs: [barcode, barcode, barcode, barcode],
-      limit: 1
-    );
-
-    debugPrint("🎯 DEBUG: Barkod sorgu sonucu: ${maps.length} ürün bulundu");
-    if (maps.isNotEmpty) {
-      debugPrint("✅ DEBUG: Barkod ile bulunan ürün: ${maps.first}");
+    // Yeni barkodlar tablosunu kullanarak tam eşleşme arama
+    final result = await dbHelper.getProductByBarcode(barcode);
+    
+    if (result != null) {
+      debugPrint("✅ DEBUG: Barkod ile bulunan ürün: $result");
+      return ProductInfo.fromDbMap(result);
     } else {
       debugPrint("❌ DEBUG: Barkod ile ürün bulunamadı: '$barcode'");
+      return null;
     }
-
-    if (maps.isEmpty) return null;
-    return ProductInfo.fromDbMap(maps.first);
   }
 
   @override

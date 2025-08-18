@@ -646,8 +646,9 @@ class TerminalController extends Controller
         // Timestamp hazır, direkt kullan
 
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
+        // ESKİ BARCODE ALANLARI ARTIK KULLANILMIYOR - Yeni barkodlar tablosuna geçildi
         $urunlerQuery = (new Query())
-            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'Barcode1', 'Barcode2', 'Barcode3', 'Barcode4', 'aktif', 'updated_at'])
+            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
             ->from('urunler');
 
         // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
@@ -686,6 +687,46 @@ class TerminalController extends Controller
 
         Yii::info("Tedarikçi sync: " . count($tedarikciData) . " tedarikçi gönderiliyor.", __METHOD__);
         // ########## TEDARİKÇİ İNKREMENTAL SYNC BİTTİ ##########
+
+        // ########## BİRİMLER İÇİN İNKREMENTAL SYNC ##########
+        $birimlerQuery = (new Query())
+            ->select(['id', 'birimadi', 'birimkod', 'carpan', 'fiyat1', 'fiyat2', 'fiyat3', 'fiyat4', 'fiyat5', 
+                     'fiyat6', 'fiyat7', 'fiyat8', 'fiyat9', 'fiyat10', '_key', '_key_scf_stokkart', 'StokKodu', 
+                     'created_at', 'updated_at'])
+            ->from('birimler');
+
+        if ($serverSyncTimestamp) {
+            $birimlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki birimler alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm birimler alınıyor (ilk sync).", __METHOD__);
+        }
+
+        $birimlerData = $birimlerQuery->all();
+        $this->castNumericValues($birimlerData, ['id'], ['carpan', 'fiyat1', 'fiyat2', 'fiyat3', 'fiyat4', 'fiyat5', 'fiyat6', 'fiyat7', 'fiyat8', 'fiyat9', 'fiyat10']);
+        $data['birimler'] = $birimlerData;
+
+        Yii::info("Birimler sync: " . count($birimlerData) . " birim gönderiliyor.", __METHOD__);
+        // ########## BİRİMLER İNKREMENTAL SYNC BİTTİ ##########
+
+        // ########## BARKODLAR İÇİN İNKREMENTAL SYNC ##########
+        $barkodlarQuery = (new Query())
+            ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
+            ->from('barkodlar');
+
+        if ($serverSyncTimestamp) {
+            $barkodlarQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki barkodlar alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm barkodlar alınıyor (ilk sync).", __METHOD__);
+        }
+
+        $barkodlarData = $barkodlarQuery->all();
+        $this->castNumericValues($barkodlarData, ['id']);
+        $data['barkodlar'] = $barkodlarData;
+
+        Yii::info("Barkodlar sync: " . count($barkodlarData) . " barkod gönderiliyor.", __METHOD__);
+        // ########## BARKODLAR İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
         $shelfsQuery = (new Query())
@@ -937,6 +978,8 @@ class TerminalController extends Controller
             'stats' => [
                 'urunler_count' => count($data['urunler'] ?? []),
                 'tedarikci_count' => count($data['tedarikci'] ?? []),
+                'birimler_count' => count($data['birimler'] ?? []),
+                'barkodlar_count' => count($data['barkodlar'] ?? []),
                 'inventory_stock_count' => count($data['inventory_stock'] ?? []),
                 'inventory_transfers_count' => count($data['inventory_transfers'] ?? []),
                 'is_incremental' => !empty($lastSyncTimestamp),

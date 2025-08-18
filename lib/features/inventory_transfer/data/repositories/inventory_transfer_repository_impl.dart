@@ -165,13 +165,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as barcode1,
+        '' as barcode1,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.UrunId
       $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
@@ -220,7 +220,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
-        u.Barcode1 as barcode1,
+        '' as barcode1,
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
       FROM inventory_stock s
@@ -548,13 +548,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<ProductInfo>> getProductInfoByBarcode(String barcode) async {
     final db = await dbHelper.database;
-    // DÜZELTME: Pasif ürünlerle de transfer işlemi yapılabilmesi için aktiflik kontrolü kaldırıldı
-    final maps = await db.query(
-      'urunler',
-      where: 'Barcode1 = ?',
-      whereArgs: [barcode],
-    );
-    return maps.map((map) => ProductInfo.fromDbMap(map)).toList();
+    // Yeni barkodlar tablosunu kullan
+    final result = await dbHelper.getProductByBarcode(barcode);
+    if (result != null) {
+      return [ProductInfo.fromDbMap(result)];
+    }
+    return [];
   }
 
   @override
@@ -583,9 +582,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
-    whereParts.add('(u.StokKodu = ? OR u.Barcode1 = ?)');
-    whereArgs.add(productCodeOrBarcode);
-    whereArgs.add(productCodeOrBarcode);
+    // Sadece barkodlar tablosundan ara
+    final productResult = await dbHelper.getProductByBarcode(productCodeOrBarcode);
+    if (productResult == null) {
+      // Barkod bulunamadı, null döndür
+      return null;
+    }
+    
+    // Barkod ile bulunan ürünün ID'sini kullan
+    whereParts.add('u.UrunId = ?');
+    whereArgs.add(productResult['UrunId']);
 
     whereParts.add('s.pallet_barcode IS NULL');
 
@@ -595,12 +601,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        u.Barcode1 as barcode1,
+        '' as barcode1,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.UrunId
       WHERE ${whereParts.join(' AND ')}
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu, u.Barcode1
+      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu
       LIMIT 1
     ''';
 
@@ -806,9 +812,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
     
-    // Always search by barcodes (like in goods receiving)
-    whereClauses.add('(u.Barcode1 LIKE ? OR u.Barcode2 LIKE ? OR u.Barcode3 LIKE ? OR u.Barcode4 LIKE ?)');
-    whereArgs.addAll(['%$query%', '%$query%', '%$query%', '%$query%']);
+    // Search by new barcode system (barkodlar table)
+    whereClauses.add('bark.barkod LIKE ?');
+    whereArgs.add('%$query%');
     
     // Add stock status filter
     if (stockStatuses.isNotEmpty) {
@@ -838,13 +844,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId,
         u.UrunAdi,
         u.StokKodu,
-        u.Barcode1,
-        u.Barcode2,
-        u.Barcode3,
-        u.Barcode4,
         u.aktif
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_id = u.UrunId
+      INNER JOIN birimler b ON b.StokKodu = u.StokKodu
+      INNER JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
       WHERE ${whereClauses.join(' AND ')} AND s.quantity > 0
       ORDER BY u.UrunAdi ASC
