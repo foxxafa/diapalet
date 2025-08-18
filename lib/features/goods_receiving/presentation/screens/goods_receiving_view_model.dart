@@ -19,6 +19,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   final SyncService _syncService;
   final BarcodeIntentService _barcodeService;
 
+  // SharedPreferences keys
+  static const String _palletIdKey = 'gr_pallet_id';
+  static const String _deliveryNoteKey = 'gr_delivery_note';
+  static const String _productKey = 'gr_product';
+  static const String _quantityKey = 'gr_quantity';
+  static const String _expiryDateKey = 'gr_expiry_date';
+
   // Controllers
   final palletIdController = TextEditingController();
   final deliveryNoteController = TextEditingController();
@@ -141,6 +148,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   void init() {
     palletIdFocusNode.addListener(_onFocusChange);
     productFocusNode.addListener(_onFocusChange);
+    unawaited(loadForm());
     _loadInitialData();
     _initBarcode();
     _syncStatusSub = _syncService.syncStatusStream.listen((status) {
@@ -156,6 +164,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     _isDisposed = true;
     _intentSub?.cancel();
     _syncStatusSub?.cancel();
+    unawaited(saveForm());
     palletIdFocusNode.removeListener(_onFocusChange);
     productFocusNode.removeListener(_onFocusChange);
     palletIdController.dispose();
@@ -694,6 +703,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   void _handleSuccessfulSave({required bool shouldNavigateBack}) {
     if (_isDisposed) return;
 
+    unawaited(clearForm());
+
     if (isOrderBased) {
       _navigateBack = shouldNavigateBack;
       _addedItems.clear();
@@ -721,6 +732,56 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     if (clearPallet) {
       palletIdController.clear();
     }
+  }
+
+  Future<void> saveForm() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (palletIdController.text.isNotEmpty) {
+      await prefs.setString(_palletIdKey, palletIdController.text);
+    } else {
+      await prefs.remove(_palletIdKey);
+    }
+    if (deliveryNoteController.text.isNotEmpty) {
+      await prefs.setString(_deliveryNoteKey, deliveryNoteController.text);
+    } else {
+      await prefs.remove(_deliveryNoteKey);
+    }
+    if (productController.text.isNotEmpty) {
+      await prefs.setString(_productKey, productController.text);
+    } else {
+      await prefs.remove(_productKey);
+    }
+    if (quantityController.text.isNotEmpty) {
+      await prefs.setString(_quantityKey, quantityController.text);
+    } else {
+      await prefs.remove(_quantityKey);
+    }
+    if (expiryDateController.text.isNotEmpty) {
+      await prefs.setString(_expiryDateKey, expiryDateController.text);
+    } else {
+      await prefs.remove(_expiryDateKey);
+    }
+  }
+
+  Future<void> loadForm() async {
+    final prefs = await SharedPreferences.getInstance();
+    palletIdController.text = prefs.getString(_palletIdKey) ?? '';
+    deliveryNoteController.text = prefs.getString(_deliveryNoteKey) ?? '';
+    productController.text = prefs.getString(_productKey) ?? '';
+    quantityController.text = prefs.getString(_quantityKey) ?? '';
+    expiryDateController.text = prefs.getString(_expiryDateKey) ?? '';
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> clearForm() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_palletIdKey);
+    await prefs.remove(_deliveryNoteKey);
+    await prefs.remove(_productKey);
+    await prefs.remove(_quantityKey);
+    await prefs.remove(_expiryDateKey);
   }
 
   String? validateProduct(String? value) {
