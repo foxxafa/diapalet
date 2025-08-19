@@ -211,6 +211,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     // Her bir satır için ürün ve barkod bilgilerini ayrı ayrı alalım
     for (final line in orderLines) {
+      if (line['urun_id'] == null) {
+        debugPrint("DEBUG: Skipping order line because urun_id is null. Line ID: ${line['id']}");
+        continue;
+      }
       final productCode = line['kartkodu'] as String?;
       if (productCode == null) continue;
 
