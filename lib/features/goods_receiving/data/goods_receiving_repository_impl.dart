@@ -274,9 +274,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       // Tüm bilgileri birleştirelim
       final enrichedMap = Map<String, dynamic>.from(line);
+      // Önce order line'daki urun_id'yi sakla
+      final orderLineUrunId = line['urun_id'];
       enrichedMap.addAll(productMap);
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
+      
+      // HATA DÜZELTMESİ: urun_id ile UrunId'nin tutarlı olduğundan emin ol
+      debugPrint("DEBUG: Order line urun_id: $orderLineUrunId, Product UrunId: ${productMap['UrunId']}");
+      
+      // HATA DÜZELTMESİ: Order line'daki urun_id'yi geri yükle (productMap tarafından üzerine yazılmış olabilir)
+      enrichedMap['urun_id'] = orderLineUrunId;
       
       // Barkod bilgisini ekleyelim
       if (barcode != null) {

@@ -16,6 +16,10 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
+        // HATA DÜZELTMESİ: Tüm veritabanı işlemlerinin UTC zaman diliminde yapılmasını sağla.
+        // Bu, incremental sync sırasında timestamp karşılaştırmalarının doğru çalışmasını garanti eder.
+        Yii::$app->db->createCommand("SET time_zone = '+00:00'")->execute();
+
         if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') {
             $this->checkApiKey();
         }

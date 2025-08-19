@@ -1,4 +1,5 @@
 // lib/features/goods_receiving/domain/entities/purchase_order_item.dart
+import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 
 class PurchaseOrderItem {
@@ -35,14 +36,33 @@ class PurchaseOrderItem {
   /// Repository katmanı bu temel nesneyi oluşturduktan sonra yeni bir
   /// nesne yaratarak bu alanı doldurur.
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
+    debugPrint("Creating PurchaseOrderItem from map. anamiktar value: ${map['anamiktar']}, type: ${map['anamiktar'].runtimeType}");
+    debugPrint("DEBUG: PurchaseOrderItem.fromDb map urun_id: ${map['urun_id']}, UrunId: ${map['UrunId']}");
+    
+    // anamiktar değerini güvenli şekilde parse et
+    double expectedQty = 0.0;
+    final anamiktarValue = map['anamiktar'];
+    if (anamiktarValue != null) {
+      if (anamiktarValue is num) {
+        expectedQty = anamiktarValue.toDouble();
+      } else {
+        expectedQty = double.tryParse(anamiktarValue.toString()) ?? 0.0;
+      }
+    }
+    
+    debugPrint("Parsed expectedQuantity: $expectedQty");
+    
+    final productId = map['urun_id'] as int;
+    debugPrint("DEBUG: Final productId being used: $productId");
+    
     return PurchaseOrderItem(
       id: map['id'] as int,
       orderId: map['siparisler_id'] as int,  // DÜZELTME: Correct field name
-      productId: map['urun_id'] as int,
-      expectedQuantity: (map['anamiktar'] as num? ?? 0).toDouble(),  // DÜZELTME: Correct field name
+      productId: productId,
+      expectedQuantity: expectedQty,
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
-      unit: map['birim'] as String?,
+      unit: map['anabirimi'] as String?,
       product: ProductInfo.fromDbMap(map), // Bu repository tarafından doldurulacak
       // palletBarcode burada null'dır, repository'de doldurulacak.
     );

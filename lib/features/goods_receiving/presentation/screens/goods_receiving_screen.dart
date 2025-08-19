@@ -427,16 +427,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     PurchaseOrderItem? orderItem;
     if (viewModel.selectedProduct != null && viewModel.isOrderBased) {
       try {
-        orderItem = viewModel.orderItems.firstWhere((item) => item.product?.id == viewModel.selectedProduct!.id);
+        // HATA DÜZELTMESİ: item.product?.id yerine item.productId kullan
+        orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.id);
+        debugPrint("DEBUG: Found orderItem for product ${viewModel.selectedProduct!.id}: expectedQuantity=${orderItem.expectedQuantity}");
       } catch (e) {
+        debugPrint("DEBUG: OrderItem not found for product ${viewModel.selectedProduct!.id}. Available orderItems: ${viewModel.orderItems.map((item) => 'productId=${item.productId}, expectedQuantity=${item.expectedQuantity}')}");
         orderItem = null;
       }
     }
 
     double alreadyAddedInUI = 0.0;
-    if (orderItem != null && orderItem.product != null) {
+    if (orderItem != null) {
       for (final item in viewModel.addedItems) {
-        if (item.product.id == orderItem.product!.id) {
+        // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır
+        if (item.product.id == orderItem.productId) {
           alreadyAddedInUI += item.quantity;
         }
       }
@@ -444,6 +448,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final totalReceived = (orderItem?.receivedQuantity ?? 0.0) + alreadyAddedInUI;
     final expectedQty = orderItem?.expectedQuantity ?? 0.0;
+    debugPrint("DEBUG: Order status display - expectedQty: $expectedQty, totalReceived: $totalReceived");
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1264,7 +1269,8 @@ class _FullscreenConfirmationPage extends StatelessWidget {
         final product = orderItem.product;
         if (product == null) return const SizedBox.shrink();
 
-        final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.id == product.id).toList();
+        // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
+        final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.id == orderItem.productId).toList();
         final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
 
         if (itemsBeingAdded.isEmpty && orderItem.expectedQuantity - orderItem.receivedQuantity <= 0) {
