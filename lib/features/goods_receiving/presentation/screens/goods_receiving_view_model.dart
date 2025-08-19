@@ -468,55 +468,26 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     });
   }
 
+  Timer? _debounce;
+
   void onProductTextChanged(String query) {
-    if (query.isEmpty) {
-      _productSearchResults.clear();
-      _selectedProduct = null;
-      notifyListeners();
-      return;
-    }
-
-    // Search for products based on the query - SADECE BARKOD ARAMA
-    final productSource = isOrderBased
-        ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
-        : _availableProducts;
-
-    final lowerQuery = query.toLowerCase();
-    _productSearchResults = productSource.where((product) {
-      // Yeni barkod sistemi: productBarcode ve stockCode'da arama yap
-      return (product.productBarcode != null && product.productBarcode!.toLowerCase().contains(lowerQuery)) ||
-             (product.stockCode.toLowerCase().contains(lowerQuery)) ||
-             (product.name.toLowerCase().contains(lowerQuery));
-    }).toList();
-
-    // Check if we have search results and auto-select if only one result
-    ProductInfo? autoSelectProduct;
-    if (_productSearchResults.length == 1) {
-      autoSelectProduct = _productSearchResults.first;
-    } else if (_productSearchResults.isNotEmpty) {
-      // İlk sonucu otomatik seç eğer barkod tam eşleşiyorsa
-      try {
-        autoSelectProduct = _productSearchResults.firstWhere((p) =>
-          (p.productBarcode?.toLowerCase() == lowerQuery));
-      } catch (e) {
-        autoSelectProduct = null;
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (query.isEmpty) {
+        _productSearchResults.clear();
+        _selectedProduct = null;
+        notifyListeners();
+        return;
       }
-    }
 
-    if (autoSelectProduct != null && _selectedProduct?.id != autoSelectProduct.id) {
-      _selectedProduct = autoSelectProduct;
-      productController.text = "${autoSelectProduct.name} (${autoSelectProduct.stockCode})";
-      _productSearchResults.clear();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isDisposed) {
-          expiryDateFocusNode.requestFocus();
-        }
-      });
-    } else if (autoSelectProduct == null && _selectedProduct != null && _productSearchResults.isEmpty) {
-      _selectedProduct = null;
-    }
-
-    notifyListeners();
+      try {
+        _productSearchResults = await _repository.searchProducts(query);
+      } catch (e) {
+        _error = 'Failed to search products: $e';
+        _productSearchResults = [];
+      }
+      notifyListeners();
+    });
   }
 
   void onExpiryDateEntered() {

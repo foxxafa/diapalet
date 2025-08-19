@@ -23,15 +23,23 @@ class ProductInfo extends Equatable {
   /// Özellikle lokal 'urunler' tablosundan gelen Map'ten nesne oluşturur.
   factory ProductInfo.fromDbMap(Map<String, dynamic> map) {
     // Gelen map'te 'id', 'urun_id', veya 'UrunId' olabilir. Hepsini kontrol edelim.
-    final dynamic idValue = map['id'] ?? map['urun_id'] ?? map['UrunId'];
+    final dynamic idValue = map['id'] ?? map['urun_id'] ?? map['UrunId'] ?? map['product_id'] ?? map['productId'];
+
+    Map<String, dynamic>? barkodInfoMap = map['barkod_info'] as Map<String, dynamic>?;
+    if (barkodInfoMap == null && (map.containsKey('barkod') || map.containsKey('barcode1'))) {
+      final barcodeValue = map['barkod'] ?? map['barcode1'];
+      if (barcodeValue != null) {
+        barkodInfoMap = {'barkod': barcodeValue};
+      }
+    }
 
     return ProductInfo(
       id: (idValue as num?)?.toInt() ?? 0,
-      name: map['UrunAdi'] as String? ?? '',
-      stockCode: map['StokKodu'] as String? ?? '',
+      name: map['UrunAdi'] as String? ?? map['product_name'] as String? ?? map['productName'] as String? ?? '',
+      stockCode: map['StokKodu'] as String? ?? map['product_code'] as String? ?? map['productCode'] as String? ?? '',
       isActive: (map['aktif'] as int? ?? 1) == 1,
       birimInfo: map['birim_info'] as Map<String, dynamic>?,
-      barkodInfo: map['barkod_info'] as Map<String, dynamic>?,
+      barkodInfo: barkodInfoMap,
     );
   }
 

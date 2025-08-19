@@ -9,7 +9,7 @@ class ProductStockItem extends Equatable {
   final String productName;
   final String productCode;
   final double quantity;
-  final String? barcode1;
+  final String? barcode;
 
   const ProductStockItem({
     this.stockId,
@@ -17,7 +17,7 @@ class ProductStockItem extends Equatable {
     required this.productName,
     required this.productCode,
     required this.quantity,
-    this.barcode1,
+    this.barcode,
   });
 
   @override
@@ -27,7 +27,7 @@ class ProductStockItem extends Equatable {
     productName,
     productCode,
     quantity,
-    barcode1,
+    barcode,
   ];
 
   factory ProductStockItem.fromJson(Map<String, dynamic> json) {
@@ -45,7 +45,7 @@ class ProductStockItem extends Equatable {
       productName: json['product_name'] as String? ?? '',
       productCode: json['product_code'] as String? ?? '',
       quantity: parseDoubleFromJson(json['quantity']),
-      barcode1: json['barcode1'] as String?,
+      barcode: json['barcode'] as String?,
     );
   }
 
@@ -56,7 +56,7 @@ class ProductStockItem extends Equatable {
       productName: map['product_name'] as String? ?? '',
       productCode: map['product_code'] as String? ?? '',
       quantity: (map['quantity'] as num?)?.toDouble() ?? 0.0,
-      barcode1: map['barcode1'] as String?,
+      barcode: map['barcode'] as String?,
     );
   }
 }

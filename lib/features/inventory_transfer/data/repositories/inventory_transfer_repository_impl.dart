@@ -165,7 +165,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        '' as barcode1,
+        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.UrunId
@@ -220,7 +220,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
-        '' as barcode1,
+        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
       FROM inventory_stock s
@@ -600,7 +600,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        '' as barcode1,
+        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_id = u.UrunId
@@ -843,7 +843,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunId,
         u.UrunAdi,
         u.StokKodu,
-        u.aktif
+        u.aktif,
+        bark.barkod
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_id = u.UrunId
       INNER JOIN birimler b ON b.StokKodu = u.StokKodu

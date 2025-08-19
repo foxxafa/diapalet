@@ -6,7 +6,7 @@ class ProductItem {
   final int id;
   final String name;
   final String productCode;
-  final String? barcode1;
+  final String? barcode;
   final double currentQuantity;
   final DateTime? expiryDate;
 
@@ -14,7 +14,7 @@ class ProductItem {
     required this.id,
     required this.name,
     required this.productCode,
-    this.barcode1,
+    this.barcode,
     required this.currentQuantity,
     this.expiryDate,
   });
@@ -26,7 +26,7 @@ class ProductItem {
       id: box.productId,
       name: box.productName,
       productCode: box.productCode,
-      barcode1: box.barcode1,
+      barcode: box.barcode,
       currentQuantity: box.quantity,
       // expiryDate will be null here, as BoxItem doesn't carry it directly.
       // It's mainly for pallet contents.
@@ -37,7 +37,7 @@ class ProductItem {
     final dynamic idValue = json['id'] ?? json['productId'];
     final dynamic nameValue = json['name'] ?? json['productName'];
     final dynamic codeValue = json['productCode'] ?? json['code'];
-    final dynamic barcodeValue = json['barcode1'];
+    final dynamic barcodeValue = json['barcode'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
     final dynamic expiryValue = json['expiryDate'];
 
@@ -52,7 +52,7 @@ class ProductItem {
       id: parseToNum(idValue).toInt(),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
-      barcode1: barcodeValue?.toString(),
+      barcode: barcodeValue?.toString(),
       currentQuantity: parseToNum(qtyValue).toDouble(),
       expiryDate: expiryValue != null ? DateTime.tryParse(expiryValue.toString()) : null,
     );
@@ -63,7 +63,7 @@ class ProductItem {
       id: map['id'] as int,
       name: (map['name'] ?? '').toString(),
       productCode: (map['code'] ?? '').toString(),
-      barcode1: map['barcode1']?.toString(),
+      barcode: map['barcode']?.toString(),
       currentQuantity: (map['currentQuantity'] as num?)?.toDouble() ?? 0.0,
       expiryDate: map['expiryDate'] != null ? DateTime.tryParse(map['expiryDate'].toString()) : null,
     );
@@ -75,7 +75,7 @@ class ProductItem {
       'id': id,
       'name': name,
       'productCode': productCode,
-      'barcode1': barcode1,
+      'barcode': barcode,
       'currentQuantity': currentQuantity,
       'expiryDate': expiryDate?.toIso8601String(),
     };

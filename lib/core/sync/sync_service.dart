@@ -369,7 +369,7 @@ class SyncService with ChangeNotifier {
         final isLastAttempt = attempt == maxRetries;
         
         if (e is DioException) {
-          debugPrint("❌ Sync-counts hatası ($attempt/$maxRetries): ${e.message}");
+          debugPrint("❌ Sync-counts hatası ($attempt/$maxRetries): $e.message");
           
           // Authentication error - retry yapma
           if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
@@ -427,7 +427,7 @@ class SyncService with ChangeNotifier {
         final isLastAttempt = attempt == maxRetries;
         
         if (e is DioException) {
-          debugPrint("❌ $tableName sayfa $page hatası ($attempt/$maxRetries): ${e.message}");
+          debugPrint("❌ $tableName sayfa $page hatası ($attempt/$maxRetries): $e.message");
           
           // Terminal hatalar - retry yapma
           if (e.response?.data is String) {
@@ -447,7 +447,7 @@ class SyncService with ChangeNotifier {
         
         if (isLastAttempt) {
           debugPrint("💥 $tableName sayfa $page - Tüm denemeler başarısız ($maxRetries/$maxRetries)");
-          throw Exception("$tableName sayfa $page indirme hatası ($maxRetries deneme): ${e.toString()}");
+          throw Exception("$tableName sayfa $page indirme hatası ($maxRetries deneme): $e");
         }
         
         // Exponential backoff: 1s, 2s, 4s
