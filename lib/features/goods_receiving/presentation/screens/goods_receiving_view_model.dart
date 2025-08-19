@@ -481,7 +481,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       }
 
       try {
-        _productSearchResults = await _repository.searchProducts(query);
+        _productSearchResults = await _repository.searchProducts(query, orderId: _selectedOrder?.id);
       } catch (e) {
         _error = 'Failed to search products: $e';
         _productSearchResults = [];

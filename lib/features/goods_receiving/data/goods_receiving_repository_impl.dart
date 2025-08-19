@@ -13,7 +13,6 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
@@ -138,7 +137,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
-    String goodsReceiptWhereClause = goodsReceiptId == null ? 'goods_receipt_id IS NULL' : 'goods_receipt_id = ?';
+    String goodsReceiptWhereClause = goodsReceiptId == null ? 'receipt_id IS NULL' : 'receipt_id = ?';
 
     List<dynamic> whereArgs = [urunId, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
@@ -170,7 +169,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'stock_status': stockStatus,
         'siparis_id': siparisId,
         'expiry_date': expiryDate,
-        'goods_receipt_id': goodsReceiptId
+        'receipt_id': goodsReceiptId
       });
     }
   }
@@ -200,27 +199,91 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
+
+    // Önce temel sipariş satırlarını alalım
+    final orderLines = await db.query(
+      'siparis_ayrintili',
+      where: 'siparisler_id = ? AND turu = ?',
+      whereArgs: [orderId, '1'],
+    );
+
+    final items = <PurchaseOrderItem>[];
     
-    final maps = await db.rawQuery('''
-        SELECT
-          s.*,
-          u.UrunId as urun_id,
-          u.UrunAdi,
-          u.StokKodu,
-          u.aktif,
-          (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
-          COALESCE((SELECT SUM(gri.quantity_received)
-                     FROM ${DbTables.goodsReceiptItems} gri
-                     JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
-                     WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = u.UrunId), 0) as receivedQuantity,
-          COALESCE(wps.putaway_quantity, 0) as transferredQuantity
-        FROM ${DbTables.orderLines} s
-        JOIN ${DbTables.products} u ON u.${DbColumns.productsCode} = s.${DbColumns.orderLinesProductCode}
-        LEFT JOIN ${DbTables.putawayStatus} wps ON wps.purchase_order_line_id = s.id
-        WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
-    ''', [orderId]);
-    debugPrint("DEBUG: Found ${maps.length} items for order $orderId with JOIN");
-    return maps.map((map) => PurchaseOrderItem.fromDb(map)).toList();
+    // Her bir satır için ürün ve barkod bilgilerini ayrı ayrı alalım
+    for (final line in orderLines) {
+      final productCode = line['kartkodu'] as String?;
+      if (productCode == null) continue;
+
+      // Ürün bilgisini al
+      final productResult = await db.query(
+        'urunler',
+        where: 'StokKodu = ?',
+        whereArgs: [productCode],
+        limit: 1,
+      );
+
+      if (productResult.isEmpty) continue;
+      final productMap = productResult.first;
+
+      // GET BARCODE CORRECTLY ACCORDING TO ORDER UNIT
+      final unitCode = line['anabirimi'] as String?;
+      String? barcode;
+      
+      if (unitCode != null) {
+        final barcodeResult = await db.rawQuery('''
+          SELECT bark.barkod 
+          FROM birimler b 
+          JOIN barkodlar bark ON b._key = bark._key_scf_stokkart_birimleri
+          WHERE b.StokKodu = ? AND b.birimkod = ?
+          LIMIT 1
+        ''', [productCode, unitCode]);
+
+        if (barcodeResult.isNotEmpty) {
+          barcode = barcodeResult.first['barkod'] as String?;
+        }
+      }
+
+      // Alınan miktarı hesapla
+      final receivedQuantityResult = await db.rawQuery('''
+        SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
+        FROM goods_receipt_items gri
+        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+        WHERE gr.siparis_id = ? AND gri.urun_id = ?
+      ''', [orderId, productMap['UrunId']]);
+
+      final receivedQuantity = receivedQuantityResult.isNotEmpty 
+          ? (receivedQuantityResult.first['total_received'] as num).toDouble() 
+          : 0.0;
+
+      // Yerleştirme miktarını al
+      final putawayResult = await db.query(
+        'wms_putaway_status',
+        columns: ['putaway_quantity'],
+        where: 'purchase_order_line_id = ?',
+        whereArgs: [line['id']],
+        limit: 1,
+      );
+
+      final transferredQuantity = putawayResult.isNotEmpty 
+          ? (putawayResult.first['putaway_quantity'] as num).toDouble() 
+          : 0.0;
+
+      // Tüm bilgileri birleştirelim
+      final enrichedMap = Map<String, dynamic>.from(line);
+      enrichedMap.addAll(productMap);
+      enrichedMap['receivedQuantity'] = receivedQuantity;
+      enrichedMap['transferredQuantity'] = transferredQuantity;
+      
+      // Barkod bilgisini ekleyelim
+      if (barcode != null) {
+        enrichedMap['barkod'] = barcode;
+      }
+
+      items.add(PurchaseOrderItem.fromDb(enrichedMap));
+    }
+
+    debugPrint("DEBUG: Found ${items.length} items for order $orderId");
+    return items;
   }
 
   @override
@@ -239,7 +302,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<void> updatePurchaseOrderStatus(int orderId, int newStatus) async {
     final db = await dbHelper.database;
     await db.transaction((txn) async {
-      final poResult = await txn.query('siparisler',
+      final poResult = await txn.query(DbTables.orders,
           columns: ['fisno'], where: 'id = ?', limit: 1, whereArgs: [orderId]);
       final fisno = poResult.isNotEmpty ? poResult.first[DbColumns.ordersFisno] as String? : null;
 
@@ -247,10 +310,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'fisno': fisno, 'status': newStatus}),
           createdAt: DateTime.now());
-      await txn.insert('pending_operation', pendingOp.toDbMap());
+      await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
 
       await txn.update(
-        'siparisler',
+        DbTables.orders,
         {'status': newStatus},
         where: 'id = ?',
         whereArgs: [orderId],
@@ -265,7 +328,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     await db.transaction((txn) async {
       final poResult = await txn.query(
-          'siparisler',
+          DbTables.orders,
           columns: ['fisno'],
           where: 'id = ?',
           limit: 1,
@@ -278,10 +341,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           data: jsonEncode({'siparis_id': orderId, 'fisno': fisno}),
           createdAt: DateTime.now()
       );
-      await txn.insert('pending_operation', pendingOp.toDbMap());
+      await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
 
       await txn.update(
-        'siparisler',
+        DbTables.orders,
         {'status': 2}, // Status 2: Manually Closed
         where: 'id = ?',
         whereArgs: [orderId],
@@ -292,8 +355,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<List<ProductInfo>> searchProducts(String query) async {
-    final results = await dbHelper.searchProductsByBarcode(query);
+  Future<List<ProductInfo>> searchProducts(String query, {int? orderId}) async {
+    final results = await dbHelper.searchProductsByBarcode(query, orderId: orderId);
     return results.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
@@ -316,38 +379,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<ProductInfo?> findProductByExactMatch(String code) async {
-    final db = await dbHelper.database;
-    debugPrint("🔍 DEBUG: findProductByExactMatch aranan kod: '$code'");
-
-    final productInfo = await dbHelper.getProductByBarcode(code);
-    if (productInfo != null) {
-      return ProductInfo.fromMap(productInfo);
-    }
-    
-    final maps = await db.query(
-      DbTables.products,
-      where: '${DbColumns.productsCode} = ?',
-      whereArgs: [code],
-      limit: 1
-    );
-
-    if (maps.isEmpty) {
-       debugPrint("❌ DEBUG: StokKodu ile ürün bulunamadı: '$code'");
-       return null;
-    }
-    
-    final productMap = Map<String, dynamic>.from(maps.first);
-    final barcodeResult = await db.rawQuery('''
-      SELECT bark.barkod FROM barkodlar bark
-      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-      WHERE b.StokKodu = ? LIMIT 1
-    ''', [productMap['StokKodu']]);
-
-    if (barcodeResult.isNotEmpty) {
-      productMap['barcode'] = barcodeResult.first['barkod'];
-    }
-
-    return ProductInfo.fromDbMap(productMap);
+    // Sadece barkod ile arama yap
+    return findProductByBarcodeExactMatch(code);
   }
 
   @override

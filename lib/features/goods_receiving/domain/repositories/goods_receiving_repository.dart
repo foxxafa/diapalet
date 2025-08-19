@@ -22,7 +22,7 @@ abstract class GoodsReceivingRepository {
   Future<void> updatePurchaseOrderStatus(int orderId, int status);
 
   /// Verilen bir sorgu metnine göre ürünleri arar.
-  Future<List<ProductInfo>> searchProducts(String query);
+  Future<List<ProductInfo>> searchProducts(String query, {int? orderId});
 
   /// Sistemdeki tüm aktif ürünleri getirir.
   Future<List<ProductInfo>> getAllActiveProducts();

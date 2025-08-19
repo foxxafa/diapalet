@@ -359,7 +359,7 @@ class SyncService with ChangeNotifier {
 
         if (response.statusCode == 200 && response.data['success'] == true) {
           if (attempt > 1) {
-            debugPrint("✅ Tablo sayıları başarılı (${attempt}. denemede)");
+            debugPrint("✅ Tablo sayıları başarılı ($attempt. denemede)");
           }
           return Map<String, dynamic>.from(response.data['counts'] ?? {});
         } else {
@@ -369,7 +369,7 @@ class SyncService with ChangeNotifier {
         final isLastAttempt = attempt == maxRetries;
         
         if (e is DioException) {
-          debugPrint("❌ Sync-counts hatası ($attempt/$maxRetries): $e.message");
+                    debugPrint("❌ Sync-counts hatası ($attempt/$maxRetries): $e.message");
           
           // Authentication error - retry yapma
           if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
@@ -417,7 +417,7 @@ class SyncService with ChangeNotifier {
         if (response.statusCode == 200 && response.data['success'] == true) {
           final data = response.data['data'] as Map<String, dynamic>? ?? {};
           if (attempt > 1) {
-            debugPrint("✅ $tableName sayfa $page başarılı (${attempt}. denemede)");
+            debugPrint("✅ $tableName sayfa $page başarılı ($attempt. denemede)");
           }
           return data[tableName] as List<dynamic>? ?? [];
         } else {
@@ -434,7 +434,7 @@ class SyncService with ChangeNotifier {
             final htmlError = e.response!.data as String;
             if (htmlError.contains('500 - Internal server error')) {
               if (isLastAttempt) {
-                throw Exception("Sunucu iç hatası (500): $tableName tablosu indirilemedi. ${maxRetries} deneme başarısız.");
+                throw Exception("Sunucu iç hatası (500): $tableName tablosu indirilemedi. $maxRetries deneme başarısız.");
               }
             }
           }

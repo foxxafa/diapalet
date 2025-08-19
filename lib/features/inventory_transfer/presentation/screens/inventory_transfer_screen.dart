@@ -316,10 +316,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (_selectedMode == AssignmentMode.pallet) {
           foundItem = _availableContainers.cast<String?>().firstWhere((id) => id?.toLowerCase() == cleanData.toLowerCase(), orElse: () => null);
         } else {
-          // Product mode - search by barcode only (barcode1)
+          // Product mode - search by barcode only
           foundItem = _availableContainers.where((container) {
             return container.items.any((item) =>
-              (item.product.barcode1?.toLowerCase() == cleanData.toLowerCase()));
+              (item.product.productBarcode?.toLowerCase() == cleanData.toLowerCase()));
           }).firstOrNull;
         }
 

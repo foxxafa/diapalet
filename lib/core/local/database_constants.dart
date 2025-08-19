@@ -50,7 +50,7 @@ class DbColumns {
   static const String productsCode = 'StokKodu';
   static const String productsName = 'UrunAdi';
   static const String productsActive = 'aktif';
-  // Barcode artık barkodlar tablosundan gelecek
+  // Barcode is now retrieved from barkodlar table
   
   // Warehouse fields moved to SharedPreferences
   // static const String warehousesCode = 'warehouse_code';
