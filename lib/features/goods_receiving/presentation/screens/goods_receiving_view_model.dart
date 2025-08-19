@@ -240,7 +240,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Debug: Sipariş ürünlerinin barkodlarını kontrol et
       debugPrint("DEBUG: Order items loaded for order $orderId:");
       for (var item in _orderItems) {
-        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Barcode: '${item.product?.barcode1}'");
+        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Barcode: '${item.product?.productBarcode}'");
       }
 
       if (_isDisposed) return;
@@ -399,13 +399,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
         ProductInfo? foundProduct;
 
-        // Önce tam eşleşme ara - TÜM BARKOD ALANLARI
+        // Önce tam eşleşme ara - YENİ BARKOD SİSTEMİ
         try {
           foundProduct = productSource.firstWhere((p) =>
-            (p.barcode1?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
-            (p.barcode2?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
-            (p.barcode3?.toLowerCase() == productCodeToSearch.toLowerCase()) ||
-            (p.barcode4?.toLowerCase() == productCodeToSearch.toLowerCase()));
+            (p.productBarcode != null && p.productBarcode!.toLowerCase() == productCodeToSearch.toLowerCase()) ||
+            (p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
           // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD
           foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch);
@@ -485,11 +483,10 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
     final lowerQuery = query.toLowerCase();
     _productSearchResults = productSource.where((product) {
-      // Sadece barkod alanlarında LIKE arama yap (Barcode1, Barcode2, Barcode3, Barcode4)
-      return (product.barcode1?.toLowerCase().contains(lowerQuery) ?? false) ||
-             (product.barcode2?.toLowerCase().contains(lowerQuery) ?? false) ||
-             (product.barcode3?.toLowerCase().contains(lowerQuery) ?? false) ||
-             (product.barcode4?.toLowerCase().contains(lowerQuery) ?? false);
+      // Yeni barkod sistemi: productBarcode ve stockCode'da arama yap
+      return (product.productBarcode != null && product.productBarcode!.toLowerCase().contains(lowerQuery)) ||
+             (product.stockCode.toLowerCase().contains(lowerQuery)) ||
+             (product.name.toLowerCase().contains(lowerQuery));
     }).toList();
 
     // Check if we have search results and auto-select if only one result
@@ -500,7 +497,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // İlk sonucu otomatik seç eğer barkod tam eşleşiyorsa
       try {
         autoSelectProduct = _productSearchResults.firstWhere((p) =>
-          (p.barcode1?.toLowerCase() == lowerQuery));
+          (p.productBarcode?.toLowerCase() == lowerQuery));
       } catch (e) {
         autoSelectProduct = null;
       }

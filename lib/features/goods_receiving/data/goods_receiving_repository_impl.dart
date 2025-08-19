@@ -267,7 +267,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           u.${DbColumns.productsId} as urun_id,
           u.${DbColumns.productsName},
           u.${DbColumns.productsCode},
-          u.${DbColumns.productsBarcode},
           u.${DbColumns.productsActive},
           COALESCE((SELECT SUM(gri.quantity_received)
                      FROM ${DbTables.goodsReceiptItems} gri
@@ -380,11 +379,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       debugPrint("   UrunId: ${product['UrunId']}, StokKodu: '${product['StokKodu']}', Barcode1: '${product['Barcode1']}', aktif: ${product['aktif']}");
     }
 
-    // DÜZELTME: Pasif ürünlerle de işlem yapılabilmesi için aktiflik kontrolü kaldırıldı
+    // Yeni barkod sistemi: Önce barkod araması yap
+    final productInfo = await dbHelper.getProductByBarcode(code);
+    if (productInfo != null) {
+      return ProductInfo.fromMap(productInfo);
+    }
+    
+    // Eğer barkod bulunamazsa StokKodu ile ara
     final maps = await db.query(
       DbTables.products,
-      where: '${DbColumns.productsCode} = ? OR ${DbColumns.productsBarcode} = ?',
-      whereArgs: [code, code],
+      where: '${DbColumns.productsCode} = ?',
+      whereArgs: [code],
       limit: 1
     );
 

@@ -37,11 +37,26 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     final placeholders = ('?' * searchTerms.length).split('').join(',');
     final whereArgs = searchTerms.toList();
 
-    // 1. Barkod, ürün adı veya stok koduna göre ürünü bul
+    // 1. Yeni barkod sistemi: Önce barkod araması yap
+    final productByBarcode = await dbHelper.getProductByBarcode(searchTerms.first);
+    if (productByBarcode != null) {
+      final productId = productByBarcode['UrunId'] as int;
+      
+      // 2. Bu ürünün stok durumunu getir
+      final stockQuery = await db.query(
+        DbTables.inventoryStock,
+        where: '${DbColumns.stockProductId} = ?',
+        whereArgs: [productId],
+      );
+      
+      return stockQuery.map((map) => ProductLocation.fromMap(map)).toList();
+    }
+    
+    // Barkod bulunamazsa ürün adı veya stok koduna göre ara
     final productQuery = await db.query(
       DbTables.products,
-      where: '${DbColumns.productsBarcode} IN ($placeholders) OR ${DbColumns.productsName} IN ($placeholders) OR ${DbColumns.productsCode} IN ($placeholders)',
-      whereArgs: [...whereArgs, ...whereArgs, ...whereArgs],
+      where: '${DbColumns.productsName} IN ($placeholders) OR ${DbColumns.productsCode} IN ($placeholders)',
+      whereArgs: [...whereArgs, ...whereArgs],
       limit: 1,
     );
 

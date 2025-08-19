@@ -34,6 +34,9 @@ class ProductInfo extends Equatable {
       barkodInfo: map['barkod_info'] as Map<String, dynamic>?,
     );
   }
+
+  /// Genel Map'ten nesne oluşturur (backward compatibility)
+  factory ProductInfo.fromMap(Map<String, dynamic> map) => ProductInfo.fromDbMap(map);
   // GÜNCELLEME SONU
 
   /// API'den gelen JSON'dan nesne oluşturur.
@@ -47,6 +50,9 @@ class ProductInfo extends Equatable {
       barkodInfo: json['barkodInfo'] as Map<String, dynamic>?,
     );
   }
+
+  /// Yeni barkod sistemi için barkod bilgisi
+  String? get productBarcode => barkodInfo?['barkod'] as String?;
 
   /// Nesneyi JSON formatına dönüştürür.
   Map<String, dynamic> toJson() {

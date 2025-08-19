@@ -24,7 +24,7 @@ class PurchaseOrderItem {
     required this.receivedQuantity,
     required this.transferredQuantity,
     this.unit,
-    required this.product,
+    this.product,
     // HATA DÜZELTMESİ: Constructor'a eklendi.
     this.palletBarcode,
   });
@@ -43,55 +43,7 @@ class PurchaseOrderItem {
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: map['birim'] as String?,
-      @immutable
-class ProductInfo {
-  final int id;
-  final String name;
-  final String? code;
-  final String? unit;
-  final double? boxQuantity;
-  final String? barcode; // Yeni barkod alanı
-
-  const ProductInfo({
-    required this.id,
-    required this.name,
-    this.code,
-    this.unit,
-    this.boxQuantity,
-    this.barcode, // Constructor'a eklendi
-  });
-
-  // fromMap constructor
-  factory ProductInfo.fromMap(Map<String, dynamic> map) {
-    return ProductInfo(
-      id: map['UrunId'] as int,
-      name: map['UrunAdi'] as String,
-      code: map['StokKodu'] as String?,
-      unit: map['anabirimi'] as String?,
-      boxQuantity: (map['qty'] as num?)?.toDouble(),
-      // Yeni barkod alanı map'ten okunuyor (barkod_info içinden)
-      barcode: (map['barkod_info'] as Map<String, dynamic>?)?['barkod'] as String? ?? map['barkod'] as String?,
-    );
-  }
-
-  ProductInfo copyWith({
-    int? id,
-    String? name,
-    String? code,
-    String? unit,
-    double? boxQuantity,
-    String? barcode,
-  }) {
-    return ProductInfo(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      code: code ?? this.code,
-      unit: unit ?? this.unit,
-      boxQuantity: boxQuantity ?? this.boxQuantity,
-      barcode: barcode ?? this.barcode,
-    );
-  }
-}
+      product: null, // Bu repository tarafından doldurulacak
       // palletBarcode burada null'dır, repository'de doldurulacak.
     );
   }

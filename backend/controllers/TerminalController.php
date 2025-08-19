@@ -647,85 +647,108 @@ class TerminalController extends Controller
 
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
         // ESKİ BARCODE ALANLARI ARTIK KULLANILMIYOR - Yeni barkodlar tablosuna geçildi
-        $urunlerQuery = (new Query())
-            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
-            ->from('urunler');
+        try {
+            Yii::info("Ürünler tablosu sorgulanıyor...", __METHOD__);
+            $urunlerQuery = (new Query())
+                ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
+                ->from('urunler');
 
-        // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
-        if ($serverSyncTimestamp) {
-            $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp (UTC) tarihinden sonraki ürünler alınıyor.", __METHOD__);
-        } else {
-            // İlk sync ise tüm aktif ürünleri al
-            Yii::info("Full sync: Tüm ürünler alınıyor (ilk sync).", __METHOD__);
+            // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
+            if ($serverSyncTimestamp) {
+                $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                Yii::info("İnkremental sync: $serverSyncTimestamp (UTC) tarihinden sonraki ürünler alınıyor.", __METHOD__);
+            } else {
+                // İlk sync ise tüm aktif ürünleri al
+                Yii::info("Full sync: Tüm ürünler alınıyor (ilk sync).", __METHOD__);
+            }
+
+            $urunlerData = $urunlerQuery->all();
+            $this->castNumericValues($urunlerData, ['id', 'aktif']);
+            $data['urunler'] = $urunlerData;
+
+            Yii::info("Ürün sync: " . count($urunlerData) . " ürün gönderiliyor.", __METHOD__);
+        } catch (\Exception $e) {
+            Yii::error("Ürünler tablosu hatası: " . $e->getMessage(), __METHOD__);
+            throw new \Exception("Ürünler tablosu sorgusu başarısız: " . $e->getMessage());
         }
-
-        $urunlerData = $urunlerQuery->all();
-        $this->castNumericValues($urunlerData, ['id', 'aktif']);
-        $data['urunler'] = $urunlerData;
-
-        Yii::info("Ürün sync: " . count($urunlerData) . " ürün gönderiliyor.", __METHOD__);
         // ########## İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## TEDARİKÇİ İÇİN İNKREMENTAL SYNC ##########
-        $tedarikciQuery = (new Query())
-            ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
-            ->from('tedarikci');
+        try {
+            Yii::info("Tedarikçi tablosu sorgulanıyor...", __METHOD__);
+            $tedarikciQuery = (new Query())
+                ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
+                ->from('tedarikci');
 
-        // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen tedarikçileri al
-        if ($serverSyncTimestamp) {
-            $tedarikciQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki tedarikçiler alınıyor.", __METHOD__);
-        } else {
-            // İlk sync ise tüm tedarikçileri al
-            Yii::info("Full sync: Tüm tedarikçiler alınıyor (ilk sync).", __METHOD__);
+            // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen tedarikçileri al
+            if ($serverSyncTimestamp) {
+                $tedarikciQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki tedarikçiler alınıyor.", __METHOD__);
+            } else {
+                // İlk sync ise tüm tedarikçileri al
+                Yii::info("Full sync: Tüm tedarikçiler alınıyor (ilk sync).", __METHOD__);
+            }
+
+            $tedarikciData = $tedarikciQuery->all();
+            $this->castNumericValues($tedarikciData, ['id', 'Aktif']);
+            $data['tedarikci'] = $tedarikciData;
+
+            Yii::info("Tedarikçi sync: " . count($tedarikciData) . " tedarikçi gönderiliyor.", __METHOD__);
+        } catch (\Exception $e) {
+            Yii::error("Tedarikçi tablosu hatası: " . $e->getMessage(), __METHOD__);
+            throw new \Exception("Tedarikçi tablosu sorgusu başarısız: " . $e->getMessage());
         }
-
-        $tedarikciData = $tedarikciQuery->all();
-        $this->castNumericValues($tedarikciData, ['id', 'Aktif']);
-        $data['tedarikci'] = $tedarikciData;
-
-        Yii::info("Tedarikçi sync: " . count($tedarikciData) . " tedarikçi gönderiliyor.", __METHOD__);
         // ########## TEDARİKÇİ İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## BİRİMLER İÇİN İNKREMENTAL SYNC ##########
-        $birimlerQuery = (new Query())
-            ->select(['id', 'birimadi', 'birimkod', 'carpan', 'fiyat1', 'fiyat2', 'fiyat3', 'fiyat4', 'fiyat5', 
-                     'fiyat6', 'fiyat7', 'fiyat8', 'fiyat9', 'fiyat10', '_key', '_key_scf_stokkart', 'StokKodu', 
-                     'created_at', 'updated_at'])
-            ->from('birimler');
+        try {
+            Yii::info("Birimler tablosu sorgulanıyor...", __METHOD__);
+            $birimlerQuery = (new Query())
+                ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
+                         'created_at', 'updated_at'])
+                ->from('birimler');
 
-        if ($serverSyncTimestamp) {
-            $birimlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki birimler alınıyor.", __METHOD__);
-        } else {
-            Yii::info("Full sync: Tüm birimler alınıyor (ilk sync).", __METHOD__);
+            if ($serverSyncTimestamp) {
+                $birimlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki birimler alınıyor.", __METHOD__);
+            } else {
+                Yii::info("Full sync: Tüm birimler alınıyor (ilk sync).", __METHOD__);
+            }
+
+            $birimlerData = $birimlerQuery->all();
+            $this->castNumericValues($birimlerData, ['id'], ['carpan']);
+            $data['birimler'] = $birimlerData;
+
+            Yii::info("Birimler sync: " . count($birimlerData) . " birim gönderiliyor.", __METHOD__);
+        } catch (\Exception $e) {
+            Yii::error("Birimler tablosu hatası: " . $e->getMessage(), __METHOD__);
+            throw new \Exception("Birimler tablosu sorgusu başarısız: " . $e->getMessage());
         }
-
-        $birimlerData = $birimlerQuery->all();
-        $this->castNumericValues($birimlerData, ['id'], ['carpan', 'fiyat1', 'fiyat2', 'fiyat3', 'fiyat4', 'fiyat5', 'fiyat6', 'fiyat7', 'fiyat8', 'fiyat9', 'fiyat10']);
-        $data['birimler'] = $birimlerData;
-
-        Yii::info("Birimler sync: " . count($birimlerData) . " birim gönderiliyor.", __METHOD__);
         // ########## BİRİMLER İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## BARKODLAR İÇİN İNKREMENTAL SYNC ##########
-        $barkodlarQuery = (new Query())
-            ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
-            ->from('barkodlar');
+        try {
+            Yii::info("Barkodlar tablosu sorgulanıyor...", __METHOD__);
+            $barkodlarQuery = (new Query())
+                ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
+                ->from('barkodlar');
 
-        if ($serverSyncTimestamp) {
-            $barkodlarQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki barkodlar alınıyor.", __METHOD__);
-        } else {
-            Yii::info("Full sync: Tüm barkodlar alınıyor (ilk sync).", __METHOD__);
+            if ($serverSyncTimestamp) {
+                $barkodlarQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki barkodlar alınıyor.", __METHOD__);
+            } else {
+                Yii::info("Full sync: Tüm barkodlar alınıyor (ilk sync).", __METHOD__);
+            }
+
+            $barkodlarData = $barkodlarQuery->all();
+            $this->castNumericValues($barkodlarData, ['id']);
+            $data['barkodlar'] = $barkodlarData;
+
+            Yii::info("Barkodlar sync: " . count($barkodlarData) . " barkod gönderiliyor.", __METHOD__);
+        } catch (\Exception $e) {
+            Yii::error("Barkodlar tablosu hatası: " . $e->getMessage(), __METHOD__);
+            throw new \Exception("Barkodlar tablosu sorgusu başarısız: " . $e->getMessage());
         }
-
-        $barkodlarData = $barkodlarQuery->all();
-        $this->castNumericValues($barkodlarData, ['id']);
-        $data['barkodlar'] = $barkodlarData;
-
-        Yii::info("Barkodlar sync: " . count($barkodlarData) . " barkod gönderiliyor.", __METHOD__);
         // ########## BARKODLAR İNKREMENTAL SYNC BİTTİ ##########
 
         // ########## SHELFS İÇİN İNKREMENTAL SYNC ##########
@@ -744,26 +767,6 @@ class TerminalController extends Controller
 
         // warehouse tablosu kaldırıldı - mobil uygulama SharedPreferences kullanıyor
 
-        // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
-        // Rowhub formatında employee sorgusu
-        $employeeColumns = [
-            'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
-            'e.warehouse_id', 'e.is_active', 'e.created_at', 'e.updated_at'
-        ];
-        $employeesQuery = (new Query())
-            ->select($employeeColumns)
-            ->from(['e' => 'employees'])
-            ->where(['e.is_active' => 1, 'e.warehouse_id' => $warehouseId]);
-
-        if ($serverSyncTimestamp) {
-            $employeesQuery->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki çalışanlar alınıyor.", __METHOD__);
-        } else {
-            Yii::info("Full sync: Tüm çalışanlar alınıyor (ilk sync).", __METHOD__);
-        }
-        $data['employees'] = $employeesQuery->all();
-        $this->castNumericValues($data['employees'], ['id', 'warehouse_id', 'is_active']);
-
         // ########## ROWHUB'A ÖZEL UYARLAMA BAŞLIYOR ##########
 
         // 1. Gelen warehouseId'ye ait warehouse bilgilerini buluyoruz.
@@ -780,6 +783,26 @@ class TerminalController extends Controller
         $warehouseCode = $warehouseInfo['warehouse_code'];
         $warehouseName = $warehouseInfo['name'];
         $warehouseKey = $warehouseInfo['_key'];
+
+        // ########## EMPLOYEES İÇİN İNKREMENTAL SYNC ##########
+        // Rowhub formatında employee sorgusu - warehouse_code kullanılıyor
+        $employeeColumns = [
+            'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
+            'e.warehouse_code', 'e.is_active', 'e.created_at', 'e.updated_at'
+        ];
+        $employeesQuery = (new Query())
+            ->select($employeeColumns)
+            ->from(['e' => 'employees'])
+            ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode]);
+
+        if ($serverSyncTimestamp) {
+            $employeesQuery->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
+            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki çalışanlar alınıyor.", __METHOD__);
+        } else {
+            Yii::info("Full sync: Tüm çalışanlar alınıyor (ilk sync).", __METHOD__);
+        }
+        $data['employees'] = $employeesQuery->all();
+        $this->castNumericValues($data['employees'], ['id', 'is_active']);
 
         // 2. Siparişleri warehouse _key ile eşleştiriyoruz.
         // Optimize edilmiş alanları seç - gereksiz alanlar kaldırıldı

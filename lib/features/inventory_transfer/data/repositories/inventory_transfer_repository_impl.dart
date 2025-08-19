@@ -547,7 +547,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<ProductInfo>> getProductInfoByBarcode(String barcode) async {
-    final db = await dbHelper.database;
     // Yeni barkodlar tablosunu kullan
     final result = await dbHelper.getProductByBarcode(barcode);
     if (result != null) {

@@ -237,10 +237,35 @@ class SyncService with ChangeNotifier {
       debugPrint("   📅 İnkremental sync yapılıyor (sadece değişenler)");
     } else {
       debugPrint("   🔄 İlk sync - tüm veriler çekilecek");
-    }    final response = await dio.post(
-      ApiConfig.syncDownload,
-      data: {'last_sync_timestamp': lastSync, 'warehouse_id': warehouseId},
-    );
+    }
+
+    Response? response;
+    try {
+      response = await dio.post(
+        ApiConfig.syncDownload,
+        data: {'last_sync_timestamp': lastSync, 'warehouse_id': warehouseId},
+      );
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint("❌ Sync-download DioException:");
+        debugPrint("   Status Code: ${e.response?.statusCode}");
+        debugPrint("   Status Message: ${e.response?.statusMessage}");
+        debugPrint("   Response Data: ${e.response?.data}");
+        debugPrint("   Error Type: ${e.type}");
+        debugPrint("   Error Message: ${e.message}");
+        
+        // Try to extract more error details from HTML response
+        if (e.response?.data is String) {
+          final htmlError = e.response!.data as String;
+          if (htmlError.contains('500 - Internal server error')) {
+            throw Exception("Sunucu iç hatası (500): Veritabanı bağlantısı veya tablo sorunu olabilir. Sistem yöneticisine başvurun.");
+          }
+        }
+        
+        throw Exception("Sunucu bağlantı hatası: ${e.message}");
+      }
+      rethrow;
+    }
 
     if (response.statusCode == 200 && response.data['success'] == true) {
       final data = response.data['data'] as Map<String, dynamic>;

@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 54;
+  static const _databaseVersion = 55;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -88,7 +88,7 @@ class DatabaseHelper {
           last_name TEXT,
           username TEXT UNIQUE,
           password TEXT,
-          warehouse_id INTEGER,
+          warehouse_code TEXT,
           is_active INTEGER DEFAULT 1,
           created_at TEXT,
           updated_at TEXT
@@ -285,7 +285,7 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_pending_operation_status ON pending_operation(status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_key ON birimler(_key)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_stokkodu ON birimler(StokKodu)');
@@ -966,7 +966,7 @@ class DatabaseHelper {
         gr.*,
         emp.first_name || ' ' || emp.last_name as employee_name,
         emp.username as employee_username,
-        emp.warehouse_id as employee_warehouse_id,
+        emp.warehouse_code as employee_warehouse_code,
         emp.role as employee_role,
         po.fisno,
         po.tarih as order_date,
@@ -1076,7 +1076,8 @@ class DatabaseHelper {
             String productBarcode = '';
             try {
               // Ürünün StokKodu ile birimler tablosundan birimlerini bul
-              final birimResults = await database.query(
+              final db = await database;
+              final birimResults = await db.query(
                 'birimler',
                 where: 'StokKodu = ?',
                 whereArgs: [product['StokKodu']],
@@ -1085,7 +1086,7 @@ class DatabaseHelper {
               if (birimResults.isNotEmpty) {
                 // İlk birimin barkodunu al
                 final birimKey = birimResults.first['_key'];
-                final barkodResults = await database.query(
+                final barkodResults = await db.query(
                   'barkodlar',
                   where: '_key_scf_stokkart_birimleri = ?',
                   whereArgs: [birimKey],
@@ -1512,9 +1513,10 @@ class DatabaseHelper {
       'branch_name': prefs.getString('branch_name') ?? 'N/A',
     };
 
+    final warehouseCode = prefs.getString('warehouse_code') ?? '';
     final employeeCount = await db.rawQuery(
-        'SELECT COUNT(*) as count FROM employees WHERE warehouse_id = ? AND is_active = 1',
-        [warehouseId]
+        'SELECT COUNT(*) as count FROM employees WHERE warehouse_code = ? AND is_active = 1',
+        [warehouseCode]
     );
 
     final locationCount = await db.rawQuery(
