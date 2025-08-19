@@ -137,7 +137,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
-    String goodsReceiptWhereClause = goodsReceiptId == null ? 'receipt_id IS NULL' : 'receipt_id = ?';
+    String goodsReceiptWhereClause = goodsReceiptId == null ? 'goods_receipt_id IS NULL' : 'goods_receipt_id = ?';
 
     List<dynamic> whereArgs = [urunId, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
@@ -169,7 +169,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'stock_status': stockStatus,
         'siparis_id': siparisId,
         'expiry_date': expiryDate,
-        'receipt_id': goodsReceiptId
+        'goods_receipt_id': goodsReceiptId
       });
     }
   }
