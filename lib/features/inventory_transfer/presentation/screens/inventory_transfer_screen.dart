@@ -21,6 +21,7 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_op
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -391,14 +392,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
-  void _selectProductFromSearch(ProductInfo product) {
+  void _selectProductFromSearch(ProductInfo product) async {
     // Create a synthetic container from the selected product
     _scannedContainerIdController.text = '${product.name} (${product.stockCode})';
     setState(() {
       _productSearchResults = [];
     });
     
-    // Find the matching container in available containers or create one
+    // Find the matching container in available containers
     final foundContainer = _availableContainers.where((container) {
       if (container is TransferableContainer) {
         return container.items.any((item) => item.product.id == product.id);
@@ -409,7 +410,77 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (foundContainer != null) {
       _handleContainerSelection(foundContainer);
     } else {
-      _showErrorSnackBar('inventory_transfer.error_product_not_in_containers'.tr());
+      // If not found in current containers, create a synthetic container for this product
+      try {
+        // Create a synthetic TransferableContainer for the selected product
+        // This is needed because the product exists in inventory but wasn't loaded
+        // in the current container filter (e.g., different delivery note)
+        
+        final db = await DatabaseHelper.instance.database;
+        
+        // Get the actual stock records for this product that match our search criteria
+        String whereClause;
+        List<dynamic> whereArgs;
+        
+        if (widget.selectedOrder != null) {
+          // Order-based putaway
+          whereClause = 'urun_id = ? AND siparis_id = ? AND stock_status = ?';
+          whereArgs = [product.id, widget.selectedOrder!.id, 'receiving'];
+        } else if (widget.isFreePutAway) {
+          // Free putaway - get all receiving items for this product
+          whereClause = 'urun_id = ? AND stock_status = ?';
+          whereArgs = [product.id, 'receiving'];
+        } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+          // Shelf-to-shelf transfer
+          final locationId = _availableSourceLocations[_selectedSourceLocationName];
+          whereClause = 'urun_id = ? AND location_id = ? AND stock_status = ?';
+          whereArgs = [product.id, locationId, 'available'];
+        } else {
+          // Receiving area transfer
+          whereClause = 'urun_id = ? AND location_id IS NULL AND stock_status = ?';
+          whereArgs = [product.id, 'available'];
+        }
+        
+        final stockMaps = await db.query('inventory_stock', 
+          where: whereClause, 
+          whereArgs: whereArgs
+        );
+        
+        if (stockMaps.isNotEmpty) {
+          // Create transferable items from stock records
+          final items = stockMaps.map((stock) {
+            final pallet = stock['pallet_barcode'] as String?;
+            final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date'].toString()) : null;
+            final quantity = (stock['quantity'] as num).toDouble();
+            
+            return TransferableItem(
+              product: product,
+              quantity: quantity,
+              sourcePalletBarcode: pallet,
+              expiryDate: expiryDate,
+            );
+          }).toList();
+          
+          // Create synthetic container
+          final containerId = 'synthetic_${product.stockCode}';
+          final syntheticContainer = TransferableContainer(
+            id: containerId,
+            items: items,
+            isPallet: false,
+          );
+          
+          // Add to available containers and select it
+          setState(() {
+            _availableContainers.add(syntheticContainer);
+          });
+          
+          _handleContainerSelection(syntheticContainer);
+        } else {
+          _showErrorSnackBar('inventory_transfer.error_product_not_available'.tr());
+        }
+      } catch (e) {
+        _showErrorSnackBar('inventory_transfer.error_loading_product_container'.tr(namedArgs: {'error': e.toString()}));
+      }
     }
   }
 
