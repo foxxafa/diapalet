@@ -212,13 +212,13 @@ class SyncService with ChangeNotifier {
   }
 
   Future<void> _downloadDataFromServer({required int warehouseId}) async {
-    debugPrint("Sunucudan veri indirme başlıyor...");
+    debugPrint("🚀 Paginated sync sistemi başlatılıyor...");
 
     // Start downloading stage
     _emitProgress(const SyncProgress(
       stage: SyncStage.downloading,
       tableName: '',
-      progress: 0.1,
+      progress: 0.05,
     ));
 
     final prefs = await SharedPreferences.getInstance();
@@ -239,89 +239,226 @@ class SyncService with ChangeNotifier {
       debugPrint("   🔄 İlk sync - tüm veriler çekilecek");
     }
 
-    Response? response;
-    try {
-      response = await dio.post(
-        ApiConfig.syncDownload,
-        data: {'last_sync_timestamp': lastSync, 'warehouse_id': warehouseId},
-      );
-    } catch (e) {
-      if (e is DioException) {
-        debugPrint("❌ Sync-download DioException:");
-        debugPrint("   Status Code: ${e.response?.statusCode}");
-        debugPrint("   Status Message: ${e.response?.statusMessage}");
-        debugPrint("   Response Data: ${e.response?.data}");
-        debugPrint("   Error Type: ${e.type}");
-        debugPrint("   Error Message: ${e.message}");
-        
-        // Try to extract more error details from HTML response
-        if (e.response?.data is String) {
-          final htmlError = e.response!.data as String;
-          if (htmlError.contains('500 - Internal server error')) {
-            throw Exception("Sunucu iç hatası (500): Veritabanı bağlantısı veya tablo sorunu olabilir. Sistem yöneticisine başvurun.");
-          }
-        }
-        
-        throw Exception("Sunucu bağlantı hatası: ${e.message}");
-      }
-      rethrow;
-    }
+    // STEP 1: Get table counts first
+    debugPrint("📊 STEP 1: Tablo sayıları alınıyor...");
+    final counts = await _getTableCounts(warehouseId, lastSync);
+    
+    debugPrint("📊 Toplam kayıt sayıları:");
+    int totalRecords = 0;
+    counts.forEach((tableName, count) {
+      debugPrint("   $tableName: $count kayıt");
+      totalRecords += count as int;
+    });
+    debugPrint("   🎯 TOPLAM: $totalRecords kayıt");
 
-    if (response.statusCode == 200 && response.data['success'] == true) {
-      final data = response.data['data'] as Map<String, dynamic>;
-      final newTimestamp = response.data['timestamp'] as String? ?? DateTime.now().toUtc().toIso8601String();
-
-      debugPrint("📥 Sunucudan gelen response:");
-      debugPrint("   🕐 Server timestamp: ${response.data['timestamp']}");
-      debugPrint("   📱 Yeni timestamp UTC: $newTimestamp");
-
-      // Debug: Gelen veri miktarını göster
-      debugPrint("📊 Sunucudan gelen veri miktarı:");
-      data.forEach((tableName, tableData) {
-        if (tableData is List) {
-          debugPrint("   $tableName: ${tableData.length} kayıt");
-          if (tableData.isNotEmpty && tableName == 'products') {
-            final firstProduct = tableData.first;
-            debugPrint("   İlk ürün tarihi: ${firstProduct['updated_at'] ?? firstProduct['created_at']}");
-          }
-        }
-      });
-
-      if (data.isEmpty || data.values.every((list) => (list as List).isEmpty)) {
-        debugPrint("⚠️  Sunucudan hiç veri gelmedi!");
-        debugPrint("   📅 Sorguladığımız timestamp: $lastSync");
-        debugPrint("   🕐 Server'ın timestamp'i: ${response.data['timestamp']}");
-        debugPrint("   ❓ Muhtemel sorun: Timestamp formatı veya timezone farkı");
-      }
-
-      // Processing stage
-      _emitProgress(const SyncProgress(
-        stage: SyncStage.processing,
-        tableName: '',
-        progress: 0.5,
-      ));
-
-      await dbHelper.applyDownloadedData(data, onTableProgress: (tableName, processed, total) {
-        // Progress calculation: 0.5 to 0.9 range (40% of total progress)
-        final progressPercentage = total > 0 ? processed / total : 0.0;
-        final currentProgress = 0.5 + (progressPercentage * 0.4);
-
-        _emitProgress(SyncProgress(
-          stage: SyncStage.processing,
-          tableName: tableName,
-          progress: currentProgress,
-          processedItems: processed,
-          totalItems: total,
-        ));
-      });
-
-      // User-specific timestamp kaydet
+    if (totalRecords == 0) {
+      debugPrint("⚠️  Sunucudan hiç veri gelmeyecek (güncel durumda)");
+      // Still process empty data to trigger completion
+      await dbHelper.applyDownloadedData({});
+      final newTimestamp = DateTime.now().toUtc().toIso8601String();
       await prefs.setString(userTimestampKey, newTimestamp);
-      debugPrint("Veri indirme başarılı. Yeni senkronizasyon zamanı: $newTimestamp");
-      debugPrint("💾 Timestamp kaydedildi: $userTimestampKey = $newTimestamp");
-    } else {
-      throw Exception("Sunucu veri indirme işlemini reddetti: ${response.data['error'] ?? 'Bilinmeyen Hata'}");
+      return;
     }
+
+    // STEP 2: Download data table by table with pagination
+    debugPrint("📥 STEP 2: Tablolar sayfa sayfa indiriliyor...");
+    
+    const pageSize = 1000; // Her sayfada 1000 kayıt
+    int processedRecords = 0;
+    final allData = <String, List<dynamic>>{};
+    
+    // Define sync order (dependencies first)
+    final syncOrder = [
+      'urunler', 'tedarikci', 'birimler', 'barkodlar', 'employees', 'shelfs',
+      'siparisler', 'siparis_ayrintili', 'goods_receipts', 'goods_receipt_items',
+      'inventory_stock', 'inventory_transfers', 'wms_putaway_status'
+    ];
+    
+    for (final tableName in syncOrder) {
+      final tableCount = counts[tableName] as int? ?? 0;
+      if (tableCount == 0) continue;
+      
+      debugPrint("📋 $tableName tablosu indiriliyor ($tableCount kayıt)...");
+      allData[tableName] = [];
+      
+      int page = 1;
+      while (true) {
+        final pageData = await _downloadTablePage(
+          tableName: tableName, 
+          warehouseId: warehouseId, 
+          lastSync: lastSync, 
+          page: page, 
+          limit: pageSize
+        );
+        
+        if (pageData.isEmpty) break;
+        
+        allData[tableName]!.addAll(pageData);
+        processedRecords += pageData.length;
+        
+        // Update progress
+        final progress = 0.1 + (processedRecords / totalRecords) * 0.5; // 10% to 60%
+        _emitProgress(SyncProgress(
+          stage: SyncStage.downloading,
+          tableName: tableName,
+          progress: progress,
+          processedItems: processedRecords,
+          totalItems: totalRecords,
+        ));
+        
+        debugPrint("   📄 Sayfa $page: ${pageData.length} kayıt (Toplam: ${allData[tableName]!.length}/$tableCount)");
+        
+        if (pageData.length < pageSize) break; // Son sayfa
+        page++;
+      }
+      
+      debugPrint("   ✅ $tableName tamamlandı: ${allData[tableName]!.length} kayıt");
+    }
+
+    // STEP 3: Process all data
+    debugPrint("⚙️  STEP 3: Veriler işleniyor...");
+    _emitProgress(const SyncProgress(
+      stage: SyncStage.processing,
+      tableName: '',
+      progress: 0.7,
+    ));
+
+    await dbHelper.applyDownloadedData(allData, onTableProgress: (tableName, processed, total) {
+      // Progress calculation: 0.7 to 0.95 range (25% of total progress)
+      final progressPercentage = total > 0 ? processed / total : 0.0;
+      final currentProgress = 0.7 + (progressPercentage * 0.25);
+
+      _emitProgress(SyncProgress(
+        stage: SyncStage.processing,
+        tableName: tableName,
+        progress: currentProgress,
+        processedItems: processed,
+        totalItems: total,
+      ));
+    });
+
+    // STEP 4: Save timestamp
+    final newTimestamp = DateTime.now().toUtc().toIso8601String();
+    await prefs.setString(userTimestampKey, newTimestamp);
+    
+    debugPrint("🎉 Paginated sync tamamlandı!");
+    debugPrint("   📊 İşlenen toplam kayıt: $processedRecords");
+    debugPrint("   💾 Yeni timestamp: $newTimestamp");
+  }
+
+  Future<Map<String, dynamic>> _getTableCounts(int warehouseId, String? lastSync) async {
+    const maxRetries = 3;
+    const baseDelayMs = 1000;
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await dio.post(
+          ApiConfig.syncCounts,
+          data: {'warehouse_id': warehouseId, 'last_sync_timestamp': lastSync},
+        );
+
+        if (response.statusCode == 200 && response.data['success'] == true) {
+          if (attempt > 1) {
+            debugPrint("✅ Tablo sayıları başarılı (${attempt}. denemede)");
+          }
+          return Map<String, dynamic>.from(response.data['counts'] ?? {});
+        } else {
+          throw Exception("Count sorgusu başarısız: ${response.data['error'] ?? 'Bilinmeyen hata'}");
+        }
+      } catch (e) {
+        final isLastAttempt = attempt == maxRetries;
+        
+        if (e is DioException) {
+          debugPrint("❌ Sync-counts hatası ($attempt/$maxRetries): ${e.message}");
+          
+          // Authentication error - retry yapma
+          if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+            throw Exception("Yetkilendirme hatası: API anahtarı geçersiz. Lütfen yeniden giriş yapın.");
+          }
+        }
+        
+        if (isLastAttempt) {
+          debugPrint("💥 Tablo sayıları - Tüm denemeler başarısız ($maxRetries/$maxRetries)");
+          throw Exception("Count sorgusu başarısız ($maxRetries deneme): ${e.toString()}");
+        }
+        
+        final delayMs = baseDelayMs * (1 << (attempt - 1));
+        debugPrint("⏳ Tablo sayıları - ${delayMs}ms bekleyip tekrar deneniyor...");
+        await Future.delayed(Duration(milliseconds: delayMs));
+      }
+    }
+    
+    throw Exception("Tablo sayıları - Beklenmeyen hata");
+  }
+
+  Future<List<dynamic>> _downloadTablePage({
+    required String tableName,
+    required int warehouseId,
+    String? lastSync,
+    required int page,
+    required int limit,
+  }) async {
+    const maxRetries = 3;
+    const baseDelayMs = 1000; // 1 saniye başlangıç
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await dio.post(
+          ApiConfig.syncDownload,
+          data: {
+            'warehouse_id': warehouseId,
+            'last_sync_timestamp': lastSync,
+            'table_name': tableName,
+            'page': page,
+            'limit': limit,
+          },
+        );
+
+        if (response.statusCode == 200 && response.data['success'] == true) {
+          final data = response.data['data'] as Map<String, dynamic>? ?? {};
+          if (attempt > 1) {
+            debugPrint("✅ $tableName sayfa $page başarılı (${attempt}. denemede)");
+          }
+          return data[tableName] as List<dynamic>? ?? [];
+        } else {
+          throw Exception("$tableName sayfa $page indirilemedi: ${response.data['error'] ?? 'Bilinmeyen hata'}");
+        }
+      } catch (e) {
+        final isLastAttempt = attempt == maxRetries;
+        
+        if (e is DioException) {
+          debugPrint("❌ $tableName sayfa $page hatası ($attempt/$maxRetries): ${e.message}");
+          
+          // Terminal hatalar - retry yapma
+          if (e.response?.data is String) {
+            final htmlError = e.response!.data as String;
+            if (htmlError.contains('500 - Internal server error')) {
+              if (isLastAttempt) {
+                throw Exception("Sunucu iç hatası (500): $tableName tablosu indirilemedi. ${maxRetries} deneme başarısız.");
+              }
+            }
+          }
+          
+          // Authentication error - retry yapma
+          if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+            throw Exception("Yetkilendirme hatası: API anahtarı geçersiz. Lütfen yeniden giriş yapın.");
+          }
+        }
+        
+        if (isLastAttempt) {
+          debugPrint("💥 $tableName sayfa $page - Tüm denemeler başarısız ($maxRetries/$maxRetries)");
+          throw Exception("$tableName sayfa $page indirme hatası ($maxRetries deneme): ${e.toString()}");
+        }
+        
+        // Exponential backoff: 1s, 2s, 4s
+        final delayMs = baseDelayMs * (1 << (attempt - 1));
+        debugPrint("⏳ $tableName sayfa $page - ${delayMs}ms bekleyip tekrar deneniyor...");
+        await Future.delayed(Duration(milliseconds: delayMs));
+      }
+    }
+    
+    // Bu noktaya asla gelmemeli
+    throw Exception("$tableName sayfa $page - Beklenmeyen hata");
   }
 
   Future<void> uploadPendingOperations() async {

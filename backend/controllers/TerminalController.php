@@ -613,17 +613,239 @@ class TerminalController extends Controller
         }
     }
 
+    public function actionSyncCounts()
+    {
+        $payload = $this->getJsonBody();
+        $warehouseId = $payload['warehouse_id'] ?? null;
+        $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
+
+        if (!$warehouseId) {
+            Yii::$app->response->statusCode = 400;
+            return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
+        }
+        $warehouseId = (int)$warehouseId;
+
+        // Buffer timestamp hazırlığı (aynı mantık)
+        $serverSyncTimestamp = $lastSyncTimestamp;
+        if ($lastSyncTimestamp) {
+            $syncDateTime = new \DateTime($lastSyncTimestamp);
+            $syncDateTime->sub(new \DateInterval('PT30S'));
+            $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+        }
+
+        try {
+            $counts = [];
+            
+            // Warehouse bilgilerini al
+            $warehouseInfo = (new Query())
+                ->select(['warehouse_code', 'name', '_key'])
+                ->from('warehouses')
+                ->where(['id' => $warehouseId])
+                ->one();
+
+            if (!$warehouseInfo) {
+                throw new \Exception("Warehouse ID $warehouseId bulunamadı.");
+            }
+
+            $warehouseCode = $warehouseInfo['warehouse_code'];
+            $warehouseKey = $warehouseInfo['_key'];
+            
+            // Her tablo için count bilgisi
+            $counts['urunler'] = $this->getTableCount('urunler', $serverSyncTimestamp);
+            $counts['tedarikci'] = $this->getTableCount('tedarikci', $serverSyncTimestamp);
+            $counts['birimler'] = $this->getTableCount('birimler', $serverSyncTimestamp);
+            $counts['barkodlar'] = $this->getTableCount('barkodlar', $serverSyncTimestamp);
+            $counts['shelfs'] = $this->getTableCount('shelfs', $serverSyncTimestamp, ['warehouse_id' => $warehouseId]);
+            $counts['employees'] = $this->getTableCount('employees', $serverSyncTimestamp, ['warehouse_code' => $warehouseCode]);
+            
+            // Siparişler için özel sorgu
+            $counts['siparisler'] = $this->getOrdersCount($warehouseKey, $serverSyncTimestamp);
+            $counts['siparis_ayrintili'] = $this->getOrderLinesCount($warehouseKey, $serverSyncTimestamp);
+            
+            // Diğer tablolar
+            $counts['goods_receipts'] = $this->getGoodsReceiptsCount($warehouseId, $serverSyncTimestamp);
+            $counts['goods_receipt_items'] = $this->getGoodsReceiptItemsCount($warehouseId, $serverSyncTimestamp);
+            $counts['inventory_stock'] = $this->getInventoryStockCount($warehouseId, $serverSyncTimestamp);
+            $counts['inventory_transfers'] = $this->getInventoryTransfersCount($warehouseId, $serverSyncTimestamp);
+            $counts['wms_putaway_status'] = $this->getPutawayStatusCount($warehouseKey, $serverSyncTimestamp);
+
+            return [
+                'success' => true,
+                'counts' => $counts,
+                'total_records' => array_sum($counts),
+                'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z')
+            ];
+
+        } catch (\Exception $e) {
+            Yii::$app->response->statusCode = 500;
+            Yii::error("SyncCounts Hatası: " . $e->getMessage(), __METHOD__);
+            return ['success' => false, 'error' => 'Count sorgusu başarısız: ' . $e->getMessage()];
+        }
+    }
+
+    private function getTableCount($tableName, $timestamp = null, $extraConditions = []) 
+    {
+        $query = (new Query())->from($tableName);
+        
+        if ($timestamp) {
+            $query->where(['>', 'updated_at', $timestamp]);
+        }
+        
+        foreach ($extraConditions as $column => $value) {
+            $query->andWhere([$column => $value]);
+        }
+        
+        return (int)$query->count();
+    }
+
+    private function getOrdersCount($warehouseKey, $timestamp = null) 
+    {
+        $query = (new Query())
+            ->from('siparisler')
+            ->where(['_key_sis_depo_source' => $warehouseKey])
+            ->andWhere(['in', 'status', [0, 1, 2, 3]]);
+            
+        if ($timestamp) {
+            $query->andWhere(['>', 'updated_at', $timestamp]);
+        }
+        
+        return (int)$query->count();
+    }
+
+    private function getOrderLinesCount($warehouseKey, $timestamp = null) 
+    {
+        $query = (new Query())
+            ->from('siparis_ayrintili')
+            ->where(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
+            
+        if ($timestamp) {
+            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $timestamp]); // FIX: Table prefix added
+            // Sadece ilgili warehouse'un siparişlerini say
+            $query->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
+                  ->andWhere(['siparisler._key_sis_depo_source' => $warehouseKey]);
+        } else {
+            $query->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
+                  ->andWhere(['siparisler._key_sis_depo_source' => $warehouseKey]);
+        }
+        
+        return (int)$query->count();
+    }
+
+    private function getGoodsReceiptsCount($warehouseId, $timestamp = null) 
+    {
+        $query = (new Query())->from('goods_receipts')->where(['warehouse_id' => $warehouseId]);
+        if ($timestamp) {
+            $query->andWhere(['>', 'updated_at', $timestamp]);
+        }
+        return (int)$query->count();
+    }
+
+    private function getGoodsReceiptItemsCount($warehouseId, $timestamp = null) 
+    {
+        $query = (new Query())
+            ->from('goods_receipt_items')
+            ->innerJoin('goods_receipts', 'goods_receipts.goods_receipt_id = goods_receipt_items.receipt_id')
+            ->where(['goods_receipts.warehouse_id' => $warehouseId]);
+            
+        if ($timestamp) {
+            $query->andWhere(['>', 'goods_receipt_items.updated_at', $timestamp]);
+        }
+        return (int)$query->count();
+    }
+
+    private function getInventoryStockCount($warehouseId, $timestamp = null) 
+    {
+        // Kompleks stok sorgusu - location bazlı ve goods_receipt bazlı
+        $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
+        $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['warehouse_id' => $warehouseId])->column();
+        
+        $query = (new Query())->from('inventory_stock');
+        $conditions = ['or'];
+        
+        if (!empty($locationIds)) {
+            $conditions[] = ['in', 'location_id', $locationIds];
+        }
+        if (!empty($receiptIds)) {
+            $conditions[] = [
+                'and',
+                ['is', 'location_id', new \yii\db\Expression('NULL')],
+                ['in', 'goods_receipt_id', $receiptIds]
+            ];
+        }
+        
+        if (count($conditions) > 1) {
+            $query->where($conditions);
+            if ($timestamp) {
+                $query->andWhere(['>', 'updated_at', $timestamp]);
+            }
+            return (int)$query->count();
+        }
+        return 0;
+    }
+
+    private function getInventoryTransfersCount($warehouseId, $timestamp = null) 
+    {
+        $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
+        $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['warehouse_id' => $warehouseId])->column();
+        
+        $query = (new Query())->from('inventory_transfers');
+        $conditions = ['or'];
+        
+        if (!empty($locationIds)) {
+            $conditions[] = ['in', 'from_location_id', $locationIds];
+            $conditions[] = ['in', 'to_location_id', $locationIds];
+        }
+        if (!empty($receiptIds)) {
+            $conditions[] = ['in', 'goods_receipt_id', $receiptIds];
+        }
+        
+        if (count($conditions) > 1) {
+            $query->where($conditions);
+            if ($timestamp) {
+                $query->andWhere(['>', 'updated_at', $timestamp]);
+            }
+            return (int)$query->count();
+        }
+        return 0;
+    }
+
+    private function getPutawayStatusCount($warehouseKey, $timestamp = null) 
+    {
+        $query = (new Query())
+            ->from('wms_putaway_status')
+            ->innerJoin('siparis_ayrintili', 'siparis_ayrintili.id = wms_putaway_status.purchase_order_line_id')
+            ->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
+            ->where(['siparisler._key_sis_depo_source' => $warehouseKey]);
+            
+        if ($timestamp) {
+            $query->andWhere(['>', 'wms_putaway_status.updated_at', $timestamp]);
+        }
+        return (int)$query->count();
+    }
+
     public function actionSyncDownload()
 {
     $payload = $this->getJsonBody();
     $warehouseId = $payload['warehouse_id'] ?? null;
-    $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null; // <<<--- YENİ PARAMETRE
-
+    $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
+    
+    // ########## YENİ PAGINATION PARAMETRELERİ ##########
+    $tableName = $payload['table_name'] ?? null;
+    $page = (int)($payload['page'] ?? 1);
+    $limit = (int)($payload['limit'] ?? 1000);
+    
     if (!$warehouseId) {
         Yii::$app->response->statusCode = 400;
         return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
     }
     $warehouseId = (int)$warehouseId;
+    
+    // Eğer table_name belirtilmişse, paginated mode
+    if ($tableName) {
+        return $this->handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit);
+    }
+    
+    // Eski mode - tüm tabloları birden indir (backward compatibility için)
 
     // ########## UTC TIMESTAMP KULLANIMI ##########
     // Global kullanım için UTC timestamp'leri direkt karşılaştır
@@ -873,9 +1095,9 @@ class TerminalController extends Controller
                 ])
                 ->from('siparis_ayrintili')
                 ->where(['in', 'siparisler_id', $poIds])
-                ->andWhere(['turu' => '1']);
+                ->andWhere(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
             if ($serverSyncTimestamp) {
-                $poLineQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                $poLineQuery->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
                 Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki sipariş kalemleri alınıyor.", __METHOD__);
             } else {
                 Yii::info("Full sync: Tüm sipariş kalemleri alınıyor (ilk sync).", __METHOD__);
@@ -1017,9 +1239,505 @@ class TerminalController extends Controller
     }
 }
 
+    /**
+     * Tek bir tablonun sayfalı verisini indirir
+     */
+    private function handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit)
+    {
+        // UTC timestamp hazırlama (aynı mantık)
+        $serverSyncTimestamp = $lastSyncTimestamp;
+        if ($lastSyncTimestamp) {
+            $syncDateTime = new \DateTime($lastSyncTimestamp);
+            $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
+            $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+        }
+        
+        $offset = ($page - 1) * $limit;
+        
+        try {
+            $data = [];
+            
+            switch ($tableName) {
+                case 'urunler':
+                    $data = $this->getPaginatedUrunler($serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'tedarikci':
+                    $data = $this->getPaginatedTedarikci($serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'birimler':
+                    $data = $this->getPaginatedBirimler($serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'barkodlar':
+                    $data = $this->getPaginatedBarkodlar($serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'employees':
+                    $data = $this->getPaginatedEmployees($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'shelfs':
+                    $data = $this->getPaginatedShelfs($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'siparisler':
+                    $data = $this->getPaginatedSiparisler($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'siparis_ayrintili':
+                    $data = $this->getPaginatedSiparisAyrintili($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'goods_receipts':
+                    $data = $this->getPaginatedGoodsReceipts($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'goods_receipt_items':
+                    $data = $this->getPaginatedGoodsReceiptItems($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'inventory_stock':
+                    $data = $this->getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'inventory_transfers':
+                    $data = $this->getPaginatedInventoryTransfers($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'wms_putaway_status':
+                    $data = $this->getPaginatedWmsPutawayStatus($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                default:
+                    throw new \Exception("Desteklenmeyen tablo: $tableName");
+            }
+            
+            return [
+                'success' => true,
+                'data' => [$tableName => $data],
+                'pagination' => [
+                    'table_name' => $tableName,
+                    'page' => $page,
+                    'limit' => $limit,
+                    'count' => count($data)
+                ]
+            ];
+        } catch (\Exception $e) {
+            Yii::$app->response->statusCode = 500;
+            Yii::error("Paginated download hatası ($tableName): " . $e->getMessage(), __METHOD__);
+            return ['success' => false, 'error' => "$tableName tablosu sayfa $page indirilemedi: " . $e->getMessage()];
+        }
+    }
+
     public function actionHealthCheck()
     {
         return ['status' => 'ok', 'timestamp' => date('c')];
+    }
+
+    // ########## PAGINATED QUERY METHODS ##########
+    
+    private function getPaginatedUrunler($serverSyncTimestamp, $offset, $limit)
+    {
+        $query = (new Query())
+            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
+            ->from('urunler')
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'aktif']);
+        return $data;
+    }
+
+    private function getPaginatedTedarikci($serverSyncTimestamp, $offset, $limit)
+    {
+        $query = (new Query())
+            ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
+            ->from('tedarikci')
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'Aktif']);
+        return $data;
+    }
+
+    private function getPaginatedBirimler($serverSyncTimestamp, $offset, $limit)
+    {
+        $query = (new Query())
+            ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
+                     'created_at', 'updated_at'])
+            ->from('birimler')
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id'], ['carpan']);
+        return $data;
+    }
+
+    private function getPaginatedBarkodlar($serverSyncTimestamp, $offset, $limit)
+    {
+        $query = (new Query())
+            ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
+            ->from('barkodlar')
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id']);
+        return $data;
+    }
+
+    private function getPaginatedEmployees($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get warehouse info
+        $warehouseInfo = (new Query())
+            ->select(['warehouse_code'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+
+        if (!$warehouseInfo) {
+            throw new \Exception("Warehouse ID $warehouseId bulunamadı.");
+        }
+
+        $warehouseCode = $warehouseInfo['warehouse_code'];
+
+        $query = (new Query())
+            ->select(['e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
+                     'e.warehouse_code', 'e.is_active', 'e.created_at', 'e.updated_at'])
+            ->from(['e' => 'employees'])
+            ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode])
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'is_active']);
+        return $data;
+    }
+
+    private function getPaginatedShelfs($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        $query = (new Query())
+            ->select(['id', 'warehouse_id', 'name', 'code', 'is_active', 'created_at', 'updated_at'])
+            ->from('shelfs')
+            ->where(['warehouse_id' => $warehouseId])
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'warehouse_id', 'is_active']);
+        return $data;
+    }
+
+    private function getPaginatedSiparisler($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get warehouse info
+        $warehouseInfo = (new Query())
+            ->select(['warehouse_code', 'name', '_key'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+
+        if (!$warehouseInfo) {
+            throw new \Exception("Warehouse ID $warehouseId bulunamadı.");
+        }
+
+        $warehouseKey = $warehouseInfo['_key'];
+
+        $query = (new Query())
+            ->select(['id', 'fisno', 'tarih', 'status', 
+                     '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'])
+            ->from('siparisler')
+            ->where(['_key_sis_depo_source' => $warehouseKey])
+            ->andWhere(['in', 'status', [0, 1, 2, 3]])
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        
+        // Add notlar field as null
+        foreach ($data as &$siparis) {
+            $siparis['notlar'] = null;
+        }
+
+        $this->castNumericValues($data, ['id', 'status']);
+        return $data;
+    }
+
+    private function getPaginatedSiparisAyrintili($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // First get all order IDs for this warehouse
+        $warehouseInfo = (new Query())
+            ->select(['_key'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+
+        if (!$warehouseInfo) {
+            return [];
+        }
+
+        $poIds = (new Query())
+            ->select('id')
+            ->from('siparisler')
+            ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
+            ->andWhere(['in', 'status', [0, 1, 2, 3]])
+            ->column();
+
+        if (empty($poIds)) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->select(['id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
+                     'anabirimi', 'created_at', 'updated_at', 'status', 'turu'])
+            ->from('siparis_ayrintili')
+            ->where(['in', 'siparisler_id', $poIds])
+            ->andWhere(['siparis_ayrintili.turu' => '1']) // FIX: Table prefix added
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['anamiktar']);
+        return $data;
+    }
+
+    private function getPaginatedGoodsReceipts($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get both order-based and free receipts
+        $warehouseInfo = (new Query())
+            ->select(['_key'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+
+        $conditions = ['or'];
+        
+        // Order-based receipts
+        if ($warehouseInfo) {
+            $poIds = (new Query())
+                ->select('id')
+                ->from('siparisler')
+                ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
+                ->column();
+            
+            if (!empty($poIds)) {
+                $conditions[] = ['in', 'siparis_id', $poIds];
+            }
+        }
+
+        // Free receipts
+        $conditions[] = ['and', ['siparis_id' => null], ['warehouse_id' => $warehouseId]];
+
+        $query = (new Query())
+            ->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 
+                     'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])
+            ->from('goods_receipts')
+            ->offset($offset)
+            ->limit($limit);
+
+        if (count($conditions) > 1) {
+            $query->where($conditions);
+        } else {
+            return [];
+        }
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+        return $data;
+    }
+
+    private function getPaginatedGoodsReceiptItems($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get receipt IDs for this warehouse first
+        $receiptIds = $this->getReceiptIdsForWarehouse($warehouseId);
+        
+        if (empty($receiptIds)) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->from('goods_receipt_items')
+            ->where(['in', 'receipt_id', $receiptIds])
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+        return $data;
+    }
+
+    private function getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        $locationIds = (new Query())
+            ->select('id')
+            ->from('shelfs')
+            ->where(['warehouse_id' => $warehouseId])
+            ->column();
+
+        $allReceiptIds = $this->getReceiptIdsForWarehouse($warehouseId);
+
+        $stockConditions = ['or'];
+
+        if (!empty($locationIds)) {
+            $stockConditions[] = ['in', 'location_id', $locationIds];
+        }
+
+        if (!empty($allReceiptIds)) {
+            $stockConditions[] = [
+                'and',
+                ['is', 'location_id', new \yii\db\Expression('NULL')],
+                ['in', 'goods_receipt_id', $allReceiptIds]
+            ];
+        }
+
+        if (count($stockConditions) <= 1) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->from('inventory_stock')
+            ->where($stockConditions)
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        return $data;
+    }
+
+    private function getPaginatedInventoryTransfers($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        $locationIds = (new Query())
+            ->select('id')
+            ->from('shelfs')
+            ->where(['warehouse_id' => $warehouseId])
+            ->column();
+
+        $allReceiptIds = $this->getReceiptIdsForWarehouse($warehouseId);
+
+        $transferConditions = ['or'];
+
+        if (!empty($locationIds)) {
+            $transferConditions[] = ['in', 'from_location_id', $locationIds];
+            $transferConditions[] = ['in', 'to_location_id', $locationIds];
+        }
+
+        if (!empty($allReceiptIds)) {
+            $transferConditions[] = ['in', 'goods_receipt_id', $allReceiptIds];
+        }
+
+        if (count($transferConditions) <= 1) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->from('inventory_transfers')
+            ->where($transferConditions)
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        return $data;
+    }
+
+    private function getPaginatedWmsPutawayStatus($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get order line IDs for this warehouse
+        $warehouseInfo = (new Query())
+            ->select(['_key'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+
+        if (!$warehouseInfo) {
+            return [];
+        }
+
+        $poIds = (new Query())
+            ->select('id')
+            ->from('siparisler')
+            ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
+            ->column();
+
+        if (empty($poIds)) {
+            return [];
+        }
+
+        $poLineIds = (new Query())
+            ->select('id')
+            ->from('siparis_ayrintili')
+            ->where(['in', 'siparisler_id', $poIds])
+            ->andWhere(['siparis_ayrintili.turu' => '1']) // FIX: Table prefix added
+            ->column();
+
+        if (empty($poLineIds)) {
+            return [];
+        }
+
+        $query = (new Query())
+            ->from('wms_putaway_status')
+            ->where(['in', 'purchase_order_line_id', $poLineIds])
+            ->offset($offset)
+            ->limit($limit);
+
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+        }
+
+        $data = $query->all();
+        $this->castNumericValues($data, ['id', 'purchase_order_line_id'], ['putaway_quantity']);
+        return $data;
+    }
+
+    // Helper method to get receipt IDs for a warehouse
+    private function getReceiptIdsForWarehouse($warehouseId)
+    {
+        return (new Query())
+            ->select('goods_receipt_id')
+            ->from('goods_receipts')
+            ->where(['warehouse_id' => $warehouseId])
+            ->column();
     }
 
     public function actionSyncShelfs()

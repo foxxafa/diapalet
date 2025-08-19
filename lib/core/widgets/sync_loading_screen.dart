@@ -114,12 +114,20 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         return 'sync.tables.shelfs'.tr();
       case 'urunler':
         return 'sync.tables.urunler'.tr();
+      case 'tedarikci':
+        return 'sync.tables.tedarikci'.tr();
+      case 'birimler':
+        return 'sync.tables.birimler'.tr();
+      case 'barkodlar':
+        return 'sync.tables.barkodlar'.tr();
       case 'goods_receipts':
         return 'sync.tables.goods_receipts'.tr();
       case 'goods_receipt_items':
         return 'sync.tables.goods_receipt_items'.tr();
       case 'inventory_stock':
         return 'sync.tables.inventory_stock'.tr();
+      case 'inventory_transfers':
+        return 'sync.tables.inventory_transfers'.tr();
       case 'wms_putaway_status':
         return 'sync.tables.wms_putaway_status'.tr();
       case 'siparisler':

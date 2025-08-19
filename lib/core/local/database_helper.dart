@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 55;
+  static const _databaseVersion = 56;
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -112,16 +112,6 @@ class DatabaseHelper {
           birimadi TEXT,
           birimkod TEXT,
           carpan REAL,
-          fiyat1 REAL,
-          fiyat2 REAL,
-          fiyat3 REAL,
-          fiyat4 REAL,
-          fiyat5 REAL,
-          fiyat6 REAL,
-          fiyat7 REAL,
-          fiyat8 REAL,
-          fiyat9 REAL,
-          fiyat10 REAL,
           _key TEXT,
           _key_scf_stokkart TEXT,
           StokKodu TEXT,

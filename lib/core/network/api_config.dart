@@ -28,6 +28,7 @@ class ApiConfig {
   static String get login => _getEndpoint('login');
   static String get syncUpload => _getEndpoint('sync-upload');
   static String get syncDownload => _getEndpoint('sync-download');
+  static String get syncCounts => _getEndpoint('sync-counts');
   static String get healthCheck => _getEndpoint('health-check');
 
   // Endpoint formatını ortama göre belirle
