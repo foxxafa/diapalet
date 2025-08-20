@@ -1240,19 +1240,19 @@ class DatabaseHelper {
               debugPrint('DEBUG - Looking for receipt with date: $receiptDateStr (truncated from ${actualReceiptDate.toUtc().toIso8601String()})');
 
               final currentReceiptQuery = await db.rawQuery(
-                  'SELECT receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
+                  'SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date = ?',
                   [siparisId, receiptDateStr]
               );
               if (currentReceiptQuery.isNotEmpty) {
-                currentReceiptId = currentReceiptQuery.first['receipt_id'] as int?;
+                currentReceiptId = currentReceiptQuery.first['goods_receipt_id'] as int?;
                 debugPrint('DEBUG - Found current receipt ID to exclude: $currentReceiptId for date: $receiptDateStr');
               } else {
                 final likeQuery = await db.rawQuery(
-                    'SELECT receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date LIKE ?',
+                    'SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ? AND receipt_date LIKE ?',
                     [siparisId, '$receiptDateStr%']
                 );
                 if (likeQuery.isNotEmpty) {
-                  currentReceiptId = likeQuery.first['receipt_id'] as int?;
+                  currentReceiptId = likeQuery.first['goods_receipt_id'] as int?;
                   debugPrint('DEBUG - Found current receipt ID via LIKE: $currentReceiptId for date pattern: $receiptDateStr%');
                 } else {
                   debugPrint('DEBUG - No receipt found to exclude for date: $receiptDateStr (tried exact and LIKE)');

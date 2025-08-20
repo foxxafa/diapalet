@@ -75,6 +75,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   List<ProductInfo> get productSearchResults => _productSearchResults;
   ProductInfo? get selectedProduct => _selectedProduct;
   List<ReceiptItemDraft> get addedItems => _addedItems;
+  int get addedItemsCount => _addedItems.length;
 
   String? get error => _error;
   String? get successMessage => _successMessage;
@@ -525,11 +526,12 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
-      if (quantity > remainingQuantity + 0.001) {
-        _error = 'goods_receiving_screen.error_quantity_exceeds_order'.tr(namedArgs: {'remainingQuantity': remainingQuantity.toStringAsFixed(2), 'unit': orderItem.unit ?? ''});
-        notifyListeners();
-        return;
-      }
+      // Sipariş miktarından fazla kabul etmeye izin ver
+      // if (quantity > remainingQuantity + 0.001) {
+      //   _error = 'goods_receiving_screen.error_quantity_exceeds_order'.tr(namedArgs: {'remainingQuantity': remainingQuantity.toStringAsFixed(2), 'unit': orderItem.unit ?? ''});
+      //   notifyListeners();
+      //   return;
+      // }
     }
 
     // Parse expiry date (now mandatory)

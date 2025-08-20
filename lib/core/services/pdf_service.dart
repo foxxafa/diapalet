@@ -33,7 +33,7 @@ class PdfService {
           );
           final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
           final orderInfo = header['order_info'] as Map<String, dynamic>?;
-          identifier = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? '';
+          identifier = orderInfo?['fisno']?.toString() ?? header['fisno']?.toString() ?? header['po_id']?.toString() ?? '';
           break;
         case PendingOperationType.inventoryTransfer:
           final enrichedData = await DatabaseHelper.instance.getEnrichedInventoryTransferData(operation.data);
@@ -117,7 +117,7 @@ class PdfService {
     final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
     final branchName = warehouseInfo?['branch_name'] ?? 'N/A';
     final warehouseReceivingMode = warehouseInfo?['receiving_mode'] ?? 2; // Default: mixed
-    final poId = orderInfo?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    final poId = orderInfo?['fisno']?.toString() ?? header['fisno']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
     final deliveryNoteNumber = header['delivery_note_number']?.toString();
     final invoiceNumber = header['invoice_number']?.toString() ?? 'N/A';
 
@@ -829,7 +829,7 @@ class PdfService {
               final productName = item['product_name'] ?? 'Unknown';
               final productCode = item['product_code'] ?? 'N/A';
               final productNameAndCode = '$productName ($productCode)';
-              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Box';
+              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Product';
 
               // Get expiry date
               final expiryDate = item['expiry_date'];

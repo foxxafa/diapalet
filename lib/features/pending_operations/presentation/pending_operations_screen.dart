@@ -500,10 +500,9 @@ class _OperationDetailsView extends StatelessWidget {
     final header = enrichedData['header'] as Map<String, dynamic>? ?? {};
     final items = enrichedData['items'] as List<dynamic>? ?? [];
 
-    // Bilgileri extract et
-    final poId = header['order_info']?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
+    // Bilgileri extract et - Purchase Order için fisno kullan
+    final poId = header['order_info']?['fisno']?.toString() ?? header['fisno']?.toString() ?? header['order_info']?['po_id']?.toString() ?? header['po_id']?.toString() ?? 'N/A';
     final deliveryNoteNumber = header['delivery_note_number']?.toString();
-    final invoice = header['invoice_number']?.toString() ?? 'N/A';
     final employeeName = header['employee_info'] != null
         ? '${header['employee_info']['first_name']} ${header['employee_info']['last_name']}'
         : header['employee_name'] ?? 'System User';
@@ -535,7 +534,6 @@ class _OperationDetailsView extends StatelessWidget {
         'dialog_labels.employee'.tr(): employeeName,
         if (isOrderBased) 'dialog_labels.purchase_order'.tr(): poId,
         if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) 'dialog_labels.delivery_note_number'.tr(): deliveryNoteNumber,
-        if (invoice != 'N/A' && invoice != poId) 'dialog_labels.invoice'.tr(): invoice,
         if (isForceClosed) 'dialog_labels.order_status'.tr(): 'Force Closed',
       },
       items: items.cast<Map<String, dynamic>>(),
@@ -855,15 +853,13 @@ class _OperationDetailsView extends StatelessWidget {
   Widget _buildGoodsReceiptDetails(BuildContext context, Map<String, dynamic> data) {
     final header = (data['header'] as Map?)?.cast<String, dynamic>();
     final items = (data['items'] as List?)?.cast<Map<String, dynamic>>();
-    final poId = header?['po_id'] ?? header?['siparis_id'] ?? 'N/A';
-    final invoice = header?['invoice_number'] ?? 'N/A';
+    final poId = header?['fisno'] ?? header?['po_id'] ?? header?['siparis_id'] ?? 'N/A';
 
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.goods_receipt'.tr(),
       details: {
         'dialog_labels.purchase_order'.tr(): poId.toString(),
-        if (invoice != 'N/A' && invoice != poId.toString()) 'dialog_labels.invoice'.tr(): invoice.toString(),
       },
       items: items,
       itemBuilder: (item) {

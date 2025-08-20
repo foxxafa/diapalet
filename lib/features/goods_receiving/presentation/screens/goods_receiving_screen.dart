@@ -606,7 +606,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: 8.0),
           child: Text(
-            'goods_receiving_screen.header_last_added_item'.tr(),
+            'goods_receiving_screen.header_last_added_item'.tr() + ' (${viewModel.addedItemsCount})',
             style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
