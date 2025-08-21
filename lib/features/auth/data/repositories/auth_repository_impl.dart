@@ -118,11 +118,31 @@ class AuthRepositoryImpl implements AuthRepository {
           dio.options.headers['Authorization'] = 'Bearer $apiKey';
           debugPrint("API Key ($apiKey) Dio istemcisine eklendi.");
 
-          // ===== ÖNEMLİ: Kullanıcı ID'sini kaydet =====
-          // 'user_id' anahtarını kullanarak SharedPreferences'a kaydediyoruz.
+          // ===== ÖNEMLİ: Warehouse değişimi kontrolü =====
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt('user_id', user['id'] as int);
-          await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+          final previousWarehouseId = prefs.getInt('warehouse_id');
+          final newWarehouseId = user['warehouse_id'] as int;
+          final newUserId = user['id'] as int;
+          final previousUserId = prefs.getInt('user_id');
+
+          // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
+          if (previousWarehouseId != null && previousWarehouseId != newWarehouseId) {
+            debugPrint("🔄 Warehouse değişimi tespit edildi! Önceki: $previousWarehouseId → Yeni: $newWarehouseId");
+            await dbHelper.clearWarehouseSpecificData();
+            debugPrint("✅ Eski warehouse verileri temizlendi, yeni warehouse sync'i başlayacak.");
+          } else if (previousUserId != null && previousUserId != newUserId) {
+            debugPrint("🔄 Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
+            await dbHelper.clearWarehouseSpecificData();
+            debugPrint("✅ Eski kullanıcı verileri temizlendi, yeni kullanıcı sync'i başlayacak.");
+          } else if (previousWarehouseId == null) {
+            debugPrint("🆕 İlk giriş - warehouse ID: $newWarehouseId");
+          } else {
+            debugPrint("✅ Aynı warehouse'da login - warehouse ID: $newWarehouseId (veri temizliği gerek yok)");
+          }
+
+          // Kullanıcı bilgilerini kaydet
+          await prefs.setInt('user_id', newUserId);
+          await prefs.setInt('warehouse_id', newWarehouseId);
           await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
           await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
           await prefs.setInt('receiving_mode', user['receiving_mode'] as int? ?? 2);
@@ -131,6 +151,7 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.setString('first_name', user['first_name'] as String);
           await prefs.setString('last_name', user['last_name'] as String);
 
+          // Eski generic timestamp key'ini temizle (artık user-specific kullanıyoruz)
           await prefs.remove('last_sync_timestamp');
           debugPrint("Kullanıcı ve şube bilgileri SharedPreferences'a kaydedildi.");
 
@@ -168,9 +189,32 @@ class AuthRepositoryImpl implements AuthRepository {
       if (result.isNotEmpty) {
         debugPrint("Offline login başarılı: $username");
         final user = result.first;
+        
+        // ===== Offline için de warehouse değişimi kontrolü =====
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', user['id'] as int);
-        await prefs.setInt('warehouse_id', user['warehouse_id'] as int);
+        final previousWarehouseId = prefs.getInt('warehouse_id');
+        final newWarehouseId = user['warehouse_id'] as int;
+        final newUserId = user['id'] as int;
+        final previousUserId = prefs.getInt('user_id');
+
+        // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
+        if (previousWarehouseId != null && previousWarehouseId != newWarehouseId) {
+          debugPrint("🔄 [OFFLINE] Warehouse değişimi tespit edildi! Önceki: $previousWarehouseId → Yeni: $newWarehouseId");
+          await dbHelper.clearWarehouseSpecificData();
+          debugPrint("✅ [OFFLINE] Eski warehouse verileri temizlendi.");
+        } else if (previousUserId != null && previousUserId != newUserId) {
+          debugPrint("🔄 [OFFLINE] Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
+          await dbHelper.clearWarehouseSpecificData();
+          debugPrint("✅ [OFFLINE] Eski kullanıcı verileri temizlendi.");
+        } else if (previousWarehouseId == null) {
+          debugPrint("🆕 [OFFLINE] İlk giriş - warehouse ID: $newWarehouseId");
+        } else {
+          debugPrint("✅ [OFFLINE] Aynı warehouse'da login - warehouse ID: $newWarehouseId (veri temizliği gerek yok)");
+        }
+
+        // Kullanıcı bilgilerini kaydet
+        await prefs.setInt('user_id', newUserId);
+        await prefs.setInt('warehouse_id', newWarehouseId);
         await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
         await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
         await prefs.setString('first_name', user['first_name'] as String);
@@ -179,7 +223,7 @@ class AuthRepositoryImpl implements AuthRepository {
         // Offline durumda branch bilgisi genelde mevcut olmaz, N/A olarak ayarla
         await prefs.setString('branch_name', 'N/A');
 
-        return {'warehouse_id': user['warehouse_id'] as int};
+        return {'warehouse_id': newWarehouseId};
       } else {
         throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");
       }

@@ -1850,6 +1850,34 @@ class DatabaseHelper {
     return maps.map((map) => SyncLog.fromMap(map)).toList();
   }
 
+  /// Farklı depo kullanıcısı giriş yaptığında warehouse'a özel verileri temizler
+  /// Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korunur
+  Future<void> clearWarehouseSpecificData() async {
+    final db = await database;
+    debugPrint("🧹 Warehouse'a özel veriler temizleniyor...");
+
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      
+      // Warehouse'a özel tabloları temizle (dependency order'da)
+      batch.delete('wms_putaway_status');           // En child tablo
+      batch.delete('goods_receipt_items');          // goods_receipts'e bağlı
+      batch.delete('inventory_transfers');          // location'lara bağlı
+      batch.delete('inventory_stock');              // location'lara bağlı  
+      batch.delete('goods_receipts');               // warehouse'a bağlı
+      batch.delete('siparis_ayrintili');            // siparisler'e bağlı
+      batch.delete('siparisler');                   // warehouse'a bağlı
+      batch.delete('shelfs');                       // warehouse'a bağlı
+      batch.delete('employees');                    // warehouse'a bağlı
+      batch.delete('pending_operation');            // Bekleyen işlemler de temizle
+      batch.delete('sync_log');                     // Sync logları da temizle
+      
+      await batch.commit(noResult: true);
+    });
+
+    debugPrint("✅ Warehouse'a özel veriler temizlendi. Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korundu.");
+  }
+
   Future<void> resetDatabase() async {
     if (_database != null && _database!.isOpen) {
       await _database!.close();
