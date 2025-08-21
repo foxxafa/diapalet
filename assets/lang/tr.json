@@ -531,6 +531,24 @@
       "completed": "Senkronizasyon başarıyla tamamlandı",
       "failed": "Senkronizasyon başarısız"
     },
+    "tables": {
+      "employees": "Çalışan Verileri",
+      "warehouses": "Depo Bilgileri",
+      "shelfs": "Raf Konumları",
+      "urunler": "Ürün Kataloğu",
+      "tedarikci": "Tedarikçiler",
+      "birimler": "Birimler",
+      "barkodlar": "Barkodlar",
+      "siparisler": "Siparişler",
+      "siparis_ayrintili": "Sipariş Detayları",
+      "goods_receipts": "Mal Kabulleri",
+      "goods_receipt_items": "Kabul Kalemleri",
+      "inventory_stock": "Stok Durumu",
+      "inventory_transfers": "Stok Transferleri",
+      "wms_putaway_status": "Yerleştirme Durumu",
+      "satin_alma_siparis_fis": "Satın Alma Siparişleri",
+      "satin_alma_siparis_fis_satir": "Sipariş Kalemleri"
+    },
     "errors": {
       "network_error": "Ağ bağlantı hatası. Lütfen internet bağlantınızı kontrol ediniz.",
       "server_error": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyiniz.",

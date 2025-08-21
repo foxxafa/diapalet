@@ -150,7 +150,7 @@ class SyncService with ChangeNotifier {
     }
 
     try {
-      // Initializing stage
+      // Initializing stage (0% - 5%)
       _emitProgress(const SyncProgress(
         stage: SyncStage.initializing,
         tableName: '',
@@ -171,7 +171,7 @@ class SyncService with ChangeNotifier {
       // Ana veritabanı temizliği - eski verileri sil
       await dbHelper.performMaintenanceCleanup(days: 7);
 
-      // Finalizing stage
+      // Finalizing stage (95% - 100%)
       _emitProgress(const SyncProgress(
         stage: SyncStage.finalizing,
         tableName: '',
@@ -214,7 +214,7 @@ class SyncService with ChangeNotifier {
   Future<void> _downloadDataFromServer({required int warehouseId}) async {
     debugPrint("🚀 Paginated sync sistemi başlatılıyor...");
 
-    // Start downloading stage
+    // Start downloading stage (5% - 80%)
     _emitProgress(const SyncProgress(
       stage: SyncStage.downloading,
       tableName: '',
@@ -296,8 +296,8 @@ class SyncService with ChangeNotifier {
         allData[tableName]!.addAll(pageData);
         processedRecords += pageData.length;
         
-        // Update progress
-        final progress = 0.1 + (processedRecords / totalRecords) * 0.5; // 10% to 60%
+        // Update progress (5% to 80% range - 75% total)
+        final progress = 0.05 + (processedRecords / totalRecords) * 0.75;
         _emitProgress(SyncProgress(
           stage: SyncStage.downloading,
           tableName: tableName,
@@ -315,18 +315,18 @@ class SyncService with ChangeNotifier {
       debugPrint("   ✅ $tableName tamamlandı: ${allData[tableName]!.length} kayıt");
     }
 
-    // STEP 3: Process all data
+    // STEP 3: Process all data (80% - 95%)
     debugPrint("⚙️  STEP 3: Veriler işleniyor...");
     _emitProgress(const SyncProgress(
       stage: SyncStage.processing,
       tableName: '',
-      progress: 0.7,
+      progress: 0.8,
     ));
 
     await dbHelper.applyDownloadedData(allData, onTableProgress: (tableName, processed, total) {
-      // Progress calculation: 0.7 to 0.95 range (25% of total progress)
+      // Progress calculation: 0.8 to 0.95 range (15% of total progress)
       final progressPercentage = total > 0 ? processed / total : 0.0;
-      final currentProgress = 0.7 + (progressPercentage * 0.25);
+      final currentProgress = 0.8 + (progressPercentage * 0.15);
 
       _emitProgress(SyncProgress(
         stage: SyncStage.processing,
