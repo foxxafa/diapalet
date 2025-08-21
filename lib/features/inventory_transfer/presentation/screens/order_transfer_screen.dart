@@ -52,6 +52,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   String? _selectedTargetLocationName;
   final _targetLocationController = TextEditingController();
   final _targetLocationFocusNode = FocusNode();
+  bool _isTargetLocationValid = false;
 
   // GÜNCELLEME: Tüm konteynerler ve mod bazlı filtrelenmiş konteynerler
   List<TransferableContainer> _allContainers = [];
@@ -68,6 +69,9 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   bool _hasPalletContainers = false;
   bool _hasBoxContainers = false;
 
+  // Container search results for inline display
+  List<TransferableContainer> _containerSearchResults = [];
+
   // Barcode service
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -78,6 +82,17 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
     _barcodeService = BarcodeIntentService();
+
+    // Target location controller listener to reset validity when text changes
+    _targetLocationController.addListener(() {
+      // Only reset validity if the controller is not being updated programmatically
+      // and the text is empty but validation was previously true
+      if (_targetLocationController.text.isEmpty &&
+          _isTargetLocationValid &&
+          _targetLocationFocusNode.hasFocus) {
+        setState(() => _isTargetLocationValid = false);
+      }
+    });
 
     // Kaynak lokasyon her zaman "Mal Kabul Alanı"
     _sourceLocationController.text = '000';
@@ -227,10 +242,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           if (_availableTargetLocations.containsKey(location.key)) {
             _handleTargetSelection(location.key);
           } else {
+            _targetLocationController.text = cleanData;
+            setState(() => _isTargetLocationValid = false);
             _showErrorSnackBar('order_transfer.error_invalid_location_for_operation'.tr());
           }
         } else {
-          _targetLocationController.clear();
+          _targetLocationController.text = cleanData;
+          setState(() => _isTargetLocationValid = false);
           _showErrorSnackBar('order_transfer.error_invalid_location_code'.tr(namedArgs: {'code': cleanData}));
         }
         break;
@@ -257,6 +275,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     setState(() {
       _selectedContainer = selectedContainer;
       _scannedContainerIdController.text = selectedContainer.displayName;
+      _containerSearchResults = []; // Clear search results
     });
 
     _fetchContainerContents();
@@ -268,6 +287,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     setState(() {
       _selectedTargetLocationName = locationName;
       _targetLocationController.text = locationName;
+      _isTargetLocationValid = true; // Mark as valid when location is found
     });
     FocusScope.of(context).unfocus();
   }
@@ -318,6 +338,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _scannedContainerIdController.clear();
     _productsInContainer = [];
     _selectedContainer = null;
+    _containerSearchResults = []; // Clear search results
     _clearProductControllers();
   }
 
@@ -381,31 +402,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
                           // Konteyner Seçimi
                           if (_isModeAvailable(_selectedMode))
-                            _buildHybridDropdownWithQr<TransferableContainer>(
-                              controller: _scannedContainerIdController,
-                              focusNode: _containerFocusNode,
-                              label: _selectedMode == AssignmentMode.pallet
-                                  ? 'order_transfer.label_pallet'.tr()
-                                  : 'order_transfer.label_product'.tr(),
-                              fieldIdentifier: 'container',
-                              items: _availableContainers,
-                              itemToString: _getContainerDisplayName,
-                              onItemSelected: _handleContainerSelection,
-                              filterCondition: (container, query) {
-                                final lowerQuery = query.toLowerCase();
-                                if (container.isPallet) {
-                                  return container.id.toLowerCase().contains(lowerQuery);
-                                } else {
-                                  // Paletsiz ürünler için ürün adı veya koduna göre filtrele
-                                  final product = container.items.first.product;
-                                  return product.name.toLowerCase().contains(lowerQuery) ||
-                                         product.stockCode.toLowerCase().contains(lowerQuery);
-                                }
-                              },
-                              validator: (val) => (val == null || val.isEmpty)
-                                  ? 'order_transfer.validator_required_field'.tr()
-                                  : null,
-                            ),
+                            _buildContainerSelectionWithInlineResults(),
                           const SizedBox(height: _gap),
 
                           // Konteyner İçeriği
@@ -420,18 +417,43 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
                           // Hedef Lokasyon Seçimi
                           if (_isModeAvailable(_selectedMode))
-                            _buildHybridDropdownWithQr<String>(
-                              controller: _targetLocationController,
-                              focusNode: _targetLocationFocusNode,
-                              label: 'order_transfer.label_target_location'.tr(),
-                              fieldIdentifier: 'target',
-                              items: _availableTargetLocations.keys.toList(),
-                              itemToString: (item) => item,
-                              onItemSelected: _handleTargetSelection,
-                              filterCondition: (item, query) => item.toLowerCase().contains(query.toLowerCase()),
-                              validator: (val) => (val == null || val.isEmpty)
-                                  ? 'order_transfer.validator_required_field'.tr()
-                                  : null,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _targetLocationController,
+                                    focusNode: _targetLocationFocusNode,
+                                    decoration: _inputDecoration(
+                                      'order_transfer.label_target_location'.tr(),
+                                      isValid: _isTargetLocationValid,
+                                    ),
+                                    validator: (val) => (val == null || val.isEmpty)
+                                        ? 'order_transfer.validator_required_field'.tr()
+                                        : null,
+                                    onFieldSubmitted: (value) async {
+                                      if (value.trim().isNotEmpty) {
+                                        await _processScannedData('target', value.trim());
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: _smallGap),
+                                SizedBox(
+                                  height: 56,
+                                  child: _QrButton(
+                                    onTap: () async {
+                                      final result = await Navigator.push<String>(
+                                        context,
+                                        MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                                      );
+                                      if (result != null && result.isNotEmpty) {
+                                        await _processScannedData('target', result);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           const SizedBox(height: _gap),
                         ],
@@ -627,6 +649,133 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
   }
 
+  Widget _buildContainerSelectionWithInlineResults() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _scannedContainerIdController,
+                focusNode: _containerFocusNode,
+                enabled: true,
+                maxLines: 1,
+                decoration: _inputDecoration(
+                  _selectedMode == AssignmentMode.pallet
+                      ? 'order_transfer.label_pallet'.tr()
+                      : 'order_transfer.label_product'.tr(),
+                  enabled: true,
+                ),
+                onChanged: (value) {
+                  _onContainerTextChanged(value);
+                },
+                onFieldSubmitted: (value) async {
+                  if (value.isNotEmpty) {
+                    // Eğer search sonuçları varsa ilk sonucu seç
+                    if (_containerSearchResults.isNotEmpty) {
+                      _handleContainerSelection(_containerSearchResults.first);
+                    } else {
+                      // Search sonuçları yoksa barkod olarak işle
+                      await _processScannedData('container', value);
+                    }
+                  }
+                },
+                textInputAction: TextInputAction.search,
+                validator: (val) => (val == null || val.isEmpty)
+                    ? 'order_transfer.validator_required_field'.tr()
+                    : null,
+              ),
+            ),
+            const SizedBox(width: _smallGap),
+            SizedBox(
+              height: 56, // TextFormField ile aynı yükseklik
+              child: _QrButton(
+                onTap: () async {
+                  // İlk önce manuel scan'i dene (mevcut metni işle)
+                  final currentText = _scannedContainerIdController.text.trim();
+                  if (currentText.isNotEmpty) {
+                    await _processScannedData('container', currentText);
+                  }
+                  
+                  // Eğer hala container seçilmemişse QR scanner'ı aç
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  if (_selectedContainer == null) {
+                    final result = await Navigator.push<String>(
+                      context,
+                      MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                    );
+                    if (result != null && result.isNotEmpty) {
+                      await _processScannedData('container', result);
+                    }
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        if (_containerSearchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: _borderRadius,
+            ),
+            child: Column(
+              children: _containerSearchResults.take(5).map((container) {
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    _getContainerDisplayName(container),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  subtitle: container.isPallet 
+                    ? Text(
+                        "Palet ID: ${container.id}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      )
+                    : Text(
+                        "Barkod: ${container.items.first.product.productBarcode ?? 'N/A'} | Stok Kodu: ${container.items.first.product.stockCode}",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  onTap: () {
+                    _handleContainerSelection(container);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _onContainerTextChanged(String value) {
+    setState(() {
+      if (value.isEmpty) {
+        _containerSearchResults = [];
+        return;
+      }
+      
+      // Filter containers based on search query (name, stock code, barcode, or pallet ID)
+      final lowerQuery = value.toLowerCase();
+      _containerSearchResults = _availableContainers.where((container) {
+        if (container.isPallet) {
+          // Pallet containers: search by pallet ID
+          return container.id.toLowerCase().contains(lowerQuery);
+        } else {
+          // Product containers: search by product name, stock code, or related barcode
+          final product = container.items.first.product;
+          return product.name.toLowerCase().contains(lowerQuery) ||
+                 product.stockCode.toLowerCase().contains(lowerQuery);
+          // Note: Container barcode search would require additional data structure
+          // For now, focusing on product name and stock code matching
+        }
+      }).toList();
+    });
+  }
+
   Widget _buildHybridDropdownWithQr<T>({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -695,14 +844,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
-            child: Text(
-              'order_transfer.content_title'.tr(namedArgs: {'containerId': _scannedContainerIdController.text}),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Divider(height: 1),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -730,18 +871,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            product.name,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                            overflow: TextOverflow.ellipsis
-                          ),
-                          Text(
                             'order_transfer.label_current_quantity'.tr(namedArgs: {
                               'productCode': product.productCode,
                               'quantity': product.currentQuantity.toStringAsFixed(
                                 product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
                               )
                             }),
-                            style: Theme.of(context).textTheme.bodySmall
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
                           ),
                         ],
                       ),
@@ -811,29 +947,20 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false}) {
     final theme = Theme.of(context);
+    final borderColor = isValid ? Colors.green : theme.dividerColor;
+    final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
+    final borderWidth = isValid ? 2.5 : 1.0; // Kalın yeşil border
     return InputDecoration(
       labelText: label,
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: theme.dividerColor)
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: theme.colorScheme.error, width: 1)
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: _borderRadius,
-        borderSide: BorderSide(color: theme.colorScheme.error, width: 2)
-      ),
+      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: borderColor, width: borderWidth)),
+      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
+      errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
+      focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       isDense: true,
       enabled: enabled,

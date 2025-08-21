@@ -447,8 +447,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final productIds = stockMaps.map((e) => e['urun_id'] as int).toSet();
-    final productsQuery = await db.query(DbTables.products, where: 'UrunId IN (${productIds.map((_) => '?').join(',')})', whereArgs: productIds.toList());
-    final productDetails = {for (var p in productsQuery) p['UrunId'] as int: ProductInfo.fromDbMap(p)};
+    final productsQuery = await db.rawQuery('''
+      SELECT 
+        u.*,
+        bark.barkod
+      FROM urunler u
+      LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE u.UrunId IN (${productIds.map((_) => '?').join(',')})
+      GROUP BY u.UrunId
+    ''', productIds.toList());
+    final productDetails = <int, ProductInfo>{};
+    for (var p in productsQuery) {
+      final productMap = Map<String, dynamic>.from(p);
+      if (productMap['barkod'] != null) {
+        productMap['barkod_info'] = {'barkod': productMap['barkod']};
+      }
+      productDetails[p['UrunId'] as int] = ProductInfo.fromDbMap(productMap);
+    }
 
     final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
 

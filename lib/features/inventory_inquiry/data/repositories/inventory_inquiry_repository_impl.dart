@@ -33,59 +33,37 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
 
     if (searchTerms.isEmpty) return [];
 
-    // Sorgu için parametre listesi ve yer tutucuları oluştur
-    final placeholders = ('?' * searchTerms.length).split('').join(',');
-    final whereArgs = searchTerms.toList();
-
-    // 1. Yeni barkod sistemi: Önce barkod araması yap
-    final productByBarcode = await dbHelper.getProductByBarcode(searchTerms.first);
-    if (productByBarcode != null) {
-      final productId = productByBarcode['UrunId'] as int;
-      
-      // 2. Bu ürünün stok durumunu getir
-      final stockQuery = await db.query(
-        DbTables.inventoryStock,
-        where: '${DbColumns.stockProductId} = ?',
-        whereArgs: [productId],
-      );
-      
-      return stockQuery.map((map) => ProductLocation.fromMap(map)).toList();
+    // 1. Yeni barkod sistemi: Her search term için barkod araması yap
+    for (final searchTerm in searchTerms) {
+      final productByBarcode = await dbHelper.getProductByBarcode(searchTerm);
+      if (productByBarcode != null) {
+        final productId = productByBarcode['UrunId'] as int;
+        
+        // 2. Bu ürünün stok durumunu detaylı bilgilerle getir
+        final sql = '''
+          SELECT
+            s.${DbColumns.stockProductId} as urun_id,
+            u.${DbColumns.productsName} as UrunAdi,
+            u.${DbColumns.productsCode} as StokKodu,
+            s.${DbColumns.stockQuantity} as quantity,
+            s.${DbColumns.stockPalletBarcode} as pallet_barcode,
+            s.${DbColumns.stockExpiryDate} as expiry_date,
+            s.${DbColumns.stockLocationId} as location_id,
+            sh.${DbColumns.locationsName} as location_name,
+            sh.${DbColumns.locationsCode} as location_code
+          FROM ${DbTables.inventoryStock} s
+          JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.stockProductId}
+          LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+          WHERE s.${DbColumns.stockProductId} = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+          ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
+        ''';
+        
+        final stockResults = await db.rawQuery(sql, [productId]);
+        return stockResults.map((map) => ProductLocation.fromMap(map)).toList();
+      }
     }
     
-    // Barkod bulunamazsa ürün adı veya stok koduna göre ara
-    final productQuery = await db.query(
-      DbTables.products,
-      where: '${DbColumns.productsName} IN ($placeholders) OR ${DbColumns.productsCode} IN ($placeholders)',
-      whereArgs: [...whereArgs, ...whereArgs],
-      limit: 1,
-    );
-
-    if (productQuery.isEmpty) {
-      return [];
-    }
-    final productId = productQuery.first[DbColumns.productsId] as int;
-
-    // 2. Ürün lokasyonları - iş mantığına özel kompleks sorgu
-    final sql = '''
-      SELECT
-        s.${DbColumns.stockProductId},
-        u.${DbColumns.productsName},
-        u.${DbColumns.productsCode},
-        s.${DbColumns.stockQuantity},
-        s.${DbColumns.stockPalletBarcode},
-        s.${DbColumns.stockExpiryDate},
-        s.${DbColumns.stockLocationId},
-        sh.${DbColumns.locationsName} as location_name,
-        sh.${DbColumns.locationsCode} as location_code
-      FROM ${DbTables.inventoryStock} s
-      JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.stockProductId}
-      LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
-      WHERE s.${DbColumns.stockProductId} = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
-      ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
-    ''';
-
-    final results = await db.rawQuery(sql, [productId]);
-
-    return results.map((map) => ProductLocation.fromMap(map)).toList();
+    // Yeni barkod sisteminde barkod bulunamadıysa sonuç yok
+    return [];
   }
 }
