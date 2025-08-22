@@ -131,8 +131,6 @@ class TerminalController extends Controller
             return ['success' => true, 'results' => []];
         }
 
-        // İşlem sayısını logla
-        Yii::info("SyncUpload başlıyor: " . count($operations) . " işlem", __METHOD__);
 
         $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
@@ -161,7 +159,6 @@ class TerminalController extends Controller
                         'local_id' => (int)$localId,
                         'result' => is_string($resultData) ? json_decode($resultData, true) : $resultData
                     ];
-                    Yii::info("İşlem zaten işlenmiş (idempotency): $idempotencyKey", __METHOD__);
                     continue; // Sonraki operasyona geç
                 }
 
@@ -170,7 +167,6 @@ class TerminalController extends Controller
                 $opData = $op['data'] ?? [];
                 $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
 
-                Yii::info("İşlem işleniyor: ID=$localId, Tip=$opType", __METHOD__);
 
                 if ($opType === 'goodsReceipt') {
                     $result = $this->_createGoodsReceipt($opData, $db);
@@ -189,7 +185,6 @@ class TerminalController extends Controller
                     ])->execute();
 
                     $results[] = ['local_id' => (int)$localId, 'result' => $result];
-                    Yii::info("İşlem başarılı: ID=$localId", __METHOD__);
                 } else {
                     // İşlem başarısız olsa bile idempotency anahtarı ile hatayı kaydet.
                     // Bu, aynı hatalı isteğin tekrar tekrar işlenmesini önler.
@@ -206,7 +201,6 @@ class TerminalController extends Controller
             }
 
             $transaction->commit();
-            Yii::info("SyncUpload başarılı: " . count($results) . " işlem tamamlandı", __METHOD__);
             return ['success' => true, 'results' => $results];
 
         } catch (\Exception $e) {
@@ -656,6 +650,7 @@ class TerminalController extends Controller
             
             // Her tablo için count bilgisi
             $counts['urunler'] = $this->getTableCount('urunler', $serverSyncTimestamp);
+            
             $counts['tedarikci'] = $this->getTableCount('tedarikci', $serverSyncTimestamp);
             $counts['birimler'] = $this->getTableCount('birimler', $serverSyncTimestamp);
             $counts['barkodlar'] = $this->getTableCount('barkodlar', $serverSyncTimestamp);
@@ -857,13 +852,14 @@ class TerminalController extends Controller
     
     // ÇÖZÜM: ON UPDATE CURRENT_TIMESTAMP sorunu için 30 saniye buffer ekle
     if ($lastSyncTimestamp) {
+        // ISO8601 formatını parse et (2025-08-22T21:20:28.545772Z)
         $syncDateTime = new \DateTime($lastSyncTimestamp);
         $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
         
-        Yii::info("İnkremental sync: Orijinal timestamp '$lastSyncTimestamp', Buffer ile kullanılan: '$serverSyncTimestamp'", __METHOD__);
+        error_log("DEBUG timestamp conversion: Input='$lastSyncTimestamp', Output='$serverSyncTimestamp'");
     } else {
-        Yii::info("Full sync: Tüm veriler alınacak (ilk sync)", __METHOD__);
+        error_log("DEBUG: First sync - no timestamp filter");
     }
 
     try {
@@ -874,7 +870,6 @@ class TerminalController extends Controller
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
         // ESKİ BARCODE ALANLARI ARTIK KULLANILMIYOR - Yeni barkodlar tablosuna geçildi
         try {
-            Yii::info("Ürünler tablosu sorgulanıyor...", __METHOD__);
             $urunlerQuery = (new Query())
                 ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
                 ->from('urunler');
@@ -882,17 +877,14 @@ class TerminalController extends Controller
             // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
             if ($serverSyncTimestamp) {
                 $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp (UTC) tarihinden sonraki ürünler alınıyor.", __METHOD__);
             } else {
                 // İlk sync ise tüm aktif ürünleri al
-                Yii::info("Full sync: Tüm ürünler alınıyor (ilk sync).", __METHOD__);
             }
 
             $urunlerData = $urunlerQuery->all();
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
             $data['urunler'] = $urunlerData;
 
-            Yii::info("Ürün sync: " . count($urunlerData) . " ürün gönderiliyor.", __METHOD__);
         } catch (\Exception $e) {
             Yii::error("Ürünler tablosu hatası: " . $e->getMessage(), __METHOD__);
             throw new \Exception("Ürünler tablosu sorgusu başarısız: " . $e->getMessage());
@@ -901,7 +893,6 @@ class TerminalController extends Controller
 
         // ########## TEDARİKÇİ İÇİN İNKREMENTAL SYNC ##########
         try {
-            Yii::info("Tedarikçi tablosu sorgulanıyor...", __METHOD__);
             $tedarikciQuery = (new Query())
                 ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
                 ->from('tedarikci');
@@ -909,17 +900,14 @@ class TerminalController extends Controller
             // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen tedarikçileri al
             if ($serverSyncTimestamp) {
                 $tedarikciQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki tedarikçiler alınıyor.", __METHOD__);
             } else {
                 // İlk sync ise tüm tedarikçileri al
-                Yii::info("Full sync: Tüm tedarikçiler alınıyor (ilk sync).", __METHOD__);
             }
 
             $tedarikciData = $tedarikciQuery->all();
             $this->castNumericValues($tedarikciData, ['id', 'Aktif']);
             $data['tedarikci'] = $tedarikciData;
 
-            Yii::info("Tedarikçi sync: " . count($tedarikciData) . " tedarikçi gönderiliyor.", __METHOD__);
         } catch (\Exception $e) {
             Yii::error("Tedarikçi tablosu hatası: " . $e->getMessage(), __METHOD__);
             throw new \Exception("Tedarikçi tablosu sorgusu başarısız: " . $e->getMessage());
@@ -928,7 +916,6 @@ class TerminalController extends Controller
 
         // ########## BİRİMLER İÇİN İNKREMENTAL SYNC ##########
         try {
-            Yii::info("Birimler tablosu sorgulanıyor...", __METHOD__);
             $birimlerQuery = (new Query())
                 ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
                          'created_at', 'updated_at'])
@@ -936,16 +923,13 @@ class TerminalController extends Controller
 
             if ($serverSyncTimestamp) {
                 $birimlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki birimler alınıyor.", __METHOD__);
             } else {
-                Yii::info("Full sync: Tüm birimler alınıyor (ilk sync).", __METHOD__);
             }
 
             $birimlerData = $birimlerQuery->all();
             $this->castNumericValues($birimlerData, ['id'], ['carpan']);
             $data['birimler'] = $birimlerData;
 
-            Yii::info("Birimler sync: " . count($birimlerData) . " birim gönderiliyor.", __METHOD__);
         } catch (\Exception $e) {
             Yii::error("Birimler tablosu hatası: " . $e->getMessage(), __METHOD__);
             throw new \Exception("Birimler tablosu sorgusu başarısız: " . $e->getMessage());
@@ -954,23 +938,19 @@ class TerminalController extends Controller
 
         // ########## BARKODLAR İÇİN İNKREMENTAL SYNC ##########
         try {
-            Yii::info("Barkodlar tablosu sorgulanıyor...", __METHOD__);
             $barkodlarQuery = (new Query())
                 ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
                 ->from('barkodlar');
 
             if ($serverSyncTimestamp) {
                 $barkodlarQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki barkodlar alınıyor.", __METHOD__);
             } else {
-                Yii::info("Full sync: Tüm barkodlar alınıyor (ilk sync).", __METHOD__);
             }
 
             $barkodlarData = $barkodlarQuery->all();
             $this->castNumericValues($barkodlarData, ['id']);
             $data['barkodlar'] = $barkodlarData;
 
-            Yii::info("Barkodlar sync: " . count($barkodlarData) . " barkod gönderiliyor.", __METHOD__);
         } catch (\Exception $e) {
             Yii::error("Barkodlar tablosu hatası: " . $e->getMessage(), __METHOD__);
             throw new \Exception("Barkodlar tablosu sorgusu başarısız: " . $e->getMessage());
@@ -984,9 +964,7 @@ class TerminalController extends Controller
             ->where(['warehouse_id' => $warehouseId]);
         if ($serverSyncTimestamp) {
             $shelfsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki raflar alınıyor.", __METHOD__);
         } else {
-            Yii::info("Full sync: Tüm raflar alınıyor (ilk sync).", __METHOD__);
         }
         $data['shelfs'] = $shelfsQuery->all();
         $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
@@ -1023,9 +1001,7 @@ class TerminalController extends Controller
 
         if ($serverSyncTimestamp) {
             $employeesQuery->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki çalışanlar alınıyor.", __METHOD__);
         } else {
-            Yii::info("Full sync: Tüm çalışanlar alınıyor (ilk sync).", __METHOD__);
         }
         $data['employees'] = $employeesQuery->all();
         $this->castNumericValues($data['employees'], ['id', 'is_active']);
@@ -1044,9 +1020,7 @@ class TerminalController extends Controller
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
             $poQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki siparişler alınıyor.", __METHOD__);
         } else {
-            Yii::info("Full sync: Tüm siparişler alınıyor (ilk sync).", __METHOD__);
         }
 
         $data['siparisler'] = $poQuery->all();
@@ -1057,26 +1031,20 @@ class TerminalController extends Controller
         }
         // ########## UYARLAMA BİTTİ ##########
 
-        Yii::info("Warehouse $warehouseId (Name: $warehouseName, Code: $warehouseCode, Key: $warehouseKey) için " . count($data['siparisler']) . " adet sipariş bulundu.", __METHOD__);
         
         // DEBUG: Sipariş olmadığında debug bilgisi
         if (empty($data['siparisler'])) {
-            Yii::info("DEBUG: Sipariş bulunamadı. Kontrol için tüm siparişleri sorguluyoruz...", __METHOD__);
             $allOrdersQuery = (new Query())->select(['count(*) as total'])->from('siparisler');
             $allOrdersCount = $allOrdersQuery->scalar();
-            Yii::info("DEBUG: Toplam sipariş sayısı: $allOrdersCount", __METHOD__);
             
             $ordersWithKeyQuery = (new Query())->select(['count(*) as total'])->from('siparisler')->where(['_key_sis_depo_source' => $warehouseKey]);
             $ordersWithKeyCount = $ordersWithKeyQuery->scalar();
-            Yii::info("DEBUG: Warehouse key '$warehouseKey' ile eşleşen sipariş sayısı: $ordersWithKeyCount", __METHOD__);
             
             // Eğer _key_sis_depo_source sütunu yoksa hata atacak
             try {
                 $sampleOrderQuery = (new Query())->select(['id', '_key_sis_depo_source'])->from('siparisler')->limit(5);
                 $sampleOrders = $sampleOrderQuery->all();
-                Yii::info("DEBUG: Örnek siparişlerin _key_sis_depo_source değerleri: " . json_encode($sampleOrders), __METHOD__);
             } catch (\Exception $e) {
-                Yii::info("DEBUG: _key_sis_depo_source sütunu bulunamadı: " . $e->getMessage(), __METHOD__);
             }
         }
 
@@ -1102,9 +1070,7 @@ class TerminalController extends Controller
                 ->andWhere(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
             if ($serverSyncTimestamp) {
                 $poLineQuery->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki sipariş kalemleri alınıyor.", __METHOD__);
             } else {
-                Yii::info("Full sync: Tüm sipariş kalemleri alınıyor (ilk sync).", __METHOD__);
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
             $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['anamiktar']);
@@ -1115,7 +1081,6 @@ class TerminalController extends Controller
                 $putawayQuery = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds]);
                 if ($serverSyncTimestamp) {
                     $putawayQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-                    Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki yerleştirme durumları alınıyor.", __METHOD__);
                 }
                 $data['wms_putaway_status'] = $putawayQuery->all();
                 $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
@@ -1125,7 +1090,6 @@ class TerminalController extends Controller
             $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
             if ($serverSyncTimestamp) {
                 $poReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki sipariş mal kabulleri alınıyor.", __METHOD__);
             }
             $poReceipts = $poReceiptsQuery->all();
             $data['goods_receipts'] = $poReceipts;
@@ -1135,7 +1099,6 @@ class TerminalController extends Controller
         $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId]);
         if ($serverSyncTimestamp) {
             $freeReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-            Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki serbest mal kabulleri alınıyor.", __METHOD__);
         }
         $freeReceipts = $freeReceiptsQuery->all();
         $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
@@ -1148,7 +1111,6 @@ class TerminalController extends Controller
             $receiptItemsQuery = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {
                 $receiptItemsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki mal kabul kalemleri alınıyor.", __METHOD__);
             }
             $data['goods_receipt_items'] = $receiptItemsQuery->all();
             $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
@@ -1182,7 +1144,6 @@ class TerminalController extends Controller
             // İnkremental sync için updated_at filtresi
             if ($serverSyncTimestamp) {
                 $stockQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki stok kayıtları alınıyor.", __METHOD__);
             }
         } else {
             $stockQuery->where('1=0');
@@ -1211,7 +1172,6 @@ class TerminalController extends Controller
             // İnkremental sync için updated_at filtresi
             if ($serverSyncTimestamp) {
                 $transferQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
-                Yii::info("İnkremental sync: $serverSyncTimestamp tarihinden sonraki transfer kayıtları alınıyor.", __METHOD__);
             }
         } else {
             $transferQuery->where('1=0');
@@ -1333,14 +1293,13 @@ class TerminalController extends Controller
     {
         $query = (new Query())
             ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
-            ->from('urunler')
-            ->offset($offset)
-            ->limit($limit);
+            ->from('urunler');
 
         if ($serverSyncTimestamp) {
             $query->where(['>', 'updated_at', $serverSyncTimestamp]);
         }
 
+        $query->offset($offset)->limit($limit);
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'aktif']);
         return $data;
@@ -1350,14 +1309,13 @@ class TerminalController extends Controller
     {
         $query = (new Query())
             ->select(['id', 'tedarikci_kodu', 'tedarikci_adi', 'Aktif', 'updated_at'])
-            ->from('tedarikci')
-            ->offset($offset)
-            ->limit($limit);
+            ->from('tedarikci');
 
         if ($serverSyncTimestamp) {
             $query->where(['>', 'updated_at', $serverSyncTimestamp]);
         }
 
+        $query->offset($offset)->limit($limit);
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'Aktif']);
         return $data;
@@ -1368,13 +1326,13 @@ class TerminalController extends Controller
         $query = (new Query())
             ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
                      'created_at', 'updated_at'])
-            ->from('birimler')
-            ->offset($offset)
-            ->limit($limit);
+            ->from('birimler');
 
         if ($serverSyncTimestamp) {
             $query->where(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id'], ['carpan']);
@@ -1385,13 +1343,13 @@ class TerminalController extends Controller
     {
         $query = (new Query())
             ->select(['id', '_key', '_key_scf_stokkart_birimleri', 'barkod', 'turu', 'created_at', 'updated_at'])
-            ->from('barkodlar')
-            ->offset($offset)
-            ->limit($limit);
+            ->from('barkodlar');
 
         if ($serverSyncTimestamp) {
             $query->where(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id']);
@@ -1417,13 +1375,13 @@ class TerminalController extends Controller
             ->select(['e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
                      'e.warehouse_code', 'e.is_active', 'e.created_at', 'e.updated_at'])
             ->from(['e' => 'employees'])
-            ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode])
-            ->offset($offset)
-            ->limit($limit);
+            ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'is_active']);
@@ -1435,13 +1393,13 @@ class TerminalController extends Controller
         $query = (new Query())
             ->select(['id', 'warehouse_id', 'name', 'code', 'is_active', 'created_at', 'updated_at'])
             ->from('shelfs')
-            ->where(['warehouse_id' => $warehouseId])
-            ->offset($offset)
-            ->limit($limit);
+            ->where(['warehouse_id' => $warehouseId]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'warehouse_id', 'is_active']);
@@ -1468,13 +1426,13 @@ class TerminalController extends Controller
                      '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]])
-            ->offset($offset)
-            ->limit($limit);
+            ->andWhere(['in', 'status', [0, 1, 2, 3]]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         
@@ -1516,13 +1474,22 @@ class TerminalController extends Controller
                      'anabirimi', 'created_at', 'updated_at', 'status', 'turu'])
             ->from('siparis_ayrintili')
             ->where(['in', 'siparisler_id', $poIds])
-            ->andWhere(['siparis_ayrintili.turu' => '1']) // FIX: Table prefix added
-            ->offset($offset)
-            ->limit($limit);
+            ->andWhere(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
 
+        // İnkremental sync için timestamp filtresi - LIMIT'ten ÖNCE eklenmeli!
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
+            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]);
+            
+            // DEBUG: Check what records we're returning and their timestamps
+            error_log("DEBUG siparis_ayrintili: serverSyncTimestamp = $serverSyncTimestamp");
+            $debugQuery = clone $query;
+            $debugData = $debugQuery->limit(5)->all();
+            foreach ($debugData as $row) {
+                error_log("DEBUG siparis_ayrintili: Record ID {$row['id']}, updated_at = {$row['updated_at']}");
+            }
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['anamiktar']);
@@ -1559,9 +1526,7 @@ class TerminalController extends Controller
         $query = (new Query())
             ->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 
                      'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])
-            ->from('goods_receipts')
-            ->offset($offset)
-            ->limit($limit);
+            ->from('goods_receipts');
 
         if (count($conditions) > 1) {
             $query->where($conditions);
@@ -1572,6 +1537,8 @@ class TerminalController extends Controller
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
@@ -1589,13 +1556,13 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->from('goods_receipt_items')
-            ->where(['in', 'receipt_id', $receiptIds])
-            ->offset($offset)
-            ->limit($limit);
+            ->where(['in', 'receipt_id', $receiptIds]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
@@ -1632,13 +1599,13 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->from('inventory_stock')
-            ->where($stockConditions)
-            ->offset($offset)
-            ->limit($limit);
+            ->where($stockConditions);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
@@ -1672,13 +1639,13 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->from('inventory_transfers')
-            ->where($transferConditions)
-            ->offset($offset)
-            ->limit($limit);
+            ->where($transferConditions);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
@@ -1721,13 +1688,13 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->from('wms_putaway_status')
-            ->where(['in', 'purchase_order_line_id', $poLineIds])
-            ->offset($offset)
-            ->limit($limit);
+            ->where(['in', 'purchase_order_line_id', $poLineIds]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
+
+        $query->offset($offset)->limit($limit);
 
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'purchase_order_line_id'], ['putaway_quantity']);

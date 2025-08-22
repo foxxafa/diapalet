@@ -349,7 +349,7 @@ class DatabaseHelper {
 
             if (aktif == 0) {
               // Silinmiş ürün: local'den sil
-              batch.delete(DbTables.products, where: 'id = ?', whereArgs: [urunId]);
+              batch.delete(DbTables.products, where: 'UrunId = ?', whereArgs: [urunId]);
             } else {
               // Aktif ürün: güncelle veya ekle
               final sanitizedRecord = _sanitizeRecord('urunler', urun);

@@ -774,14 +774,35 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (!mounted) return;
     final viewModel = context.read<GoodsReceivingViewModel>();
 
-    if (viewModel.palletIdFocusNode.hasFocus) {
-      viewModel.processScannedData('pallet', code);
-    } else if (viewModel.productFocusNode.hasFocus) {
-      viewModel.processScannedData('product', code);
-    } else {
-      if (viewModel.receivingMode == ReceivingMode.palet &&
-          viewModel.palletIdController.text.isEmpty) {
+    // Pallet modunda sadece pallet barcode ve product selection alanlarına el terminali ile giriş izinli
+    if (viewModel.receivingMode == ReceivingMode.palet) {
+      if (viewModel.palletIdFocusNode.hasFocus) {
         viewModel.processScannedData('pallet', code);
+      } else if (viewModel.productFocusNode.hasFocus) {
+        viewModel.processScannedData('product', code);
+      } else {
+        // Pallet modunda diğer alanlar focus'ta ise barkod okutmayı engelle
+        if (viewModel.expiryDateFocusNode.hasFocus || 
+            viewModel.quantityFocusNode.hasFocus ||
+            viewModel.deliveryNoteFocusNode.hasFocus) {
+          // Bu alanlar el terminali ile doldurulmasın
+          return;
+        }
+        
+        // Eğer başka bir alan focus'ta değilse, öncelik sırasına göre işle
+        if (viewModel.palletIdController.text.isEmpty) {
+          viewModel.processScannedData('pallet', code);
+        } else {
+          viewModel.productFocusNode.requestFocus();
+          viewModel.processScannedData('product', code);
+        }
+      }
+    } else {
+      // Product modunda eski davranışı koru
+      if (viewModel.palletIdFocusNode.hasFocus) {
+        viewModel.processScannedData('pallet', code);
+      } else if (viewModel.productFocusNode.hasFocus) {
+        viewModel.processScannedData('product', code);
       } else {
         viewModel.productFocusNode.requestFocus();
         viewModel.processScannedData('product', code);
