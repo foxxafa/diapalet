@@ -16,8 +16,7 @@ class TerminalController extends Controller
         Yii::$app->response->format = Response::FORMAT_JSON;
         $this->enableCsrfValidation = false;
 
-        // HATA DÜZELTMESİ: Tüm veritabanı işlemlerinin UTC zaman diliminde yapılmasını sağla.
-        // Bu, incremental sync sırasında timestamp karşılaştırmalarının doğru çalışmasını garanti eder.
+        // HATA DÜZELTMESİ: Veritabanı timezone'ını UTC'ye ayarla (global uyumluluk için)
         Yii::$app->db->createCommand("SET time_zone = '+00:00'")->execute();
 
         if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') {
@@ -831,7 +830,7 @@ class TerminalController extends Controller
     // ########## YENİ PAGINATION PARAMETRELERİ ##########
     $tableName = $payload['table_name'] ?? null;
     $page = (int)($payload['page'] ?? 1);
-    $limit = (int)($payload['limit'] ?? 1000);
+    $limit = (int)($payload['limit'] ?? 5000);
     
     if (!$warehouseId) {
         Yii::$app->response->statusCode = 400;
@@ -854,12 +853,10 @@ class TerminalController extends Controller
     if ($lastSyncTimestamp) {
         // ISO8601 formatını parse et (2025-08-22T21:20:28.545772Z)
         $syncDateTime = new \DateTime($lastSyncTimestamp);
+        // Evrensel UTC kullanımı için standart buffer
         $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
-        
-        error_log("DEBUG timestamp conversion: Input='$lastSyncTimestamp', Output='$serverSyncTimestamp'");
     } else {
-        error_log("DEBUG: First sync - no timestamp filter");
     }
 
     try {
@@ -1062,18 +1059,20 @@ class TerminalController extends Controller
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
             $poLineQuery = (new Query())
                 ->select([
-                    'id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
-                    'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
+                    'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
+                    'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
+                    'u.UrunId as urun_id'
                 ])
-                ->from('siparis_ayrintili')
-                ->where(['in', 'siparisler_id', $poIds])
-                ->andWhere(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
+                ->from(['sa' => 'siparis_ayrintili'])
+                ->leftJoin(['u' => 'urunler'], 'u.StokKodu = sa.kartkodu')
+                ->where(['in', 'sa.siparisler_id', $poIds])
+                ->andWhere(['sa.turu' => '1']); // FIX: Table prefix added
             if ($serverSyncTimestamp) {
-                $poLineQuery->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
+                $poLineQuery->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
             } else {
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
-            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['anamiktar']);
+            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status', 'urun_id'], ['anamiktar']);
 
             $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {
@@ -1212,7 +1211,7 @@ class TerminalController extends Controller
         $serverSyncTimestamp = $lastSyncTimestamp;
         if ($lastSyncTimestamp) {
             $syncDateTime = new \DateTime($lastSyncTimestamp);
-            $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
+            $syncDateTime->sub(new \DateInterval('PT60S')); // 60 saniye çıkar
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
         }
         
@@ -1470,29 +1469,22 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
-                     'anabirimi', 'created_at', 'updated_at', 'status', 'turu'])
-            ->from('siparis_ayrintili')
-            ->where(['in', 'siparisler_id', $poIds])
-            ->andWhere(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
+            ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
+                     'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
+                     'u.UrunId as urun_id'])
+            ->from(['sa' => 'siparis_ayrintili'])
+            ->leftJoin(['u' => 'urunler'], 'u.StokKodu = sa.kartkodu')
+            ->where(['in', 'sa.siparisler_id', $poIds])
+            ->andWhere(['sa.turu' => '1']); // FIX: Table prefix added
 
-        // İnkremental sync için timestamp filtresi - LIMIT'ten ÖNCE eklenmeli!
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $serverSyncTimestamp]);
-            
-            // DEBUG: Check what records we're returning and their timestamps
-            error_log("DEBUG siparis_ayrintili: serverSyncTimestamp = $serverSyncTimestamp");
-            $debugQuery = clone $query;
-            $debugData = $debugQuery->limit(5)->all();
-            foreach ($debugData as $row) {
-                error_log("DEBUG siparis_ayrintili: Record ID {$row['id']}, updated_at = {$row['updated_at']}");
-            }
+            $query->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['anamiktar']);
+        $this->castNumericValues($data, ['id', 'siparisler_id', 'status', 'urun_id'], ['anamiktar']);
         return $data;
     }
 

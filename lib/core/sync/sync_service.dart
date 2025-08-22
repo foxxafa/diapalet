@@ -263,7 +263,7 @@ class SyncService with ChangeNotifier {
     // STEP 2: Download data table by table with pagination
     debugPrint("📥 STEP 2: Tablolar sayfa sayfa indiriliyor...");
     
-    const pageSize = 1000; // Her sayfada 1000 kayıt
+    const pageSize = 5000; // Her sayfada 5000 kayıt
     int processedRecords = 0;
     final allData = <String, List<dynamic>>{};
     

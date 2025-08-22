@@ -211,11 +211,29 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     // Her bir satır için ürün ve barkod bilgilerini ayrı ayrı alalım
     for (final line in orderLines) {
-      if (line['urun_id'] == null) {
-        debugPrint("DEBUG: Skipping order line because urun_id is null. Line ID: ${line['id']}");
+      // HATA DÜZELTMESİ: urun_id null ise kartkodu ile ürün ID'sini bul
+      int? urunId = line['urun_id'] as int?;
+      final productCode = line['kartkodu'] as String?;
+      
+      if (urunId == null && productCode != null) {
+        debugPrint("DEBUG: urun_id is null, trying to find via productCode: $productCode. Line ID: ${line['id']}");
+        final productResult = await db.query(
+          'urunler',
+          columns: ['UrunId'],
+          where: 'StokKodu = ?',
+          whereArgs: [productCode],
+          limit: 1,
+        );
+        if (productResult.isNotEmpty) {
+          urunId = productResult.first['UrunId'] as int?;
+          debugPrint("DEBUG: Found urun_id $urunId for productCode $productCode");
+        }
+      }
+      
+      if (urunId == null) {
+        debugPrint("DEBUG: Skipping order line because urun_id could not be resolved. Line ID: ${line['id']}");
         continue;
       }
-      final productCode = line['kartkodu'] as String?;
       if (productCode == null) continue;
 
       // Ürün bilgisini al
@@ -247,13 +265,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         }
       }
 
-      // Alınan miktarı hesapla
+      // Alınan miktarı hesapla - bulunan urunId'yi kullan
       final receivedQuantityResult = await db.rawQuery('''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ? AND gri.urun_id = ?
-      ''', [orderId, productMap['UrunId']]);
+      ''', [orderId, urunId]);
 
       final receivedQuantity = receivedQuantityResult.isNotEmpty 
           ? (receivedQuantityResult.first['total_received'] as num).toDouble() 
@@ -274,17 +292,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       // Tüm bilgileri birleştirelim
       final enrichedMap = Map<String, dynamic>.from(line);
-      // Önce order line'daki urun_id'yi sakla
-      final orderLineUrunId = line['urun_id'];
       enrichedMap.addAll(productMap);
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
       
-      // HATA DÜZELTMESİ: urun_id ile UrunId'nin tutarlı olduğundan emin ol
-      debugPrint("DEBUG: Order line urun_id: $orderLineUrunId, Product UrunId: ${productMap['UrunId']}");
-      
-      // HATA DÜZELTMESİ: Order line'daki urun_id'yi geri yükle (productMap tarafından üzerine yazılmış olabilir)
-      enrichedMap['urun_id'] = orderLineUrunId;
+      // HATA DÜZELTMESİ: Bulunan urun_id'yi kullan
+      debugPrint("DEBUG: Using resolved urun_id: $urunId, Product UrunId: ${productMap['UrunId']}");
+      enrichedMap['urun_id'] = urunId;
       
       // Barkod bilgisini ekleyelim
       if (barcode != null) {

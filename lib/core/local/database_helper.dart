@@ -499,37 +499,6 @@ class DatabaseHelper {
           }
         }
 
-        // Order lines incremental sync
-        if (data.containsKey('siparis_ayrintili')) {
-          final satirlarData = List<Map<String, dynamic>>.from(data['siparis_ayrintili']);
-          for (final satir in satirlarData) {
-            // Sadece turu = '1' olanları kabul et
-            if (satir['turu'] == '1' || satir['turu'] == 1) {
-              final sanitizedSatir = _sanitizeRecord('siparis_ayrintili', satir);
-              
-              // Derive urun_id from kartkodu if needed
-              if (sanitizedSatir.containsKey('kartkodu') && sanitizedSatir['kartkodu'] != null) {
-                final kartkodu = sanitizedSatir['kartkodu'];
-                final urunQuery = await txn.query(
-                  'urunler', 
-                  columns: ['UrunId'], 
-                  where: 'StokKodu = ?', 
-                  whereArgs: [kartkodu],
-                  limit: 1
-                );
-                if (urunQuery.isNotEmpty) {
-                  sanitizedSatir['urun_id'] = urunQuery.first['UrunId'];
-                }
-              }
-              
-              batch.insert(DbTables.orderLines, sanitizedSatir, conflictAlgorithm: ConflictAlgorithm.replace);
-
-              processedItems++;
-              updateProgress('siparis_ayrintili');
-            }
-          }
-        }
-
         // Birimler incremental sync
         if (data.containsKey('birimler')) {
           final birimlerData = List<Map<String, dynamic>>.from(data['birimler']);
@@ -555,10 +524,8 @@ class DatabaseHelper {
         }
 
         // Diğer tablolar için eski mantık (full replacement)
-        // Silme sırası önemli: önce child tablolar, sonra parent tablolar
         const deletionOrder = [
-          // 'siparis_ayrintili', 'siparisler' artık incremental olarak işleniyor
-          // 'urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock' burada yok çünkü yukarıda incremental olarak işlendi
+          // Tüm tablolar incremental olarak işlendiği için bu liste boş
         ];
 
         // Tablolari belirtilen sirada sil (incremental tablolar hariç)
@@ -587,9 +554,52 @@ class DatabaseHelper {
             updateProgress(table);
           }
         }
-        // End of incremental sync
+        // End of first pass sync
 
         await batch.commit(noResult: true);
+
+        // --- SECOND PASS for siparis_ayrintili ---
+        // This runs after all other data is committed in the same transaction,
+        // allowing us to query for 'urunler' to find the 'urun_id'.
+        if (data.containsKey('siparis_ayrintili')) {
+          final satirlarData = List<Map<String, dynamic>>.from(data['siparis_ayrintili']);
+          final secondPassBatch = txn.batch();
+
+          for (final satir in satirlarData) {
+            if (satir['turu'] == '1' || satir['turu'] == 1) {
+              final sanitizedSatir = _sanitizeRecord('siparis_ayrintili', satir);
+
+              // urun_id is null, try to derive it from kartkodu
+              if ((sanitizedSatir['urun_id'] == null || sanitizedSatir['urun_id'] == 0) &&
+                  sanitizedSatir.containsKey('kartkodu') &&
+                  sanitizedSatir['kartkodu'] != null) {
+                final kartkodu = sanitizedSatir['kartkodu'];
+                try {
+                  final urunQuery = await txn.query(
+                    'urunler',
+                    columns: ['UrunId'],
+                    where: 'StokKodu = ?',
+                    whereArgs: [kartkodu],
+                    limit: 1,
+                  );
+                  if (urunQuery.isNotEmpty) {
+                    sanitizedSatir['urun_id'] = urunQuery.first['UrunId'];
+                  } else {
+                     debugPrint("SYNC WARNING: Could not find urun_id for kartkodu $kartkodu during sync.");
+                  }
+                } catch (e) {
+                  debugPrint("SYNC ERROR: Failed to query urun_id for kartkodu $kartkodu: $e");
+                }
+              }
+
+              secondPassBatch.insert(DbTables.orderLines, sanitizedSatir,
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+              processedItems++;
+              updateProgress('siparis_ayrintili');
+            }
+          }
+          await secondPassBatch.commit(noResult: true);
+        }
       });
     } finally {
       // Foreign key constraint'leri yeniden etkinleştir
