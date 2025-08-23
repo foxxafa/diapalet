@@ -209,7 +209,8 @@
   },
   "common": {
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "confirm": "Confirm"
   },
   "common_labels": {
     "login": "Login",

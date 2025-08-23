@@ -305,6 +305,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       // Barkod bilgisini ekleyelim
       if (barcode != null) {
         enrichedMap['barkod'] = barcode;
+        debugPrint("✅ Barcode found: $barcode for product ${productMap['StokKodu']} (unit: $unitCode)");
+      } else {
+        debugPrint("❌ No barcode for product ${productMap['StokKodu']} with unit $unitCode");
       }
 
       items.add(PurchaseOrderItem.fromDb(enrichedMap));

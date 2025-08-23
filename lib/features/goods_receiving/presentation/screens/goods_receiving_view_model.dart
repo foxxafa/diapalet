@@ -241,7 +241,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Debug: Sipariş ürünlerinin barkodlarını kontrol et
       debugPrint("DEBUG: Order items loaded for order $orderId:");
       for (var item in _orderItems) {
-        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Barcode: '${item.product?.productBarcode}'");
+        final barcode = item.product?.productBarcode ?? 'null';
+        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Unit: ${item.unit}, Barcode: '$barcode'");
       }
 
       if (_isDisposed) return;
@@ -830,25 +831,104 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<bool> _showQuantityExceedsConfirmation(BuildContext context, double enteredQuantity, double remainingQuantity, String unit) async {
+    // Format numbers as integers if they are whole numbers, otherwise show minimal decimals
+    String formatQuantity(double value) {
+      if (value == value.roundToDouble()) {
+        return value.toInt().toString();
+      } else {
+        return value.toStringAsFixed(value.truncateToDouble() != value ? 2 : 0);
+      }
+    }
+
+    final theme = Theme.of(context);
+    
     return await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('goods_receiving_screen.confirm_quantity_exceeds_title'.tr()),
-          content: Text(
-            'goods_receiving_screen.confirm_quantity_exceeds_message'.tr(namedArgs: {
-              'enteredQuantity': enteredQuantity.toStringAsFixed(2),
-              'remainingQuantity': remainingQuantity.toStringAsFixed(2),
-              'unit': unit,
-            }),
+          icon: Icon(
+            Icons.warning_amber_rounded,
+            color: theme.colorScheme.error,
+            size: 32,
+          ),
+          title: Text(
+            'goods_receiving_screen.confirm_quantity_exceeds_title'.tr(),
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Expected:', style: theme.textTheme.bodyMedium),
+                        Text(
+                          '${formatQuantity(remainingQuantity)} $unit',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Entering:', style: theme.textTheme.bodyMedium),
+                        Text(
+                          '${formatQuantity(enteredQuantity)} $unit',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Excess:', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        Text(
+                          '+${formatQuantity(enteredQuantity - remainingQuantity)} $unit',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Are you sure you want to continue?',
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               child: Text('common.cancel'.tr()),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
               child: Text('common.confirm'.tr()),
             ),
           ],
