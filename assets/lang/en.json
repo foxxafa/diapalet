@@ -136,7 +136,9 @@
     "validator_select_product": "Please select a product",
     "validator_enter_quantity": "Please enter quantity",
     "validator_enter_valid_quantity": "Please enter a valid quantity",
-    "validator_pallet_barcode": "Pallet barcode is required"
+    "validator_pallet_barcode": "Pallet barcode is required",
+    "confirm_quantity_exceeds_title": "Quantity Exceeds Expected",
+    "confirm_quantity_exceeds_message": "You are trying to receive {enteredQuantity} {unit}, but only {remainingQuantity} {unit} is expected. Are you sure you want to continue?"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",

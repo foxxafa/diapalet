@@ -457,7 +457,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   void selectProduct(ProductInfo product, {VoidCallback? onProductSelected}) {
     _selectedProduct = product;
-    productController.text = "${product.name} (${product.stockCode})";
+    productController.text = product.productBarcode ?? product.stockCode;
     _productSearchResults.clear(); // Clear search results when a product is selected
     notifyListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -500,7 +500,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
   }
 
-  void addItemToList() {
+  Future<void> addItemToList(BuildContext context) async {
     final quantity = double.tryParse(quantityController.text);
     if (_selectedProduct == null || quantity == null || quantity <= 0) {
       _error = 'goods_receiving_screen.error_select_product_and_quantity'.tr();
@@ -526,12 +526,19 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
-      // Sipariş miktarından fazla kabul etmeye izin ver
-      // if (quantity > remainingQuantity + 0.001) {
-      //   _error = 'goods_receiving_screen.error_quantity_exceeds_order'.tr(namedArgs: {'remainingQuantity': remainingQuantity.toStringAsFixed(2), 'unit': orderItem.unit ?? ''});
-      //   notifyListeners();
-      //   return;
-      // }
+      // Check if quantity exceeds expected amount and ask for confirmation
+      if (quantity > remainingQuantity + 0.001) {
+        final shouldProceed = await _showQuantityExceedsConfirmation(
+          context,
+          quantity, 
+          remainingQuantity, 
+          orderItem.unit ?? ''
+        );
+        
+        if (!shouldProceed) {
+          return;
+        }
+      }
     }
 
     // Parse expiry date (now mandatory)
@@ -820,5 +827,33 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   void clearNavigateBack() {
     _navigateBack = false;
+  }
+
+  Future<bool> _showQuantityExceedsConfirmation(BuildContext context, double enteredQuantity, double remainingQuantity, String unit) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('goods_receiving_screen.confirm_quantity_exceeds_title'.tr()),
+          content: Text(
+            'goods_receiving_screen.confirm_quantity_exceeds_message'.tr(namedArgs: {
+              'enteredQuantity': enteredQuantity.toStringAsFixed(2),
+              'remainingQuantity': remainingQuantity.toStringAsFixed(2),
+              'unit': unit,
+            }),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('common.cancel'.tr()),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('common.confirm'.tr()),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
   }
 }

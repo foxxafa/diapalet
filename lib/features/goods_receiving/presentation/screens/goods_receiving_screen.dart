@@ -271,9 +271,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 enabled: viewModel.areFieldsEnabled,
                 maxLines: 1, // Tek satır yap
                 decoration: _inputDecoration(
-                  viewModel.isOrderBased
-                      ? 'goods_receiving_screen.label_select_product_in_order'.tr()
-                      : 'goods_receiving_screen.label_select_product'.tr(),
+                  viewModel.selectedProduct == null 
+                    ? (viewModel.isOrderBased
+                        ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                        : 'goods_receiving_screen.label_select_product'.tr())
+                    : '${viewModel.selectedProduct!.name} (${viewModel.selectedProduct!.stockCode})',
                   enabled: viewModel.areFieldsEnabled,
                 ),
                 onChanged: (value) {
@@ -465,7 +467,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) {
                 if (_formKey.currentState?.validate() ?? false) {
-                  viewModel.addItemToList();
+                  viewModel.addItemToList(context);
                 }
               }
             },

@@ -741,15 +741,12 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> searchProductsByBarcode(String query, {int? orderId}) async {
     final db = await database;
     
-    debugPrint("🔍 DEBUG: searchProductsByBarcode başladı - query: '$query', orderId: $orderId");
-    debugPrint("🔧 DÜZELTME: Aynı sonuçların tekrar etmesini önlemek için GROUP BY eklendi");
+    debugPrint("🔍 Searching for barcode: '$query'${orderId != null ? ' in order $orderId' : ''}");
     
     String sql;
     final params = <dynamic>['%$query%'];
 
     if (orderId != null) {
-      // Siparişe özel arama: Sipariş → Ürün → Birim → Barkod (tersten yaklaşım)
-      // Tamamen aynı sonuçların tekrarını önle - GROUP BY ile tekil sonuçlar al
       sql = '''
         SELECT 
           u.*,
@@ -769,10 +766,8 @@ class DatabaseHelper {
         GROUP BY u.StokKodu, bark.barkod
         ORDER BY u.UrunAdi ASC
       ''';
-      params.add(orderId); // Sipariş ID'si
+      params.add(orderId);
     } else {
-      // Genel arama: Tüm aktif ürünler içinde barkod ara  
-      // Tamamen aynı sonuçların tekrarını önle - GROUP BY ile tekil sonuçlar al
       sql = '''
         SELECT 
           u.*,
@@ -790,118 +785,11 @@ class DatabaseHelper {
         ORDER BY u.UrunAdi ASC
       ''';
     }
-
-    debugPrint("🔍 DEBUG: SQL: $sql");
-    debugPrint("🔍 DEBUG: Params: $params");
-    
-    // HATA TESTİ: SQL'in her adımını test edelim
-    debugPrint("🧪 TEST: Her JOIN adımını kontrol ediyoruz...");
-    
-    // 1. Sadece barkodlar tablosunu test et
-    final barkodTest = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM barkodlar WHERE barkod LIKE ?', 
-      ['%${query}%']
-    );
-    debugPrint("🧪 Barkodlar tablosu '%${query}%' için sonuç: ${barkodTest.first['count']}");
-    
-    // 2. Barkod + Birimler JOIN test
-    final birimTest = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE bark.barkod LIKE ?', 
-      ['%${query}%']
-    );
-    debugPrint("🧪 Barkod+Birim JOIN '%${query}%' için sonuç: ${birimTest.first['count']}");
-    
-    // 3. Barkod+Birim+Ürün JOIN test
-    final urunTest = await db.rawQuery('''
-      SELECT COUNT(*) as count 
-      FROM barkodlar bark
-      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-      JOIN urunler u ON u.StokKodu = b.StokKodu
-      WHERE bark.barkod LIKE ?
-    ''', ['%${query}%']);
-    debugPrint("🧪 Barkod+Birim+Ürün JOIN '%${query}%' için sonuç: ${urunTest.first['count']}");
-    
-    // HATA AYIKLAMA: JOIN problem analizleri
-    final birimStokTest = await db.rawQuery('''
-      SELECT DISTINCT b.StokKodu 
-      FROM barkodlar bark
-      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-      WHERE bark.barkod LIKE ?
-      LIMIT 5
-    ''', ['%${query}%']);
-    debugPrint("🔧 Birimler'den gelen StokKodu örnekleri: $birimStokTest");
-    
-    final urunStokTest = await db.rawQuery('''
-      SELECT DISTINCT StokKodu 
-      FROM urunler 
-      LIMIT 5
-    ''');
-    debugPrint("🔧 Urunler'deki tüm StokKodu örnekleri: $urunStokTest");
-    
-    // Aktif olmayan ürünleri de kontrol et
-    final tumUrunTest = await db.rawQuery('''
-      SELECT COUNT(*) as toplam, 
-             SUM(CASE WHEN aktif = 1 THEN 1 ELSE 0 END) as aktif_sayi,
-             SUM(CASE WHEN aktif = 0 THEN 1 ELSE 0 END) as pasif_sayi
-      FROM urunler
-    ''');
-    debugPrint("🔧 Urunler tablosu durumu: $tumUrunTest");
-    
-    // Siparişteki ürünlerin durumunu kontrol et
-    final siparisUrunDurumu = await db.rawQuery('''
-      SELECT DISTINCT 
-        sa.kartkodu,
-        u.StokKodu,
-        u.aktif,
-        u.UrunAdi
-      FROM siparis_ayrintili sa
-      LEFT JOIN urunler u ON u.StokKodu = sa.kartkodu
-      WHERE sa.siparisler_id = ?
-        AND sa.turu = '1'
-    ''', [orderId]);
-    debugPrint("🔧 Sipariş $orderId ürünlerinin durumu: $siparisUrunDurumu");
-    
-    // StokKodu eşleşme testi
-    final stokEslesmeTesti = await db.rawQuery('''
-      SELECT 
-        b.StokKodu as birim_stok,
-        u.StokKodu as urun_stok,
-        COUNT(*) as eslesme_sayisi
-      FROM barkodlar bark
-      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-      LEFT JOIN urunler u ON u.StokKodu = b.StokKodu
-      WHERE bark.barkod LIKE ?
-      GROUP BY b.StokKodu, u.StokKodu
-      LIMIT 10
-    ''', ['%${query}%']);
-    debugPrint("🔧 StokKodu eşleşme analizi: $stokEslesmeTesti");
-    
-    // 4. Eğer orderId varsa, sipariş JOIN testleri
-    if (orderId != null) {
-      // Sipariş ayrintili tabloda bu sipariş var mı?
-      final siparisTest = await db.rawQuery(
-        'SELECT COUNT(*) as count FROM siparis_ayrintili WHERE siparisler_id = ? AND turu = ?', 
-        [orderId, '1']
-      );
-      debugPrint("🧪 Sipariş $orderId varlığı (turu=1): ${siparisTest.first['count']}");
-      
-      // Yeni yaklaşım ile test: Sipariş → Ürün → Birim → Barkod
-      final newApproachTest = await db.rawQuery('''
-        SELECT COUNT(*) as count 
-        FROM siparis_ayrintili sa
-        JOIN urunler u ON u.StokKodu = sa.kartkodu
-        JOIN birimler b ON b.StokKodu = u.StokKodu
-        JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-        WHERE bark.barkod LIKE ? AND sa.siparisler_id = ? AND sa.turu = ?
-      ''', ['%${query}%', orderId, '1']);
-      debugPrint("🧪 YENİ YAKLAŞIM: Sipariş→Ürün→Birim→Barkod '%${query}%' orderId $orderId için sonuç: ${newApproachTest.first['count']}");
-    }
-    
     final result = await db.rawQuery(sql, params);
     
-    debugPrint("🔍 DEBUG: Sonuç sayısı: ${result.length}");
+    debugPrint("🔍 Found ${result.length} products matching barcode");
     if (result.isNotEmpty) {
-      debugPrint("🔍 DEBUG: İlk sonuç: ${result.first['StokKodu']} - ${result.first['UrunAdi']} - ${result.first['barkod']}");
+      debugPrint("First result: ${result.first['UrunAdi']} - ${result.first['barkod']}");
     }
     
     return result;
@@ -927,10 +815,7 @@ class DatabaseHelper {
     ''';
     
     final result = await db.rawQuery(sql, [orderId]);
-    debugPrint("📋 DEBUG: Sipariş $orderId'deki tüm barkodlar:");
-    for (final row in result) {
-      debugPrint("   ${row['stok_kodu']} - ${row['UrunAdi']} - ${row['barkod']} (${row['birimadi']})");
-    }
+    debugPrint("📋 Order $orderId barcodes: ${result.length} items");
     return result;
   }
 

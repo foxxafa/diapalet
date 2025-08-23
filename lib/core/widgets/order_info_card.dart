@@ -27,28 +27,39 @@ class OrderInfoCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'goods_receiving_screen.order_info_title'.tr(), // Çeviri anahtarı goods_receiving'den geliyor.
+              'goods_receiving_screen.order_info_title'.tr(),
               style: theme.textTheme.labelLarge?.copyWith(
                   color: theme.colorScheme.onPrimaryContainer
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              order.poId ?? 'common_labels.not_available'.tr(),
-              style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: order.poId ?? 'common_labels.not_available'.tr(),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onPrimaryContainer
+                    ),
+                  ),
+                  if (order.supplierName != null && order.supplierName!.isNotEmpty) ...[
+                    TextSpan(
+                      text: ' • ',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer
+                      ),
+                    ),
+                    TextSpan(
+                      text: order.supplierName!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ),
-            if(order.supplierName != null && order.supplierName!.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                order.supplierName!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer
-                ),
-              ),
-            ]
+            )
           ],
         ),
       ),
