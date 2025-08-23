@@ -685,56 +685,55 @@ class DatabaseHelper {
   // --- YARDIMCI FONKSİYONLAR ---
 
   /// Product search by barcode - Using new barkodlar table
-  Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
+  Future<Map<String, dynamic>?> getProductByBarcode(String barcode, {int? orderId}) async {
     final db = await database;
     
-    // First search for barcode in barkodlar table
-    final barkodResult = await db.query(
-      'barkodlar',
-      where: 'barkod = ?',
-      whereArgs: [barcode],
-      limit: 1,
-    );
+    String sql;
+    List<dynamic> params;
 
-    if (barkodResult.isEmpty) return null;
+    if (orderId != null) {
+      // Sipariş bazlı arama: Barkodlar → Birimler → Sipariş
+      sql = '''
+        SELECT 
+          u.*,
+          b.birimadi,
+          b.birimkod,
+          b.carpan,
+          b._key as birim_key,
+          bark.barkod,
+          bark._key as barkod_key
+        FROM barkodlar bark
+        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+        JOIN siparis_ayrintili sa ON b.StokKodu = sa.kartkodu
+        JOIN urunler u ON u.StokKodu = sa.kartkodu
+        WHERE bark.barkod = ?
+          AND sa.siparisler_id = ?
+          AND sa.turu = '1'
+        LIMIT 1
+      ''';
+      params = [barcode, orderId];
+    } else {
+      // Genel arama: Tüm aktif ürünler içinde barkod ara
+      sql = '''
+        SELECT 
+          u.*,
+          b.birimadi,
+          b.birimkod,
+          b.carpan,
+          b._key as birim_key,
+          bark.barkod,
+          bark._key as barkod_key
+        FROM barkodlar bark
+        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+        JOIN urunler u ON b.StokKodu = u.StokKodu
+        WHERE bark.barkod = ?
+        LIMIT 1
+      ''';
+      params = [barcode];
+    }
 
-    // Barcode found, get related unit information
-    final barkodInfo = barkodResult.first;
-    final birimKey = barkodInfo['_key_scf_stokkart_birimleri'] as String?;
-    
-    if (birimKey == null) return null;
-
-    // Birim bilgisi ile ürün bilgisini getir
-    final birimResult = await db.query(
-      'birimler',
-      where: '_key = ?',
-      whereArgs: [birimKey],
-      limit: 1,
-    );
-
-    if (birimResult.isEmpty) return null;
-
-    final birimInfo = birimResult.first;
-    final stokKodu = birimInfo['StokKodu'] as String?;
-    
-    if (stokKodu == null) return null;
-
-    // StokKodu ile ürün bilgisini getir
-    final urunResult = await db.query(
-      'urunler',
-      where: 'StokKodu = ?',
-      whereArgs: [stokKodu],
-      limit: 1,
-    );
-
-    if (urunResult.isEmpty) return null;
-
-    final urunInfo = Map<String, dynamic>.from(urunResult.first);
-    // Birim bilgilerini de ekle
-    urunInfo['birim_info'] = birimInfo;
-    urunInfo['barkod_info'] = barkodInfo;
-    
-    return urunInfo;
+    final result = await db.rawQuery(sql, params);
+    return result.isNotEmpty ? result.first : null;
   }
 
   /// Barkod ile ürün arama (LIKE) - Yeni barkodlar tablosunu kullanır
@@ -742,50 +741,224 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> searchProductsByBarcode(String query, {int? orderId}) async {
     final db = await database;
     
+    debugPrint("🔍 DEBUG: searchProductsByBarcode başladı - query: '$query', orderId: $orderId");
+    debugPrint("🔧 DÜZELTME: Aynı sonuçların tekrar etmesini önlemek için GROUP BY eklendi");
+    
     String sql;
     final params = <dynamic>['%$query%'];
 
     if (orderId != null) {
-      // Siparişe özel arama: Sadece o siparişteki ürünler içinde barkod ara
+      // Siparişe özel arama: Sipariş → Ürün → Birim → Barkod (tersten yaklaşım)
+      // Tamamen aynı sonuçların tekrarını önle - GROUP BY ile tekil sonuçlar al
       sql = '''
-        SELECT DISTINCT 
+        SELECT 
           u.*,
-          b.birimadi,
-          b.birimkod,
-          b.carpan,
-          b._key as birim_key,
+          MIN(b.birimadi) as birimadi,
+          MIN(b.birimkod) as birimkod,
+          MIN(b.carpan) as carpan,
+          MIN(b._key) as birim_key,
           bark.barkod,
-          bark._key as barkod_key
-        FROM barkodlar bark
-        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN urunler u ON b.StokKodu = u.StokKodu
-        JOIN siparis_ayrintili sa ON u.StokKodu = sa.kartkodu
+          MIN(bark._key) as barkod_key
+        FROM siparis_ayrintili sa
+        JOIN urunler u ON u.StokKodu = sa.kartkodu
+        JOIN birimler b ON b.StokKodu = u.StokKodu
+        JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
         WHERE bark.barkod LIKE ? 
           AND sa.siparisler_id = ?
+          AND sa.turu = '1'
+        GROUP BY u.StokKodu, bark.barkod
         ORDER BY u.UrunAdi ASC
       ''';
-      params.add(orderId);
+      params.add(orderId); // Sipariş ID'si
     } else {
-      // Genel arama: Tüm aktif ürünler içinde barkod ara
+      // Genel arama: Tüm aktif ürünler içinde barkod ara  
+      // Tamamen aynı sonuçların tekrarını önle - GROUP BY ile tekil sonuçlar al
       sql = '''
-        SELECT DISTINCT 
+        SELECT 
           u.*,
-          b.birimadi,
-          b.birimkod,
-          b.carpan,
-          b._key as birim_key,
+          MIN(b.birimadi) as birimadi,
+          MIN(b.birimkod) as birimkod,
+          MIN(b.carpan) as carpan,
+          MIN(b._key) as birim_key,
           bark.barkod,
-          bark._key as barkod_key
+          MIN(bark._key) as barkod_key
         FROM barkodlar bark
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
         JOIN urunler u ON b.StokKodu = u.StokKodu
-        WHERE bark.barkod LIKE ? 
-          AND u.aktif = 1
+        WHERE bark.barkod LIKE ?
+        GROUP BY u.StokKodu, bark.barkod
         ORDER BY u.UrunAdi ASC
       ''';
     }
 
-    return await db.rawQuery(sql, params);
+    debugPrint("🔍 DEBUG: SQL: $sql");
+    debugPrint("🔍 DEBUG: Params: $params");
+    
+    // HATA TESTİ: SQL'in her adımını test edelim
+    debugPrint("🧪 TEST: Her JOIN adımını kontrol ediyoruz...");
+    
+    // 1. Sadece barkodlar tablosunu test et
+    final barkodTest = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM barkodlar WHERE barkod LIKE ?', 
+      ['%${query}%']
+    );
+    debugPrint("🧪 Barkodlar tablosu '%${query}%' için sonuç: ${barkodTest.first['count']}");
+    
+    // 2. Barkod + Birimler JOIN test
+    final birimTest = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE bark.barkod LIKE ?', 
+      ['%${query}%']
+    );
+    debugPrint("🧪 Barkod+Birim JOIN '%${query}%' için sonuç: ${birimTest.first['count']}");
+    
+    // 3. Barkod+Birim+Ürün JOIN test
+    final urunTest = await db.rawQuery('''
+      SELECT COUNT(*) as count 
+      FROM barkodlar bark
+      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+      JOIN urunler u ON u.StokKodu = b.StokKodu
+      WHERE bark.barkod LIKE ?
+    ''', ['%${query}%']);
+    debugPrint("🧪 Barkod+Birim+Ürün JOIN '%${query}%' için sonuç: ${urunTest.first['count']}");
+    
+    // HATA AYIKLAMA: JOIN problem analizleri
+    final birimStokTest = await db.rawQuery('''
+      SELECT DISTINCT b.StokKodu 
+      FROM barkodlar bark
+      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE bark.barkod LIKE ?
+      LIMIT 5
+    ''', ['%${query}%']);
+    debugPrint("🔧 Birimler'den gelen StokKodu örnekleri: $birimStokTest");
+    
+    final urunStokTest = await db.rawQuery('''
+      SELECT DISTINCT StokKodu 
+      FROM urunler 
+      LIMIT 5
+    ''');
+    debugPrint("🔧 Urunler'deki tüm StokKodu örnekleri: $urunStokTest");
+    
+    // Aktif olmayan ürünleri de kontrol et
+    final tumUrunTest = await db.rawQuery('''
+      SELECT COUNT(*) as toplam, 
+             SUM(CASE WHEN aktif = 1 THEN 1 ELSE 0 END) as aktif_sayi,
+             SUM(CASE WHEN aktif = 0 THEN 1 ELSE 0 END) as pasif_sayi
+      FROM urunler
+    ''');
+    debugPrint("🔧 Urunler tablosu durumu: $tumUrunTest");
+    
+    // Siparişteki ürünlerin durumunu kontrol et
+    final siparisUrunDurumu = await db.rawQuery('''
+      SELECT DISTINCT 
+        sa.kartkodu,
+        u.StokKodu,
+        u.aktif,
+        u.UrunAdi
+      FROM siparis_ayrintili sa
+      LEFT JOIN urunler u ON u.StokKodu = sa.kartkodu
+      WHERE sa.siparisler_id = ?
+        AND sa.turu = '1'
+    ''', [orderId]);
+    debugPrint("🔧 Sipariş $orderId ürünlerinin durumu: $siparisUrunDurumu");
+    
+    // StokKodu eşleşme testi
+    final stokEslesmeTesti = await db.rawQuery('''
+      SELECT 
+        b.StokKodu as birim_stok,
+        u.StokKodu as urun_stok,
+        COUNT(*) as eslesme_sayisi
+      FROM barkodlar bark
+      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN urunler u ON u.StokKodu = b.StokKodu
+      WHERE bark.barkod LIKE ?
+      GROUP BY b.StokKodu, u.StokKodu
+      LIMIT 10
+    ''', ['%${query}%']);
+    debugPrint("🔧 StokKodu eşleşme analizi: $stokEslesmeTesti");
+    
+    // 4. Eğer orderId varsa, sipariş JOIN testleri
+    if (orderId != null) {
+      // Sipariş ayrintili tabloda bu sipariş var mı?
+      final siparisTest = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM siparis_ayrintili WHERE siparisler_id = ? AND turu = ?', 
+        [orderId, '1']
+      );
+      debugPrint("🧪 Sipariş $orderId varlığı (turu=1): ${siparisTest.first['count']}");
+      
+      // Yeni yaklaşım ile test: Sipariş → Ürün → Birim → Barkod
+      final newApproachTest = await db.rawQuery('''
+        SELECT COUNT(*) as count 
+        FROM siparis_ayrintili sa
+        JOIN urunler u ON u.StokKodu = sa.kartkodu
+        JOIN birimler b ON b.StokKodu = u.StokKodu
+        JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+        WHERE bark.barkod LIKE ? AND sa.siparisler_id = ? AND sa.turu = ?
+      ''', ['%${query}%', orderId, '1']);
+      debugPrint("🧪 YENİ YAKLAŞIM: Sipariş→Ürün→Birim→Barkod '%${query}%' orderId $orderId için sonuç: ${newApproachTest.first['count']}");
+    }
+    
+    final result = await db.rawQuery(sql, params);
+    
+    debugPrint("🔍 DEBUG: Sonuç sayısı: ${result.length}");
+    if (result.isNotEmpty) {
+      debugPrint("🔍 DEBUG: İlk sonuç: ${result.first['StokKodu']} - ${result.first['UrunAdi']} - ${result.first['barkod']}");
+    }
+    
+    return result;
+  }
+
+  /// TEST: Siparişteki tüm barkodları listele
+  Future<List<Map<String, dynamic>>> debugOrderBarcodes(int orderId) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT DISTINCT 
+        sa.kartkodu as stok_kodu,
+        u.UrunAdi,
+        bark.barkod,
+        b.birimadi
+      FROM siparis_ayrintili sa
+      JOIN urunler u ON u.StokKodu = sa.kartkodu
+      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE sa.siparisler_id = ?
+        AND sa.turu = '1'
+      ORDER BY sa.kartkodu, b.birimadi
+    ''';
+    
+    final result = await db.rawQuery(sql, [orderId]);
+    debugPrint("📋 DEBUG: Sipariş $orderId'deki tüm barkodlar:");
+    for (final row in result) {
+      debugPrint("   ${row['stok_kodu']} - ${row['UrunAdi']} - ${row['barkod']} (${row['birimadi']})");
+    }
+    return result;
+  }
+
+  /// Siparişteki bir ürünün tüm barkodlarını getir (StokKodu'na göre)
+  Future<List<Map<String, dynamic>>> getAllBarcodesForOrderProduct(int orderId, String stokKodu) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT DISTINCT 
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b.carpan,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key
+      FROM siparis_ayrintili sa
+      JOIN urunler u ON u.StokKodu = sa.kartkodu
+      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE sa.siparisler_id = ? 
+        AND sa.turu = '1'
+        AND u.StokKodu = ?
+        AND u.aktif = 1
+      ORDER BY b.birimadi ASC
+    ''';
+    
+    return await db.rawQuery(sql, [orderId, stokKodu]);
   }
 
   Future<String?> getPoIdBySiparisId(int siparisId) async {

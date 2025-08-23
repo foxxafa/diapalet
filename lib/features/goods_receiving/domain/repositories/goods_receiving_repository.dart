@@ -31,7 +31,7 @@ abstract class GoodsReceivingRepository {
   Future<ProductInfo?> findProductByExactMatch(String code);
 
   /// Sadece barkod ile tam eşleşme yaparak ürün bulur.
-  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode);
+  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode, {int? orderId});
 
   /// Sistemdeki tüm lokasyonları getirir.
   Future<List<LocationInfo>> getLocations();

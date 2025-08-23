@@ -406,8 +406,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
             (p.productBarcode != null && p.productBarcode!.toLowerCase() == productCodeToSearch.toLowerCase()) ||
             (p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase()));
         } catch (e) {
-          // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD
-          foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch);
+          // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD (Sipariş bazlı)
+          foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch, orderId: _selectedOrder?.id);
 
           // Database'den bulunan ürün order'da var mı kontrol et
           if (foundProduct != null && isOrderBased) {

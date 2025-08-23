@@ -384,6 +384,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<ProductInfo>> searchProducts(String query, {int? orderId}) async {
+    // TEST: İlk aramada siparişteki tüm barkodları listele
+    if (orderId != null) {
+      await dbHelper.debugOrderBarcodes(orderId);
+    }
+    
     final results = await dbHelper.searchProductsByBarcode(query, orderId: orderId);
     return results.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
@@ -412,10 +417,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   @override
-  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode) async {
-    debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode'");
+  Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode, {int? orderId}) async {
+    debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode', orderId: $orderId");
 
-    final result = await dbHelper.getProductByBarcode(barcode);
+    final result = await dbHelper.getProductByBarcode(barcode, orderId: orderId);
     
     if (result != null) {
       debugPrint("✅ DEBUG: Barkod ile bulunan ürün: $result");

@@ -875,8 +875,13 @@ class TerminalController extends Controller
             if ($serverSyncTimestamp) {
                 $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
             } else {
-                // İlk sync ise tüm aktif ürünleri al
+                // İlk sync ise tüm ürünleri al (aktif/pasif ayrımı olmadan)
+                // Mobil uygulama kendi filtrelemesini yapar
             }
+            
+            // DÜZELTME: Tüm ürünleri gönder (aktif=0 olanlar da dahil)
+            // Mobil uygulama WHERE u.aktif = 1 filtresi kullanıyor, bu nedenle 
+            // server'dan aktif=0 olanlar da gelmeli ki mobil tarafta doğru çalışsın
 
             $urunlerData = $urunlerQuery->all();
             $this->castNumericValues($urunlerData, ['id', 'aktif']);
