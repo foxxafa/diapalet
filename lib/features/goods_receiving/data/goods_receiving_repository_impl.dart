@@ -236,15 +236,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
       if (productCode == null) continue;
 
-      // Ürün bilgisini al
+      // Ürün bilgisini al - UrunId kullanarak sorgula (daha güvenilir)
       final productResult = await db.query(
         'urunler',
-        where: 'StokKodu = ?',
-        whereArgs: [productCode],
+        where: 'UrunId = ?',
+        whereArgs: [urunId],
         limit: 1,
       );
 
-      if (productResult.isEmpty) continue;
+      if (productResult.isEmpty) {
+        continue;
+      }
       final productMap = productResult.first;
 
       // GET BARCODE CORRECTLY ACCORDING TO ORDER UNIT

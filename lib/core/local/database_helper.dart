@@ -307,6 +307,16 @@ class DatabaseHelper {
     Map<String, dynamic> data, {
     void Function(String tableName, int processed, int total)? onTableProgress
   }) async {
+    debugPrint("--- applyDownloadedData: Veri işlemeye başlanıyor ---");
+    data.forEach((key, value) {
+      if (value is List) {
+        debugPrint("SYNC DATA: Alınan anahtar: '$key', Kayıt sayısı: ${value.length}");
+      } else {
+        debugPrint("SYNC DATA: Alınan anahtar: '$key', Tip: ${value.runtimeType}");
+      }
+    });
+    debugPrint("----------------------------------------------------");
+
     final db = await database;
 
     // Foreign key constraint'leri geçici olarak devre dışı bırak (transaction dışında)
@@ -344,17 +354,11 @@ class DatabaseHelper {
           final urunlerData = List<Map<String, dynamic>>.from(data['urunler']);
 
           for (final urun in urunlerData) {
-            final urunId = urun['id'];
-            final aktif = urun['aktif'];
-
-            if (aktif == 0) {
-              // Silinmiş ürün: local'den sil
-              batch.delete(DbTables.products, where: 'UrunId = ?', whereArgs: [urunId]);
-            } else {
-              // Aktif ürün: güncelle veya ekle
-              final sanitizedRecord = _sanitizeRecord('urunler', urun);
-              batch.insert(DbTables.products, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-            }
+            // DAHA SAĞLAM YÖNTEM: Aktif/pasif kontrolünü kaldır.
+            // Gelen tüm ürünleri doğrudan ekle/güncelle.
+            // Aktif olmayan ürünler zaten "aktif=0" olarak gelecektir.
+            final sanitizedRecord = _sanitizeRecord('urunler', urun);
+            batch.insert(DbTables.products, sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
             updateProgress('urunler');
@@ -562,6 +566,20 @@ class DatabaseHelper {
         // This runs after all other data is committed in the same transaction,
         // allowing us to query for 'urunler' to find the 'urun_id'.
         if (data.containsKey('siparis_ayrintili')) {
+          // For robust lookup, use an in-memory map created from the sync data.
+          final productCodeToIdMap = <String, int>{};
+          if (data.containsKey('urunler')) {
+            final urunlerData = List<Map<String, dynamic>>.from(data['urunler']);
+            for (final urun in urunlerData) {
+              final urunId = urun['id'];
+              final stokKodu = urun['StokKodu'];
+              if (stokKodu != null && urunId != null) {
+                productCodeToIdMap[stokKodu.toString()] = urunId as int;
+              }
+            }
+            debugPrint("SYNC INFO: Using in-memory product map with ${productCodeToIdMap.length} entries for order line processing.");
+          }
+
           final satirlarData = List<Map<String, dynamic>>.from(data['siparis_ayrintili']);
           final secondPassBatch = txn.batch();
 
@@ -573,22 +591,11 @@ class DatabaseHelper {
               if ((sanitizedSatir['urun_id'] == null || sanitizedSatir['urun_id'] == 0) &&
                   sanitizedSatir.containsKey('kartkodu') &&
                   sanitizedSatir['kartkodu'] != null) {
-                final kartkodu = sanitizedSatir['kartkodu'];
-                try {
-                  final urunQuery = await txn.query(
-                    'urunler',
-                    columns: ['UrunId'],
-                    where: 'StokKodu = ?',
-                    whereArgs: [kartkodu],
-                    limit: 1,
-                  );
-                  if (urunQuery.isNotEmpty) {
-                    sanitizedSatir['urun_id'] = urunQuery.first['UrunId'];
-                  } else {
-                     debugPrint("SYNC WARNING: Could not find urun_id for kartkodu $kartkodu during sync.");
-                  }
-                } catch (e) {
-                  debugPrint("SYNC ERROR: Failed to query urun_id for kartkodu $kartkodu: $e");
+                final kartkodu = sanitizedSatir['kartkodu'].toString();
+                if (productCodeToIdMap.containsKey(kartkodu)) {
+                  sanitizedSatir['urun_id'] = productCodeToIdMap[kartkodu];
+                } else {
+                  debugPrint("SYNC WARNING: kartkodu '$kartkodu' not found in in-memory product map. Line ID: ${sanitizedSatir['id']}");
                 }
               }
 
@@ -657,7 +664,7 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'kartkodu', 'anamiktar', 'miktar',
+          'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
           'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
@@ -665,12 +672,6 @@ class DatabaseHelper {
           if (newRecord.containsKey(column)) {
             localRecord[column] = newRecord[column];
           }
-        }
-        
-        // Derive urun_id from kartkodu using urunler table
-        if (localRecord.containsKey('kartkodu') && localRecord['kartkodu'] != null) {
-          // This will be handled by a separate lookup during data processing
-          localRecord['urun_id'] = null; // Will be filled later
         }
         
         return localRecord;
@@ -760,7 +761,6 @@ class DatabaseHelper {
         JOIN urunler u ON b.StokKodu = u.StokKodu
         JOIN siparis_ayrintili sa ON u.StokKodu = sa.kartkodu
         WHERE bark.barkod LIKE ? 
-          AND u.aktif = 1
           AND sa.siparisler_id = ?
         ORDER BY u.UrunAdi ASC
       ''';
