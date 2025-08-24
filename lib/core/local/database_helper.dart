@@ -436,6 +436,23 @@ class DatabaseHelper {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
           for (final receipt in goodsReceiptsData) {
             final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
+            
+            // Serbest mal kabul duplicate kontrolü
+            if (sanitizedRecord['siparis_id'] == null && sanitizedRecord['delivery_note_number'] != null) {
+              final existingReceipts = await txn.query(
+                'goods_receipts',
+                where: 'delivery_note_number = ? AND siparis_id IS NULL',
+                whereArgs: [sanitizedRecord['delivery_note_number']]
+              );
+              
+              if (existingReceipts.isNotEmpty) {
+                debugPrint('SYNC INFO: Skipping duplicate free receipt with delivery_note_number: ${sanitizedRecord["delivery_note_number"]}');
+                processedItems++;
+                updateProgress('goods_receipts');
+                continue; // Skip duplicate
+              }
+            }
+            
             batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
@@ -472,7 +489,57 @@ class DatabaseHelper {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
             final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
-            batch.insert('inventory_stock', sanitizedStock, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            // Inventory stock unique constraint kontrol (composite key)
+            final existingStock = await txn.query(
+              'inventory_stock',
+              where: '''
+                urun_id = ? AND 
+                (location_id = ? OR (location_id IS NULL AND ? IS NULL)) AND 
+                (pallet_barcode = ? OR (pallet_barcode IS NULL AND ? IS NULL)) AND 
+                stock_status = ? AND 
+                (siparis_id = ? OR (siparis_id IS NULL AND ? IS NULL)) AND 
+                (expiry_date = ? OR (expiry_date IS NULL AND ? IS NULL)) AND 
+                (goods_receipt_id = ? OR (goods_receipt_id IS NULL AND ? IS NULL))
+              ''',
+              whereArgs: [
+                sanitizedStock['urun_id'],
+                sanitizedStock['location_id'], sanitizedStock['location_id'],
+                sanitizedStock['pallet_barcode'], sanitizedStock['pallet_barcode'], 
+                sanitizedStock['stock_status'],
+                sanitizedStock['siparis_id'], sanitizedStock['siparis_id'],
+                sanitizedStock['expiry_date'], sanitizedStock['expiry_date'],
+                sanitizedStock['goods_receipt_id'], sanitizedStock['goods_receipt_id']
+              ]
+            );
+            
+            if (existingStock.isNotEmpty) {
+              // Mevcut stok varsa, miktarı güncelle (quantity'leri topla)
+              final existingId = existingStock.first['id'];
+              final existingQuantity = (existingStock.first['quantity'] as num).toDouble();
+              final newQuantity = (sanitizedStock['quantity'] as num).toDouble();
+              final totalQuantity = existingQuantity + newQuantity;
+              
+              if (totalQuantity > 0.001) {
+                await txn.update(
+                  'inventory_stock',
+                  {
+                    'quantity': totalQuantity,
+                    'updated_at': DateTime.now().toIso8601String()
+                  },
+                  where: 'id = ?',
+                  whereArgs: [existingId]
+                );
+                debugPrint('SYNC INFO: Updated existing inventory stock quantity: $existingQuantity + $newQuantity = $totalQuantity');
+              } else {
+                // Miktar 0 veya negatifse kaydı sil
+                await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existingId]);
+                debugPrint('SYNC INFO: Deleted inventory stock due to zero quantity');
+              }
+            } else {
+              // Yeni stok kaydı oluştur
+              batch.insert('inventory_stock', sanitizedStock, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
 
             processedItems++;
             updateProgress('inventory_stock');
@@ -1640,6 +1707,61 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
     final db = await database;
 
+    // Duplicate'leri tespit et ve temizle
+    final duplicateCheck = await db.rawQuery('''
+      SELECT delivery_note_number, COUNT(*) as count
+      FROM goods_receipts 
+      WHERE siparis_id IS NULL AND delivery_note_number IS NOT NULL
+      GROUP BY delivery_note_number
+      HAVING COUNT(*) > 1
+    ''');
+    
+    if (duplicateCheck.isNotEmpty) {
+      debugPrint("🧹 CLEANING DUPLICATE DELIVERY NOTES:");
+      
+      await db.transaction((txn) async {
+        for (final dup in duplicateCheck) {
+          final deliveryNote = dup['delivery_note_number'];
+          debugPrint("  - Cleaning duplicates for: $deliveryNote (${dup['count']} kayıt)");
+          
+          // En eski kaydı bırak, diğerlerini sil
+          final duplicateReceipts = await txn.query(
+            'goods_receipts',
+            where: 'delivery_note_number = ? AND siparis_id IS NULL',
+            whereArgs: [deliveryNote],
+            orderBy: 'goods_receipt_id ASC'
+          );
+          
+          if (duplicateReceipts.length > 1) {
+            // İlk kaydı koru, diğerlerini sil
+            final receiptIdsToDelete = duplicateReceipts
+                .skip(1)
+                .map((r) => r['goods_receipt_id'])
+                .toList();
+                
+            for (final receiptId in receiptIdsToDelete) {
+              // İlişkili goods_receipt_items'ları da sil
+              await txn.delete('goods_receipt_items', 
+                where: 'receipt_id = ?', whereArgs: [receiptId]);
+              
+              // İlişkili inventory_stock kayıtlarını da sil
+              await txn.delete('inventory_stock', 
+                where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
+                
+              // goods_receipt'i sil  
+              await txn.delete('goods_receipts', 
+                where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
+                
+              debugPrint("    ✅ Deleted duplicate receipt ID: $receiptId");
+            }
+          }
+        }
+      });
+      
+      debugPrint("✅ Duplicate cleanup completed!");
+    }
+
+    // Temizlenmiş verilerle sorgula
     const sql = '''
       SELECT DISTINCT
         gr.goods_receipt_id,
@@ -1654,11 +1776,14 @@ class DatabaseHelper {
       LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id AND ist.stock_status = 'receiving'
       WHERE gr.siparis_id IS NULL
         AND ist.id IS NOT NULL
-      GROUP BY gr.goods_receipt_id, gr.delivery_note_number, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
+      GROUP BY gr.delivery_note_number  -- Group by delivery_note to ensure uniqueness
+      HAVING gr.goods_receipt_id = MIN(gr.goods_receipt_id)  -- Keep only the first receipt for each delivery note
       ORDER BY gr.receipt_date DESC
     ''';
 
-    return await db.rawQuery(sql);
+    final result = await db.rawQuery(sql);
+    debugPrint("📋 Free receipts for putaway: ${result.length} kayıt (duplicates cleaned)");
+    return result;
   }
 
   Future<List<Map<String, dynamic>>> getStockItemsForFreeReceipt(String deliveryNoteNumber) async {

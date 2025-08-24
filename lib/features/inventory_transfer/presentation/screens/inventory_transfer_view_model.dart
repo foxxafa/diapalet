@@ -254,11 +254,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   void _handleBarcodeScan(String barcode) {
     if (_isDisposed) return;
 
-    if (sourceLocationFocusNode.hasFocus) {
-      _findLocationAndSet(barcode, isSource: true);
-    } else if (targetLocationFocusNode.hasFocus) {
-      _findLocationAndSet(barcode, isSource: false);
-    } else if (containerFocusNode.hasFocus) {
+    // Sadece container/pallet alanına barcode girişine izin ver
+    if (containerFocusNode.hasFocus) {
       _findContainerAndSet(barcode);
     } else {
       final focusedProductNode = _productQuantityFocusNodes.entries
@@ -266,7 +263,9 @@ class InventoryTransferViewModel extends ChangeNotifier {
       if (focusedProductNode.key != -1) {
         _setError('inventory_transfer.error_barcode_in_quantity_field');
       } else {
-         _findContainerAndSet(barcode);
+        // Hiçbir uygun alan focus'ta değilse container alanına odaklan ve veriyi gir
+        containerFocusNode.requestFocus();
+        _findContainerAndSet(barcode);
       }
     }
   }
@@ -542,29 +541,6 @@ class InventoryTransferViewModel extends ChangeNotifier {
     if (cleanData.isEmpty) return;
 
     switch (field) {
-      case 'source':
-      case 'target':
-        final location = await _repo.findLocationByCode(cleanData);
-        if (location != null) {
-          final bool isValidSource = field == 'source' && _availableSourceLocationsMap.containsKey(location.key);
-          final bool isValidTarget = field == 'target' && _availableTargetLocationsMap.containsKey(location.key);
-
-          if (isValidSource) {
-            handleSourceSelection(location.key);
-          } else if (isValidTarget) {
-            handleTargetSelection(location.key);
-          } else {
-            if (field == 'source') sourceLocationController.clear();
-            if (field == 'target') targetLocationController.clear();
-            _setError('inventory_transfer.error_invalid_location_for_operation', location.key);
-          }
-        } else {
-          if (field == 'source') sourceLocationController.clear();
-          if (field == 'target') targetLocationController.clear();
-          _setError('inventory_transfer.error_invalid_location_code', cleanData);
-        }
-        break;
-
       case 'container':
         _findContainerAndSet(cleanData);
         break;

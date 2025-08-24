@@ -622,11 +622,12 @@ class TerminalController extends Controller
         }
         $warehouseId = (int)$warehouseId;
 
-        // Buffer timestamp hazırlığı (aynı mantık)
+        // Buffer timestamp hazırlığı - ana sync ile tutarlı
         $serverSyncTimestamp = $lastSyncTimestamp;
         if ($lastSyncTimestamp) {
             $syncDateTime = new \DateTime($lastSyncTimestamp);
-            $syncDateTime->sub(new \DateInterval('PT30S'));
+            // Ana sync ile aynı 60 saniye buffer kullan
+            $syncDateTime->sub(new \DateInterval('PT60S'));
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
         }
 
@@ -849,13 +850,16 @@ class TerminalController extends Controller
     // Global kullanım için UTC timestamp'leri direkt karşılaştır
     $serverSyncTimestamp = $lastSyncTimestamp;
     
-    // ÇÖZÜM: ON UPDATE CURRENT_TIMESTAMP sorunu için 30 saniye buffer ekle
+    // GÜVENLIK: Race condition ve timing sorunları için 60 saniye buffer ekle
     if ($lastSyncTimestamp) {
         // ISO8601 formatını parse et (2025-08-22T21:20:28.545772Z)
         $syncDateTime = new \DateTime($lastSyncTimestamp);
-        // Evrensel UTC kullanımı için standart buffer
-        $syncDateTime->sub(new \DateInterval('PT30S')); // 30 saniye çıkar
+        // Race condition riskini minimize etmek için buffer artırıldı
+        $syncDateTime->sub(new \DateInterval('PT60S')); // 30'dan 60 saniyeye çıkarıldı
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+        
+        // Debug için log
+        \Yii::info("Sync buffer applied: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", __METHOD__);
     } else {
     }
 
@@ -1212,11 +1216,12 @@ class TerminalController extends Controller
      */
     private function handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit)
     {
-        // UTC timestamp hazırlama (aynı mantık)
+        // UTC timestamp hazırlama - buffer ile tutarlı
         $serverSyncTimestamp = $lastSyncTimestamp;
         if ($lastSyncTimestamp) {
             $syncDateTime = new \DateTime($lastSyncTimestamp);
-            $syncDateTime->sub(new \DateInterval('PT60S')); // 60 saniye çıkar
+            // Ana sync ile aynı buffer kullan
+            $syncDateTime->sub(new \DateInterval('PT60S')); // 60 saniye buffer
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
         }
         

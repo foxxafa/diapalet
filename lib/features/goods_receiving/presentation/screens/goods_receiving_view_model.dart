@@ -313,24 +313,34 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<void> _processScannedDataAsync(String code) async {
+    // Sadece izin verilen alanlarda barcode kabul et
     if (palletIdFocusNode.hasFocus) {
       await processScannedData('pallet', code);
     } else if (productFocusNode.hasFocus) {
       await processScannedData('product', code);
+    } else if (deliveryNoteFocusNode.hasFocus || quantityFocusNode.hasFocus || expiryDateFocusNode.hasFocus) {
+      // Bu alanlar barcode kabul etmez, uygun alana yönlendir
+      _redirectToAppropriateField(code);
     } else {
-      // Eğer palet modundaysak ve palet kodu boşsa, önce palet koduna odaklan
-      if (_receivingMode == ReceivingMode.palet && palletIdController.text.isEmpty) {
+      // Hiçbir alan focus'ta değilse varsayılan mantığı kullan
+      _redirectToAppropriateField(code);
+    }
+  }
+
+  Future<void> _redirectToAppropriateField(String code) async {
+    if (_receivingMode == ReceivingMode.palet) {
+      // Pallet modunda: pallet boşsa pallet'e, doluysa product'a
+      if (palletIdController.text.isEmpty) {
         palletIdFocusNode.requestFocus();
         await processScannedData('pallet', code);
-      } else if (_selectedProduct == null) {
-        // Ürün seçilmemişse product field'a odaklan
-        productFocusNode.requestFocus();
-        await processScannedData('product', code);
       } else {
-        // Diğer durumlarda product field'a odaklan
         productFocusNode.requestFocus();
         await processScannedData('product', code);
       }
+    } else {
+      // Product modunda: her zaman product alanına
+      productFocusNode.requestFocus();
+      await processScannedData('product', code);
     }
   }
 
