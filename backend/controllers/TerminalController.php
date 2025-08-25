@@ -67,7 +67,7 @@ class TerminalController extends Controller
         }
 
         try {
-            // Rowhub formatında login sorgusu
+            // Rowhub formatında giriş sorgusu
             $userQuery = (new Query())
                 ->select([
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
@@ -231,7 +231,7 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
         }
 
-        // Employee'nin warehouse_id'sini al - Rowhub formatında
+        // Çalışanın depo ID'sini al - Rowhub formatında
         $employeeId = $header['employee_id'];
         $employeeWarehouseQuery = (new Query())
             ->select('w.id')
@@ -263,7 +263,7 @@ class TerminalController extends Controller
 
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
-            $stockStatus = 'receiving'; // For all goods receipts, stock should initially be in 'receiving' status.
+            $stockStatus = 'receiving'; // Tüm mal kabulleri için, stok başlangıçta 'mal kabul' durumunda olmalıdır.
             $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
         }
 
@@ -288,7 +288,7 @@ class TerminalController extends Controller
         $goodsReceiptId = $header['goods_receipt_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
 
-        // A putaway operation is any transfer from the virtual receiving area (source_location_id is NULL)
+        // Rafa yerleştirme işlemi sanal mal kabul alanından (kaynak_lokasyon_id NULL) yapılan herhangi bir transferdir
         $isPutawayOperation = ($sourceLocationId === null);
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
@@ -298,19 +298,19 @@ class TerminalController extends Controller
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
-            // 1. Find source stocks using FIFO logic
+            // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
                 ->where(['urun_id' => $productId, 'stock_status' => $sourceStatus]);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
-            // For putaway operations, we must filter by the specific order or receipt
+            // Rafa yerleştirme işlemleri için, belirli sipariş veya fişe göre filtrelememiz gerekir
             if ($isPutawayOperation) {
                 if ($siparisId) {
                     $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
                 } elseif ($deliveryNoteNumber) {
-                    // Serbest mal kabul için delivery note üzerinden receipt ID bulun
+                    // Serbest mal kabul için irsaliye numarası üzerinden fiş ID'sini bul
                     $actualGoodsReceiptId = (new Query())
                         ->select('goods_receipt_id')
                         ->from('goods_receipts')
@@ -318,7 +318,7 @@ class TerminalController extends Controller
                         ->scalar($db);
                     if ($actualGoodsReceiptId) {
                         $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $actualGoodsReceiptId);
-                        // errorContext ve sonraki işlemler için goodsReceiptId'i güncelle
+                        // hata bağlamı ve sonraki işlemler için mal kabul ID'sini güncelle
                         $goodsReceiptId = $actualGoodsReceiptId;
                     }
                 } elseif ($goodsReceiptId) {
@@ -335,10 +335,10 @@ class TerminalController extends Controller
                 return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$productId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
             }
 
-            // 2. Determine portions to transfer and the required DB operations
+            // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
             $quantityLeft = $totalQuantityToTransfer;
-            $portionsToTransfer = []; // {qty, expiry, siparis_id, goods_receipt_id}
-            $dbOps = ['delete' => [], 'update' => []]; // {id: new_qty}
+            $portionsToTransfer = []; // {miktar, son_kullanma_tarihi, siparis_id, mal_kabul_id}
+            $vtIslemleri = ['delete' => [], 'update' => []]; // {id: yeni_miktar}
 
             foreach ($sourceStocks as $stock) {
                 if ($quantityLeft <= 0.001) break;
@@ -355,22 +355,22 @@ class TerminalController extends Controller
                 ];
 
                 if ($stockQty - $qtyThisCycle > 0.001) {
-                    $dbOps['update'][$stockId] = $stockQty - $qtyThisCycle;
+                    $vtIslemleri['update'][$stockId] = $stockQty - $qtyThisCycle;
                 } else {
-                    $dbOps['delete'][] = $stockId;
+                    $vtIslemleri['delete'][] = $stockId;
                 }
                 $quantityLeft -= $qtyThisCycle;
             }
 
-            // 3. Execute DB operations (Decrement source)
-            if (!empty($dbOps['delete'])) {
-                $db->createCommand()->delete('inventory_stock', ['in', 'id', $dbOps['delete']])->execute();
+            // 3. Veritabanı işlemlerini çalıştır (Kaynağı azalt)
+            if (!empty($vtIslemleri['delete'])) {
+                $db->createCommand()->delete('inventory_stock', ['in', 'id', $vtIslemleri['delete']])->execute();
             }
-            foreach ($dbOps['update'] as $id => $newQty) {
+            foreach ($vtIslemleri['update'] as $id => $newQty) {
                 $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $id])->execute();
             }
 
-            // 4. Add portions to target (preserving expiry dates and source IDs)
+            // 4. Kısımları hedefe ekle (son kullanma tarihleri ve kaynak ID'leri korunarak)
             foreach($portionsToTransfer as $portion) {
                 $this->upsertStock(
                     $db,
@@ -385,7 +385,7 @@ class TerminalController extends Controller
                     $portion['goods_receipt_id']
                 );
 
-                // 5. Create a separate transfer record for each portion
+                // 5. Her kısım için ayrı transfer kaydı oluştur
                 $transferData = [
                     'urun_id'             => $productId,
                     'from_location_id'    => $sourceLocationId,
@@ -406,9 +406,9 @@ class TerminalController extends Controller
                 $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
             }
 
-            // 6. Update putaway status for order-based operations
+            // 6. Sipariş bazlı işlemler için rafa yerleştirme durumunu güncelle
             if ($isPutawayOperation && $siparisId) {
-                 // kartkodu ile ürün bulup sipariş satırını bul  
+                 // kart kodu ile ürün bulup sipariş satırını bul
                  $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['UrunId' => $productId])->scalar($db);
                  if ($productCode) {
                      $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
@@ -718,7 +718,7 @@ class TerminalController extends Controller
             ->where(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
             
         if ($timestamp) {
-            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $timestamp]); // FIX: Table prefix added
+            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $timestamp]); // DÜZELTME: Tablo öneki eklendi
             // Sadece ilgili warehouse'un siparişlerini say
             $query->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
                   ->andWhere(['siparisler._key_sis_depo_source' => $warehouseKey]);
@@ -844,7 +844,7 @@ class TerminalController extends Controller
         return $this->handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit);
     }
     
-    // Eski mode - tüm tabloları birden indir (backward compatibility için)
+    // Eski mod - tüm tabloları birden indir (backward compatibility için)
 
     // ########## UTC TIMESTAMP KULLANIMI ##########
     // Global kullanım için UTC timestamp'leri direkt karşılaştır
@@ -1075,9 +1075,9 @@ class TerminalController extends Controller
                 ->from(['sa' => 'siparis_ayrintili'])
                 ->leftJoin(['u' => 'urunler'], 'u.StokKodu = sa.kartkodu')
                 ->where(['in', 'sa.siparisler_id', $poIds])
-                ->andWhere(['sa.turu' => '1']); // FIX: Table prefix added
+                ->andWhere(['sa.turu' => '1']); // DÜZELTME: Tablo öneki eklendi
             if ($serverSyncTimestamp) {
-                $poLineQuery->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]); // FIX: Table prefix added
+                $poLineQuery->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]); // DÜZELTME: Tablo öneki eklendi
             } else {
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
@@ -1681,7 +1681,7 @@ class TerminalController extends Controller
             ->select('id')
             ->from('siparis_ayrintili')
             ->where(['in', 'siparisler_id', $poIds])
-            ->andWhere(['siparis_ayrintili.turu' => '1']) // FIX: Table prefix added
+            ->andWhere(['siparis_ayrintili.turu' => '1']) // DÜZELTME: Tablo öneki eklendi
             ->column();
 
         if (empty($poLineIds)) {

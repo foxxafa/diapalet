@@ -491,26 +491,57 @@ class DatabaseHelper {
             final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
             
             // Inventory stock unique constraint kontrol (composite key)
+            // Simplified NULL-safe WHERE clause to avoid parameter count issues
+            final existingStockQuery = StringBuffer();
+            final queryArgs = <dynamic>[];
+            
+            existingStockQuery.write('urun_id = ? AND stock_status = ?');
+            queryArgs.addAll([sanitizedStock['urun_id'], sanitizedStock['stock_status']]);
+            
+            // Handle location_id
+            if (sanitizedStock['location_id'] == null) {
+              existingStockQuery.write(' AND location_id IS NULL');
+            } else {
+              existingStockQuery.write(' AND location_id = ?');
+              queryArgs.add(sanitizedStock['location_id']);
+            }
+            
+            // Handle pallet_barcode
+            if (sanitizedStock['pallet_barcode'] == null) {
+              existingStockQuery.write(' AND pallet_barcode IS NULL');
+            } else {
+              existingStockQuery.write(' AND pallet_barcode = ?');
+              queryArgs.add(sanitizedStock['pallet_barcode']);
+            }
+            
+            // Handle siparis_id
+            if (sanitizedStock['siparis_id'] == null) {
+              existingStockQuery.write(' AND siparis_id IS NULL');
+            } else {
+              existingStockQuery.write(' AND siparis_id = ?');
+              queryArgs.add(sanitizedStock['siparis_id']);
+            }
+            
+            // Handle expiry_date
+            if (sanitizedStock['expiry_date'] == null) {
+              existingStockQuery.write(' AND expiry_date IS NULL');
+            } else {
+              existingStockQuery.write(' AND expiry_date = ?');
+              queryArgs.add(sanitizedStock['expiry_date']);
+            }
+            
+            // Handle goods_receipt_id
+            if (sanitizedStock['goods_receipt_id'] == null) {
+              existingStockQuery.write(' AND goods_receipt_id IS NULL');
+            } else {
+              existingStockQuery.write(' AND goods_receipt_id = ?');
+              queryArgs.add(sanitizedStock['goods_receipt_id']);
+            }
+            
             final existingStock = await txn.query(
               'inventory_stock',
-              where: '''
-                urun_id = ? AND 
-                (location_id = ? OR (location_id IS NULL AND ? IS NULL)) AND 
-                (pallet_barcode = ? OR (pallet_barcode IS NULL AND ? IS NULL)) AND 
-                stock_status = ? AND 
-                (siparis_id = ? OR (siparis_id IS NULL AND ? IS NULL)) AND 
-                (expiry_date = ? OR (expiry_date IS NULL AND ? IS NULL)) AND 
-                (goods_receipt_id = ? OR (goods_receipt_id IS NULL AND ? IS NULL))
-              ''',
-              whereArgs: [
-                sanitizedStock['urun_id'],
-                sanitizedStock['location_id'], sanitizedStock['location_id'],
-                sanitizedStock['pallet_barcode'], sanitizedStock['pallet_barcode'], 
-                sanitizedStock['stock_status'],
-                sanitizedStock['siparis_id'], sanitizedStock['siparis_id'],
-                sanitizedStock['expiry_date'], sanitizedStock['expiry_date'],
-                sanitizedStock['goods_receipt_id'], sanitizedStock['goods_receipt_id']
-              ]
+              where: existingStockQuery.toString(),
+              whereArgs: queryArgs
             );
             
             if (existingStock.isNotEmpty) {
