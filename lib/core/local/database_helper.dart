@@ -1380,6 +1380,26 @@ class DatabaseHelper {
               debugPrint('PDF için barkod alınırken hata: $e');
             }
             
+            // Eğer barcode bulunamadıysa, direkt barkodlar tablosunda ürünün barkodunu ara
+            if (productBarcode.isEmpty) {
+              try {
+                // Alternatif yöntem: Barkodlar tablosunda direkt product code'a göre ara
+                final directBarkodResults = await db.rawQuery('''
+                  SELECT b.barkod 
+                  FROM barkodlar b
+                  INNER JOIN birimler br ON b._key_scf_stokkart_birimleri = br._key
+                  WHERE br.StokKodu = ?
+                  LIMIT 1
+                ''', [product['StokKodu']]);
+                
+                if (directBarkodResults.isNotEmpty) {
+                  productBarcode = directBarkodResults.first['barkod'] as String? ?? '';
+                }
+              } catch (e) {
+                debugPrint('PDF barcode alternatif arama hatası: $e');
+              }
+            }
+            
             mutableItem['product_barcode'] = productBarcode;
           }
         }

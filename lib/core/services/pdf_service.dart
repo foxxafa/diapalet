@@ -825,11 +825,12 @@ class PdfService {
                 ],
               ),
             ...items.map((item) {
-              final productBarcode = item['product_barcode'] ?? '';
+              final productBarcode = item['product_barcode']?.toString() ?? '';
               final productName = item['product_name'] ?? 'Unknown';
               final productCode = item['product_code'] ?? 'N/A';
               final productNameAndCode = '$productName ($productCode)';
               final containerDisplay = item['pallet_barcode']?.toString() ?? 'Product';
+              
 
               // Get expiry date
               final expiryDate = item['expiry_date'];
