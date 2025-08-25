@@ -45,20 +45,20 @@ class GoodsReceiptHeader {
 
 @immutable
 class GoodsReceiptItemPayload {
-  final int urunId;
+  final String productId; // _key değeri string olarak
   final double quantity;
   final String? palletBarcode;
   final DateTime? expiryDate;
 
   const GoodsReceiptItemPayload({
-    required this.urunId,
+    required this.productId,
     required this.quantity,
     this.palletBarcode,
     this.expiryDate,
   });
 
   Map<String, dynamic> toJson() => {
-    'urun_id': urunId,
+    'product_id': productId, // _key değeri product_id olarak gönderiliyor
     'quantity': quantity,
     'pallet_barcode': palletBarcode,
     'expiry_date': expiryDate?.toIso8601String(),

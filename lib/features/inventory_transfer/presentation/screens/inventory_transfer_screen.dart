@@ -671,7 +671,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
-          productId: product.id,
+          productId: product.apiProductId, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,

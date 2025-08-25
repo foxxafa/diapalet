@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 @immutable
 class ProductItem {
   final int id;
+  final String? productKey; // _key değeri için yeni alan
   final String name;
   final String productCode;
   final String? barcode;
@@ -12,12 +13,16 @@ class ProductItem {
 
   const ProductItem({
     required this.id,
+    this.productKey, // _key değeri
     required this.name,
     required this.productCode,
     this.barcode,
     required this.currentQuantity,
     this.expiryDate,
   });
+
+  /// API'ye gönderilecek ürün ID'si - _key varsa onu kullan
+  String get apiProductId => productKey ?? id.toString();
 
   /// @deprecated This method is deprecated. Use ProductItem constructor directly with TransferableItem data.
   @Deprecated('Use ProductItem constructor directly with TransferableItem data')
@@ -40,6 +45,7 @@ class ProductItem {
     final dynamic barcodeValue = json['barcode'];
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
     final dynamic expiryValue = json['expiryDate'];
+    final dynamic keyValue = json['_key'] ?? json['productKey'];
 
     num parseToNum(dynamic val) {
       if (val == null) return 0;
@@ -50,6 +56,7 @@ class ProductItem {
 
     return ProductItem(
       id: parseToNum(idValue).toInt(),
+      productKey: keyValue?.toString(),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
       barcode: barcodeValue?.toString(),
@@ -61,6 +68,7 @@ class ProductItem {
   factory ProductItem.fromMap(Map<String, dynamic> map) {
     return ProductItem(
       id: map['id'] as int,
+      productKey: map['_key']?.toString() ?? map['productKey']?.toString(),
       name: (map['name'] ?? '').toString(),
       productCode: (map['code'] ?? '').toString(),
       barcode: map['barcode']?.toString(),
@@ -73,6 +81,7 @@ class ProductItem {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'productKey': productKey,
       'name': name,
       'productCode': productCode,
       'barcode': barcode,

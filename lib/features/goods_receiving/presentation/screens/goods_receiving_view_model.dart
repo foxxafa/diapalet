@@ -670,7 +670,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         employeeId: employeeId,
       ),
       items: _addedItems.map((draft) => GoodsReceiptItemPayload(
-        urunId: draft.product.id,
+        productId: draft.product.apiProductId, // _key değeri kullanılıyor
         quantity: draft.quantity,
         palletBarcode: draft.palletBarcode,
         expiryDate: draft.expiryDate, // Now always has a value
@@ -871,7 +871,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer.withOpacity(0.3),
+                  color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(

@@ -399,26 +399,6 @@ class InventoryTransferViewModel extends ChangeNotifier {
   }
 
   // Field Handling (Find, Set, Clear)
-  Future<void> _findLocationAndSet(String barcode, {required bool isSource}) async {
-    final location = await _repo.findLocationByCode(barcode);
-    if (location != null) {
-      if (isSource) {
-        if (_availableSourceLocationsMap.containsKey(location.key)) {
-          handleSourceSelection(location.key);
-        } else {
-          _setError('inventory_transfer.error_location_not_in_source_list');
-        }
-      } else {
-        if (_availableTargetLocationsMap.containsKey(location.key)) {
-          handleTargetSelection(location.key);
-        } else {
-          _setError('inventory_transfer.error_location_not_in_target_list');
-        }
-      }
-    } else {
-      _setError('inventory_transfer.error_location_not_found');
-    }
-  }
 
   void _findContainerAndSet(String barcode) {
     final found = _availableContainers.where((c) => c.id.toLowerCase() == barcode.toLowerCase() || c.displayName.toLowerCase() == barcode.toLowerCase()).toList();
@@ -582,7 +562,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         items.add(TransferItemDetail(
-          productId: product.id,
+          productId: product.apiProductId, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,

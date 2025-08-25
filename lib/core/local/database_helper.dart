@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 56;
+  static const _databaseVersion = 57; // _key PRIMARY KEY olarak değiştirildi
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -95,9 +95,11 @@ class DatabaseHelper {
         )
       ''');
 
+      // _key artık PRIMARY KEY olarak kullanılıyor
       batch.execute('''
         CREATE TABLE IF NOT EXISTS urunler (
-          UrunId INTEGER PRIMARY KEY,
+          _key TEXT PRIMARY KEY,
+          UrunId INTEGER UNIQUE,
           StokKodu TEXT UNIQUE,
           UrunAdi TEXT,
           aktif INTEGER,
@@ -164,7 +166,7 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS siparis_ayrintili (
           id INTEGER PRIMARY KEY,
           siparisler_id INTEGER,
-          urun_id INTEGER,
+          urun_key TEXT,
           kartkodu TEXT,
           anamiktar REAL,
           miktar REAL,
@@ -172,7 +174,8 @@ class DatabaseHelper {
           created_at TEXT,
           updated_at TEXT,
           status INTEGER,
-          turu TEXT
+          turu TEXT,
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key)
         )
       ''');
 
@@ -205,14 +208,14 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS goods_receipt_items (
           id INTEGER PRIMARY KEY,
           receipt_id INTEGER,
-          urun_id INTEGER,
+          urun_key TEXT,
           quantity_received REAL,
           pallet_barcode TEXT,
           expiry_date TEXT,
           created_at TEXT,
           updated_at TEXT,
           FOREIGN KEY(receipt_id) REFERENCES goods_receipts(goods_receipt_id),
-          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId)
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key)
         )
       ''');
 
@@ -220,7 +223,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          urun_id INTEGER NOT NULL,
+          urun_key TEXT NOT NULL,
           location_id INTEGER,
           siparis_id INTEGER,
           goods_receipt_id INTEGER,
@@ -230,8 +233,8 @@ class DatabaseHelper {
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
           created_at TEXT,
           updated_at TEXT,
-          UNIQUE(urun_id, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
-          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
+          UNIQUE(urun_key, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key),
           FOREIGN KEY(location_id) REFERENCES shelfs(id),
           FOREIGN KEY(siparis_id) REFERENCES siparisler(id),
           FOREIGN KEY(goods_receipt_id) REFERENCES goods_receipts(goods_receipt_id)
@@ -245,12 +248,12 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON siparis_ayrintili(siparisler_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_key)');
       
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           id INTEGER PRIMARY KEY,
-          urun_id INTEGER,
+          urun_key TEXT,
           from_location_id INTEGER,
           to_location_id INTEGER,
           quantity REAL,
@@ -263,7 +266,7 @@ class DatabaseHelper {
           transfer_date TEXT,
           created_at TEXT,
           updated_at TEXT,
-          FOREIGN KEY(urun_id) REFERENCES urunler(UrunId),
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key),
           FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
           FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
           FOREIGN KEY(employee_id) REFERENCES employees(id)
@@ -718,10 +721,15 @@ class DatabaseHelper {
     // Only handle critical field mappings - let SQLite ignore unknown fields
     switch (table) {
       case 'urunler':
-        // Server uses 'id', local uses 'UrunId'
+        // _key artık PRIMARY KEY, UrunId'yi de saklıyoruz backward compatibility için
+        // Server'dan gelen 'id' alanını 'UrunId' olarak saklıyoruz
         if (newRecord.containsKey('id')) {
           newRecord['UrunId'] = newRecord['id'];
           newRecord.remove('id');
+        }
+        // _key yoksa UrunId'den oluştur (fallback)
+        if (!newRecord.containsKey('_key') || newRecord['_key'] == null) {
+          newRecord['_key'] = newRecord['UrunId']?.toString() ?? '';
         }
         break;
 
@@ -762,9 +770,16 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'urun_id', 'kartkodu', 'anamiktar', 'miktar',
+          'id', 'siparisler_id', 'urun_key', 'kartkodu', 'anamiktar', 'miktar',
           'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
         ];
+        
+        // urun_id'yi urun_key'e dönüştür
+        if (newRecord.containsKey('urun_id')) {
+          // Önce urunler tablosundan _key'i bulmaya çalış
+          // Bu bölüm sync sırasında çalışacak
+          newRecord['urun_key'] = newRecord['urun_id']?.toString();
+        }
         
         for (String column in localColumns) {
           if (newRecord.containsKey(column)) {

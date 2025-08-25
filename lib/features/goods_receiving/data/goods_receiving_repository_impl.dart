@@ -56,15 +56,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         for (final item in payload.items) {
           await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
-            DbColumns.orderLinesProductId: item.urunId,
+            'urun_key': item.productId, // _key değeri direkt kullanılıyor
             'quantity_received': item.quantity,
             DbColumns.stockPalletBarcode: item.palletBarcode,
             DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
           });
 
-          await _updateStock(
+          await _updateStockWithKey(
               txn,
-              item.urunId,
+              item.productId, // _key değeri string olarak
               null, // locationId is null for receiving area
               item.quantity,
               item.palletBarcode,
@@ -118,7 +118,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           DbTables.products,
           columns: [DbColumns.productsName, DbColumns.productsCode],
           where: '${DbColumns.productsId} = ?',
-          whereArgs: [item.urunId],
+          whereArgs: [item.productId],
           limit: 1,
         );
         if (productResult.isNotEmpty) {
@@ -132,14 +132,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  Future<void> _updateStock(Transaction txn, int urunId, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
+  Future<void> _updateStockWithKey(Transaction txn, String urunKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
     String locationWhereClause = locationId == null ? 'location_id IS NULL' : 'location_id = ?';
     String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
     String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
     String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
     String goodsReceiptWhereClause = goodsReceiptId == null ? 'goods_receipt_id IS NULL' : 'goods_receipt_id = ?';
 
-    List<dynamic> whereArgs = [urunId, stockStatus];
+    List<dynamic> whereArgs = [urunKey, stockStatus];
     if (locationId != null) whereArgs.add(locationId);
     if (palletBarcode != null) whereArgs.add(palletBarcode);
     if (siparisId != null) whereArgs.add(siparisId);
@@ -147,7 +147,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     if (goodsReceiptId != null) whereArgs.add(goodsReceiptId);
 
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_id = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause AND $goodsReceiptWhereClause',
+        where: 'urun_key = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause AND $goodsReceiptWhereClause',
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
@@ -161,7 +161,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
     } else if (quantityChange > 0) {
       await txn.insert('inventory_stock', {
-        'urun_id': urunId,
+        'urun_key': urunKey,
         'location_id': locationId,
         'quantity': quantityChange,
         'pallet_barcode': palletBarcode,

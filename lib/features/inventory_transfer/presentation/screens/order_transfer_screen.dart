@@ -580,7 +580,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
-          productId: product.id,
+          productId: product.apiProductId, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
@@ -774,64 +774,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         }
       }).toList();
     });
-  }
-
-  Widget _buildHybridDropdownWithQr<T>({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String fieldIdentifier,
-    required List<T> items,
-    required String Function(T item) itemToString,
-    required void Function(T? item) onItemSelected,
-    required bool Function(T item, String query) filterCondition,
-    required FormFieldValidator<String>? validator,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextFormField(
-            readOnly: true,
-            controller: controller,
-            focusNode: focusNode,
-            decoration: _inputDecoration(
-              label,
-              suffixIcon: const Icon(Icons.arrow_drop_down),
-            ),
-            onTap: () async {
-              FocusScope.of(context).unfocus();
-
-              final T? selectedItem = await _showSearchableDropdownDialog<T>(
-                title: label,
-                items: items,
-                itemToString: itemToString,
-                filterCondition: filterCondition,
-              );
-              if (selectedItem != null) {
-                onItemSelected(selectedItem);
-              }
-            },
-            validator: validator,
-          ),
-        ),
-        const SizedBox(width: _smallGap),
-        SizedBox(
-          height: 56, // TextFormField ile aynı yükseklik
-          child: _QrButton(
-            onTap: () async {
-              final result = await Navigator.push<String>(
-                context,
-                MaterialPageRoute(builder: (context) => const QrScannerScreen())
-              );
-              if (result != null && result.isNotEmpty) {
-                _processScannedData(fieldIdentifier, result);
-              }
-            },
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _buildProductsList() {

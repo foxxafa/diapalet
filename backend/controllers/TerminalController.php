@@ -216,6 +216,36 @@ class TerminalController extends Controller
         }
     }
 
+    /**
+     * _key değerini UrunId'ye dönüştürür
+     * Eğer _key geliyorsa, urunler tablosundan UrunId'yi bulur
+     * Eğer sayısal bir değer geliyorsa direkt döndürür
+     */
+    private function getProductIdFromKey($productIdOrKey, $db) {
+        // Eğer sayısal ise direkt UrunId olarak kullan
+        if (is_numeric($productIdOrKey)) {
+            return (int)$productIdOrKey;
+        }
+        
+        // String ise _key olarak kabul et ve UrunId'yi bul
+        $urunId = (new Query())
+            ->select('UrunId')
+            ->from('urunler')
+            ->where(['_key' => $productIdOrKey])
+            ->scalar($db);
+            
+        if (!$urunId) {
+            // _key bulunamazsa, belki StokKodu'dur, onu da kontrol et
+            $urunId = (new Query())
+                ->select('UrunId')
+                ->from('urunler')
+                ->where(['StokKodu' => $productIdOrKey])
+                ->scalar($db);
+        }
+        
+        return $urunId ? (int)$urunId : null;
+    }
+
     private function _createGoodsReceipt($data, $db) {
         $header = $data['header'] ?? [];
         $items = $data['items'] ?? [];
@@ -255,8 +285,14 @@ class TerminalController extends Controller
         $receiptId = $db->getLastInsertID();
 
         foreach ($items as $item) {
+            // Mobile'dan product_id (_key veya UrunId) geliyor, UrunId'ye dönüştürülüyor
+            $urunId = $this->getProductIdFromKey($item['product_id'], $db);
+            if (!$urunId) {
+                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $item['product_id']];
+            }
+            
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId, 'urun_id' => $item['urun_id'],
+                'receipt_id' => $receiptId, 'urun_id' => $urunId,
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
             ])->execute();
@@ -264,7 +300,8 @@ class TerminalController extends Controller
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
             $stockStatus = 'receiving'; // Tüm mal kabulleri için, stok başlangıçta 'mal kabul' durumunda olmalıdır.
-            $this->upsertStock($db, $item['urun_id'], null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
+            // _key veya UrunId'den dönüştürülmüş UrunId kullanılıyor
+            $this->upsertStock($db, $urunId, null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
         }
 
         if ($siparisId) {
@@ -293,7 +330,12 @@ class TerminalController extends Controller
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
         foreach ($items as $item) {
-            $productId = $item['product_id'];
+            // Mobile'dan _key değeri geliyor, UrunId'ye dönüştürülüp urun_id sütununa yazılıyor
+            $urunId = $this->getProductIdFromKey($item['product_id'], $db);
+            if (!$urunId) {
+                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $item['product_id']];
+            }
+            
             $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
@@ -301,7 +343,7 @@ class TerminalController extends Controller
             // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
-                ->where(['urun_id' => $productId, 'stock_status' => $sourceStatus]);
+                ->where(['urun_id' => $urunId, 'stock_status' => $sourceStatus]);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
@@ -332,7 +374,7 @@ class TerminalController extends Controller
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
             if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
                 $errorContext = $isPutawayOperation ? "Putaway for Receipt #$goodsReceiptId / Order #$siparisId" : "Shelf Transfer";
-                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$productId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
+                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$urunId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
             }
 
             // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
@@ -374,7 +416,7 @@ class TerminalController extends Controller
             foreach($portionsToTransfer as $portion) {
                 $this->upsertStock(
                     $db,
-                    $productId,
+                    $urunId, // UrunId kullanılıyor
                     $targetLocationId,
                     $portion['qty'],
                     $targetPallet,
@@ -386,8 +428,9 @@ class TerminalController extends Controller
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
+                // _key artık urun_id olarak kullanılıyor
                 $transferData = [
-                    'urun_id'             => $productId,
+                    'urun_id'             => $urunId, // UrunId yazılıyor
                     'from_location_id'    => $sourceLocationId,
                     'to_location_id'      => $targetLocationId,
                     'quantity'            => $portion['qty'],
@@ -409,7 +452,7 @@ class TerminalController extends Controller
             // 6. Sipariş bazlı işlemler için rafa yerleştirme durumunu güncelle
             if ($isPutawayOperation && $siparisId) {
                  // kart kodu ile ürün bulup sipariş satırını bul
-                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['UrunId' => $productId])->scalar($db);
+                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['UrunId' => $urunId])->scalar($db);
                  if ($productCode) {
                      $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
                      if ($orderLine) {
@@ -498,6 +541,7 @@ class TerminalController extends Controller
                     $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
                 }
             } elseif ($qtyChange > 0) {
+                // _key artık urun_id olarak kullanılıyor
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_id' => $urunId, 'location_id' => $locationId, 'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
@@ -870,9 +914,10 @@ class TerminalController extends Controller
 
         // ########## İNKREMENTAL SYNC İÇİN ÜRÜNLER ##########
         // ESKİ BARCODE ALANLARI ARTIK KULLANILMIYOR - Yeni barkodlar tablosuna geçildi
+        // TODO: UrunId yerine _key kullanılacak - _key eşsiz ürün tanımlayıcısı
         try {
             $urunlerQuery = (new Query())
-                ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
+                ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', '_key', 'updated_at'])
                 ->from('urunler');
 
             // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
@@ -1300,8 +1345,9 @@ class TerminalController extends Controller
     
     private function getPaginatedUrunler($serverSyncTimestamp, $offset, $limit)
     {
+        // TODO: UrunId yerine _key kullanılacak - _key eşsiz ürün tanımlayıcısı
         $query = (new Query())
-            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', 'updated_at'])
+            ->select(['UrunId as id', 'StokKodu', 'UrunAdi', 'aktif', '_key', 'updated_at'])
             ->from('urunler');
 
         if ($serverSyncTimestamp) {

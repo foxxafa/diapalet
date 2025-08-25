@@ -634,7 +634,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   Future<void> _updateStockSmart(
     DatabaseExecutor txn, {
-    required int productId,
+    required String productId, // _key değeri String olarak
     required int? locationId,
     required double quantityChange,
     required String? palletId,
