@@ -498,8 +498,8 @@ class DatabaseHelper {
             final existingStockQuery = StringBuffer();
             final queryArgs = <dynamic>[];
             
-            existingStockQuery.write('urun_id = ? AND stock_status = ?');
-            queryArgs.addAll([sanitizedStock['urun_id'], sanitizedStock['stock_status']]);
+            existingStockQuery.write('urun_key = ? AND stock_status = ?');
+            queryArgs.addAll([sanitizedStock['urun_key'], sanitizedStock['stock_status']]);
             
             // Handle location_id
             if (sanitizedStock['location_id'] == null) {
@@ -688,13 +688,13 @@ class DatabaseHelper {
             if (satir['turu'] == '1' || satir['turu'] == 1) {
               final sanitizedSatir = _sanitizeRecord('siparis_ayrintili', satir);
 
-              // urun_id is null, try to derive it from kartkodu
-              if ((sanitizedSatir['urun_id'] == null || sanitizedSatir['urun_id'] == 0) &&
+              // urun_key is null, try to derive it from kartkodu
+              if ((sanitizedSatir['urun_key'] == null || sanitizedSatir['urun_key'] == '') &&
                   sanitizedSatir.containsKey('kartkodu') &&
                   sanitizedSatir['kartkodu'] != null) {
                 final kartkodu = sanitizedSatir['kartkodu'].toString();
                 if (productCodeToIdMap.containsKey(kartkodu)) {
-                  sanitizedSatir['urun_id'] = productCodeToIdMap[kartkodu];
+                  sanitizedSatir['urun_key'] = productCodeToIdMap[kartkodu].toString();
                 } else {
                   debugPrint("SYNC WARNING: kartkodu '$kartkodu' not found in in-memory product map. Line ID: ${sanitizedSatir['id']}");
                 }
@@ -774,13 +774,17 @@ class DatabaseHelper {
           'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
-        // urun_id'yi urun_key'e dönüştür
-        if (newRecord.containsKey('urun_id')) {
-          // Önce urunler tablosundan _key'i bulmaya çalış
-          // Bu bölüm sync sırasında çalışacak
+        // Sunucu urun_id göndermişse urun_key'e çevir
+        if (newRecord.containsKey('urun_id') && !newRecord.containsKey('urun_key')) {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
         }
         
+        // Sunucuda _key_kalemturu alanında ürünün _key'i var, bunu urun_key'e çevir
+        if (newRecord.containsKey('_key_kalemturu') && !newRecord.containsKey('urun_key')) {
+          newRecord['urun_key'] = newRecord['_key_kalemturu'];
+        }
+        
+        // Sadece local tabloda var olan sütunları kopyala
         for (String column in localColumns) {
           if (newRecord.containsKey(column)) {
             localRecord[column] = newRecord[column];
@@ -788,6 +792,32 @@ class DatabaseHelper {
         }
         
         return localRecord;
+
+      case 'inventory_stock':
+        // Sunucu artık urun_id alanında _key değerini gönderiyor, direkt urun_key olarak kaydet
+        if (newRecord.containsKey('urun_id')) {
+          newRecord['urun_key'] = newRecord['urun_id']?.toString();
+          newRecord.remove('urun_id');
+        }
+        break;
+
+      case 'goods_receipt_items':
+        // Sunucu artık urun_id alanında _key değerini gönderiyor, direkt urun_key olarak kaydet
+        if (newRecord.containsKey('urun_id')) {
+          newRecord['urun_key'] = newRecord['urun_id']?.toString();
+          newRecord.remove('urun_id');
+        }
+        break;
+
+      case 'inventory_transfers':
+        // Sunucu artık urun_id alanında _key değerini gönderiyor, direkt urun_key olarak kaydet
+        if (newRecord.containsKey('urun_id')) {
+          newRecord['urun_key'] = newRecord['urun_id']?.toString();
+          newRecord.remove('urun_id');
+        }
+        break;
+
+      // siparis_ayrintili case already handled above with early return
     }
 
     // SQLite will automatically ignore unknown columns during INSERT
@@ -1023,23 +1053,23 @@ class DatabaseHelper {
     const sql = '''
       SELECT
         sa.id,
-        sa.urun_id,
+        sa.urun_key,
         sa.anamiktar as ordered_quantity,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         COALESCE(received.total_received, 0) as received_quantity,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM siparis_ayrintili sa
-      LEFT JOIN urunler u ON u.UrunId = sa.urun_id
+      LEFT JOIN urunler u ON u._key = sa.urun_key
       LEFT JOIN (
         SELECT
-          gri.urun_id,
+          gri.urun_key,
           SUM(gri.quantity_received) as total_received
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ?
-        GROUP BY gri.urun_id
-      ) received ON received.urun_id = sa.urun_id
+        GROUP BY gri.urun_key
+      ) received ON received.urun_key = sa.urun_key
       LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
     ''';
@@ -1064,7 +1094,7 @@ class DatabaseHelper {
     const sql = '''
       SELECT
         gri.id,
-        gri.urun_id,
+        gri.urun_key,
         gri.quantity_received as current_received,
         gri.pallet_barcode,
         u.UrunAdi as product_name,
@@ -1074,19 +1104,19 @@ class DatabaseHelper {
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
+      LEFT JOIN urunler u ON u._key = gri.urun_key
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_id = gri.urun_id
+      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
       LEFT JOIN (
         SELECT
-          gri2.urun_id,
+          gri2.urun_key,
           SUM(gri2.quantity_received) as previous_received
         FROM goods_receipt_items gri2
         JOIN goods_receipts gr2 ON gr2.goods_receipt_id = gri2.receipt_id
         WHERE gr2.siparis_id = ?
           AND gr2.goods_receipt_id < ?
-        GROUP BY gri2.urun_id
-      ) previous ON previous.urun_id = gri.urun_id
+        GROUP BY gri2.urun_key
+      ) previous ON previous.urun_key = gri.urun_key
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
@@ -1103,7 +1133,7 @@ class DatabaseHelper {
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
+      LEFT JOIN urunler u ON u._key = gri.urun_key
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
@@ -1126,7 +1156,7 @@ class DatabaseHelper {
         emp.first_name || ' ' || emp.last_name as employee_name,
         emp.username as employee_username
       FROM inventory_transfers it
-      LEFT JOIN urunler u ON u.UrunId = it.urun_id
+      LEFT JOIN urunler u ON u._key = it.urun_key
       LEFT JOIN shelfs source_loc ON source_loc.id = it.from_location_id
       LEFT JOIN shelfs target_loc ON target_loc.id = it.to_location_id
       LEFT JOIN employees emp ON emp.id = it.employee_id
@@ -1148,10 +1178,10 @@ class DatabaseHelper {
         loc.name as location_name,
         loc.code as location_code
       FROM inventory_stock ints
-      LEFT JOIN urunler u ON u.UrunId = ints.urun_id
+      LEFT JOIN urunler u ON u._key = ints.urun_key
       LEFT JOIN shelfs loc ON loc.id = ints.location_id
       WHERE ints.siparis_id = ? AND ints.stock_status = 'receiving'
-      ORDER BY ints.urun_id
+      ORDER BY ints.urun_key
     ''';
 
     return await db.rawQuery(sql, [siparisId]);
@@ -1197,9 +1227,9 @@ class DatabaseHelper {
         sa.notes as order_line_notes,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM goods_receipt_items gri
-      LEFT JOIN urunler u ON u.UrunId = gri.urun_id
+      LEFT JOIN urunler u ON u._key = gri.urun_key
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_id = gri.urun_id
+      LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
       LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
@@ -1264,7 +1294,7 @@ class DatabaseHelper {
       final enrichedItems = <Map<String, dynamic>>[];
       for (final item in items) {
         final enrichedItem = Map<String, dynamic>.from(item);
-        final productId = item['product_id'] ?? item['urun_id'];
+        final productId = item['product_id'] ?? item['urun_key'];
         if (productId != null) {
           final product = await getProductById(productId);
           if (product != null) {
@@ -1359,13 +1389,14 @@ class DatabaseHelper {
 
       for (final item in items) {
         final mutableItem = Map<String, dynamic>.from(item);
-        final productId = item['urun_id'];
+        final productId = item['urun_key'];
 
         if (productId != null) {
           final product = await getProductById(productId);
           if (product != null) {
             mutableItem['product_name'] = product['UrunAdi'];
             mutableItem['product_code'] = product['StokKodu'];
+            mutableItem['urun_key'] = product['_key']; // Add urun_key for matching with order lines
             
             // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
             String productBarcode = '';
@@ -1493,10 +1524,10 @@ class DatabaseHelper {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
 
-          final orderLinesMap = {for (var line in orderLines) line['urun_id']: line};
+          final orderLinesMap = {for (var line in orderLines) line['urun_key']: line};
 
           for (final item in enrichedItems) {
-            final orderLine = orderLinesMap[item['urun_id']];
+            final orderLine = orderLinesMap[item['urun_key']];
             if (orderLine != null) {
               item['ordered_quantity'] = orderLine['ordered_quantity'] ?? 0.0;
               item['unit'] = orderLine['unit'] ?? item['unit'];
@@ -1524,7 +1555,7 @@ class DatabaseHelper {
     List<dynamic> params;
 
     if (beforeDate != null || excludeReceiptId != null) {
-      List<String> conditions = ['gr.siparis_id = ?', 'gri.urun_id = ?'];
+      List<String> conditions = ['gr.siparis_id = ?', 'gri.urun_key = ?'];
       params = [siparisId, productId];
 
       if (beforeDate != null) {
@@ -1558,7 +1589,7 @@ class DatabaseHelper {
         SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id, 'ALL' as note
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-        WHERE gr.siparis_id = ? AND gri.urun_id = ?
+        WHERE gr.siparis_id = ? AND gri.urun_key = ?
         ORDER BY gr.receipt_date
       ''';
       final allReceipts = await db.rawQuery(allReceiptsSql, [siparisId, productId]);
@@ -1568,7 +1599,7 @@ class DatabaseHelper {
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-        WHERE gr.siparis_id = ? AND gri.urun_id = ?
+        WHERE gr.siparis_id = ? AND gri.urun_key = ?
       ''';
       params = [siparisId, productId];
     }
@@ -1835,7 +1866,7 @@ class DatabaseHelper {
         gr.receipt_date,
         gr.employee_id,
         e.first_name || ' ' || e.last_name as employee_name,
-        COUNT(DISTINCT ist.urun_id) as item_count,
+        COUNT(DISTINCT ist.urun_key) as item_count,
         SUM(ist.quantity) as total_quantity
       FROM goods_receipts gr
       LEFT JOIN employees e ON e.id = gr.employee_id
@@ -1858,19 +1889,19 @@ class DatabaseHelper {
     const sql = '''
       SELECT
         ist.id,
-        ist.urun_id,
+        ist.urun_key,
         ist.quantity,
         ist.pallet_barcode,
         ist.expiry_date,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
       FROM inventory_stock ist
-      LEFT JOIN urunler u ON u.UrunId = ist.urun_id
+      LEFT JOIN urunler u ON u._key = ist.urun_key
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
       WHERE gr.delivery_note_number = ?
         AND ist.stock_status = 'receiving'
         AND gr.siparis_id IS NULL
-      ORDER BY ist.urun_id, ist.expiry_date
+      ORDER BY ist.urun_key, ist.expiry_date
     ''';
 
     return await db.rawQuery(sql, [deliveryNoteNumber]);

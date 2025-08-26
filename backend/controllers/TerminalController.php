@@ -8,6 +8,9 @@ use yii\web\Response;
 use yii\db\Transaction;
 use yii\db\Query;
 use app\components\DepoComponent;
+use app\components\Dia;
+use app\models\GoodsReceipts;
+use app\models\GoodsReceiptItems;
 
 class TerminalController extends Controller
 {
@@ -222,26 +225,36 @@ class TerminalController extends Controller
      * Eğer sayısal bir değer geliyorsa direkt döndürür
      */
     private function getProductIdFromKey($productIdOrKey, $db) {
-        // Eğer sayısal ise direkt UrunId olarak kullan
-        if (is_numeric($productIdOrKey)) {
-            return (int)$productIdOrKey;
-        }
-        
-        // String ise _key olarak kabul et ve UrunId'yi bul
+        // Önce _key olarak ara (sayısal görünse bile _key olabilir)
         $urunId = (new Query())
             ->select('UrunId')
             ->from('urunler')
             ->where(['_key' => $productIdOrKey])
             ->scalar($db);
             
-        if (!$urunId) {
-            // _key bulunamazsa, belki StokKodu'dur, onu da kontrol et
-            $urunId = (new Query())
+        if ($urunId) {
+            return (int)$urunId;
+        }
+        
+        // _key bulunamazsa ve sayısalsa, direkt UrunId olabilir
+        if (is_numeric($productIdOrKey)) {
+            // UrunId'nin gerçekten var olduğunu kontrol et
+            $exists = (new Query())
                 ->select('UrunId')
                 ->from('urunler')
-                ->where(['StokKodu' => $productIdOrKey])
+                ->where(['UrunId' => (int)$productIdOrKey])
                 ->scalar($db);
+            if ($exists) {
+                return (int)$productIdOrKey;
+            }
         }
+        
+        // Son olarak StokKodu olarak kontrol et
+        $urunId = (new Query())
+            ->select('UrunId')
+            ->from('urunler')
+            ->where(['StokKodu' => $productIdOrKey])
+            ->scalar($db);
         
         return $urunId ? (int)$urunId : null;
     }
@@ -285,14 +298,21 @@ class TerminalController extends Controller
         $receiptId = $db->getLastInsertID();
 
         foreach ($items as $item) {
-            // Mobile'dan product_id (_key veya UrunId) geliyor, UrunId'ye dönüştürülüyor
-            $urunId = $this->getProductIdFromKey($item['product_id'], $db);
-            if (!$urunId) {
-                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $item['product_id']];
+            // Mobile'dan urun_id (_key değeri) geliyor, direkt yazılıyor
+            $urunKey = $item['urun_id']; // _key değeri
+            
+            // _key'in gerçekten var olduğunu kontrol et
+            $exists = (new Query())
+                ->from('urunler')
+                ->where(['_key' => $urunKey])
+                ->exists($db);
+            
+            if (!$exists) {
+                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
             
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId, 'urun_id' => $urunId,
+                'receipt_id' => $receiptId, 'urun_id' => $urunKey, // _key değeri direkt yazılıyor
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
             ])->execute();
@@ -300,9 +320,24 @@ class TerminalController extends Controller
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
             // sanal bir alana eklenir.
             $stockStatus = 'receiving'; // Tüm mal kabulleri için, stok başlangıçta 'mal kabul' durumunda olmalıdır.
-            // _key veya UrunId'den dönüştürülmüş UrunId kullanılıyor
-            $this->upsertStock($db, $urunId, null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
+            // _key değeri direkt kullanılıyor
+            $this->upsertStock($db, $urunKey, null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
         }
+
+        // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
+        /* try {
+            $goodsReceipt = GoodsReceipts::findOne($receiptId);
+            $goodsReceiptItems = GoodsReceiptItems::find()->where(['receipt_id' => $receiptId])->all();
+            
+            if ($goodsReceipt && !empty($goodsReceiptItems)) {
+                $result = Dia::goodReceiptIrsaliyeEkle($goodsReceipt, $goodsReceiptItems);
+                // DIA işlem sonucunu log'a kaydet
+                Yii::info("DIA goodReceiptIrsaliyeEkle result for receipt $receiptId: " . json_encode($result), __METHOD__);
+            }
+        } catch (\Exception $e) {
+            // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder
+            Yii::error("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), __METHOD__);
+        } */
 
         if ($siparisId) {
             $this->checkAndFinalizeReceiptStatus($db, $siparisId);
@@ -330,10 +365,17 @@ class TerminalController extends Controller
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
 
         foreach ($items as $item) {
-            // Mobile'dan _key değeri geliyor, UrunId'ye dönüştürülüp urun_id sütununa yazılıyor
-            $urunId = $this->getProductIdFromKey($item['product_id'], $db);
-            if (!$urunId) {
-                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $item['product_id']];
+            // Mobile'dan _key değeri geliyor, direkt kullanılıyor
+            $urunKey = $item['urun_id']; // _key değeri
+            
+            // _key'in gerçekten var olduğunu kontrol et
+            $exists = (new Query())
+                ->from('urunler')
+                ->where(['_key' => $urunKey])
+                ->exists($db);
+            
+            if (!$exists) {
+                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
             
             $totalQuantityToTransfer = (float)$item['quantity'];
@@ -343,7 +385,7 @@ class TerminalController extends Controller
             // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
-                ->where(['urun_id' => $urunId, 'stock_status' => $sourceStatus]);
+                ->where(['urun_id' => $urunKey, 'stock_status' => $sourceStatus]);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
@@ -374,7 +416,7 @@ class TerminalController extends Controller
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
             if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
                 $errorContext = $isPutawayOperation ? "Putaway for Receipt #$goodsReceiptId / Order #$siparisId" : "Shelf Transfer";
-                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$urunId}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
+                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$urunKey}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
             }
 
             // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
@@ -416,7 +458,7 @@ class TerminalController extends Controller
             foreach($portionsToTransfer as $portion) {
                 $this->upsertStock(
                     $db,
-                    $urunId, // UrunId kullanılıyor
+                    $urunKey, // _key kullanılıyor
                     $targetLocationId,
                     $portion['qty'],
                     $targetPallet,
@@ -430,7 +472,7 @@ class TerminalController extends Controller
                 // 5. Her kısım için ayrı transfer kaydı oluştur
                 // _key artık urun_id olarak kullanılıyor
                 $transferData = [
-                    'urun_id'             => $urunId, // UrunId yazılıyor
+                    'urun_id'             => $urunKey, // _key yazılıyor
                     'from_location_id'    => $sourceLocationId,
                     'to_location_id'      => $targetLocationId,
                     'quantity'            => $portion['qty'],
@@ -451,8 +493,8 @@ class TerminalController extends Controller
 
             // 6. Sipariş bazlı işlemler için rafa yerleştirme durumunu güncelle
             if ($isPutawayOperation && $siparisId) {
-                 // kart kodu ile ürün bulup sipariş satırını bul
-                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['UrunId' => $urunId])->scalar($db);
+                 // _key ile ürün bulup sipariş satırını bul
+                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['_key' => $urunKey])->scalar($db);
                  if ($productCode) {
                      $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
                      if ($orderLine) {
@@ -471,7 +513,7 @@ class TerminalController extends Controller
         return ['status' => 'success'];
     }
 
-    private function upsertStock($db, $urunId, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
+    private function upsertStock($db, $urunKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -481,7 +523,7 @@ class TerminalController extends Controller
             $toDecrement = abs((float)$qtyChange);
 
             $availabilityQuery = new Query();
-            $availabilityQuery->from('inventory_stock')->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+            $availabilityQuery->from('inventory_stock')->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
@@ -494,7 +536,7 @@ class TerminalController extends Controller
 
             while ($toDecrement > 0.001) {
                 $query = new Query();
-                $query->from('inventory_stock')->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+                $query->from('inventory_stock')->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
@@ -523,7 +565,7 @@ class TerminalController extends Controller
             // --- Stok Ekleme Mantığı ---
             $query = new Query();
             $query->from('inventory_stock')
-                  ->where(['urun_id' => $urunId, 'stock_status' => $stockStatus]);
+                  ->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
 
             $this->addNullSafeWhere($query, 'location_id', $locationId);
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
@@ -543,7 +585,7 @@ class TerminalController extends Controller
             } elseif ($qtyChange > 0) {
                 // _key artık urun_id olarak kullanılıyor
                 $db->createCommand()->insert('inventory_stock', [
-                    'urun_id' => $urunId, 'location_id' => $locationId, 'siparis_id' => $siparisId,
+                    'urun_id' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
                     'goods_receipt_id' => $goodsReceiptId,
@@ -567,11 +609,11 @@ class TerminalController extends Controller
             SELECT
                 s.id,
                 s.anamiktar,
-                u.UrunId,
+                u._key,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
                  JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                 WHERE gr.siparis_id = :siparis_id AND gri.urun_id = u.UrunId
+                 WHERE gr.siparis_id = :siparis_id AND gri.urun_id = u._key
                 ) as received_quantity
             FROM siparis_ayrintili s
             JOIN urunler u ON u.StokKodu = s.kartkodu

@@ -5,7 +5,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 class PurchaseOrderItem {
   final int id;
   final int orderId;
-  final int productId;
+  final String productId;
   final double expectedQuantity;
   final double receivedQuantity;
   final double transferredQuantity;
@@ -37,7 +37,7 @@ class PurchaseOrderItem {
   /// nesne yaratarak bu alanı doldurur.
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
     debugPrint("Creating PurchaseOrderItem from map. anamiktar value: ${map['anamiktar']}, type: ${map['anamiktar'].runtimeType}");
-    debugPrint("DEBUG: PurchaseOrderItem.fromDb map urun_id: ${map['urun_id']}, UrunId: ${map['UrunId']}");
+    debugPrint("DEBUG: PurchaseOrderItem.fromDb map urun_key: ${map['urun_key']}, _key: ${map['_key']}");
     
     // anamiktar değerini güvenli şekilde parse et
     double expectedQty = 0.0;
@@ -52,7 +52,7 @@ class PurchaseOrderItem {
     
     debugPrint("Parsed expectedQuantity: $expectedQty");
     
-    final productId = map['urun_id'] as int;
+    final productId = map['urun_key'] as String;
     debugPrint("DEBUG: Final productId being used: $productId");
     
     return PurchaseOrderItem(

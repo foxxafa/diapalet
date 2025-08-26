@@ -1,6 +1,6 @@
 
 class ProductLocation {
-  final int productId;
+  final String productId;
   final String productName;
   final String productCode;
   final double quantity;
@@ -24,7 +24,7 @@ class ProductLocation {
 
   factory ProductLocation.fromMap(Map<String, dynamic> map) {
     return ProductLocation(
-      productId: map['urun_id'],
+      productId: map['urun_key'],
       productName: map['UrunAdi'],
       productCode: map['StokKodu'],
       quantity: (map['quantity'] as num).toDouble(),

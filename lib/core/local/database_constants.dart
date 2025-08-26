@@ -39,7 +39,7 @@ class DbColumns {
   
   // Order lines (siparis_ayrintili) table
   static const String orderLinesOrderId = 'siparisler_id';
-  static const String orderLinesProductId = 'urun_id';
+  static const String orderLinesProductId = 'urun_key';
   static const String orderLinesQuantity = 'anamiktar';
   static const String orderLinesType = 'turu';
   static const String orderLinesTypeValue = '1';
@@ -76,7 +76,7 @@ class DbColumns {
   static const String suppliersName = 'tedarikci_adi';
   
   // Inventory stock table
-  static const String stockProductId = 'urun_id';
+  static const String stockProductId = 'urun_key';
   static const String stockLocationId = 'location_id';
   static const String stockOrderId = 'siparis_id';
   static const String stockGoodsReceiptId = 'goods_receipt_id';
@@ -184,7 +184,7 @@ class DbQueries {
                    WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = s.${DbColumns.orderLinesProductId}), 0) as receivedQuantity,
         COALESCE(wps.putaway_quantity, 0) as transferredQuantity
       FROM ${DbTables.orderLines} s
-      JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.orderLinesProductId}
+      JOIN ${DbTables.products} u ON u._key = s.${DbColumns.orderLinesProductId}
       LEFT JOIN ${DbTables.putawayStatus} wps ON wps.purchase_order_line_id = s.${DbColumns.id}
       WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
     ''';

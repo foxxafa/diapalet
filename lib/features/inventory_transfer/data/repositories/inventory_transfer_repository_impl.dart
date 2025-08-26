@@ -162,16 +162,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final query = '''
       SELECT
         s.id as stock_id,
-        u.UrunId as product_id,
+        u._key as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.UrunId
+      JOIN urunler u ON s.urun_key = u._key
       $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu
+      GROUP BY u._key, u.UrunAdi, u.StokKodu
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
@@ -217,14 +217,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final query = '''
       SELECT
-        u.UrunId as productId,
+        u._key as productId,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.UrunId
+      JOIN urunler u ON s.urun_key = u._key
       WHERE ${whereParts.join(' AND ')}
       ORDER BY u.UrunAdi
     ''';
@@ -255,7 +255,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
           final sourceStockQuery = await txn.query(
             'inventory_stock',
-            where: 'urun_id = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?',
+            where: 'urun_key = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?',
             whereArgs: [
               item.productId,
               sourceLocationId,
@@ -304,7 +304,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           );
 
           await txn.insert(DbTables.inventoryTransfers, {
-            'urun_id': item.productId,
+            'urun_key': item.productId,
             'from_location_id': sourceLocationId, // Artık null ise null kalıyor
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
@@ -318,7 +318,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             final orderLine = await txn.query(
               DbTables.orderLines,
               columns: ['id'],
-              where: 'siparisler_id = ? AND urun_id = ? AND turu = ?',
+              where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',
               whereArgs: [header.siparisId, item.productId, '1'],
               limit: 1,
             );
@@ -446,7 +446,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       return [];
     }
 
-    final productIds = stockMaps.map((e) => e['urun_id'] as int).toSet();
+    final productIds = stockMaps.map((e) => e['urun_key'] as String).toSet();
     final productsQuery = await db.rawQuery('''
       SELECT 
         u.*,
@@ -454,22 +454,22 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       FROM urunler u
       LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-      WHERE u.UrunId IN (${productIds.map((_) => '?').join(',')})
-      GROUP BY u.UrunId
+      WHERE u._key IN (${productIds.map((_) => '?').join(',')})
+      GROUP BY u._key
     ''', productIds.toList());
-    final productDetails = <int, ProductInfo>{};
+    final productDetails = <String, ProductInfo>{};
     for (var p in productsQuery) {
       final productMap = Map<String, dynamic>.from(p);
       if (productMap['barkod'] != null) {
         productMap['barkod_info'] = {'barkod': productMap['barkod']};
       }
-      productDetails[p['UrunId'] as int] = ProductInfo.fromDbMap(productMap);
+      productDetails[p['_key'] as String] = ProductInfo.fromDbMap(productMap);
     }
 
-    final Map<String, Map<int, TransferableItem>> aggregatedItems = {};
+    final Map<String, Map<String, TransferableItem>> aggregatedItems = {};
 
     for (final stock in stockMaps) {
-      final productId = stock['urun_id'] as int;
+      final productId = stock['urun_key'] as String;
       final productInfo = productDetails[productId];
       if (productInfo == null) continue;
 
@@ -604,24 +604,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       return null;
     }
     
-    // Barkod ile bulunan ürünün ID'sini kullan
-    whereParts.add('u.UrunId = ?');
-    whereArgs.add(productResult['UrunId']);
+    // Barkod ile bulunan ürünün _key'ini kullan
+    whereParts.add('u._key = ?');
+    whereArgs.add(productResult['_key']);
 
     whereParts.add('s.pallet_barcode IS NULL');
 
     final query = '''
       SELECT
         s.id as stock_id,
-        u.UrunId as product_id,
+        u._key as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
-      JOIN urunler u ON s.urun_id = u.UrunId
+      JOIN urunler u ON s.urun_key = u._key
       WHERE ${whereParts.join(' AND ')}
-      GROUP BY u.UrunId, u.UrunAdi, u.StokKodu
+      GROUP BY u._key, u.UrunAdi, u.StokKodu
       LIMIT 1
     ''';
 
@@ -634,7 +634,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   Future<void> _updateStockSmart(
     DatabaseExecutor txn, {
-    required String productId, // _key değeri String olarak
+    required String productId, // urun_key değeri String olarak
     required int? locationId,
     required double quantityChange,
     required String? palletId,
@@ -650,7 +650,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (isDecrement) {
       double remainingToDecrement = quantityChange.abs();
 
-      final whereClause = 'urun_id = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?';
+      final whereClause = 'urun_key = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?';
       final whereArgs = locationId == null
         ? [productId, palletId, palletId, status]
         : [productId, locationId, palletId, palletId, status];
@@ -672,7 +672,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         // Hangi lokasyonlarda bu ürün var, kontrol edelim
         final availableStocks = await txn.query(
           'inventory_stock',
-          where: 'urun_id = ? AND stock_status = ? AND quantity > 0',
+          where: 'urun_key = ? AND stock_status = ? AND quantity > 0',
           whereArgs: [productId, status],
         );
         debugPrint("Bu ürün için mevcut stoklar: ${availableStocks.length} kayıt");
@@ -711,7 +711,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       final existing = await txn.query(
         'inventory_stock',
-        where: 'urun_id = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
+        where: 'urun_key = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
         whereArgs: locationId == null
           ? [productId, palletId, palletId, status, siparisIdForAddition, siparisIdForAddition, expiryDateStr, expiryDateStr]
           : [productId, locationId, palletId, palletId, status, siparisIdForAddition, siparisIdForAddition, expiryDateStr, expiryDateStr],
@@ -729,7 +729,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         );
       } else {
         await txn.insert(DbTables.inventoryStock, {
-          'urun_id': productId,
+          'urun_key': productId,
           'location_id': locationId, // Artık null ise null kalıyor
           'quantity': quantityChange,
           'pallet_barcode': palletId,
@@ -856,13 +856,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     
     final sql = '''
       SELECT DISTINCT
-        u.UrunId,
+        u._key,
         u.UrunAdi,
         u.StokKodu,
         u.aktif,
         bark.barkod
       FROM urunler u
-      INNER JOIN inventory_stock s ON s.urun_id = u.UrunId
+      INNER JOIN inventory_stock s ON s.urun_key = u._key
       INNER JOIN birimler b ON b.StokKodu = u.StokKodu
       INNER JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}

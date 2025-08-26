@@ -200,6 +200,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
 
+    // Debug kaldırıldı - sistem çalışıyor
+
     // Önce temel sipariş satırlarını alalım
     final orderLines = await db.query(
       'siparis_ayrintili',
@@ -211,36 +213,39 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     // Her bir satır için ürün ve barkod bilgilerini ayrı ayrı alalım
     for (final line in orderLines) {
-      // HATA DÜZELTMESİ: urun_id null ise kartkodu ile ürün ID'sini bul
-      int? urunId = line['urun_id'] as int?;
+      // HATA DÜZELTMESİ: urun_key null ise veya numeric ID ise kartkodu ile ürün key'ini bul
+      String? urunKey = line['urun_key'] as String?;
       final productCode = line['kartkodu'] as String?;
       
-      if (urunId == null && productCode != null) {
-        debugPrint("DEBUG: urun_id is null, trying to find via productCode: $productCode. Line ID: ${line['id']}");
+      // urun_key null ise veya numeric bir değer ise (eski UrunId formatı) kartkodu ile ara
+      bool needsCodeLookup = urunKey == null || (urunKey.isNotEmpty && int.tryParse(urunKey) != null);
+      
+      if (needsCodeLookup && productCode != null) {
+        debugPrint("DEBUG: urun_key is '$urunKey' (null/numeric), trying to find via productCode: $productCode. Line ID: ${line['id']}");
         final productResult = await db.query(
           'urunler',
-          columns: ['UrunId'],
+          columns: ['_key'],
           where: 'StokKodu = ?',
           whereArgs: [productCode],
           limit: 1,
         );
         if (productResult.isNotEmpty) {
-          urunId = productResult.first['UrunId'] as int?;
-          debugPrint("DEBUG: Found urun_id $urunId for productCode $productCode");
+          urunKey = productResult.first['_key'] as String?;
+          debugPrint("DEBUG: Found urun_key $urunKey for productCode $productCode");
         }
       }
       
-      if (urunId == null) {
-        debugPrint("DEBUG: Skipping order line because urun_id could not be resolved. Line ID: ${line['id']}");
+      if (urunKey == null) {
+        debugPrint("DEBUG: Skipping order line because urun_key could not be resolved. Line ID: ${line['id']}");
         continue;
       }
       if (productCode == null) continue;
 
-      // Ürün bilgisini al - UrunId kullanarak sorgula (daha güvenilir)
+      // Ürün bilgisini al - _key kullanarak sorgula (daha güvenilir)
       final productResult = await db.query(
         'urunler',
-        where: 'UrunId = ?',
-        whereArgs: [urunId],
+        where: '_key = ?',
+        whereArgs: [urunKey],
         limit: 1,
       );
 
@@ -267,13 +272,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         }
       }
 
-      // Alınan miktarı hesapla - bulunan urunId'yi kullan
+      // Alınan miktarı hesapla - bulunan urunKey'i kullan
       final receivedQuantityResult = await db.rawQuery('''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-        WHERE gr.siparis_id = ? AND gri.urun_id = ?
-      ''', [orderId, urunId]);
+        WHERE gr.siparis_id = ? AND gri.urun_key = ?
+      ''', [orderId, urunKey]);
 
       final receivedQuantity = receivedQuantityResult.isNotEmpty 
           ? (receivedQuantityResult.first['total_received'] as num).toDouble() 
@@ -298,9 +303,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
       
-      // HATA DÜZELTMESİ: Bulunan urun_id'yi kullan
-      debugPrint("DEBUG: Using resolved urun_id: $urunId, Product UrunId: ${productMap['UrunId']}");
-      enrichedMap['urun_id'] = urunId;
+      // HATA DÜZELTMESİ: Bulunan urun_key'i kullan
+      debugPrint("DEBUG: Using resolved urun_key: $urunKey, Product _key: ${productMap['_key']}");
+      enrichedMap['urun_key'] = urunKey;
       
       // Barkod bilgisini ekleyelim
       if (barcode != null) {
@@ -490,4 +495,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       whereArgs: [siparisId],
     );
   }
+
+  // Duplicate functions removed - they already exist in the file
 }

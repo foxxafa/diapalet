@@ -749,7 +749,7 @@ class PdfService {
     // Yinelenen ürün girişlerinden kaynaklanan mükerrer toplamayı önlemek için ürünleri ID'lerine göre grupluyoruz.
     final Map<dynamic, double> uniqueOrderedQuantities = {};
     for (final item in items) {
-      final productId = item['urun_id']; // Benzersiz ürün kimliğini kullanıyoruz
+      final productId = item['urun_key']; // Benzersiz ürün kimliğini kullanıyoruz
       if (productId != null) {
         uniqueOrderedQuantities[productId] = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
       }

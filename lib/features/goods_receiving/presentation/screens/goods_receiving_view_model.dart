@@ -532,8 +532,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      final orderItem = _orderItems.firstWhere((item) => item.productId == _selectedProduct!.id);
-      final alreadyAddedInUI = _addedItems.where((item) => item.product.id == _selectedProduct!.id).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
+      final orderItem = _orderItems.firstWhere((item) => item.productId == _selectedProduct!.apiProductId);
+      final alreadyAddedInUI = _addedItems.where((item) => item.product.apiProductId == _selectedProduct!.apiProductId).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 

@@ -424,20 +424,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         
         if (widget.selectedOrder != null) {
           // Order-based putaway
-          whereClause = 'urun_id = ? AND siparis_id = ? AND stock_status = ?';
+          whereClause = 'urun_key = ? AND siparis_id = ? AND stock_status = ?';
           whereArgs = [product.id, widget.selectedOrder!.id, 'receiving'];
         } else if (widget.isFreePutAway) {
           // Free putaway - get all receiving items for this product
-          whereClause = 'urun_id = ? AND stock_status = ?';
+          whereClause = 'urun_key = ? AND stock_status = ?';
           whereArgs = [product.id, 'receiving'];
         } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
           // Shelf-to-shelf transfer
           final locationId = _availableSourceLocations[_selectedSourceLocationName];
-          whereClause = 'urun_id = ? AND location_id = ? AND stock_status = ?';
+          whereClause = 'urun_key = ? AND location_id = ? AND stock_status = ?';
           whereArgs = [product.id, locationId, 'available'];
         } else {
           // Receiving area transfer
-          whereClause = 'urun_id = ? AND location_id IS NULL AND stock_status = ?';
+          whereClause = 'urun_key = ? AND location_id IS NULL AND stock_status = ?';
           whereArgs = [product.id, 'available'];
         }
         

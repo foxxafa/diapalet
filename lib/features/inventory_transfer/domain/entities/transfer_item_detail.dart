@@ -30,10 +30,10 @@ class TransferItemDetail {
   });
 
   /// Sunucuya gönderilecek olan, sadeleştirilmiş JSON formatını oluşturur.
-  /// _key değeri product_id olarak gönderilir
+  /// _key değeri urun_id alanına gönderilir
   Map<String, dynamic> toApiJson() {
     return {
-      'product_id': productId, // _key değeri product_id olarak gönderiliyor
+      'urun_id': productId, // _key değeri urun_id alanına gönderiliyor (sunucu bu alanda bekliyor)
       'quantity': quantity,
       'pallet_id': palletId,
       'expiry_date': expiryDate?.toIso8601String(),

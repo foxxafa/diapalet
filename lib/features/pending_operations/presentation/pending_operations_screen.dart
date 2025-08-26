@@ -864,7 +864,7 @@ class _OperationDetailsView extends StatelessWidget {
       items: items,
       itemBuilder: (item) {
         final productName = item['product_name'] ?? 'dialog_labels.unknown_product'.tr();
-        final productIdInfo = ' (ID: ${item['urun_id']})';
+        final productIdInfo = ' (Key: ${item['urun_key']})';
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,

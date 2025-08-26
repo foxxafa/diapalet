@@ -37,12 +37,12 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     for (final searchTerm in searchTerms) {
       final productByBarcode = await dbHelper.getProductByBarcode(searchTerm);
       if (productByBarcode != null) {
-        final productId = productByBarcode['UrunId'] as int;
+        final productKey = productByBarcode['_key'] as String;
         
         // 2. Bu ürünün stok durumunu detaylı bilgilerle getir
         final sql = '''
           SELECT
-            s.${DbColumns.stockProductId} as urun_id,
+            s.urun_key,
             u.${DbColumns.productsName} as UrunAdi,
             u.${DbColumns.productsCode} as StokKodu,
             s.${DbColumns.stockQuantity} as quantity,
@@ -52,13 +52,13 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
             sh.${DbColumns.locationsName} as location_name,
             sh.${DbColumns.locationsCode} as location_code
           FROM ${DbTables.inventoryStock} s
-          JOIN ${DbTables.products} u ON u.${DbColumns.productsId} = s.${DbColumns.stockProductId}
+          JOIN ${DbTables.products} u ON u._key = s.urun_key
           LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
-          WHERE s.${DbColumns.stockProductId} = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+          WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
           ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
         ''';
         
-        final stockResults = await db.rawQuery(sql, [productId]);
+        final stockResults = await db.rawQuery(sql, [productKey]);
         return stockResults.map((map) => ProductLocation.fromMap(map)).toList();
       }
     }

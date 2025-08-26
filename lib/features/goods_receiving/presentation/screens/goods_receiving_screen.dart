@@ -430,7 +430,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (viewModel.selectedProduct != null && viewModel.isOrderBased) {
       try {
         // HATA DÜZELTMESİ: item.product?.id yerine item.productId kullan
-        orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.id);
+        orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.apiProductId);
         debugPrint("DEBUG: Found orderItem for product ${viewModel.selectedProduct!.id}: expectedQuantity=${orderItem.expectedQuantity}");
       } catch (e) {
         debugPrint("DEBUG: OrderItem not found for product ${viewModel.selectedProduct!.id}. Available orderItems: ${viewModel.orderItems.map((item) => 'productId=${item.productId}, expectedQuantity=${item.expectedQuantity}')}");
@@ -442,7 +442,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (orderItem != null) {
       for (final item in viewModel.addedItems) {
         // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır
-        if (item.product.id == orderItem.productId) {
+        if (item.product.apiProductId == orderItem.productId) {
           alreadyAddedInUI += item.quantity;
         }
       }
@@ -1293,7 +1293,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
         if (product == null) return const SizedBox.shrink();
 
         // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
-        final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.id == orderItem.productId).toList();
+        final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.apiProductId == orderItem.productId).toList();
         final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
 
         if (itemsBeingAdded.isEmpty && orderItem.expectedQuantity - orderItem.receivedQuantity <= 0) {
