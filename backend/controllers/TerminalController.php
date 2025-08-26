@@ -311,10 +311,32 @@ class TerminalController extends Controller
                 return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
             
+            // Sipariş bazlı mal kabulde siparis_key'i bul
+            $siparisKey = null;
+            if ($siparisId) {
+                // Ürünün StokKodu'nu al
+                $stokKodu = (new Query())
+                    ->select('StokKodu')
+                    ->from('urunler')
+                    ->where(['_key' => $urunKey])
+                    ->scalar($db);
+                
+                if ($stokKodu) {
+                    // siparis_ayrintili tablosundan _key değerini bul
+                    // siparis_ayrintili'de stok_kodu değil kartkodu var
+                    $siparisKey = (new Query())
+                        ->select('_key')
+                        ->from('siparis_ayrintili')
+                        ->where(['siparisler_id' => $siparisId, 'kartkodu' => $stokKodu])
+                        ->scalar($db);
+                }
+            }
+            
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId, 'urun_id' => $urunKey, // _key değeri direkt yazılıyor
+                'receipt_id' => $receiptId, 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
                 'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
+                'siparis_key' => $siparisKey,
             ])->execute();
 
             // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
@@ -385,7 +407,7 @@ class TerminalController extends Controller
             // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
-                ->where(['urun_id' => $urunKey, 'stock_status' => $sourceStatus]);
+                ->where(['urun_key' => $urunKey, 'stock_status' => $sourceStatus]);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
@@ -472,7 +494,7 @@ class TerminalController extends Controller
                 // 5. Her kısım için ayrı transfer kaydı oluştur
                 // _key artık urun_id olarak kullanılıyor
                 $transferData = [
-                    'urun_id'             => $urunKey, // _key yazılıyor
+                    'urun_key'            => $urunKey, // _key yazılıyor
                     'from_location_id'    => $sourceLocationId,
                     'to_location_id'      => $targetLocationId,
                     'quantity'            => $portion['qty'],
@@ -523,7 +545,7 @@ class TerminalController extends Controller
             $toDecrement = abs((float)$qtyChange);
 
             $availabilityQuery = new Query();
-            $availabilityQuery->from('inventory_stock')->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
+            $availabilityQuery->from('inventory_stock')->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
@@ -536,7 +558,7 @@ class TerminalController extends Controller
 
             while ($toDecrement > 0.001) {
                 $query = new Query();
-                $query->from('inventory_stock')->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
+                $query->from('inventory_stock')->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
@@ -565,7 +587,7 @@ class TerminalController extends Controller
             // --- Stok Ekleme Mantığı ---
             $query = new Query();
             $query->from('inventory_stock')
-                  ->where(['urun_id' => $urunKey, 'stock_status' => $stockStatus]);
+                  ->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
 
             $this->addNullSafeWhere($query, 'location_id', $locationId);
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
@@ -585,7 +607,7 @@ class TerminalController extends Controller
             } elseif ($qtyChange > 0) {
                 // _key artık urun_id olarak kullanılıyor
                 $db->createCommand()->insert('inventory_stock', [
-                    'urun_id' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
+                    'urun_key' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
                     'goods_receipt_id' => $goodsReceiptId,
@@ -613,7 +635,7 @@ class TerminalController extends Controller
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
                  JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                 WHERE gr.siparis_id = :siparis_id AND gri.urun_id = u._key
+                 WHERE gr.siparis_id = :siparis_id AND gri.urun_key = u._key
                 ) as received_quantity
             FROM siparis_ayrintili s
             JOIN urunler u ON u.StokKodu = s.kartkodu
@@ -1157,10 +1179,9 @@ class TerminalController extends Controller
                 ->select([
                     'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
                     'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
-                    'u.UrunId as urun_id'
+                    'sa._key_kalemturu'
                 ])
                 ->from(['sa' => 'siparis_ayrintili'])
-                ->leftJoin(['u' => 'urunler'], 'u.StokKodu = sa.kartkodu')
                 ->where(['in', 'sa.siparisler_id', $poIds])
                 ->andWhere(['sa.turu' => '1']); // DÜZELTME: Tablo öneki eklendi
             if ($serverSyncTimestamp) {
@@ -1168,7 +1189,7 @@ class TerminalController extends Controller
             } else {
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
-            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status', 'urun_id'], ['anamiktar']);
+            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['anamiktar']);
 
             $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {
@@ -1208,7 +1229,7 @@ class TerminalController extends Controller
                 $receiptItemsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
             }
             $data['goods_receipt_items'] = $receiptItemsQuery->all();
-            $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+            $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id'], ['quantity_received']);
         }
 
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
@@ -1245,7 +1266,7 @@ class TerminalController extends Controller
         }
 
         $data['inventory_stock'] = $stockQuery->all();
-         $this->castNumericValues($data['inventory_stock'], ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+         $this->castNumericValues($data['inventory_stock'], ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())->from('inventory_transfers');
@@ -1273,7 +1294,7 @@ class TerminalController extends Controller
         }
 
         $data['inventory_transfers'] = $transferQuery->all();
-        $this->castNumericValues($data['inventory_transfers'], ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data['inventory_transfers'], ['id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
         return [
             'success' => true,
@@ -1569,9 +1590,8 @@ class TerminalController extends Controller
         $query = (new Query())
             ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
                      'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
-                     'u.UrunId as urun_id'])
+                     'sa._key_kalemturu'])
             ->from(['sa' => 'siparis_ayrintili'])
-            ->leftJoin(['u' => 'urunler'], 'u.StokKodu = sa.kartkodu')
             ->where(['in', 'sa.siparisler_id', $poIds])
             ->andWhere(['sa.turu' => '1']); // FIX: Table prefix added
 
@@ -1582,7 +1602,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'siparisler_id', 'status', 'urun_id'], ['anamiktar']);
+        $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['anamiktar']);
         return $data;
     }
 
@@ -1655,7 +1675,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'receipt_id', 'urun_id'], ['quantity_received']);
+        $this->castNumericValues($data, ['id', 'receipt_id'], ['quantity_received']);
         return $data;
     }
 
@@ -1698,7 +1718,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'urun_id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data, ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
         return $data;
     }
 
@@ -1738,7 +1758,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'urun_id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data, ['id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
         return $data;
     }
 
@@ -1824,7 +1844,7 @@ class TerminalController extends Controller
                 'gr.receipt_date',
                 'e.first_name',
                 'e.last_name',
-                'COUNT(DISTINCT ist.urun_id) as item_count'
+                'COUNT(DISTINCT ist.urun_key) as item_count'
             ])
             ->from('goods_receipts gr')
             ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.goods_receipt_id')

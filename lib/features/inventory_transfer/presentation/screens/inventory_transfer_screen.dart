@@ -76,8 +76,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _containerFocusNode = FocusNode();
 
   List<ProductItem> _productsInContainer = [];
-  final Map<int, TextEditingController> _productQuantityControllers = {};
-  final Map<int, FocusNode> _productQuantityFocusNodes = {};
+  final Map<String, TextEditingController> _productQuantityControllers = {};
+  final Map<String, FocusNode> _productQuantityFocusNodes = {};
 
   // Product search state
   List<ProductInfo> _productSearchResults = [];
@@ -402,7 +402,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     // Find the matching container in available containers
     final foundContainer = _availableContainers.where((container) {
       if (container is TransferableContainer) {
-        return container.items.any((item) => item.product.id == product.id);
+        return container.items.any((item) => item.product.key == product.key);
       }
       return false;
     }).cast<TransferableContainer?>().firstWhere((element) => element != null, orElse: () => null);
@@ -425,20 +425,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (widget.selectedOrder != null) {
           // Order-based putaway
           whereClause = 'urun_key = ? AND siparis_id = ? AND stock_status = ?';
-          whereArgs = [product.id, widget.selectedOrder!.id, 'receiving'];
+          whereArgs = [product.key, widget.selectedOrder!.id, 'receiving'];
         } else if (widget.isFreePutAway) {
           // Free putaway - get all receiving items for this product
           whereClause = 'urun_key = ? AND stock_status = ?';
-          whereArgs = [product.id, 'receiving'];
+          whereArgs = [product.key, 'receiving'];
         } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
           // Shelf-to-shelf transfer
           final locationId = _availableSourceLocations[_selectedSourceLocationName];
           whereClause = 'urun_key = ? AND location_id = ? AND stock_status = ?';
-          whereArgs = [product.id, locationId, 'available'];
+          whereArgs = [product.key, locationId, 'available'];
         } else {
           // Receiving area transfer
           whereClause = 'urun_key = ? AND location_id IS NULL AND stock_status = ?';
-          whereArgs = [product.id, 'available'];
+          whereArgs = [product.key, 'available'];
         }
         
         final stockMaps = await db.query('inventory_stock', 
@@ -629,7 +629,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         );
       } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
         contents = container.items.map((transferableItem) => ProductItem(
-          id: transferableItem.product.id,
+          productKey: transferableItem.product.key,
           name: transferableItem.product.name,
           productCode: transferableItem.product.stockCode,
           currentQuantity: transferableItem.quantity,
@@ -645,8 +645,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           final initialQtyText = initialQty == initialQty.truncate()
               ? initialQty.toInt().toString()
               : initialQty.toString();
-          _productQuantityControllers[product.id] = TextEditingController(text: initialQtyText);
-          _productQuantityFocusNodes[product.id] = FocusNode();
+          _productQuantityControllers[product.key] = TextEditingController(text: initialQtyText);
+          _productQuantityFocusNodes[product.key] = FocusNode();
         }
       });
     } catch (e, s) {
@@ -667,11 +667,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     final List<TransferItemDetail> itemsToTransfer = [];
 
     for (var product in _productsInContainer) {
-      final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
+      final qtyText = _productQuantityControllers[product.key]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
-          productId: product.apiProductId, // _key değeri kullanılıyor
+          productKey: product.key, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
@@ -1071,7 +1071,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 final initialQtyText = initialQty == initialQty.truncate()
                     ? initialQty.toInt().toString()
                     : initialQty.toString();
-                _productQuantityControllers[product.id]?.text = initialQtyText;
+                _productQuantityControllers[product.key]?.text = initialQtyText;
               }
             }
           });
@@ -1112,8 +1112,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16, thickness: 0.2),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
-              final controller = _productQuantityControllers[product.id]!;
-              final focusNode = _productQuantityFocusNodes[product.id]!;
+              final controller = _productQuantityControllers[product.key]!;
+              final focusNode = _productQuantityFocusNodes[product.key]!;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
@@ -1154,7 +1154,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         },
                         onFieldSubmitted: (value) {
                           final productIds = _productQuantityFocusNodes.keys.toList();
-                          final currentIndex = productIds.indexOf(product.id);
+                          final currentIndex = productIds.indexOf(product.key);
                           if (currentIndex < productIds.length - 1) {
                             _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
                           } else {

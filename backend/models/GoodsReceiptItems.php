@@ -1,0 +1,87 @@
+<?php
+
+namespace app\models;
+
+use Yii;
+
+/**
+ * This is the model class for table "goods_receipt_items".
+ *
+ * @property int $id
+ * @property int $receipt_id
+ * @property string|null $urun_id
+ * @property float $quantity_received
+ * @property string|null $pallet_barcode
+ * @property string|null $expiry_date
+ * @property string|null $siparis_key
+ * @property string|null $created_at
+ * @property string|null $updated_at
+ *
+ * @property GoodsReceipts $receipt
+ * @property Urunler $urun
+ */
+class GoodsReceiptItems extends \yii\db\ActiveRecord
+{
+    /**
+     * {@inheritdoc}
+     */
+    public static function tableName()
+    {
+        return 'goods_receipt_items';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function rules()
+    {
+        return [
+            [['urun_id', 'pallet_barcode', 'expiry_date', 'siparis_key'], 'default', 'value' => null],
+            [['receipt_id', 'quantity_received'], 'required'],
+            [['receipt_id'], 'integer'],
+            [['quantity_received'], 'number'],
+            [['expiry_date', 'created_at', 'updated_at'], 'safe'],
+            [['pallet_barcode'], 'string', 'max' => 50],
+            [['urun_id', 'siparis_key'], 'string', 'max' => 10],
+            [['receipt_id'], 'exist', 'skipOnError' => true, 'targetClass' => GoodsReceipts::class, 'targetAttribute' => ['receipt_id' => 'goods_receipt_id']],
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function attributeLabels()
+    {
+        return [
+            'id' => 'ID',
+            'receipt_id' => 'Receipt ID',
+            'urun_id' => 'Urun ID',
+            'quantity_received' => 'Quantity Received',
+            'pallet_barcode' => 'Pallet Barcode',
+            'expiry_date' => 'Expiry Date',
+            'siparis_key' => 'Siparis Key',
+            'created_at' => 'Created At',
+            'updated_at' => 'Updated At',
+        ];
+    }
+
+    /**
+     * Gets query for [[Receipt]].
+     *
+     * @return \yii\db\ActiveQuery
+     */
+    public function getReceipt()
+    {
+        return $this->hasOne(GoodsReceipts::class, ['goods_receipt_id' => 'receipt_id']);
+    }
+
+    /**
+     * Gets query for [[Urun]].
+     *
+     * @return \yii\db\ActiveQuery
+     */
+    public function getUrun()
+    {
+        return $this->hasOne(Urunler::class, ['_key' => 'urun_id']);
+    }
+}

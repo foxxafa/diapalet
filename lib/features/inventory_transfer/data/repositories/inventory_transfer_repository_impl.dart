@@ -253,17 +253,33 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         for (final item in items) {
           // 1. Azaltma işleminden önce kaynak stok kaydını/kayıtlarını bul.
           // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
+          // NULL-safe kaynak stok sorgusu
+          String sourceWhereClause = 'urun_key = ? AND stock_status = ?';
+          List<dynamic> sourceWhereArgs = [
+            item.productKey,
+            (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available'
+          ];
+          
+          // Location_id kontrolü
+          if (sourceLocationId == null || sourceLocationId == 0) {
+            sourceWhereClause += ' AND location_id IS NULL';
+          } else {
+            sourceWhereClause += ' AND location_id = ?';
+            sourceWhereArgs.add(sourceLocationId);
+          }
+          
+          // Pallet_barcode kontrolü
+          if (item.palletId == null) {
+            sourceWhereClause += ' AND pallet_barcode IS NULL';
+          } else {
+            sourceWhereClause += ' AND pallet_barcode = ?';
+            sourceWhereArgs.add(item.palletId);
+          }
+          
           final sourceStockQuery = await txn.query(
             'inventory_stock',
-            where: 'urun_key = ? AND (location_id = ? OR (? IS NULL AND location_id IS NULL)) AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?',
-            whereArgs: [
-              item.productId,
-              sourceLocationId,
-              sourceLocationId,
-              item.palletId,
-              item.palletId,
-              (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available'
-            ],
+            where: sourceWhereClause,
+            whereArgs: sourceWhereArgs,
             limit: 1, // Sadece bir tane bulmamız yeterli
           );
 
@@ -278,7 +294,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 2. Stoğu kaynaktan azalt
           await _updateStockSmart(
             txn,
-            productId: item.productId,
+            productId: item.productKey,
             locationId: sourceLocationId,
             quantityChange: -item.quantity,
             palletId: item.palletId,
@@ -293,7 +309,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // 3. Stoğu hedefe ekle (yeni ID'lerle birlikte)
           await _updateStockSmart(
             txn,
-            productId: item.productId,
+            productId: item.productKey,
             locationId: targetLocationId,
             quantityChange: item.quantity,
             palletId: targetPalletId,
@@ -304,7 +320,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           );
 
           await txn.insert(DbTables.inventoryTransfers, {
-            'urun_key': item.productId,
+            'urun_key': item.productKey,
             'from_location_id': sourceLocationId, // Artık null ise null kalıyor
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
@@ -319,7 +335,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
               DbTables.orderLines,
               columns: ['id'],
               where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',
-              whereArgs: [header.siparisId, item.productId, '1'],
+              whereArgs: [header.siparisId, item.productKey, '1'],
               limit: 1,
             );
             if (orderLine.isNotEmpty) {
@@ -650,10 +666,25 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (isDecrement) {
       double remainingToDecrement = quantityChange.abs();
 
-      final whereClause = 'urun_key = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ?';
-      final whereArgs = locationId == null
-        ? [productId, palletId, palletId, status]
-        : [productId, locationId, palletId, palletId, status];
+      // NULL-safe SQL sorgusu oluştur
+      String whereClause = 'urun_key = ? AND stock_status = ?';
+      List<dynamic> whereArgs = [productId, status];
+      
+      // Location_id kontrolü
+      if (locationId == null) {
+        whereClause += ' AND location_id IS NULL';
+      } else {
+        whereClause += ' AND location_id = ?';
+        whereArgs.add(locationId);
+      }
+      
+      // Pallet_barcode kontrolü
+      if (palletId == null) {
+        whereClause += ' AND pallet_barcode IS NULL';
+      } else {
+        whereClause += ' AND pallet_barcode = ?';
+        whereArgs.add(palletId);
+      }
 
       debugPrint("DEBUG: SQL sorgusu: $whereClause");
       debugPrint("DEBUG: SQL parametreleri: $whereArgs");

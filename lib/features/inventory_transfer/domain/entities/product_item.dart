@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 
 @immutable
 class ProductItem {
-  final int id;
-  final String? productKey; // _key değeri için yeni alan
+  final String productKey; // _key değeri
   final String name;
   final String productCode;
   final String? barcode;
@@ -12,8 +11,7 @@ class ProductItem {
   final DateTime? expiryDate;
 
   const ProductItem({
-    required this.id,
-    this.productKey, // _key değeri
+    required this.productKey,
     required this.name,
     required this.productCode,
     this.barcode,
@@ -21,25 +19,11 @@ class ProductItem {
     this.expiryDate,
   });
 
-  /// API'ye gönderilecek ürün ID'si - _key varsa onu kullan
-  String get apiProductId => productKey ?? id.toString();
+  /// Ürün anahtarı
+  String get key => productKey;
 
-  /// @deprecated This method is deprecated. Use ProductItem constructor directly with TransferableItem data.
-  @Deprecated('Use ProductItem constructor directly with TransferableItem data')
-  factory ProductItem.fromBoxItem(dynamic box) {
-    return ProductItem(
-      id: box.productId,
-      name: box.productName,
-      productCode: box.productCode,
-      barcode: box.barcode,
-      currentQuantity: box.quantity,
-      // expiryDate will be null here, as BoxItem doesn't carry it directly.
-      // It's mainly for pallet contents.
-    );
-  }
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
-    final dynamic idValue = json['id'] ?? json['productId'];
     final dynamic nameValue = json['name'] ?? json['productName'];
     final dynamic codeValue = json['productCode'] ?? json['code'];
     final dynamic barcodeValue = json['barcode'];
@@ -55,8 +39,7 @@ class ProductItem {
     }
 
     return ProductItem(
-      id: parseToNum(idValue).toInt(),
-      productKey: keyValue?.toString(),
+      productKey: keyValue?.toString() ?? '',
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
       barcode: barcodeValue?.toString(),
@@ -67,8 +50,7 @@ class ProductItem {
 
   factory ProductItem.fromMap(Map<String, dynamic> map) {
     return ProductItem(
-      id: map['id'] as int,
-      productKey: map['_key']?.toString() ?? map['productKey']?.toString(),
+      productKey: map['_key']?.toString() ?? map['productKey']?.toString() ?? '',
       name: (map['name'] ?? '').toString(),
       productCode: (map['code'] ?? '').toString(),
       barcode: map['barcode']?.toString(),
@@ -77,10 +59,8 @@ class ProductItem {
     );
   }
 
-  // DÜZELTME: Eksik olan toJson metodu eklendi.
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
       'productKey': productKey,
       'name': name,
       'productCode': productCode,
@@ -95,9 +75,9 @@ class ProductItem {
       identical(this, other) ||
           other is ProductItem &&
               runtimeType == other.runtimeType &&
-              id == other.id &&
+              productKey == other.productKey &&
               expiryDate == other.expiryDate;
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => productKey.hashCode;
 }

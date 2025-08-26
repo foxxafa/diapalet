@@ -58,4 +58,7 @@ class TransferableItem {
     this.sourcePalletBarcode,
     this.expiryDate,
   });
+
+  /// Ürün anahtarını döndürür (_key değeri öncelikli).
+  String get productKey => product.productKey ?? product.id.toString();
 }

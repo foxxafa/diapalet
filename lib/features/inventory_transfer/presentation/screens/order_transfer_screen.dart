@@ -62,8 +62,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   final _containerFocusNode = FocusNode();
 
   List<ProductItem> _productsInContainer = [];
-  final Map<int, TextEditingController> _productQuantityControllers = {};
-  final Map<int, FocusNode> _productQuantityFocusNodes = {};
+  final Map<String, TextEditingController> _productQuantityControllers = {};
+  final Map<String, FocusNode> _productQuantityFocusNodes = {};
 
   // GÜNCELLEME: Mod durumları
   bool _hasPalletContainers = false;
@@ -305,7 +305,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     try {
       final products = container.items.map((item) {
         return ProductItem(
-          id: item.product.id,
+          productKey: item.product.key,
           name: item.product.name,
           productCode: item.product.stockCode,
           currentQuantity: item.quantity,
@@ -321,8 +321,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           final initialQtyText = initialQty == initialQty.truncate()
               ? initialQty.toInt().toString()
               : initialQty.toString();
-          _productQuantityControllers[product.id] = TextEditingController(text: initialQtyText);
-          _productQuantityFocusNodes[product.id] = FocusNode();
+          _productQuantityControllers[product.key] = TextEditingController(text: initialQtyText);
+          _productQuantityFocusNodes[product.key] = FocusNode();
         }
       });
     } catch (e) {
@@ -555,7 +555,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   //               final initialQtyText = initialQty == initialQty.truncate()
   //                   ? initialQty.toInt().toString()
   //                   : initialQty.toString();
-  //               _productQuantityControllers[product.id]?.text = initialQtyText;
+  //               _productQuantityControllers[product.key]?.text = initialQtyText;
   //             }
   //         });
   //       } : null,
@@ -576,11 +576,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     final List<TransferItemDetail> itemsToTransfer = [];
 
     for (var product in _productsInContainer) {
-      final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
+      final qtyText = _productQuantityControllers[product.key]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
-          productId: product.apiProductId, // _key değeri kullanılıyor
+          productKey: product.key, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
@@ -799,8 +799,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             ),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
-              final controller = _productQuantityControllers[product.id]!;
-              final focusNode = _productQuantityFocusNodes[product.id]!;
+              final controller = _productQuantityControllers[product.key]!;
+              final focusNode = _productQuantityFocusNodes[product.key]!;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
@@ -847,7 +847,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         },
                         onFieldSubmitted: (value) {
                           final productIds = _productQuantityFocusNodes.keys.toList();
-                          final currentIndex = productIds.indexOf(product.id);
+                          final currentIndex = productIds.indexOf(product.key);
                           if (currentIndex < productIds.length - 1) {
                             _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
                           } else {
@@ -912,25 +912,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  Future<T?> _showSearchableDropdownDialog<T>({
-    required String title,
-    required List<T> items,
-    required String Function(T) itemToString,
-    required bool Function(T, String) filterCondition,
-  }) {
-    return Navigator.push<T>(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (context) => _SearchPage<T>(
-          title: title,
-          items: items,
-          itemToString: itemToString,
-          filterCondition: filterCondition,
-        ),
-      ),
-    );
-  }
 
   Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return Navigator.push<bool>(

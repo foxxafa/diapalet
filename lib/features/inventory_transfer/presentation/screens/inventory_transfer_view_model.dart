@@ -43,8 +43,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   TransferableContainer? _selectedContainer;
 
   List<ProductItem> _productsInContainer = [];
-  final Map<int, TextEditingController> _productQuantityControllers = {};
-  final Map<int, FocusNode> _productQuantityFocusNodes = {};
+  final Map<String, TextEditingController> _productQuantityControllers = {};
+  final Map<String, FocusNode> _productQuantityFocusNodes = {};
 
   StreamSubscription<String>? _intentSub;
   String? _lastError;
@@ -77,8 +77,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
   TransferableContainer? get selectedContainer => _selectedContainer;
 
   List<ProductItem> get productsInContainer => _productsInContainer;
-  Map<int, TextEditingController> get productQuantityControllers => _productQuantityControllers;
-  Map<int, FocusNode> get productQuantityFocusNodes => _productQuantityFocusNodes;
+  Map<String, TextEditingController> get productQuantityControllers => _productQuantityControllers;
+  Map<String, FocusNode> get productQuantityFocusNodes => _productQuantityFocusNodes;
   String? get lastError => _lastError;
   PurchaseOrder? get selectedOrder => _selectedOrder;
 
@@ -259,8 +259,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _findContainerAndSet(barcode);
     } else {
       final focusedProductNode = _productQuantityFocusNodes.entries
-          .firstWhere((entry) => entry.value.hasFocus, orElse: () => MapEntry(-1, FocusNode()));
-      if (focusedProductNode.key != -1) {
+          .firstWhere((entry) => entry.value.hasFocus, orElse: () => MapEntry('', FocusNode()));
+      if (focusedProductNode.key != '') {
         _setError('inventory_transfer.error_barcode_in_quantity_field');
       } else {
         // Hiçbir uygun alan focus'ta değilse container alanına odaklan ve veriyi gir
@@ -310,7 +310,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
     if (!value) {
       for (var product in _productsInContainer) {
         final initialQty = product.currentQuantity;
-        _productQuantityControllers[product.id]?.text = initialQty.toStringAsFixed(initialQty.truncateToDouble() == initialQty ? 0 : 2);
+        _productQuantityControllers[product.key]?.text = initialQty.toStringAsFixed(initialQty.truncateToDouble() == initialQty ? 0 : 2);
       }
     }
     notifyListeners();
@@ -376,7 +376,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
     final products = _selectedContainer!.items.map((item) {
       return ProductItem(
-        id: item.product.id,
+        productKey: item.product.key,
         name: item.product.name,
         productCode: item.product.stockCode,
         currentQuantity: item.quantity,
@@ -393,8 +393,8 @@ class InventoryTransferViewModel extends ChangeNotifier {
     _clearProductControllers();
     for (var product in _productsInContainer) {
       final qty = product.currentQuantity;
-      _productQuantityControllers[product.id] = TextEditingController(text: qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2));
-      _productQuantityFocusNodes[product.id] = FocusNode();
+      _productQuantityControllers[product.key] = TextEditingController(text: qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 2));
+      _productQuantityFocusNodes[product.key] = FocusNode();
     }
   }
 
@@ -509,7 +509,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         final initialQtyText = initialQty == initialQty.truncate()
             ? initialQty.toInt().toString()
             : initialQty.toString();
-        _productQuantityControllers[product.id]?.text = initialQtyText;
+        _productQuantityControllers[product.key]?.text = initialQtyText;
       }
     }
 
@@ -544,11 +544,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
     return null;
   }
 
-  void focusNextProductOrTarget(int currentProductId) {
-    final productIds = _productQuantityFocusNodes.keys.toList();
-    final currentIndex = productIds.indexOf(currentProductId);
-    if (currentIndex < productIds.length - 1) {
-      _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+  void focusNextProductOrTarget(String currentProductKey) {
+    final productKeys = _productQuantityFocusNodes.keys.toList();
+    final currentIndex = productKeys.indexOf(currentProductKey);
+    if (currentIndex < productKeys.length - 1) {
+      _productQuantityFocusNodes[productKeys[currentIndex + 1]]?.requestFocus();
     } else {
       targetLocationFocusNode.requestFocus();
     }
@@ -558,11 +558,11 @@ class InventoryTransferViewModel extends ChangeNotifier {
     final List<TransferItemDetail> items = [];
 
     for (var product in _productsInContainer) {
-      final qtyText = _productQuantityControllers[product.id]?.text ?? '0';
+      final qtyText = _productQuantityControllers[product.key]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         items.add(TransferItemDetail(
-          productId: product.apiProductId, // _key değeri kullanılıyor
+          productKey: product.key, // _key değeri kullanılıyor
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,

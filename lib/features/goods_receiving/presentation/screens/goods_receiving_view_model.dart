@@ -532,8 +532,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      final orderItem = _orderItems.firstWhere((item) => item.productId == _selectedProduct!.apiProductId);
-      final alreadyAddedInUI = _addedItems.where((item) => item.product.apiProductId == _selectedProduct!.apiProductId).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
+      final orderItem = _orderItems.firstWhere((item) => item.productId == _selectedProduct!.key);
+      final alreadyAddedInUI = _addedItems.where((item) => item.product.key == _selectedProduct!.key).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
 
@@ -670,7 +670,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         employeeId: employeeId,
       ),
       items: _addedItems.map((draft) => GoodsReceiptItemPayload(
-        productId: draft.product.apiProductId, // _key değeri kullanılıyor
+        productId: draft.product.key, // _key değeri kullanılıyor
         quantity: draft.quantity,
         palletBarcode: draft.palletBarcode,
         expiryDate: draft.expiryDate, // Now always has a value

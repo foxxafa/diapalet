@@ -167,6 +167,7 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           siparisler_id INTEGER,
           urun_key TEXT,
+          _key_kalemturu TEXT,
           kartkodu TEXT,
           anamiktar REAL,
           miktar REAL,
@@ -209,6 +210,7 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           receipt_id INTEGER,
           urun_key TEXT,
+          siparis_key TEXT,
           quantity_received REAL,
           pallet_barcode TEXT,
           expiry_date TEXT,
@@ -770,17 +772,12 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'urun_key', 'kartkodu', 'anamiktar', 'miktar',
+          'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'anamiktar', 'miktar',
           'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
-        // Sunucu urun_id göndermişse urun_key'e çevir
-        if (newRecord.containsKey('urun_id') && !newRecord.containsKey('urun_key')) {
-          newRecord['urun_key'] = newRecord['urun_id']?.toString();
-        }
-        
         // Sunucuda _key_kalemturu alanında ürünün _key'i var, bunu urun_key'e çevir
-        if (newRecord.containsKey('_key_kalemturu') && !newRecord.containsKey('urun_key')) {
+        if (newRecord.containsKey('_key_kalemturu') && newRecord['_key_kalemturu'] != null) {
           newRecord['urun_key'] = newRecord['_key_kalemturu'];
         }
         
@@ -1003,14 +1000,29 @@ class DatabaseHelper {
 
 
 
-  Future<Map<String, dynamic>?> getProductById(int productId) async {
+  Future<Map<String, dynamic>?> getProductById(dynamic productId) async {
     final db = await database;
-    final result = await db.query(
-      'urunler',
-      where: 'UrunId = ?',
-      whereArgs: [productId],
-      limit: 1,
-    );
+    
+    // _key (string) veya UrunId (int) ile arama yap
+    List<Map<String, Object?>> result;
+    if (productId is String) {
+      // _key ile ara
+      result = await db.query(
+        'urunler',
+        where: '_key = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+    } else {
+      // UrunId ile ara (geriye dönük uyumluluk için)
+      result = await db.query(
+        'urunler',
+        where: 'UrunId = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+    }
+    
     return result.isNotEmpty ? result.first : null;
   }
 
@@ -1053,14 +1065,14 @@ class DatabaseHelper {
     const sql = '''
       SELECT
         sa.id,
-        sa.urun_key,
+        COALESCE(sa.urun_key, sa._key_kalemturu) as urun_key,
         sa.anamiktar as ordered_quantity,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         COALESCE(received.total_received, 0) as received_quantity,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM siparis_ayrintili sa
-      LEFT JOIN urunler u ON u._key = sa.urun_key
+      LEFT JOIN urunler u ON u._key = COALESCE(sa.urun_key, sa._key_kalemturu)
       LEFT JOIN (
         SELECT
           gri.urun_key,
@@ -1069,7 +1081,7 @@ class DatabaseHelper {
         JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_key
-      ) received ON received.urun_key = sa.urun_key
+      ) received ON received.urun_key = COALESCE(sa.urun_key, sa._key_kalemturu)
       LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
     ''';
@@ -1389,14 +1401,20 @@ class DatabaseHelper {
 
       for (final item in items) {
         final mutableItem = Map<String, dynamic>.from(item);
-        final productId = item['urun_key'];
-
+        
+        // Debug: item içeriğini görelim
+        debugPrint('PDF ENRICH DEBUG: Raw item keys: ${item.keys.toList()}');
+        debugPrint('PDF ENRICH DEBUG: Looking for urun_key: ${item['urun_key']}, urun_id: ${item['urun_id']}');
+        
+        // urun_key yoksa urun_id'yi kullan
+        final productId = item['urun_key'] ?? item['urun_id'];
+        
         if (productId != null) {
           final product = await getProductById(productId);
           if (product != null) {
             mutableItem['product_name'] = product['UrunAdi'];
             mutableItem['product_code'] = product['StokKodu'];
-            mutableItem['urun_key'] = product['_key']; // Add urun_key for matching with order lines
+            mutableItem['urun_key'] = product['_key'] ?? productId; // Use _key if available, otherwise use productId
             
             // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
             String productBarcode = '';
@@ -1425,6 +1443,9 @@ class DatabaseHelper {
             } catch (e) {
               debugPrint('PDF için barkod alınırken hata: $e');
             }
+            
+            // PDF için barkod bilgisini ekle
+            mutableItem['product_barcode'] = productBarcode;
             
             // Eğer barcode bulunamadıysa, direkt barkodlar tablosunda ürünün barkodunu ara
             if (productBarcode.isEmpty) {
@@ -1515,6 +1536,11 @@ class DatabaseHelper {
           }
         }
 
+        // urun_key'in mutlaka set edildiğinden emin ol
+        if (mutableItem['urun_key'] == null && productId != null) {
+          mutableItem['urun_key'] = productId;
+        }
+        
         enrichedItems.add(mutableItem);
       }
 
@@ -1523,16 +1549,24 @@ class DatabaseHelper {
         if (orderSummary != null) {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
+          
+          debugPrint('PDF ORDER DEBUG: Found ${orderLines.length} order lines for siparis $siparisId');
+          for (var line in orderLines) {
+            debugPrint('PDF ORDER DEBUG: Order line urun_key: ${line['urun_key']}, product_name: ${line['product_name']}, ordered_quantity: ${line['ordered_quantity']}');
+          }
 
           final orderLinesMap = {for (var line in orderLines) line['urun_key']: line};
 
           for (final item in enrichedItems) {
             final orderLine = orderLinesMap[item['urun_key']];
+            debugPrint('PDF DEBUG: Matching item with urun_key: ${item['urun_key']}, Found orderLine: ${orderLine != null}');
             if (orderLine != null) {
               item['ordered_quantity'] = orderLine['ordered_quantity'] ?? 0.0;
               item['unit'] = orderLine['unit'] ?? item['unit'];
+              debugPrint('PDF DEBUG: Set ordered_quantity: ${item['ordered_quantity']} for product: ${item['product_name']}');
             } else {
               item['ordered_quantity'] = 0.0;
+              debugPrint('PDF DEBUG: No order line found for urun_key: ${item['urun_key']}');
             }
           }
         }
@@ -1548,7 +1582,7 @@ class DatabaseHelper {
     }
   }
 
-  Future<double> _getPreviousReceivedQuantity(int siparisId, int productId, {DateTime? beforeDate, int? excludeReceiptId}) async {
+  Future<double> _getPreviousReceivedQuantity(int siparisId, dynamic productId, {DateTime? beforeDate, int? excludeReceiptId}) async {
     final db = await database;
 
     String sql;

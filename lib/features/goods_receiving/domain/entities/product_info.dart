@@ -21,8 +21,8 @@ class ProductInfo extends Equatable {
     this.barkodInfo,
   });
 
-  /// API'ye gönderilecek ürün ID'si - _key varsa onu kullan
-  String get apiProductId => productKey ?? id.toString();
+  /// Ürün anahtarı - _key varsa onu kullan, yoksa id'yi string'e çevir
+  String get key => productKey ?? id.toString();
 
   // GÜNCELLEME BAŞLANGIÇ
   /// Especially for Map coming from local 'urunler' table.

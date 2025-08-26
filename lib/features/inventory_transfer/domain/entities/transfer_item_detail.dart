@@ -1,7 +1,7 @@
 // lib/features/inventory_transfer/domain/entities/transfer_item_detail.dart
 
 class TransferItemDetail {
-  final String productId; // _key değeri string olarak
+  final String productKey; // _key değeri
   final String productName;
   final String productCode;
   final double quantity;
@@ -19,7 +19,7 @@ class TransferItemDetail {
   final String? targetLocationName;
 
   TransferItemDetail({
-    required this.productId,
+    required this.productKey,
     required this.productName,
     required this.productCode,
     required this.quantity,
@@ -30,10 +30,9 @@ class TransferItemDetail {
   });
 
   /// Sunucuya gönderilecek olan, sadeleştirilmiş JSON formatını oluşturur.
-  /// _key değeri urun_id alanına gönderilir
   Map<String, dynamic> toApiJson() {
     return {
-      'urun_id': productId, // _key değeri urun_id alanına gönderiliyor (sunucu bu alanda bekliyor)
+      'urun_key': productKey, // _key değeri
       'quantity': quantity,
       'pallet_id': palletId,
       'expiry_date': expiryDate?.toIso8601String(),
