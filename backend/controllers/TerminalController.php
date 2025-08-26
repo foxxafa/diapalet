@@ -276,16 +276,22 @@ class TerminalController extends Controller
 
         // Çalışanın depo ID'sini al - Rowhub formatında
         $employeeId = $header['employee_id'];
-        $employeeWarehouseQuery = (new Query())
-            ->select('w.id')
+        
+        // DEBUG: Employee warehouse mapping'i kontrol et
+        $employeeInfo = (new Query())
+            ->select(['e.id', 'e.warehouse_code', 'w.id as warehouse_id', 'w.warehouse_code as w_warehouse_code'])
             ->from(['e' => 'employees'])
             ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
-            ->where(['e.id' => $employeeId]);
-
-        $warehouseId = $employeeWarehouseQuery->scalar($db);
+            ->where(['e.id' => $employeeId])
+            ->one($db);
+            
+        Yii::info("DEBUG createGoodsReceipt - employee_id: $employeeId", __METHOD__);
+        Yii::info("DEBUG employee info: " . json_encode($employeeInfo), __METHOD__);
+        
+        $warehouseId = $employeeInfo['warehouse_id'] ?? null;
 
         if (!$warehouseId) {
-            return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı.'];
+            return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı. Employee warehouse_code: ' . ($employeeInfo['warehouse_code'] ?? 'null')];
         }
 
         $db->createCommand()->insert('goods_receipts', [
@@ -298,8 +304,8 @@ class TerminalController extends Controller
         $receiptId = $db->getLastInsertID();
 
         foreach ($items as $item) {
-            // Mobile'dan urun_id (_key değeri) geliyor, direkt yazılıyor
-            $urunKey = $item['urun_id']; // _key değeri
+            // Mobile'dan urun_key (_key değeri) geliyor, direkt yazılıyor
+            $urunKey = $item['urun_key']; // _key değeri
             
             // _key'in gerçekten var olduğunu kontrol et
             $exists = (new Query())
@@ -388,7 +394,7 @@ class TerminalController extends Controller
 
         foreach ($items as $item) {
             // Mobile'dan _key değeri geliyor, direkt kullanılıyor
-            $urunKey = $item['urun_id']; // _key değeri
+            $urunKey = $item['urun_key']; // _key değeri
             
             // _key'in gerçekten var olduğunu kontrol et
             $exists = (new Query())
@@ -492,7 +498,7 @@ class TerminalController extends Controller
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
-                // _key artık urun_id olarak kullanılıyor
+                // _key urun_key olarak kullanılıyor
                 $transferData = [
                     'urun_key'            => $urunKey, // _key yazılıyor
                     'from_location_id'    => $sourceLocationId,
@@ -605,7 +611,7 @@ class TerminalController extends Controller
                     $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
                 }
             } elseif ($qtyChange > 0) {
-                // _key artık urun_id olarak kullanılıyor
+                // _key urun_key olarak kullanılıyor
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_key' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
@@ -866,11 +872,25 @@ class TerminalController extends Controller
         $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
         $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['warehouse_id' => $warehouseId])->column();
         
+        // DEBUG: Count alma sorununu tespit et
+        Yii::info("DEBUG getInventoryStockCount - warehouse_id: $warehouseId", __METHOD__);
+        Yii::info("DEBUG locationIds count: " . count($locationIds), __METHOD__);
+        Yii::info("DEBUG receiptIds count: " . count($receiptIds), __METHOD__);
+        
+        // DEBUG: Mevcut receipt 71'i kontrol et
+        $receipt71 = (new Query())
+            ->select(['goods_receipt_id', 'warehouse_id', 'delivery_note_number'])
+            ->from('goods_receipts')
+            ->where(['goods_receipt_id' => 71])
+            ->one();
+        Yii::info("DEBUG Receipt 71: " . json_encode($receipt71), __METHOD__);
+        
         $query = (new Query())->from('inventory_stock');
         $conditions = ['or'];
         
         if (!empty($locationIds)) {
             $conditions[] = ['in', 'location_id', $locationIds];
+            Yii::info("DEBUG: location_id condition added", __METHOD__);
         }
         if (!empty($receiptIds)) {
             $conditions[] = [
@@ -878,15 +898,21 @@ class TerminalController extends Controller
                 ['is', 'location_id', new \yii\db\Expression('NULL')],
                 ['in', 'goods_receipt_id', $receiptIds]
             ];
+            Yii::info("DEBUG: goods_receipt_id condition added", __METHOD__);
         }
+        
+        Yii::info("DEBUG conditions count: " . count($conditions), __METHOD__);
         
         if (count($conditions) > 1) {
             $query->where($conditions);
             if ($timestamp) {
                 $query->andWhere(['>', 'updated_at', $timestamp]);
             }
-            return (int)$query->count();
+            $result = (int)$query->count();
+            Yii::info("DEBUG final inventory_stock count: $result", __METHOD__);
+            return $result;
         }
+        Yii::info("DEBUG: Returning 0 because no conditions", __METHOD__);
         return 0;
     }
 

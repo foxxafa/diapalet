@@ -740,12 +740,46 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } else {
       final expiryDateStr = expiryDateForAddition?.toIso8601String();
 
+      // NULL-safe existing stock sorgusu
+      String existingWhereClause = 'urun_key = ? AND stock_status = ?';
+      List<dynamic> existingWhereArgs = [productId, status];
+      
+      // Location ID kontrolü
+      if (locationId == null) {
+        existingWhereClause += ' AND location_id IS NULL';
+      } else {
+        existingWhereClause += ' AND location_id = ?';
+        existingWhereArgs.add(locationId);
+      }
+      
+      // Pallet barcode kontrolü
+      if (palletId == null) {
+        existingWhereClause += ' AND pallet_barcode IS NULL';
+      } else {
+        existingWhereClause += ' AND pallet_barcode = ?';
+        existingWhereArgs.add(palletId);
+      }
+      
+      // Siparis ID kontrolü
+      if (siparisIdForAddition == null) {
+        existingWhereClause += ' AND siparis_id IS NULL';
+      } else {
+        existingWhereClause += ' AND siparis_id = ?';
+        existingWhereArgs.add(siparisIdForAddition);
+      }
+      
+      // Expiry date kontrolü
+      if (expiryDateStr == null) {
+        existingWhereClause += ' AND expiry_date IS NULL';
+      } else {
+        existingWhereClause += ' AND expiry_date = ?';
+        existingWhereArgs.add(expiryDateStr);
+      }
+
       final existing = await txn.query(
         'inventory_stock',
-        where: 'urun_key = ? AND ${locationId == null ? 'location_id IS NULL' : 'location_id = ?'} AND (pallet_barcode = ? OR (? IS NULL AND pallet_barcode IS NULL)) AND stock_status = ? AND (siparis_id = ? OR (? IS NULL AND siparis_id IS NULL)) AND (expiry_date = ? OR (? IS NULL AND expiry_date IS NULL))',
-        whereArgs: locationId == null
-          ? [productId, palletId, palletId, status, siparisIdForAddition, siparisIdForAddition, expiryDateStr, expiryDateStr]
-          : [productId, locationId, palletId, palletId, status, siparisIdForAddition, siparisIdForAddition, expiryDateStr, expiryDateStr],
+        where: existingWhereClause,
+        whereArgs: existingWhereArgs,
         limit: 1,
       );
 

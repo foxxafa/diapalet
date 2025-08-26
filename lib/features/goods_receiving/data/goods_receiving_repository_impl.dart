@@ -53,15 +53,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
         const stockStatus = 'receiving';
 
+        debugPrint("Processing ${payload.items.length} items...");
         for (final item in payload.items) {
-          await txn.insert(DbTables.goodsReceiptItems, {
+          debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity}");
+          
+          final itemId = await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
             'urun_key': item.productId, // _key değeri direkt kullanılıyor
             'quantity_received': item.quantity,
             DbColumns.stockPalletBarcode: item.palletBarcode,
             DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
           });
+          debugPrint("Item inserted with ID: $itemId");
 
+          debugPrint("Updating stock for: ${item.productId}");
           await _updateStockWithKey(
               txn,
               item.productId, // _key değeri string olarak
@@ -72,6 +77,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               payload.header.siparisId,
               item.expiryDate?.toIso8601String(),
               receiptId);
+          debugPrint("Stock updated for: ${item.productId}");
         }
 
         if (payload.header.siparisId != null) {
@@ -133,21 +139,53 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   Future<void> _updateStockWithKey(Transaction txn, String urunKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
-    String locationWhereClause = locationId == null ? 'location_id IS NULL' : 'location_id = ?';
-    String palletWhereClause = palletBarcode == null ? 'pallet_barcode IS NULL' : 'pallet_barcode = ?';
-    String siparisWhereClause = siparisId == null ? 'siparis_id IS NULL' : 'siparis_id = ?';
-    String expiryWhereClause = expiryDate == null ? 'expiry_date IS NULL' : 'expiry_date = ?';
-    String goodsReceiptWhereClause = goodsReceiptId == null ? 'goods_receipt_id IS NULL' : 'goods_receipt_id = ?';
-
-    List<dynamic> whereArgs = [urunKey, stockStatus];
-    if (locationId != null) whereArgs.add(locationId);
-    if (palletBarcode != null) whereArgs.add(palletBarcode);
-    if (siparisId != null) whereArgs.add(siparisId);
-    if (expiryDate != null) whereArgs.add(expiryDate);
-    if (goodsReceiptId != null) whereArgs.add(goodsReceiptId);
+    // NULL-safe WHERE clause construction
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
+    
+    whereClauses.add('urun_key = ?');
+    whereArgs.add(urunKey);
+    
+    whereClauses.add('stock_status = ?');
+    whereArgs.add(stockStatus);
+    
+    if (locationId == null) {
+      whereClauses.add('location_id IS NULL');
+    } else {
+      whereClauses.add('location_id = ?');
+      whereArgs.add(locationId);
+    }
+    
+    if (palletBarcode == null) {
+      whereClauses.add('pallet_barcode IS NULL');
+    } else {
+      whereClauses.add('pallet_barcode = ?');
+      whereArgs.add(palletBarcode);
+    }
+    
+    if (siparisId == null) {
+      whereClauses.add('siparis_id IS NULL');
+    } else {
+      whereClauses.add('siparis_id = ?');
+      whereArgs.add(siparisId);
+    }
+    
+    if (expiryDate == null) {
+      whereClauses.add('expiry_date IS NULL');
+    } else {
+      whereClauses.add('expiry_date = ?');
+      whereArgs.add(expiryDate);
+    }
+    
+    if (goodsReceiptId == null) {
+      whereClauses.add('goods_receipt_id IS NULL');
+    } else {
+      whereClauses.add('goods_receipt_id = ?');
+      whereArgs.add(goodsReceiptId);
+    }
 
     final existingStock = await txn.query('inventory_stock',
-        where: 'urun_key = ? AND stock_status = ? AND $locationWhereClause AND $palletWhereClause AND $siparisWhereClause AND $expiryWhereClause AND $goodsReceiptWhereClause',
+        where: whereClauses.join(' AND '),
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {

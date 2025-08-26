@@ -58,7 +58,7 @@ class GoodsReceiptItemPayload {
   });
 
   Map<String, dynamic> toJson() => {
-    'urun_id': productId, // _key değeri urun_id alanına gönderiliyor (sunucu bu alanda bekliyor)
+    'urun_key': productId, // _key değeri urun_key alanına gönderiliyor
     'quantity': quantity,
     'pallet_barcode': palletBarcode,
     'expiry_date': expiryDate?.toIso8601String(),

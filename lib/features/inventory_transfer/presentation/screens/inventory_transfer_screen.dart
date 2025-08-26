@@ -823,7 +823,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                             'inventory_transfer.label_source_location'.tr(),
                             isValid: _isSourceLocationValid,
                           ),
-                          validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
+                          validator: (val) {
+                            // Skip validation if field is disabled (free putaway or order-based)
+                            if (widget.selectedOrder != null || widget.isFreePutAway) {
+                              return null;
+                            }
+                            return (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null;
+                          },
                           onFieldSubmitted: (value) async {
                             if (value.trim().isNotEmpty) {
                               await _processScannedData('source', value.trim());

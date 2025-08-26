@@ -463,6 +463,14 @@ class DatabaseHelper {
             processedItems++;
             updateProgress('goods_receipts');
           }
+          
+          // GEÇICI FIX: NULL warehouse_id'li receipt'leri güncelle
+          await txn.rawUpdate('''
+            UPDATE goods_receipts 
+            SET warehouse_id = 7 
+            WHERE warehouse_id IS NULL AND employee_id = 5
+          ''');
+          debugPrint('🔧 FIXED: Updated NULL warehouse_id receipts to warehouse_id = 7');
         }
 
         // Goods receipt items incremental sync
@@ -1837,6 +1845,65 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
     final db = await database;
+
+    // DEBUG: Check all recent receipts and their inventory_stock
+    final debugReceipt = await db.rawQuery('''
+      SELECT gr.goods_receipt_id, gr.delivery_note_number, gr.siparis_id, 
+             ist.id as stock_id, ist.stock_status, ist.urun_key, ist.quantity
+      FROM goods_receipts gr
+      LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id
+      WHERE gr.delivery_note_number IN ('5432154321', 'test123test1') 
+         OR gr.goods_receipt_id IN (66, 71, 72)
+      ORDER BY gr.goods_receipt_id DESC
+    ''');
+    
+    if (debugReceipt.isNotEmpty) {
+      debugPrint("🔍 DEBUG Receipt 71/5432154321:");
+      for (final row in debugReceipt) {
+        debugPrint("  - receipt_id: ${row['goods_receipt_id']}, delivery_note: ${row['delivery_note_number']}, siparis_id: ${row['siparis_id']}");
+        debugPrint("    stock_id: ${row['stock_id']}, status: ${row['stock_status']}, urun_key: ${row['urun_key']}, qty: ${row['quantity']}");
+      }
+      
+      // Inventory_stock tablosunu direkt kontrol et
+      final allStock = await db.query('inventory_stock', 
+        where: 'goods_receipt_id IN (66, 67, 72)',
+        orderBy: 'goods_receipt_id DESC'
+      );
+      debugPrint("🏪 STOCK TABLE - Direct check:");
+      for (final stock in allStock) {
+        debugPrint("  - stock_id: ${stock['id']}, goods_receipt_id: ${stock['goods_receipt_id']}, urun_key: ${stock['urun_key']}, qty: ${stock['quantity']}, status: ${stock['stock_status']}");
+      }
+      
+      // Eksik inventory_stock kayıtlarını oluştur
+      final receiptsWithoutStock = [66, 67];
+      for (final receiptId in receiptsWithoutStock) {
+        final existingStock = await db.query('inventory_stock', where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
+        if (existingStock.isEmpty) {
+          // Bu receipt için goods_receipt_items'dan bilgi al
+          final items = await db.query('goods_receipt_items', where: 'receipt_id = ?', whereArgs: [receiptId]);
+          debugPrint("  🔍 Receipt $receiptId items found: ${items.length}");
+          for (final item in items) {
+            debugPrint("    - Item: ${item['urun_key']}, qty: ${item['quantity_received']}");
+            await db.insert('inventory_stock', {
+              'urun_key': item['urun_key'],
+              'location_id': null,
+              'siparis_id': null,
+              'goods_receipt_id': receiptId,
+              'quantity': item['quantity_received'],
+              'pallet_barcode': item['pallet_barcode'],
+              'stock_status': 'receiving',
+              'expiry_date': item['expiry_date'],
+              'created_at': DateTime.now().toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            });
+            debugPrint("    ✅ Created missing stock for receipt $receiptId: ${item['urun_key']}, qty: ${item['quantity_received']}");
+          }
+          if (items.isEmpty) {
+            debugPrint("    ⚠️ No goods_receipt_items found for receipt $receiptId");
+          }
+        }
+      }
+    }
 
     // Duplicate'leri tespit et ve temizle
     final duplicateCheck = await db.rawQuery('''
