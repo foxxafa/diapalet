@@ -3,6 +3,7 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/sync_loading_screen.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
+import 'package:diapalet/core/network/network_info.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -39,33 +40,44 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (authData != null && mounted) {
           final syncService = context.read<SyncService>();
+          final networkInfo = context.read<NetworkInfo>();
 
-          // Show sync loading screen
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => SyncLoadingScreen(
-                progressStream: syncService.syncProgressStream,
-                onSyncComplete: () {
-                  if (mounted) {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
-                    );
-                  }
-                },
-                onSyncError: (error) {
-                  if (mounted) {
-                    Navigator.of(context).pop(); // Close loading screen
-                    setState(() {
-                      _errorMessage = 'sync.errors.general'.tr();
-                    });
-                  }
-                },
+          // Check if we have internet connection
+          final hasInternet = await networkInfo.isConnected;
+
+          if (hasInternet) {
+            // Show sync loading screen only if online
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => SyncLoadingScreen(
+                  progressStream: syncService.syncProgressStream,
+                  onSyncComplete: () {
+                    if (mounted) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (context) => const HomeScreen()),
+                      );
+                    }
+                  },
+                  onSyncError: (error) {
+                    if (mounted) {
+                      Navigator.of(context).pop(); // Close loading screen
+                      setState(() {
+                        _errorMessage = 'sync.errors.general'.tr();
+                      });
+                    }
+                  },
+                ),
               ),
-            ),
-          );
+            );
 
-          // Start sync after showing loading screen
-          syncService.performFullSync();
+            // Start sync after showing loading screen
+            syncService.performFullSync();
+          } else {
+            // Offline login - go directly to home screen
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          }
         }
       } catch (e) {
         if (mounted) {

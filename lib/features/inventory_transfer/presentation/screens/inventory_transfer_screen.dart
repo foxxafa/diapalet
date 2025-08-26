@@ -1020,8 +1020,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               _isPalletOpening = false;
 
               // Clear all input fields and validity flags when switching between pallet/product modes
-              _sourceLocationController.clear();
-              _isSourceLocationValid = false;
+              // But preserve "000" for free putaway and order-based operations
+              if (widget.selectedOrder == null && !widget.isFreePutAway) {
+                _sourceLocationController.clear();
+                _isSourceLocationValid = false;
+              }
               _scannedContainerIdController.clear();
               _productSearchController.clear();
               _productSearchResults = [];

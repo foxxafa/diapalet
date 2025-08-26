@@ -177,8 +177,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
       // Employee bilgilerini al (warehouse bilgileri employees tablosunda mevcut)
       final sql = '''
-        SELECT e.*, e.warehouse_code,
-               COALESCE(e.warehouse_name, 'N/A') as warehouse_name
+        SELECT e.*, e.warehouse_code
         FROM ${DbTables.employees} e
         WHERE e.${DbColumns.employeesUsername} = ? AND e.${DbColumns.employeesPassword} = ? AND e.${DbColumns.isActive} = 1
         LIMIT 1
@@ -190,40 +189,44 @@ class AuthRepositoryImpl implements AuthRepository {
         debugPrint("Offline login başarılı: $username");
         final user = result.first;
         
-        // ===== Offline için de warehouse değişimi kontrolü =====
+        // ===== Offline için kullanıcı kontrolü =====
         final prefs = await SharedPreferences.getInstance();
-        final previousWarehouseId = prefs.getInt('warehouse_id');
-        final newWarehouseId = user['warehouse_id'] as int;
-        final newUserId = user['id'] as int;
+        final newUserId = user['id'] as int? ?? 0;
         final previousUserId = prefs.getInt('user_id');
+        final newWarehouseCode = user['warehouse_code'] as String? ?? 'N/A';
+        final previousWarehouseCode = prefs.getString('warehouse_code');
+
+        // User ID'nin geçerli olup olmadığını kontrol et
+        if (newUserId <= 0) {
+          throw Exception("Geçersiz kullanıcı ID'si alındı. Lütfen veritabanı senkronizasyonunu kontrol edin.");
+        }
 
         // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
-        if (previousWarehouseId != null && previousWarehouseId != newWarehouseId) {
-          debugPrint("🔄 [OFFLINE] Warehouse değişimi tespit edildi! Önceki: $previousWarehouseId → Yeni: $newWarehouseId");
+        if (previousWarehouseCode != null && previousWarehouseCode != newWarehouseCode) {
+          debugPrint("🔄 [OFFLINE] Warehouse değişimi tespit edildi! Önceki: $previousWarehouseCode → Yeni: $newWarehouseCode");
           await dbHelper.clearWarehouseSpecificData();
           debugPrint("✅ [OFFLINE] Eski warehouse verileri temizlendi.");
         } else if (previousUserId != null && previousUserId != newUserId) {
           debugPrint("🔄 [OFFLINE] Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
           await dbHelper.clearWarehouseSpecificData();
           debugPrint("✅ [OFFLINE] Eski kullanıcı verileri temizlendi.");
-        } else if (previousWarehouseId == null) {
-          debugPrint("🆕 [OFFLINE] İlk giriş - warehouse ID: $newWarehouseId");
+        } else if (previousWarehouseCode == null) {
+          debugPrint("🆕 [OFFLINE] İlk giriş - warehouse code: $newWarehouseCode");
         } else {
-          debugPrint("✅ [OFFLINE] Aynı warehouse'da login - warehouse ID: $newWarehouseId (veri temizliği gerek yok)");
+          debugPrint("✅ [OFFLINE] Aynı warehouse'da login - warehouse code: $newWarehouseCode (veri temizliği gerek yok)");
         }
 
-        // Kullanıcı bilgilerini kaydet
+        // Kullanıcı bilgilerini kaydet (warehouse_id olmadan)
         await prefs.setInt('user_id', newUserId);
-        await prefs.setInt('warehouse_id', newWarehouseId);
-        await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
-        await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
-        await prefs.setString('first_name', user['first_name'] as String);
-        await prefs.setString('last_name', user['last_name'] as String);
+        await prefs.setString('warehouse_code', newWarehouseCode);
+        await prefs.setString('warehouse_name', 'N/A'); // Offline durumda warehouse name mevcut değil
+        await prefs.setString('first_name', user['first_name'] as String? ?? 'N/A');
+        await prefs.setString('last_name', user['last_name'] as String? ?? 'N/A');
 
         // Offline durumda branch bilgisi genelde mevcut olmaz, N/A olarak ayarla
         await prefs.setString('branch_name', 'N/A');
 
-        return {'warehouse_id': newWarehouseId};
+        return {'success': true};
       } else {
         throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");
       }
