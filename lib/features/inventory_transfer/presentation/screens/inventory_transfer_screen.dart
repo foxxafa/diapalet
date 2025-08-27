@@ -2,6 +2,7 @@
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
+import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
@@ -22,6 +23,7 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_it
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/utils/keyboard_utils.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -842,11 +844,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         height: 56,
                         child: !(widget.selectedOrder != null || widget.isFreePutAway) ? _QrButton(
                           onTap: () async {
+                            // Gelişmiş klavye kapatma
+                            await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_sourceLocationFocusNode]);
+                            
                             final result = await Navigator.push<String>(
                               context,
                               MaterialPageRoute(builder: (context) => const QrScannerScreen())
                             );
                             if (result != null && result.isNotEmpty) {
+                              _sourceLocationController.text = result;
                               await _processScannedData('source', result);
                             }
                           },
@@ -866,13 +872,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: TextFormField(
+                        child: QrTextField(
                           controller: _targetLocationController,
                           focusNode: _targetLocationFocusNode,
-                          decoration: _inputDecoration(
-                            'inventory_transfer.label_target_location'.tr(),
-                            isValid: _isTargetLocationValid,
-                          ),
+                          labelText: 'inventory_transfer.label_target_location'.tr(),
+                          isValid: _isTargetLocationValid,
                           validator: (val) {
                             if (val == null || val.isEmpty) return 'inventory_transfer.validator_required_field'.tr();
                             if (val == _sourceLocationController.text) {
@@ -885,20 +889,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                               await _processScannedData('target', value.trim());
                             }
                           },
-                        ),
-                      ),
-                      const SizedBox(width: _smallGap),
-                      SizedBox(
-                        height: 56,
-                        child: _QrButton(
-                          onTap: () async {
-                            final result = await Navigator.push<String>(
-                              context,
-                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
-                            );
-                            if (result != null && result.isNotEmpty) {
-                              await _processScannedData('target', result);
-                            }
+                          onQrScanned: (result) async {
+                            await _processScannedData('target', result);
                           },
                         ),
                       ),
@@ -967,20 +959,36 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (!mounted) return;
 
     if (_sourceLocationFocusNode.hasFocus) {
+      _sourceLocationController.text = code;
       _processScannedData('source', code);
     } else if (_containerFocusNode.hasFocus) {
-      _processScannedData('container', code);
+      if (_selectedMode == AssignmentMode.product) {
+        _productSearchController.text = code;
+        _searchProductsForTransfer(code);
+      } else {
+        _scannedContainerIdController.text = code;
+        _processScannedData('container', code);
+      }
     } else if (_targetLocationFocusNode.hasFocus) {
+      _targetLocationController.text = code;
       _processScannedData('target', code);
     } else {
       if (_selectedSourceLocationName == null) {
         _sourceLocationFocusNode.requestFocus();
+        _sourceLocationController.text = code;
         _processScannedData('source', code);
       } else if (_selectedContainer == null) {
         _containerFocusNode.requestFocus();
-        _processScannedData('container', code);
+        if (_selectedMode == AssignmentMode.product) {
+          _productSearchController.text = code;
+          _searchProductsForTransfer(code);
+        } else {
+          _scannedContainerIdController.text = code;
+          _processScannedData('container', code);
+        }
       } else {
         _targetLocationFocusNode.requestFocus();
+        _targetLocationController.text = code;
         _processScannedData('target', code);
       }
     }
@@ -1302,13 +1310,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               height: 56,
               child: _QrButton(
                 onTap: () async {
+                  // Gelişmiş klavye kapatma - hem container hem product focus'u temizle
+                  await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_containerFocusNode, _productSearchFocusNode]);
+                  
                   final result = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(builder: (context) => const QrScannerScreen())
                   );
                   if (result != null && result.isNotEmpty) {
+                    setState(() {
+                      if (_selectedMode == AssignmentMode.product) {
+                        _productSearchController.text = result;
+                      } else {
+                        _scannedContainerIdController.text = result;
+                      }
+                    });
+                    
+                    // Process after UI update
                     if (_selectedMode == AssignmentMode.product) {
-                      _productSearchController.text = result;
                       _searchProductsForTransfer(result);
                     } else {
                       await _processScannedData('container', result);

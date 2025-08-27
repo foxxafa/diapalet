@@ -3,6 +3,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/utils/keyboard_utils.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
@@ -60,6 +62,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   TransferableContainer? _selectedContainer;
   final _scannedContainerIdController = TextEditingController();
   final _containerFocusNode = FocusNode();
+  String? _dynamicProductLabel; // Dinamik product label için
 
   List<ProductItem> _productsInContainer = [];
   final Map<String, TextEditingController> _productQuantityControllers = {};
@@ -173,13 +176,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
       _filterContainersByMode();
 
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            FocusScope.of(context).requestFocus(_containerFocusNode);
-          }
-        });
-      }
+      // Sayfa yüklendiğinde otomatik klavye açılmasını engelle
+      // Kullanıcı manuel olarak tıkladığında klavye açılacak
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('order_transfer.error_loading_data'.tr(namedArgs: {'error': e.toString()}));
@@ -254,6 +252,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         break;
 
       case 'container':
+        // First try to find by container ID or display name
         final foundContainer = _availableContainers.where((container) {
           return container.id.toLowerCase() == cleanData.toLowerCase() ||
                  container.displayName.toLowerCase().contains(cleanData.toLowerCase());
@@ -262,8 +261,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         if (foundContainer != null) {
           _handleContainerSelection(foundContainer);
         } else {
-          _scannedContainerIdController.clear();
-          _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': cleanData}));
+          // If not found, try barcode search
+          await _searchByBarcode(cleanData);
         }
         break;
     }
@@ -274,7 +273,17 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
     setState(() {
       _selectedContainer = selectedContainer;
-      _scannedContainerIdController.text = selectedContainer.displayName;
+      // Show barcode for products, pallet ID for pallets
+      if (selectedContainer.isPallet) {
+        _scannedContainerIdController.text = selectedContainer.id;
+        _dynamicProductLabel = null; // Pallet için label değişmez
+      } else {
+        // For products, show barcode if available, otherwise product name
+        final barcode = selectedContainer.items.first.product.productBarcode;
+        _scannedContainerIdController.text = barcode ?? selectedContainer.displayName;
+        // Label'ı ürün adıyla güncelle
+        _dynamicProductLabel = selectedContainer.displayName;
+      }
       _containerSearchResults = []; // Clear search results
     });
 
@@ -290,6 +299,38 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       _isTargetLocationValid = true; // Mark as valid when location is found
     });
     FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _searchByBarcode(String barcode) async {
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final product = await dbHelper.getProductByBarcode(barcode, orderId: widget.order.id);
+      
+      if (product != null) {
+        // Try to find a matching container in available containers
+        final matchingContainer = _availableContainers.where((container) {
+          if (container.isPallet) return false;
+          
+          final containerProduct = container.items.first.product;
+          return containerProduct.stockCode == product['StokKodu'] ||
+                 containerProduct.productBarcode == barcode;
+        }).firstOrNull;
+        
+        if (matchingContainer != null) {
+          _handleContainerSelection(matchingContainer);
+        } else {
+          _scannedContainerIdController.clear();
+          _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': barcode}));
+        }
+      } else {
+        _scannedContainerIdController.clear();
+        _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': barcode}));
+      }
+    } catch (e) {
+      debugPrint('Barcode search error: $e');
+      _scannedContainerIdController.clear();
+      _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': barcode}));
+    }
   }
 
   Future<void> _fetchContainerContents() async {
@@ -339,6 +380,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _productsInContainer = [];
     _selectedContainer = null;
     _containerSearchResults = []; // Clear search results
+    _dynamicProductLabel = null; // Label'ı da temizle
     _clearProductControllers();
   }
 
@@ -443,11 +485,23 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                                   height: 56,
                                   child: _QrButton(
                                     onTap: () async {
+                                      // Gelişmiş klavye kapatma
+                                      await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_targetLocationFocusNode]);
+                                      
                                       final result = await Navigator.push<String>(
                                         context,
                                         MaterialPageRoute(builder: (context) => const QrScannerScreen())
                                       );
                                       if (result != null && result.isNotEmpty) {
+                                        // Text alanına yazmayı garantile
+                                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            _targetLocationController.text = result;
+                                            _targetLocationController.selection = TextSelection.fromPosition(
+                                              TextPosition(offset: result.length),
+                                            );
+                                          }
+                                        });
                                         await _processScannedData('target', result);
                                       }
                                     },
@@ -638,7 +692,14 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           ),
         );
 
-        Navigator.of(context).pop(true);
+        // Transfer başarılı, yeni transfer için formu temizle
+        _resetContainerAndProducts();
+        _selectedTargetLocationName = null;
+        _targetLocationController.clear();
+        _isTargetLocationValid = false;
+        
+        // Transfer tamamlandı - klavye açmadan bekle
+        // Kullanıcı field'a tıkladığında klavye açılacak
       }
     } catch (e) {
       if (mounted) {
@@ -665,7 +726,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                 decoration: _inputDecoration(
                   _selectedMode == AssignmentMode.pallet
                       ? 'order_transfer.label_pallet'.tr()
-                      : 'order_transfer.label_product'.tr(),
+                      : _dynamicProductLabel ?? 'order_transfer.label_product'.tr(),
                   enabled: true,
                 ),
                 onChanged: (value) {
@@ -693,22 +754,25 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               height: 56, // TextFormField ile aynı yükseklik
               child: _QrButton(
                 onTap: () async {
-                  // İlk önce manuel scan'i dene (mevcut metni işle)
-                  final currentText = _scannedContainerIdController.text.trim();
-                  if (currentText.isNotEmpty) {
-                    await _processScannedData('container', currentText);
-                  }
+                  // Gelişmiş klavye kapatma  
+                  await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_containerFocusNode]);
                   
-                  // Eğer hala container seçilmemişse QR scanner'ı aç
-                  await Future.delayed(const Duration(milliseconds: 100));
-                  if (_selectedContainer == null) {
-                    final result = await Navigator.push<String>(
-                      context,
-                      MaterialPageRoute(builder: (context) => const QrScannerScreen())
-                    );
-                    if (result != null && result.isNotEmpty) {
-                      await _processScannedData('container', result);
-                    }
+                  final result = await Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                  );
+                  
+                  if (result != null && result.isNotEmpty) {
+                    // Text alanına yazmayı garantile
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        _scannedContainerIdController.text = result;
+                        _scannedContainerIdController.selection = TextSelection.fromPosition(
+                          TextPosition(offset: result.length),
+                        );
+                      }
+                    });
+                    await _processScannedData('container', result);
                   }
                 },
               ),
@@ -752,28 +816,69 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   void _onContainerTextChanged(String value) {
-    setState(() {
-      if (value.isEmpty) {
+    if (value.isEmpty) {
+      setState(() {
         _containerSearchResults = [];
-        return;
+        _dynamicProductLabel = null; // Text temizlendiğinde label'ı da temizle
+      });
+      return;
+    }
+    
+    // Önce mevcut container'larda ara
+    final lowerQuery = value.toLowerCase();
+    final localResults = _availableContainers.where((container) {
+      if (container.isPallet) {
+        return container.id.toLowerCase().contains(lowerQuery);
+      } else {
+        final product = container.items.first.product;
+        return product.name.toLowerCase().contains(lowerQuery) ||
+               product.stockCode.toLowerCase().contains(lowerQuery) ||
+               (product.productBarcode?.toLowerCase().contains(lowerQuery) ?? false);
       }
-      
-      // Filter containers based on search query (name, stock code, barcode, or pallet ID)
-      final lowerQuery = value.toLowerCase();
-      _containerSearchResults = _availableContainers.where((container) {
-        if (container.isPallet) {
-          // Pallet containers: search by pallet ID
-          return container.id.toLowerCase().contains(lowerQuery);
-        } else {
-          // Product containers: search by product name, stock code, or related barcode
-          final product = container.items.first.product;
-          return product.name.toLowerCase().contains(lowerQuery) ||
-                 product.stockCode.toLowerCase().contains(lowerQuery);
-          // Note: Container barcode search would require additional data structure
-          // For now, focusing on product name and stock code matching
-        }
-      }).toList();
+    }).toList();
+    
+    setState(() {
+      _containerSearchResults = localResults;
     });
+    
+    // Eğer tam barkod gibi görünüyorsa (5+ karakter), database'de de ara
+    if (value.length >= 5) {
+      _performBarcodeSearch(value);
+    }
+  }
+  
+  Future<void> _performBarcodeSearch(String query) async {
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final products = await dbHelper.searchProductsByBarcode(query, orderId: widget.order.id);
+      
+      if (products.isNotEmpty) {
+        // Database sonuçlarını mevcut container'larla eşleştir
+        final matchingContainers = <TransferableContainer>[];
+        for (final product in products) {
+          final matching = _availableContainers.where((container) {
+            if (container.isPallet) return false;
+            final containerProduct = container.items.first.product;
+            return containerProduct.stockCode == product['StokKodu'];
+          });
+          matchingContainers.addAll(matching);
+        }
+        
+        // Duplicate'leri kaldır ve mevcut sonuçlarla birleştir
+        final combinedResults = <TransferableContainer>[
+          ..._containerSearchResults,
+          ...matchingContainers.where((container) => 
+            !_containerSearchResults.any((existing) => existing.id == container.id)
+          )
+        ];
+        
+        setState(() {
+          _containerSearchResults = combinedResults;
+        });
+      }
+    } catch (e) {
+      debugPrint('Database barcode search error: $e');
+    }
   }
 
   Widget _buildProductsList() {
@@ -959,16 +1064,28 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     if (!mounted) return;
 
     if (_containerFocusNode.hasFocus) {
+      setState(() {
+        _scannedContainerIdController.text = code;
+      });
       _processScannedData('container', code);
     } else if (_targetLocationFocusNode.hasFocus) {
+      setState(() {
+        _targetLocationController.text = code;
+      });
       _processScannedData('target', code);
     } else {
       // Aktif bir odak yoksa, mantıksal bir sıra izle
       if (_selectedContainer == null) {
         _containerFocusNode.requestFocus();
+        setState(() {
+          _scannedContainerIdController.text = code;
+        });
         _processScannedData('container', code);
       } else {
         _targetLocationFocusNode.requestFocus();
+        setState(() {
+          _targetLocationController.text = code;
+        });
         _processScannedData('target', code);
       }
     }

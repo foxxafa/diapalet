@@ -357,10 +357,23 @@ class TerminalController extends Controller
             $goodsReceipt = GoodsReceipts::findOne($receiptId);
             $goodsReceiptItems = GoodsReceiptItems::find()->where(['receipt_id' => $receiptId])->all();
             
+            Yii::info("DIA entegrasyonu başlatılıyor - Receipt ID: $receiptId, Item sayısı: " . count($goodsReceiptItems), __METHOD__);
+            
             if ($goodsReceipt && !empty($goodsReceiptItems)) {
                 $result = Dia::goodReceiptIrsaliyeEkle($goodsReceipt, $goodsReceiptItems);
                 // DIA işlem sonucunu log'a kaydet
                 Yii::info("DIA goodReceiptIrsaliyeEkle result for receipt $receiptId: " . json_encode($result), __METHOD__);
+                
+                // Sonucu response'a ekle
+                if($result && isset($result['code'])) {
+                    if($result['code'] == '200') {
+                        Yii::info("✓ DIA İrsaliye başarıyla oluşturuldu. DIA Key: " . ($result['key'] ?? 'N/A'), __METHOD__);
+                    } else {
+                        Yii::warning("✗ DIA İrsaliye oluşturulamadı: " . ($result['msg'] ?? 'Bilinmeyen hata'), __METHOD__);
+                    }
+                }
+            } else {
+                Yii::warning("DIA entegrasyonu atlandı - Mal kabul veya kalemler bulunamadı", __METHOD__);
             }
         } catch (\Exception $e) {
             // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder

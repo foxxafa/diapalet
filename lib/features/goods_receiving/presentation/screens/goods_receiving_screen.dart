@@ -3,6 +3,7 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
+import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -261,87 +262,74 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: viewModel.productController,
-                focusNode: viewModel.productFocusNode,
-                enabled: viewModel.areFieldsEnabled,
-                maxLines: 1, // Tek satır yap
-                decoration: _inputDecoration(
-                  viewModel.selectedProduct == null 
-                    ? (viewModel.isOrderBased
-                        ? 'goods_receiving_screen.label_select_product_in_order'.tr()
-                        : 'goods_receiving_screen.label_select_product'.tr())
-                    : '${viewModel.selectedProduct!.name} (${viewModel.selectedProduct!.stockCode})',
-                  enabled: viewModel.areFieldsEnabled,
-                ),
-                onChanged: (value) {
-                  // Auto-search and select product as user types
-                  viewModel.onProductTextChanged(value);
+        QrTextField(
+          controller: viewModel.productController,
+          focusNode: viewModel.productFocusNode,
+          enabled: viewModel.areFieldsEnabled,
+          maxLines: 1,
+          labelText: viewModel.selectedProduct == null 
+            ? (viewModel.isOrderBased
+                ? 'goods_receiving_screen.label_select_product_in_order'.tr()
+                : 'goods_receiving_screen.label_select_product'.tr())
+            : '${viewModel.selectedProduct!.name} (${viewModel.selectedProduct!.stockCode})',
+          onChanged: (value) {
+            // Auto-search and select product as user types
+            viewModel.onProductTextChanged(value);
 
-                  // Focus expiry date field when product is selected
-                  if (value.length > 5 && viewModel.selectedProduct != null) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
-                        viewModel.expiryDateFocusNode.requestFocus();
-                      }
-                    });
-                  }
-                },
-                onFieldSubmitted: (value) async {
-                  // Enter'a basıldığında ürünü ara ve seç
-                  if (value.isNotEmpty) {
-                    // Eğer search sonuçları varsa ilk sonucu seç
-                    if (viewModel.productSearchResults.isNotEmpty) {
-                      viewModel.selectProduct(viewModel.productSearchResults.first);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
-                          viewModel.expiryDateFocusNode.requestFocus();
-                        }
-                      });
-                    } else {
-                      // Search sonuçları yoksa barkod olarak işle
-                      await viewModel.processScannedData('product', value);
-                      // UI güncellemesi tamamlandıktan sonra çalıştır
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
-                          viewModel.expiryDateFocusNode.requestFocus();
-                        }
-                      });
-                    }
-                  }
-                },
-                textInputAction: TextInputAction.search, // Klavyede arama ikonu göster
-                validator: viewModel.validateProduct,
-              ),
-            ),
-            const SizedBox(width: _smallGap),
-            _QrButton(
-              onTap: () async {
-                if (viewModel.areFieldsEnabled) {
-                  // İlk önce manuel scan'i dene
-                  viewModel.triggerManualScan();
-
-                  // Eğer hala sonuç yoksa QR scanner'ı aç
-                  await Future.delayed(const Duration(milliseconds: 100));
-                  if (viewModel.selectedProduct == null) {
-                    final result = await Navigator.push<String>(
-                      context,
-                      MaterialPageRoute(builder: (context) => const QrScannerScreen())
-                    );
-                    if (!mounted) return;
-                    if (result != null && result.isNotEmpty) {
-                      await viewModel.processScannedData('product', result);
-                    }
-                  }
+            // Focus expiry date field when product is selected
+            if (value.length > 5 && viewModel.selectedProduct != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                  viewModel.expiryDateFocusNode.requestFocus();
                 }
-              },
-              isEnabled: viewModel.areFieldsEnabled,
-            ),
-          ],
+              });
+            }
+          },
+          onFieldSubmitted: (value) async {
+            // Enter'a basıldığında ürünü ara ve seç
+            if (value.isNotEmpty) {
+              // Eğer search sonuçları varsa ilk sonucu seç
+              if (viewModel.productSearchResults.isNotEmpty) {
+                viewModel.selectProduct(viewModel.productSearchResults.first);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                    viewModel.expiryDateFocusNode.requestFocus();
+                  }
+                });
+              } else {
+                // Search sonuçları yoksa barkod olarak işle
+                await viewModel.processScannedData('product', value);
+                // UI güncellemesi tamamlandıktan sonra çalıştır
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
+                    viewModel.expiryDateFocusNode.requestFocus();
+                  }
+                });
+              }
+            }
+          },
+          textInputAction: TextInputAction.search,
+          validator: viewModel.validateProduct,
+          // Karmaşık QR buton mantığı için özel callback
+          onQrTap: () async {
+            if (viewModel.areFieldsEnabled) {
+              // İlk önce manuel scan'i dene
+              viewModel.triggerManualScan();
+
+              // Eğer hala sonuç yoksa QR scanner'ı aç
+              await Future.delayed(const Duration(milliseconds: 100));
+              if (viewModel.selectedProduct == null) {
+                final result = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                );
+                if (!mounted) return;
+                if (result != null && result.isNotEmpty) {
+                  await viewModel.processScannedData('product', result);
+                }
+              }
+            }
+          },
         ),
         if (viewModel.productSearchResults.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -380,45 +368,26 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildPalletIdField(GoodsReceivingViewModel viewModel) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: TextFormField(
-            controller: viewModel.palletIdController,
-            focusNode: viewModel.palletIdFocusNode,
-            enabled: viewModel.areFieldsEnabled,
-            decoration: _inputDecoration(
-              'goods_receiving_screen.label_pallet_barcode'.tr(),
-              enabled: viewModel.areFieldsEnabled,
-            ),
-            onFieldSubmitted: (value) async {
-              if (value.isNotEmpty) {
-                await viewModel.processScannedData('pallet', value);
-              }
-            },
-            validator: viewModel.validatePalletId,
-          ),
-        ),
-        const SizedBox(width: _smallGap),
-        _QrButton(
-          onTap: () async {
-            // İlk önce mevcut metni kontrol et
-            final currentText = viewModel.palletIdController.text.trim();
-            if (currentText.isNotEmpty) {
-              await viewModel.processScannedData('pallet', currentText);
-            } else {
-              // Metin yoksa QR scanner'ı aç
-              final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const QrScannerScreen()));
-              if (!mounted) return;
-              if (result != null && result.isNotEmpty) {
-                await viewModel.processScannedData('pallet', result);
-              }
-            }
-          },
-          isEnabled: viewModel.areFieldsEnabled,
-        ),
-      ],
+    return QrTextField(
+      controller: viewModel.palletIdController,
+      focusNode: viewModel.palletIdFocusNode,
+      labelText: 'goods_receiving_screen.label_pallet_barcode'.tr(),
+      enabled: viewModel.areFieldsEnabled,
+      onFieldSubmitted: (value) async {
+        if (value.isNotEmpty) {
+          await viewModel.processScannedData('pallet', value);
+        }
+      },
+      onQrScanned: (result) async {
+        // Karmaşık mantığı callback'te işle
+        final currentText = viewModel.palletIdController.text.trim();
+        if (currentText.isNotEmpty) {
+          await viewModel.processScannedData('pallet', currentText);
+        } else {
+          await viewModel.processScannedData('pallet', result);
+        }
+      },
+      validator: viewModel.validatePalletId,
     );
   }
 
@@ -1010,33 +979,6 @@ bool _isValidDate(String dateString) {
   }
 }
 
-class _QrButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final bool isEnabled;
-
-  const _QrButton({required this.onTap, this.isEnabled = true});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      width: 56,
-      child: ElevatedButton(
-        onPressed: isEnabled ? onTap : null,
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          padding: EdgeInsets.zero,
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final iconSize = constraints.maxHeight * 0.6;
-            return Icon(Icons.qr_code_scanner, size: iconSize);
-          },
-        ),
-      ),
-    );
-  }
-}
 
 class _FullscreenConfirmationPage extends StatelessWidget {
   final ValueChanged<ReceiptItemDraft> onItemRemoved;

@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
-import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
+import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
@@ -133,56 +133,12 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _barcodeController,
-              focusNode: _barcodeFocusNode,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'inventory_inquiry.barcode_label'.tr(),
-                border: const OutlineInputBorder(),
-                suffixIcon: _barcodeController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _barcodeController.clear();
-                          setState(() {
-                            _locations = null;
-                            _lastSearchedBarcode = null;
-                          });
-                          _barcodeFocusNode.requestFocus();
-                        },
-                      )
-                    : null,
-              ),
-              onFieldSubmitted: (_) => _search(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            height: 56,
-            child: ElevatedButton(
-              onPressed: () async {
-                final result = await Navigator.push<String>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const QrScannerScreen(),
-                  ),
-                );
-                if (result != null && result.isNotEmpty) {
-                  _handleBarcode(result);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.zero,
-              ),
-              child: const Icon(Icons.qr_code_scanner, size: 32),
-            ),
-          ),
-        ],
+      child: QrTextField(
+        controller: _barcodeController,
+        focusNode: _barcodeFocusNode,
+        labelText: 'inventory_inquiry.barcode_label'.tr(),
+        onFieldSubmitted: (_) => _search(),
+        onQrScanned: (scannedData) => _handleBarcode(scannedData),
       ),
     );
   }

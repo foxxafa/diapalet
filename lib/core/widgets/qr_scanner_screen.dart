@@ -26,6 +26,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final barcode = capture.barcodes.first.rawValue;
       if (barcode != null && barcode.isNotEmpty) {
         _isHandling = true;
+        // Kamerayı durdur ve kapat
+        controller.stop();
         if (mounted) Navigator.pop(context, barcode);
       }
     });
