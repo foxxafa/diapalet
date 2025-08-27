@@ -353,7 +353,7 @@ class TerminalController extends Controller
         }
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
-        /* try {
+         try {
             $goodsReceipt = GoodsReceipts::findOne($receiptId);
             $goodsReceiptItems = GoodsReceiptItems::find()->where(['receipt_id' => $receiptId])->all();
             
@@ -365,7 +365,7 @@ class TerminalController extends Controller
         } catch (\Exception $e) {
             // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder
             Yii::error("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), __METHOD__);
-        } */
+        }
 
         if ($siparisId) {
             $this->checkAndFinalizeReceiptStatus($db, $siparisId);

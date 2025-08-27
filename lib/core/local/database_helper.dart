@@ -1274,10 +1274,20 @@ class DatabaseHelper {
       }
 
       final prefs = await SharedPreferences.getInstance();
+      
+      final warehouseName = prefs.getString('warehouse_name') ?? 'N/A';
+      final warehouseCode = prefs.getString('warehouse_code') ?? 'N/A';
+      final branchName = prefs.getString('branch_name') ?? 'N/A';
+      
+      debugPrint('🏭 TRANSFER ENRICH: SharedPreferences warehouse bilgileri:');
+      debugPrint('  - warehouse_name: $warehouseName');
+      debugPrint('  - warehouse_code: $warehouseCode');
+      debugPrint('  - branch_name: $branchName');
+      
       Map<String, dynamic> warehouseInfo = {
-        'name': prefs.getString('warehouse_name') ?? 'N/A',
-        'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
-        'branch_name': prefs.getString('branch_name') ?? 'N/A',
+        'name': warehouseName,
+        'warehouse_code': warehouseCode,
+        'branch_name': branchName,
       };
 
       header['warehouse_info'] = warehouseInfo;
@@ -1393,11 +1403,23 @@ class DatabaseHelper {
       }
 
       final prefs = await SharedPreferences.getInstance();
+      
+      final warehouseName = prefs.getString('warehouse_name') ?? 'N/A';
+      final warehouseCode = prefs.getString('warehouse_code') ?? 'N/A';
+      final branchName = prefs.getString('branch_name') ?? 'N/A';
+      final receivingMode = prefs.getInt('receiving_mode') ?? 2;
+      
+      debugPrint('🏭 PDF ENRICH: SharedPreferences warehouse bilgileri:');
+      debugPrint('  - warehouse_name: $warehouseName');
+      debugPrint('  - warehouse_code: $warehouseCode');
+      debugPrint('  - branch_name: $branchName');
+      debugPrint('  - receiving_mode: $receivingMode');
+      
       Map<String, dynamic> warehouseInfo = {
-        'name': prefs.getString('warehouse_name') ?? 'N/A',
-        'warehouse_code': prefs.getString('warehouse_code') ?? 'N/A',
-        'branch_name': prefs.getString('branch_name') ?? 'N/A',
-        'receiving_mode': prefs.getInt('receiving_mode') ?? 2, // Default: mixed
+        'name': warehouseName,
+        'warehouse_code': warehouseCode,
+        'branch_name': branchName,
+        'receiving_mode': receivingMode,
       };
 
       // Warehouse bilgileri SharedPreferences'tan alındı
@@ -2243,6 +2265,7 @@ class DatabaseHelper {
 
   /// Farklı depo kullanıcısı giriş yaptığında warehouse'a özel verileri temizler
   /// Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korunur
+  /// EMPLOYEES tablosu offline login için gerekli olduğundan korunur
   Future<void> clearWarehouseSpecificData() async {
     final db = await database;
     debugPrint("🧹 Warehouse'a özel veriler temizleniyor...");
@@ -2259,14 +2282,15 @@ class DatabaseHelper {
       batch.delete('siparis_ayrintili');            // siparisler'e bağlı
       batch.delete('siparisler');                   // warehouse'a bağlı
       batch.delete('shelfs');                       // warehouse'a bağlı
-      batch.delete('employees');                    // warehouse'a bağlı
+      // EMPLOYEES tablosunu SİLME - offline login için gerekli!
+      // batch.delete('employees');                 // COMMENTED OUT - offline login için gerekli
       batch.delete('pending_operation');            // Bekleyen işlemler de temizle
       batch.delete('sync_log');                     // Sync logları da temizle
       
       await batch.commit(noResult: true);
     });
 
-    debugPrint("✅ Warehouse'a özel veriler temizlendi. Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korundu.");
+    debugPrint("✅ Warehouse'a özel veriler temizlendi. Employees tablosu offline login için korundu. Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korundu.");
   }
 
   Future<void> resetDatabase() async {

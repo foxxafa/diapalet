@@ -28,22 +28,18 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
-  /// GÜNCELLEME: Kullanıcı oturumunu sonlandıran ve yerel depolamayı temizleyen fonksiyon.
+  /// GÜNCELLEME: Kullanıcı oturumunu sonlandıran fonksiyon.
+  /// OFFLINE KULLANIM İÇİN: warehouse ve branch bilgileri korunur
   @override
   Future<void> logout() async {
-    debugPrint("Çıkış yapılıyor ve oturum verileri temizleniyor...");
+    debugPrint("Çıkış yapılıyor - offline kullanım için warehouse bilgileri korunacak...");
 
     // Dio istemcisindeki Authorization başlığını kaldır.
     dio.options.headers.remove('Authorization');
 
-    // SharedPreferences'teki tüm kullanıcı verilerini temizle.
+    // SharedPreferences'ten SADECE kullanıcı kimlik verilerini temizle
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_id');
-    await prefs.remove('warehouse_id');
-    await prefs.remove('warehouse_name');
-    await prefs.remove('warehouse_code');
-    await prefs.remove('branch_name');
-    await prefs.remove('apikey');
     await prefs.remove('first_name');
     await prefs.remove('last_name');
 
@@ -54,7 +50,16 @@ class AuthRepositoryImpl implements AuthRepository {
     // Eski generic timestamp key'ini de temizle (backward compatibility)
     await prefs.remove('last_sync_timestamp');
 
-    debugPrint("Oturum başarıyla sonlandırıldı.");
+    // ⚠️ OFFLINE KULLANIM İÇİN KORUNANLAR:
+    // - warehouse_id (depo seçimi için)
+    // - warehouse_name (PDF'ler için)  
+    // - warehouse_code (offline login için)
+    // - branch_name (PDF'ler için)
+    // - apikey (sync için - tekrar online olduğunda)
+    // - receiving_mode (depo ayarları için)
+
+    debugPrint("✅ Oturum sonlandırıldı. Warehouse bilgileri offline kullanım için korundu.");
+    debugPrint("🔒 Korunan veriler: warehouse_name, warehouse_code, branch_name, apikey, receiving_mode");
   }
 
   Future<Map<String, dynamic>?> _loginOnline(String username, String password) async {
@@ -202,29 +207,78 @@ class AuthRepositoryImpl implements AuthRepository {
         }
 
         // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
+        // ANCAK warehouse/branch name bilgilerini koruyalım
         if (previousWarehouseCode != null && previousWarehouseCode != newWarehouseCode) {
           debugPrint("🔄 [OFFLINE] Warehouse değişimi tespit edildi! Önceki: $previousWarehouseCode → Yeni: $newWarehouseCode");
+          debugPrint("⚠️ [OFFLINE] Warehouse/branch bilgileri korunacak, sadece operasyon verileri temizlenecek");
           await dbHelper.clearWarehouseSpecificData();
-          debugPrint("✅ [OFFLINE] Eski warehouse verileri temizlendi.");
+          debugPrint("✅ [OFFLINE] Eski warehouse operasyon verileri temizlendi.");
         } else if (previousUserId != null && previousUserId != newUserId) {
           debugPrint("🔄 [OFFLINE] Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
+          debugPrint("⚠️ [OFFLINE] Warehouse/branch bilgileri korunacak, sadece operasyon verileri temizlenecek");
           await dbHelper.clearWarehouseSpecificData();
-          debugPrint("✅ [OFFLINE] Eski kullanıcı verileri temizlendi.");
+          debugPrint("✅ [OFFLINE] Eski kullanıcı operasyon verileri temizlendi.");
         } else if (previousWarehouseCode == null) {
           debugPrint("🆕 [OFFLINE] İlk giriş - warehouse code: $newWarehouseCode");
         } else {
           debugPrint("✅ [OFFLINE] Aynı warehouse'da login - warehouse code: $newWarehouseCode (veri temizliği gerek yok)");
         }
 
-        // Kullanıcı bilgilerini kaydet (warehouse_id olmadan)
+        // Kullanıcı bilgilerini kaydet - mevcut warehouse/branch bilgilerini koru
         await prefs.setInt('user_id', newUserId);
         await prefs.setString('warehouse_code', newWarehouseCode);
-        await prefs.setString('warehouse_name', 'N/A'); // Offline durumda warehouse name mevcut değil
         await prefs.setString('first_name', user['first_name'] as String? ?? 'N/A');
         await prefs.setString('last_name', user['last_name'] as String? ?? 'N/A');
 
-        // Offline durumda branch bilgisi genelde mevcut olmaz, N/A olarak ayarla
-        await prefs.setString('branch_name', 'N/A');
+        // Mevcut warehouse_name, branch_name ve API key'i KORU - offline'da bunlar değişmez
+        final existingWarehouseName = prefs.getString('warehouse_name');
+        final existingBranchName = prefs.getString('branch_name');
+        final existingReceivingMode = prefs.getInt('receiving_mode');
+        final existingApiKey = prefs.getString('apikey');
+        
+        debugPrint('🔍 [OFFLINE] Mevcut bilgiler kontrol ediliyor:');
+        debugPrint('  - warehouse_name: $existingWarehouseName');
+        debugPrint('  - branch_name: $existingBranchName');
+        debugPrint('  - receiving_mode: $existingReceivingMode');
+        debugPrint('  - apikey: ${existingApiKey != null ? 'MEVCUT (${existingApiKey.substring(0, 10)}...)' : 'YOK'}');
+        
+        // Logout artık warehouse bilgilerini koruduğu için bu değerler mevcut olmalı
+        if (existingWarehouseName == null) {
+          debugPrint('  ❌ HATA: warehouse_name YOK - Logout düzgün çalışmamış olabilir');
+          throw Exception('Warehouse bilgileri bulunamadı. Lütfen önce online login yapın.');
+        } else {
+          // Değeri tekrar yaz ki silinmesin
+          await prefs.setString('warehouse_name', existingWarehouseName);
+          debugPrint('  ✅ warehouse_name KORUNDU: $existingWarehouseName');
+        }
+        
+        if (existingBranchName == null) {
+          debugPrint('  ❌ HATA: branch_name YOK - Logout düzgün çalışmamış olabilir');
+          throw Exception('Branch bilgileri bulunamadı. Lütfen önce online login yapın.');
+        } else {
+          // Değeri tekrar yaz ki silinmesin
+          await prefs.setString('branch_name', existingBranchName);
+          debugPrint('  ✅ branch_name KORUNDU: $existingBranchName');
+        }
+        
+        if (existingReceivingMode == null) {
+          await prefs.setInt('receiving_mode', 2);
+          debugPrint('  ⚠️ receiving_mode YOK - varsayılan 2 atandı');
+        } else {
+          // Değeri tekrar yaz ki silinmesin
+          await prefs.setInt('receiving_mode', existingReceivingMode);
+          debugPrint('  ✅ receiving_mode KORUNDU: $existingReceivingMode');
+        }
+        
+        // API KEY'İ MUTLAKA KORU - offline'da sync için gerekli!
+        if (existingApiKey != null) {
+          await prefs.setString('apikey', existingApiKey);
+          // Dio client'a da ekle ki sync yapabilsin
+          dio.options.headers['Authorization'] = 'Bearer $existingApiKey';
+          debugPrint('  ✅ API KEY KORUNDU ve Dio\'ya eklendi - sync yapılabilecek');
+        } else {
+          debugPrint('  ⚠️ API KEY YOK - sync yapılamayacak, önce online login gerekli');
+        }
 
         return {'success': true};
       } else {
