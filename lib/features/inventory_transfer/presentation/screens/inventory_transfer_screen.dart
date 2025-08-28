@@ -148,15 +148,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   void _onFocusChange() {
-    if (_sourceLocationFocusNode.hasFocus && _sourceLocationController.text.isNotEmpty) {
-      _sourceLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _sourceLocationController.text.length);
-    }
-    if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
-      _scannedContainerIdController.selection = TextSelection(baseOffset: 0, extentOffset: _scannedContainerIdController.text.length);
-    }
-    if (_targetLocationFocusNode.hasFocus && _targetLocationController.text.isNotEmpty) {
-      _targetLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _targetLocationController.text.length);
-    }
+    // TextSelection'ları kaldırıldı - klavye açılmasını önlemek için
+    // if (_sourceLocationFocusNode.hasFocus && _sourceLocationController.text.isNotEmpty) {
+    //   _sourceLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _sourceLocationController.text.length);
+    // }
+    // if (_containerFocusNode.hasFocus && _scannedContainerIdController.text.isNotEmpty) {
+    //   _scannedContainerIdController.selection = TextSelection(baseOffset: 0, extentOffset: _scannedContainerIdController.text.length);
+    // }
+    // if (_targetLocationFocusNode.hasFocus && _targetLocationController.text.isNotEmpty) {
+    //   _targetLocationController.selection = TextSelection(baseOffset: 0, extentOffset: _targetLocationController.text.length);
+    // }
   }
 
   void _clearProductControllers() {
@@ -201,14 +202,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         // _loadContainersForLocation'ı bekle ve sonra setState çağır.
         await _loadContainersForLocation();
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            FocusScope.of(context).requestFocus(
-              (widget.selectedOrder != null || widget.isFreePutAway)
-                  ? _containerFocusNode
-                  : _sourceLocationFocusNode);
-          }
-        });
+        // Sayfa açılışında otomatik focus yapma - klavye açılmasını önle
+        // WidgetsBinding.instance.addPostFrameCallback((_) {
+        //   if (mounted) {
+        //     FocusScope.of(context).requestFocus(
+        //       (widget.selectedOrder != null || widget.isFreePutAway)
+        //           ? _containerFocusNode
+        //           : _sourceLocationFocusNode);
+        //   }
+        // });
       }
     } catch (e) {
       if (mounted) {
@@ -290,13 +292,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               _selectedSourceLocationName = null;
               _sourceLocationController.text = cleanData;
               setState(() => _isSourceLocationValid = false);
-              FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
+              // Hata durumunda otomatik focus yapma - klavye açılmasını önle
+              // FocusScope.of(context).requestFocus(_sourceLocationFocusNode);
             }
             if (field == 'target') {
               _selectedTargetLocationName = null;
               _targetLocationController.text = cleanData;
               setState(() => _isTargetLocationValid = false);
-              FocusScope.of(context).requestFocus(_targetLocationFocusNode);
+              // Hata durumunda otomatik focus yapma - klavye açılmasını önle
+              // FocusScope.of(context).requestFocus(_targetLocationFocusNode);
             }
             _showErrorSnackBar('inventory_transfer.error_invalid_location_for_operation'
               .tr(namedArgs: {'location': location.key, 'field': field}));
@@ -499,7 +503,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _isTargetLocationValid = false; // Reset target validity when source changes
     });
     _loadContainersForLocation();
-    _containerFocusNode.requestFocus();
+    // Otomatik focus yapma - kullanıcı manuel seçsin
+    // _containerFocusNode.requestFocus();
   }
 
   Future<void> _handleContainerSelection(dynamic selectedItem) async {
@@ -511,7 +516,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           : selectedItem.toString();
     });
     await _fetchContainerContents();
-    _targetLocationFocusNode.requestFocus();
+    // Otomatik focus yapma - kullanıcı manuel tıklayana kadar bekle
+    // _targetLocationFocusNode.requestFocus();
   }
 
   void _handleTargetSelection(String? locationName) {
@@ -777,7 +783,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _formKey.currentState?.reset();
-        FocusScope.of(context).requestFocus(resetAll ? _sourceLocationFocusNode : _containerFocusNode);
+        // Otomatik focus yapma - kullanıcı manuel tıklayana kadar bekle
+        // FocusScope.of(context).requestFocus(resetAll ? _sourceLocationFocusNode : _containerFocusNode);
       });
     });
   }
@@ -813,6 +820,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     _buildPalletOpeningSwitch(),
                     const SizedBox(height: _gap),
                   ],
+                  // Source location - grup halinde hizalama
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -840,24 +848,24 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         ),
                       ),
                       const SizedBox(width: _smallGap),
-                      SizedBox(
-                        height: 56,
-                        child: !(widget.selectedOrder != null || widget.isFreePutAway) ? _QrButton(
-                          onTap: () async {
-                            // Gelişmiş klavye kapatma
-                            await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_sourceLocationFocusNode]);
-                            
-                            final result = await Navigator.push<String>(
-                              context,
-                              MaterialPageRoute(builder: (context) => const QrScannerScreen())
-                            );
-                            if (result != null && result.isNotEmpty) {
-                              _sourceLocationController.text = result;
-                              await _processScannedData('source', result);
-                            }
-                          },
-                        ) : const SizedBox.shrink(),
-                      ),
+                      // QR butonu - sadece enabled durumda göster
+                      !(widget.selectedOrder != null || widget.isFreePutAway) 
+                        ? _QrButton(
+                            onTap: () async {
+                              // Gelişmiş klavye kapatma
+                              await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_sourceLocationFocusNode]);
+                              
+                              final result = await Navigator.push<String>(
+                                context,
+                                MaterialPageRoute(builder: (context) => const QrScannerScreen())
+                              );
+                              if (result != null && result.isNotEmpty) {
+                                _sourceLocationController.text = result;
+                                await _processScannedData('source', result);
+                              }
+                            },
+                          )
+                        : const SizedBox(width: 56), // Boşluk bırak ki hizalama bozulmasın
                     ],
                   ),
                   const SizedBox(height: _gap),
@@ -973,12 +981,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _targetLocationController.text = code;
       _processScannedData('target', code);
     } else {
+      // Otomatik focus yapmayı kaldır - sadece veriyi işle
       if (_selectedSourceLocationName == null) {
-        _sourceLocationFocusNode.requestFocus();
+        // _sourceLocationFocusNode.requestFocus(); // Klavye açar - kaldırıldı
         _sourceLocationController.text = code;
         _processScannedData('source', code);
       } else if (_selectedContainer == null) {
-        _containerFocusNode.requestFocus();
+        // _containerFocusNode.requestFocus(); // Klavye açar - kaldırıldı
         if (_selectedMode == AssignmentMode.product) {
           _productSearchController.text = code;
           _searchProductsForTransfer(code);
@@ -987,7 +996,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _processScannedData('container', code);
         }
       } else {
-        _targetLocationFocusNode.requestFocus();
+        // _targetLocationFocusNode.requestFocus(); // Klavye açar - kaldırıldı
         _targetLocationController.text = code;
         _processScannedData('target', code);
       }
@@ -1047,7 +1056,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               if (_selectedSourceLocationName != null) {
                 _loadContainersForLocation();
               } else {
-                _sourceLocationFocusNode.requestFocus();
+                // Otomatik focus yapma - kullanıcı manuel seçsin
+                // _sourceLocationFocusNode.requestFocus();
               }
             });
           }
@@ -1170,13 +1180,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           return null;
                         },
                         onFieldSubmitted: (value) {
-                          final productIds = _productQuantityFocusNodes.keys.toList();
-                          final currentIndex = productIds.indexOf(product.key);
-                          if (currentIndex < productIds.length - 1) {
-                            _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
-                          } else {
-                            _targetLocationFocusNode.requestFocus();
-                          }
+                          // Otomatik focus geçişini kaldır - klavye açılmasını önle
+                          // final productIds = _productQuantityFocusNodes.keys.toList();
+                          // final currentIndex = productIds.indexOf(product.key);
+                          // if (currentIndex < productIds.length - 1) {
+                          //   _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+                          // } else {
+                          //   _targetLocationFocusNode.requestFocus();
+                          // }
+                          
+                          // Sadece klavyeyi kapat
+                          FocusScope.of(context).unfocus();
                         },
                       ),
                     ),
@@ -1226,7 +1240,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // QrTextField ile aynı yükseklik
       isDense: true,
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -1306,9 +1320,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               ),
             ),
             const SizedBox(width: _smallGap),
-            SizedBox(
-              height: 56,
-              child: _QrButton(
+            _QrButton(
                 onTap: () async {
                   // Gelişmiş klavye kapatma - hem container hem product focus'u temizle
                   await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_containerFocusNode, _productSearchFocusNode]);
@@ -1334,7 +1346,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     }
                   }
                 },
-              ),
             ),
           ],
         ),
@@ -1380,19 +1391,15 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 56,
+      height: 56, // Text field ile aynı yükseklik
+      width: 56,  // Kare yapı
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
         ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final iconSize = constraints.maxHeight * 0.6;
-            return Icon(Icons.qr_code_scanner, size: iconSize);
-          },
-        ),
+        child: const Icon(Icons.qr_code_scanner, size: 28), // 28 boyutunda icon
       ),
     );
   }

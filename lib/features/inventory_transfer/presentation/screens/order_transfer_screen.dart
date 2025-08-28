@@ -288,7 +288,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     });
 
     _fetchContainerContents();
-    _targetLocationFocusNode.requestFocus();
+    // Otomatik focus yapma - kullanıcı manuel geçiş yapsın
+    // _targetLocationFocusNode.requestFocus();
   }
 
   void _handleTargetSelection(String? locationName) {
@@ -481,9 +482,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: _smallGap),
-                                SizedBox(
-                                  height: 56,
-                                  child: _QrButton(
+                                _QrButton(
                                     onTap: () async {
                                       // Gelişmiş klavye kapatma
                                       await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_targetLocationFocusNode]);
@@ -493,19 +492,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                                         MaterialPageRoute(builder: (context) => const QrScannerScreen())
                                       );
                                       if (result != null && result.isNotEmpty) {
-                                        // Text alanına yazmayı garantile
-                                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                                          if (mounted) {
-                                            _targetLocationController.text = result;
-                                            _targetLocationController.selection = TextSelection.fromPosition(
-                                              TextPosition(offset: result.length),
-                                            );
-                                          }
-                                        });
+                                        // Text alanına yaz ama focus yapma
+                                        _targetLocationController.text = result;
                                         await _processScannedData('target', result);
                                       }
                                     },
-                                  ),
                                 ),
                               ],
                             ),
@@ -715,7 +706,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start, // Text field ile QR buton hizalama
           children: [
             Expanded(
               child: TextFormField(
@@ -750,9 +741,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               ),
             ),
             const SizedBox(width: _smallGap),
-            SizedBox(
-              height: 56, // TextFormField ile aynı yükseklik
-              child: _QrButton(
+            _QrButton(
                 onTap: () async {
                   // Gelişmiş klavye kapatma  
                   await KeyboardUtils.prepareForQrScanner(context, focusNodes: [_containerFocusNode]);
@@ -763,19 +752,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                   );
                   
                   if (result != null && result.isNotEmpty) {
-                    // Text alanına yazmayı garantile
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        _scannedContainerIdController.text = result;
-                        _scannedContainerIdController.selection = TextSelection.fromPosition(
-                          TextPosition(offset: result.length),
-                        );
-                      }
-                    });
+                    // Text alanına yaz ama focus yapma
+                    _scannedContainerIdController.text = result;
                     await _processScannedData('container', result);
                   }
                 },
-              ),
             ),
           ],
         ),
@@ -1008,7 +989,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // QrTextField ile tutarlı yükseklik
       isDense: true,
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -1100,19 +1081,15 @@ class _QrButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 56,
+      height: 56, // Text field ile aynı yükseklik
+      width: 56,  // Kare yapı
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
           padding: EdgeInsets.zero,
         ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final iconSize = constraints.maxHeight * 0.6;
-            return Icon(Icons.qr_code_scanner, size: iconSize);
-          },
-        ),
+        child: const Icon(Icons.qr_code_scanner, size: 28), // Tutarlı 28 boyutunda icon
       ),
     );
   }

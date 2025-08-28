@@ -4,6 +4,7 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/qr_text_field.dart';
+import 'package:diapalet/core/utils/keyboard_utils.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -319,6 +320,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               // Eğer hala sonuç yoksa QR scanner'ı aç
               await Future.delayed(const Duration(milliseconds: 100));
               if (viewModel.selectedProduct == null) {
+                // Klavyeyi kapat
+                await KeyboardUtils.prepareForQrScanner(context, 
+                  focusNodes: [viewModel.productFocusNode]);
+                
                 final result = await Navigator.push<String>(
                   context,
                   MaterialPageRoute(builder: (context) => const QrScannerScreen())

@@ -40,7 +40,7 @@ class QrTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start, // Üstten hizala
       children: [
         Expanded(
           child: TextFormField(
@@ -56,9 +56,10 @@ class QrTextField extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
+        // QR butonu - text field ile aynı yükseklikte kare
         SizedBox(
-          height: 56,
-          width: 56,
+          height: 56, // Text field ile aynı yükseklik
+          width: 56,  // Kare yapı
           child: ElevatedButton(
             onPressed: enabled ? () => _onQrButtonPressed(context) : null,
             style: ElevatedButton.styleFrom(
@@ -67,7 +68,7 @@ class QrTextField extends StatelessWidget {
               ),
               padding: EdgeInsets.zero,
             ),
-            child: const Icon(Icons.qr_code_scanner, size: 24),
+            child: const Icon(Icons.qr_code_scanner, size: 28),
           ),
         ),
       ],
@@ -93,13 +94,8 @@ class QrTextField extends StatelessWidget {
       );
       
       if (result != null && result.isNotEmpty) {
-        // Text alanına yazmayı garantile
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          controller.text = result;
-          controller.selection = TextSelection.fromPosition(
-            TextPosition(offset: result.length),
-          );
-        });
+        // Text alanına yaz ama focus/selection yapma - klavye açılmasını önle
+        controller.text = result;
         
         // Callback'i çağır
         onQrScanned?.call(result);
