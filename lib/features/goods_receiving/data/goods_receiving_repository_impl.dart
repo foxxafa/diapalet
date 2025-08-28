@@ -238,77 +238,43 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
 
-    // Debug kaldırıldı - sistem çalışıyor
-
-    // Önce temel sipariş satırlarını alalım
-    final orderLines = await db.query(
-      'siparis_ayrintili',
-      where: 'siparisler_id = ? AND turu = ?',
-      whereArgs: [orderId, '1'],
-    );
+    // YENI YAKLAŞIM: Sipariş satırlarını birimi ile birlikte al
+    // Her sipariş satırında sipbirimkey ile eşleşen birimin bilgilerini direkt alalım
+    final orderLines = await db.rawQuery('''
+      SELECT 
+        sa.*,
+        u.UrunAdi,
+        u.StokKodu,
+        u._key as product_key,
+        b.birimadi,
+        b.birimkod,
+        b.carpan,
+        b._key as birim_key,
+        bark.barkod
+      FROM siparis_ayrintili sa
+      JOIN urunler u ON sa.kartkodu = u.StokKodu
+      LEFT JOIN birimler b ON sa.sipbirimkey = b._key
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE sa.siparisler_id = ? AND sa.turu = '1'
+      ORDER BY sa.id
+    ''', [orderId]);
 
     final items = <PurchaseOrderItem>[];
     
-    // Her bir satır için ürün ve barkod bilgilerini ayrı ayrı alalım
+    // Her sipariş satırı için zaten doğru birim bilgisi mevcut
     for (final line in orderLines) {
-      // HATA DÜZELTMESİ: urun_key null ise veya numeric ID ise kartkodu ile ürün key'ini bul
-      String? urunKey = line['urun_key'] as String?;
-      final productCode = line['kartkodu'] as String?;
+      final urunKey = line['product_key'] as String?;
+      final productCode = line['StokKodu'] as String?;
       
-      // urun_key null ise veya numeric bir değer ise (eski UrunId formatı) kartkodu ile ara
-      bool needsCodeLookup = urunKey == null || (urunKey.isNotEmpty && int.tryParse(urunKey) != null);
-      
-      if (needsCodeLookup && productCode != null) {
-        debugPrint("DEBUG: urun_key is '$urunKey' (null/numeric), trying to find via productCode: $productCode. Line ID: ${line['id']}");
-        final productResult = await db.query(
-          'urunler',
-          columns: ['_key'],
-          where: 'StokKodu = ?',
-          whereArgs: [productCode],
-          limit: 1,
-        );
-        if (productResult.isNotEmpty) {
-          urunKey = productResult.first['_key'] as String?;
-          debugPrint("DEBUG: Found urun_key $urunKey for productCode $productCode");
-        }
-      }
-      
-      if (urunKey == null) {
-        debugPrint("DEBUG: Skipping order line because urun_key could not be resolved. Line ID: ${line['id']}");
+      if (urunKey == null || productCode == null) {
+        debugPrint("DEBUG: Skipping order line due to missing keys. Line ID: ${line['id']}");
         continue;
       }
-      if (productCode == null) continue;
 
-      // Ürün bilgisini al - _key kullanarak sorgula (daha güvenilir)
-      final productResult = await db.query(
-        'urunler',
-        where: '_key = ?',
-        whereArgs: [urunKey],
-        limit: 1,
-      );
+      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimkod']}, Ordered: ${line['anamiktar']}");
 
-      if (productResult.isEmpty) {
-        continue;
-      }
-      final productMap = productResult.first;
-
-      // GET BARCODE CORRECTLY ACCORDING TO ORDER UNIT
-      final unitCode = line['anabirimi'] as String?;
-      String? barcode;
-      
-      if (unitCode != null) {
-        final barcodeResult = await db.rawQuery('''
-          SELECT bark.barkod 
-          FROM birimler b 
-          JOIN barkodlar bark ON b._key = bark._key_scf_stokkart_birimleri
-          WHERE b.StokKodu = ? AND b.birimkod = ?
-          LIMIT 1
-        ''', [productCode, unitCode]);
-
-        if (barcodeResult.isNotEmpty) {
-          barcode = barcodeResult.first['barkod'] as String?;
-        }
-      }
+      // Barcode zaten join ile alındı
+      final barcode = line['barkod'] as String?;
 
       // Alınan miktarı hesapla - bulunan urunKey'i kullan
       final receivedQuantityResult = await db.rawQuery('''
@@ -335,22 +301,21 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           ? (putawayResult.first['putaway_quantity'] as num).toDouble() 
           : 0.0;
 
-      // Tüm bilgileri birleştirelim
+      // Enriched map oluştur - line zaten tüm JOIN bilgilerini içeriyor
       final enrichedMap = Map<String, dynamic>.from(line);
-      enrichedMap.addAll(productMap);
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
-      
-      // HATA DÜZELTMESİ: Bulunan urun_key'i kullan
-      debugPrint("DEBUG: Using resolved urun_key: $urunKey, Product _key: ${productMap['_key']}");
       enrichedMap['urun_key'] = urunKey;
       
-      // Barkod bilgisini ekleyelim
+      // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
+      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimkod']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['anamiktar']}");
+      
+      // Barkod bilgisini kontrol et
       if (barcode != null) {
         enrichedMap['barkod'] = barcode;
-        debugPrint("✅ Barcode found: $barcode for product ${productMap['StokKodu']} (unit: $unitCode)");
+        debugPrint("✅ Barcode found: $barcode for product $productCode (unit: ${line['birimkod']})");
       } else {
-        debugPrint("❌ No barcode for product ${productMap['StokKodu']} with unit $unitCode");
+        debugPrint("❌ No barcode for product $productCode with unit ${line['birimkod']}");
       }
 
       items.add(PurchaseOrderItem.fromDb(enrichedMap));
@@ -466,10 +431,34 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode, {int? orderId}) async {
     debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode', orderId: $orderId");
 
-    final result = await dbHelper.getProductByBarcode(barcode, orderId: orderId);
+    if (orderId != null) {
+      // Sipariş bazlı arama: Tüm birimleri al ve önceliği siparişli birimlere ver
+      final results = await dbHelper.getAllProductsByBarcode(barcode, orderId: orderId);
+      
+      if (results.isNotEmpty) {
+        // Önce siparişli birim (source_type = 'order') varsa onu tercih et
+        final orderUnits = results.where((r) => r['source_type'] == 'order');
+        if (orderUnits.isNotEmpty) {
+          final orderUnit = orderUnits.first;
+          debugPrint("✅ DEBUG: Sipariş içi birim bulundu: ${orderUnit['birimadi']}, miktar: ${orderUnit['anamiktar']}");
+          return ProductInfo.fromDbMap(orderUnit);
+        }
+        
+        // Sipariş dışı birim varsa (source_type = 'out_of_order')
+        final outOfOrderUnits = results.where((r) => r['source_type'] == 'out_of_order');
+        if (outOfOrderUnits.isNotEmpty) {
+          final outOfOrderUnit = outOfOrderUnits.first;
+          debugPrint("⚠️ DEBUG: Sipariş dışı birim bulundu: ${outOfOrderUnit['birimadi']}, miktar: 0 (sipariş dışı)");
+          return ProductInfo.fromDbMap(outOfOrderUnit);
+        }
+      }
+    }
+
+    // Genel arama (orderId null ise)
+    final result = await dbHelper.getProductByBarcode(barcode); // orderId: null
     
     if (result != null) {
-      debugPrint("✅ DEBUG: Barkod ile bulunan ürün: $result");
+      debugPrint("✅ DEBUG: Genel aramada bulunan ürün: $result");
       return ProductInfo.fromDbMap(result);
     } else {
       debugPrint("❌ DEBUG: Barkod ile ürün bulunamadı: '$barcode'");

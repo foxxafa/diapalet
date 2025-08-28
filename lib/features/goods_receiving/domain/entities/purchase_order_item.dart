@@ -62,7 +62,7 @@ class PurchaseOrderItem {
       expectedQuantity: expectedQty,
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
-      unit: map['anabirimi'] as String?,
+      unit: (map['birimkod'] ?? map['anabirimi']) as String?,
       product: ProductInfo.fromDbMap(map), // Bu repository tarafından doldurulacak
       // palletBarcode burada null'dır, repository'de doldurulacak.
     );

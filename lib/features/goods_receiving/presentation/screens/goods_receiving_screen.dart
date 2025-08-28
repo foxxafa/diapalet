@@ -188,6 +188,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             ),
                             const SizedBox(height: _gap),
                             if (viewModel.selectedProduct != null) ...[
+                              // Sipariş dışı ürün uyarısı
+                              if (viewModel.isSelectedProductOutOfOrder) 
+                                _buildOutOfOrderWarning(viewModel),
                               _buildQuantityAndStatusRow(viewModel),
                               const SizedBox(height: _gap),
                             ],
@@ -402,13 +405,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     PurchaseOrderItem? orderItem;
     if (viewModel.selectedProduct != null && viewModel.isOrderBased) {
-      try {
-        // HATA DÜZELTMESİ: item.product?.id yerine item.productId kullan
-        orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.key);
-        debugPrint("DEBUG: Found orderItem for product ${viewModel.selectedProduct!.id}: expectedQuantity=${orderItem.expectedQuantity}");
-      } catch (e) {
-        debugPrint("DEBUG: OrderItem not found for product ${viewModel.selectedProduct!.id}. Available orderItems: ${viewModel.orderItems.map((item) => 'productId=${item.productId}, expectedQuantity=${item.expectedQuantity}')}");
+      // Sipariş dışı ürünler için orderItem arama yapma
+      if (viewModel.selectedProduct!.isOutOfOrder) {
+        debugPrint("DEBUG: Out-of-order product, not searching for orderItem. Using ProductInfo.orderQuantity: ${viewModel.selectedProduct!.orderQuantity}");
         orderItem = null;
+      } else {
+        try {
+          // HATA DÜZELTMESİ: item.product?.id yerine item.productId kullan
+          orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.key);
+          debugPrint("DEBUG: Found orderItem for product ${viewModel.selectedProduct!.key} (searching with key): expectedQuantity=${orderItem.expectedQuantity}");
+        } catch (e) {
+          debugPrint("DEBUG: OrderItem not found for product ${viewModel.selectedProduct!.key} (search key). Available orderItems: ${viewModel.orderItems.map((item) => 'productId=${item.productId}, expectedQuantity=${item.expectedQuantity}')}");
+          orderItem = null;
+        }
       }
     }
 
@@ -423,8 +432,13 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
 
     final totalReceived = (orderItem?.receivedQuantity ?? 0.0) + alreadyAddedInUI;
-    final expectedQty = orderItem?.expectedQuantity ?? 0.0;
+    final expectedQty = orderItem?.expectedQuantity ?? viewModel.selectedProduct?.orderQuantity ?? 0.0;
     debugPrint("DEBUG: Order status display - expectedQty: $expectedQty, totalReceived: $totalReceived");
+    
+    // Sipariş dışı ürün debug
+    if (orderItem == null && viewModel.selectedProduct != null) {
+      debugPrint("DEBUG: Sipariş dışı ürün - ProductInfo.orderQuantity: ${viewModel.selectedProduct!.orderQuantity}");
+    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -786,7 +800,56 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     }
   }
 
-
+  /// Sipariş dışı ürün uyarı widget'ı
+  Widget _buildOutOfOrderWarning(GoodsReceivingViewModel viewModel) {
+    final theme = Theme.of(context);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: _gap),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        border: Border.all(color: Colors.orange.shade200),
+        borderRadius: _borderRadius,
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_rounded,
+            color: Colors.orange,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sipariş Dışı Ürün',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: Colors.deepOrange,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Bu ürün sipariş listesinde bulunmuyor. Sipariş dışı ürün olarak kabul edilecek.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.brown,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Colors.orangeAccent,
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DateInputFormatter extends TextInputFormatter {
@@ -905,6 +968,7 @@ class _DateInputFormatter extends TextInputFormatter {
       return dateStr;
     }
   }
+
 }
 
 // Helper function to get specific error message for date validation

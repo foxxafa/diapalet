@@ -1628,7 +1628,7 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
-                     'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
+                     'sa.anabirimi', 'sa.sipbirimi', 'sa.sipbirimkey', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
                      'sa._key_kalemturu'])
             ->from(['sa' => 'siparis_ayrintili'])
             ->where(['in', 'sa.siparisler_id', $poIds])

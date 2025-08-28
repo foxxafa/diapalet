@@ -10,6 +10,7 @@ class ProductInfo extends Equatable {
   // Barcode bilgileri artık barkodlar tablosundan gelecek
   final Map<String, dynamic>? birimInfo;
   final Map<String, dynamic>? barkodInfo;
+  final bool isOutOfOrder; // Sipariş dışı ürün flag
 
   const ProductInfo({
     required this.id,
@@ -19,6 +20,7 @@ class ProductInfo extends Equatable {
     required this.isActive,
     this.birimInfo,
     this.barkodInfo,
+    this.isOutOfOrder = false, // Default false
   });
 
   /// Ürün anahtarı - _key varsa onu kullan, yoksa id'yi string'e çevir
@@ -36,6 +38,22 @@ class ProductInfo extends Equatable {
       }
     }
 
+    // Yeni veritabanı yapısından birim bilgilerini al
+    Map<String, dynamic>? birimInfoMap = map['birim_info'] as Map<String, dynamic>?;
+    if (birimInfoMap == null) {
+      // Veritabanından gelen birim bilgilerini kullan
+      if (map.containsKey('birimadi') || map.containsKey('birimkod') || map.containsKey('carpan')) {
+        birimInfoMap = {
+          'birimadi': map['birimadi'],
+          'birimkod': map['birimkod'],
+          'carpan': map['carpan'],
+          'anamiktar': map['anamiktar'], // Sipariş miktarı
+          'anabirimi': map['anabirimi'], // Sipariş birimi
+          'source_type': map['source_type'], // 'order' veya 'out_of_order'
+        };
+      }
+    }
+
     return ProductInfo(
       // UrunId backward compatibility için
       id: (map['UrunId'] as num?)?.toInt() ?? (map['id'] as num?)?.toInt() ?? 0,
@@ -43,8 +61,9 @@ class ProductInfo extends Equatable {
       name: map['UrunAdi'] as String? ?? map['product_name'] as String? ?? map['productName'] as String? ?? '',
       stockCode: map['StokKodu'] as String? ?? map['product_code'] as String? ?? map['productCode'] as String? ?? '',
       isActive: (map['aktif'] as int? ?? 1) == 1,
-      birimInfo: map['birim_info'] as Map<String, dynamic>?,
+      birimInfo: birimInfoMap,
       barkodInfo: barkodInfoMap,
+      isOutOfOrder: map['is_out_of_order'] as bool? ?? (map['source_type'] == 'out_of_order'),
     );
   }
 
@@ -61,11 +80,24 @@ class ProductInfo extends Equatable {
       isActive: (json['isActive'] as bool? ?? true),
       birimInfo: json['birimInfo'] as Map<String, dynamic>?,
       barkodInfo: json['barkodInfo'] as Map<String, dynamic>?,
+      isOutOfOrder: json['isOutOfOrder'] as bool? ?? false,
     );
   }
 
   /// Yeni barkod sistemi için barkod bilgisi
   String? get productBarcode => barkodInfo?['barkod'] as String?;
+
+  /// Sipariş miktarı - siparişli ürünlerde anamiktar, sipariş dışında 0
+  double get orderQuantity => birimInfo?['anamiktar']?.toDouble() ?? 0.0;
+
+  /// Birim adı
+  String? get unitName => birimInfo?['birimadi'] as String?;
+
+  /// Birim kodu
+  String? get unitCode => birimInfo?['birimkod'] as String?;
+
+  /// Sipariş içi/dışı durumu
+  bool get isOrderedUnit => birimInfo?['source_type'] == 'order';
 
   /// Nesneyi JSON formatına dönüştürür.
   Map<String, dynamic> toJson() {
@@ -77,10 +109,25 @@ class ProductInfo extends Equatable {
       'isActive': isActive,
       'birimInfo': birimInfo,
       'barkodInfo': barkodInfo,
+      'isOutOfOrder': isOutOfOrder,
     };
   }
 
 
+  /// copyWith method to create a new instance with isOutOfOrder flag
+  ProductInfo copyWithOutOfOrderFlag(bool isOutOfOrder) {
+    return ProductInfo(
+      id: id,
+      productKey: productKey,
+      name: name,
+      stockCode: stockCode,
+      isActive: isActive,
+      birimInfo: birimInfo,
+      barkodInfo: barkodInfo,
+      isOutOfOrder: isOutOfOrder,
+    );
+  }
+
   @override
-  List<Object?> get props => [id, productKey, name, stockCode, isActive, birimInfo, barkodInfo];
+  List<Object?> get props => [id, productKey, name, stockCode, isActive, birimInfo, barkodInfo, isOutOfOrder];
 }

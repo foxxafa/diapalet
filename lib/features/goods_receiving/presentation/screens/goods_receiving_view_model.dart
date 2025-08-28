@@ -80,6 +80,9 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   String? get error => _error;
   String? get successMessage => _successMessage;
   bool get navigateBack => _navigateBack;
+  
+  /// Seçili ürün sipariş dışı mı?
+  bool get isSelectedProductOutOfOrder => _selectedProduct?.isOutOfOrder == true;
 
   /// Warehouse receiving mode kontrolü
   Future<WarehouseReceivingMode> get warehouseReceivingMode async {
@@ -405,29 +408,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           }
         }
 
-        final productSource = isOrderBased
-            ? _orderItems.map((item) => item.product).whereType<ProductInfo>().toList()
-            : _availableProducts;
 
         ProductInfo? foundProduct;
 
-        // Önce tam eşleşme ara - YENİ BARKOD SİSTEMİ
-        try {
-          foundProduct = productSource.firstWhere((p) =>
-            (p.productBarcode != null && p.productBarcode!.toLowerCase() == productCodeToSearch.toLowerCase()) ||
-            (p.stockCode.toLowerCase() == productCodeToSearch.toLowerCase()));
-        } catch (e) {
-          // Tam eşleşme bulunamazsa database'den ara - SADECE BARKOD (Sipariş bazlı)
-          foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch, orderId: _selectedOrder?.id);
+        // YENİ BARKOD SİSTEMİ - Doğrudan database'den tam arama yap
+        foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch, orderId: _selectedOrder?.id);
 
-          // Database'den bulunan ürün order'da var mı kontrol et
-          if (foundProduct != null && isOrderBased) {
-            final orderProduct = productSource.where((p) => p.id == foundProduct!.id).firstOrNull;
-            if (orderProduct == null) {
-              foundProduct = null; // Order'da yoksa seçilemesin
-            }
-          }
-        }
+        // Database'den bulunan ürün order'da var mı kontrol et - out-of-order flag zaten database'den geliyor
 
         if (foundProduct != null) {
           selectProduct(foundProduct);

@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 57; // _key PRIMARY KEY olarak değiştirildi
+  static const _databaseVersion = 58; // sipbirimi ve sipbirimkey alanları eklendi
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -172,6 +172,8 @@ class DatabaseHelper {
           anamiktar REAL,
           miktar REAL,
           anabirimi TEXT,
+          sipbirimi TEXT,
+          sipbirimkey TEXT,
           created_at TEXT,
           updated_at TEXT,
           status INTEGER,
@@ -781,7 +783,7 @@ class DatabaseHelper {
         final localRecord = <String, dynamic>{};
         final localColumns = [
           'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'anamiktar', 'miktar',
-          'anabirimi', 'created_at', 'updated_at', 'status', 'turu'
+          'anabirimi', 'sipbirimi', 'sipbirimkey', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
         // Sunucuda _key_kalemturu alanında ürünün _key'i var, bunu urun_key'e çevir
@@ -833,14 +835,14 @@ class DatabaseHelper {
   // --- YARDIMCI FONKSİYONLAR ---
 
   /// Product search by barcode - Using new barkodlar table
-  Future<Map<String, dynamic>?> getProductByBarcode(String barcode, {int? orderId}) async {
+  Future<List<Map<String, dynamic>>> getAllProductsByBarcode(String barcode, {int? orderId}) async {
     final db = await database;
     
     String sql;
     List<dynamic> params;
 
     if (orderId != null) {
-      // Sipariş bazlı arama: Barkodlar → Birimler → Sipariş
+      // Sipariş bazlı arama: Önce siparişteki birimle eşleşen satırı ara, yoksa sipariş dışı olarak işaretle
       sql = '''
         SELECT 
           u.*,
@@ -849,17 +851,22 @@ class DatabaseHelper {
           b.carpan,
           b._key as birim_key,
           bark.barkod,
-          bark._key as barkod_key
+          bark._key as barkod_key,
+          COALESCE(sa.anamiktar, 0.0) as anamiktar,
+          COALESCE(sa.anabirimi, b.birimkod) as anabirimi,
+          sa.id as order_line_id,
+          CASE WHEN sa.id IS NOT NULL THEN 'order' ELSE 'out_of_order' END as source_type
         FROM barkodlar bark
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN siparis_ayrintili sa ON b.StokKodu = sa.kartkodu
-        JOIN urunler u ON u.StokKodu = sa.kartkodu
-        WHERE bark.barkod = ?
+        JOIN urunler u ON b.StokKodu = u.StokKodu
+        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+          AND sa.sipbirimkey = b._key
           AND sa.siparisler_id = ?
           AND sa.turu = '1'
-        LIMIT 1
+        WHERE bark.barkod = ?
+          AND u.aktif = 1
       ''';
-      params = [barcode, orderId];
+      params = [orderId, barcode];
     } else {
       // Genel arama: Tüm aktif ürünler içinde barkod ara
       sql = '''
@@ -875,13 +882,18 @@ class DatabaseHelper {
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
         JOIN urunler u ON b.StokKodu = u.StokKodu
         WHERE bark.barkod = ?
-        LIMIT 1
       ''';
       params = [barcode];
     }
 
     final result = await db.rawQuery(sql, params);
-    return result.isNotEmpty ? result.first : null;
+    return result;
+  }
+
+  /// Backward compatibility için - ilk sonucu döndürür
+  Future<Map<String, dynamic>?> getProductByBarcode(String barcode, {int? orderId}) async {
+    final results = await getAllProductsByBarcode(barcode, orderId: orderId);
+    return results.isNotEmpty ? results.first : null;
   }
 
   /// Barkod ile ürün arama (LIKE) - Yeni barkodlar tablosunu kullanır
