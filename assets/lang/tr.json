@@ -135,7 +135,15 @@
     "dialog_search_hint": "Ara...",
     "dialog_search_no_results": "Sonuç bulunamadı.",
     "label_order_status": "Sipariş Durumu",
-    "order_info_title": "Sipariş Bilgisi"
+    "order_info_title": "Sipariş Bilgisi",
+    "out_of_order_product_title": "Sipariş Dışı Ürün",
+    "out_of_order_product_message": "Bu ürün siparişte bulunmuyor. Sipariş dışı mal kabul olarak işlem yapılacaktır.",
+    "out_of_order_product_confirm": "Bu ürünü kabul etmek istediğinizden emin misiniz?",
+    "out_of_order_product_stock_code": "Stok Kodu:",
+    "out_of_order_product_unit": "Birim:",
+    "out_of_order_product_barcode": "Barkod:",
+    "out_of_order_product_accept": "Kabul Et",
+    "out_of_order_product_cancel": "İptal"
   },
   "pallet_assignment": {
     "title": "Transfer İşlemi",

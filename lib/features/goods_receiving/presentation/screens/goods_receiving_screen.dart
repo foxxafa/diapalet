@@ -188,9 +188,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                             ),
                             const SizedBox(height: _gap),
                             if (viewModel.selectedProduct != null) ...[
-                              // Sipariş dışı ürün uyarısı
-                              if (viewModel.isSelectedProductOutOfOrder) 
-                                _buildOutOfOrderWarning(viewModel),
                               _buildQuantityAndStatusRow(viewModel),
                               const SizedBox(height: _gap),
                             ],
@@ -222,7 +219,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       );
   if (!mounted) return;
   if (result != null && result.isNotEmpty) {
-        await viewModel.processScannedData('product', result);
+        await viewModel.processScannedData('product', result, context: context);
       }
     } else if (viewModel.palletIdFocusNode.hasFocus && viewModel.palletIdController.text.isEmpty) {
   final result = await Navigator.push<String>(
@@ -231,7 +228,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       );
   if (!mounted) return;
   if (result != null && result.isNotEmpty) {
-        await viewModel.processScannedData('pallet', result);
+        await viewModel.processScannedData('pallet', result, context: context);
       }
     }
   }
@@ -302,7 +299,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 });
               } else {
                 // Search sonuçları yoksa barkod olarak işle
-                await viewModel.processScannedData('product', value);
+                await viewModel.processScannedData('product', value, context: context);
                 // UI güncellemesi tamamlandıktan sonra çalıştır
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
@@ -333,7 +330,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 );
                 if (!mounted) return;
                 if (result != null && result.isNotEmpty) {
-                  await viewModel.processScannedData('product', result);
+                  await viewModel.processScannedData('product', result, context: context);
                 }
               }
             }
@@ -355,11 +352,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   subtitle: Text(
-                    "Barkod: ${product.productBarcode ?? 'N/A'} | Stok Kodu: ${product.stockCode}",
+                    "Barkod: ${product.productBarcode ?? 'N/A'} | Stok Kodu: ${product.stockCode} | Birim: ${product.displayUnitName ?? 'N/A'}",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  onTap: () {
-                    viewModel.selectProduct(product);
+                  onTap: () async {
+                    await viewModel.selectProduct(product, context: context);
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted && viewModel.isExpiryDateEnabled) {
                         viewModel.expiryDateFocusNode.requestFocus();
@@ -383,16 +380,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       enabled: viewModel.areFieldsEnabled,
       onFieldSubmitted: (value) async {
         if (value.isNotEmpty) {
-          await viewModel.processScannedData('pallet', value);
+          await viewModel.processScannedData('pallet', value, context: context);
         }
       },
       onQrScanned: (result) async {
         // Karmaşık mantığı callback'te işle
         final currentText = viewModel.palletIdController.text.trim();
         if (currentText.isNotEmpty) {
-          await viewModel.processScannedData('pallet', currentText);
+          await viewModel.processScannedData('pallet', currentText, context: context);
         } else {
-          await viewModel.processScannedData('pallet', result);
+          await viewModel.processScannedData('pallet', result, context: context);
         }
       },
       validator: viewModel.validatePalletId,
@@ -444,7 +441,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 3,
+          flex: 4,
           child: TextFormField(
             controller: viewModel.quantityController,
             focusNode: viewModel.quantityFocusNode,
@@ -464,7 +461,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ),
         const SizedBox(width: _smallGap),
         Expanded(
-          flex: 4,
+          flex: 5,
           child: InputDecorator(
             decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
             child: Center(
@@ -480,11 +477,19 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                         style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                         children: [
                           TextSpan(
-                            text: '${totalReceived.toStringAsFixed(0)} ',
+                            text: '${totalReceived.toStringAsFixed(0)}',
                             style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
                           ),
-                          TextSpan(text: '/ ', style: TextStyle(color: textTheme.bodyLarge?.color?.withAlpha(179))),
-                          TextSpan(text: expectedQty.toStringAsFixed(0), style: TextStyle(color: textTheme.bodyLarge?.color)),
+                          TextSpan(text: '/', style: TextStyle(color: textTheme.bodyLarge?.color?.withAlpha(179))),
+                          TextSpan(text: '${expectedQty.toStringAsFixed(0)} ', style: TextStyle(color: textTheme.bodyLarge?.color)),
+                          TextSpan(
+                            text: viewModel.selectedProduct?.displayUnitName ?? '',
+                            style: TextStyle(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -767,9 +772,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     // Pallet modunda sadece pallet barcode ve product selection alanlarına el terminali ile giriş izinli
     if (viewModel.receivingMode == ReceivingMode.palet) {
       if (viewModel.palletIdFocusNode.hasFocus) {
-        viewModel.processScannedData('pallet', code);
+        viewModel.processScannedData('pallet', code, context: context);
       } else if (viewModel.productFocusNode.hasFocus) {
-        viewModel.processScannedData('product', code);
+        viewModel.processScannedData('product', code, context: context);
       } else {
         // Pallet modunda diğer alanlar focus'ta ise barkod okutmayı engelle
         if (viewModel.expiryDateFocusNode.hasFocus || 
@@ -781,75 +786,25 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         
         // Eğer başka bir alan focus'ta değilse, öncelik sırasına göre işle
         if (viewModel.palletIdController.text.isEmpty) {
-          viewModel.processScannedData('pallet', code);
+          viewModel.processScannedData('pallet', code, context: context);
         } else {
           viewModel.productFocusNode.requestFocus();
-          viewModel.processScannedData('product', code);
+          viewModel.processScannedData('product', code, context: context);
         }
       }
     } else {
       // Product modunda eski davranışı koru
       if (viewModel.palletIdFocusNode.hasFocus) {
-        viewModel.processScannedData('pallet', code);
+        viewModel.processScannedData('pallet', code, context: context);
       } else if (viewModel.productFocusNode.hasFocus) {
-        viewModel.processScannedData('product', code);
+        viewModel.processScannedData('product', code, context: context);
       } else {
         viewModel.productFocusNode.requestFocus();
-        viewModel.processScannedData('product', code);
+        viewModel.processScannedData('product', code, context: context);
       }
     }
   }
 
-  /// Sipariş dışı ürün uyarı widget'ı
-  Widget _buildOutOfOrderWarning(GoodsReceivingViewModel viewModel) {
-    final theme = Theme.of(context);
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: _gap),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        border: Border.all(color: Colors.orange.shade200),
-        borderRadius: _borderRadius,
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.warning_rounded,
-            color: Colors.orange,
-            size: 24,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sipariş Dışı Ürün',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: Colors.deepOrange,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Bu ürün sipariş listesinde bulunmuyor. Sipariş dışı ürün olarak kabul edilecek.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.brown,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.info_outline_rounded,
-            color: Colors.orangeAccent,
-            size: 20,
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _DateInputFormatter extends TextInputFormatter {

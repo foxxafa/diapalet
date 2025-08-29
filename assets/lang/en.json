@@ -138,7 +138,15 @@
     "validator_enter_valid_quantity": "Please enter a valid quantity",
     "validator_pallet_barcode": "Pallet barcode is required",
     "confirm_quantity_exceeds_title": "Quantity Exceeds Expected",
-    "confirm_quantity_exceeds_message": "You are trying to receive {enteredQuantity} {unit}, but only {remainingQuantity} {unit} is expected. Are you sure you want to continue?"
+    "confirm_quantity_exceeds_message": "You are trying to receive {enteredQuantity} {unit}, but only {remainingQuantity} {unit} is expected. Are you sure you want to continue?",
+    "out_of_order_product_title": "Out of Order Product",
+    "out_of_order_product_message": "This product is not in the order. It will be processed as out-of-order goods receipt.",
+    "out_of_order_product_confirm": "Are you sure you want to accept this product?",
+    "out_of_order_product_stock_code": "Stock Code:",
+    "out_of_order_product_unit": "Unit:",
+    "out_of_order_product_barcode": "Barcode:",
+    "out_of_order_product_accept": "Accept",
+    "out_of_order_product_cancel": "Cancel"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",

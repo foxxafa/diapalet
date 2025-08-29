@@ -48,7 +48,10 @@ class ProductInfo extends Equatable {
           'birimkod': map['birimkod'],
           'carpan': map['carpan'],
           'anamiktar': map['anamiktar'], // Sipariş miktarı
-          'anabirimi': map['anabirimi'], // Sipariş birimi
+          'anabirimi': map['anabirimi'], // Sipariş birimi (eski)
+          'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
+          'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)
+          'sipbirimkey': map['sipbirimkey'], // Sipariş birim anahtarı
           'source_type': map['source_type'], // 'order' veya 'out_of_order'
         };
       }
@@ -90,11 +93,20 @@ class ProductInfo extends Equatable {
   /// Sipariş miktarı - siparişli ürünlerde anamiktar, sipariş dışında 0
   double get orderQuantity => birimInfo?['anamiktar']?.toDouble() ?? 0.0;
 
-  /// Birim adı
+  /// Birim adı (barkod üzerinden gelen birim)
   String? get unitName => birimInfo?['birimadi'] as String?;
 
-  /// Birim kodu
+  /// Birim kodu (barkod üzerinden gelen birim)
   String? get unitCode => birimInfo?['birimkod'] as String?;
+
+  /// Sipariş birimi adı (sipbirimkey üzerinden gelen)
+  String? get orderUnitName => birimInfo?['sipbirimi_adi'] as String?;
+
+  /// Sipariş birimi kodu (sipbirimkey üzerinden gelen)  
+  String? get orderUnitCode => birimInfo?['sipbirimi_kod'] as String?;
+
+  /// Görüntüleme için birim adı - sipariş varsa sipariş birimi, yoksa barkod birimi
+  String? get displayUnitName => orderUnitName ?? unitName;
 
   /// Sipariş içi/dışı durumu
   bool get isOrderedUnit => birimInfo?['source_type'] == 'order';

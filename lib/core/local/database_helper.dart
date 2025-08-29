@@ -853,7 +853,10 @@ class DatabaseHelper {
           bark.barkod,
           bark._key as barkod_key,
           COALESCE(sa.anamiktar, 0.0) as anamiktar,
-          COALESCE(sa.anabirimi, b.birimkod) as anabirimi,
+          COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+          sa.sipbirimkey,
+          sb.birimadi as sipbirimi_adi,
+          sb.birimkod as sipbirimi_kod,
           sa.id as order_line_id,
           CASE WHEN sa.id IS NOT NULL THEN 'order' ELSE 'out_of_order' END as source_type
         FROM barkodlar bark
@@ -863,10 +866,11 @@ class DatabaseHelper {
           AND sa.sipbirimkey = b._key
           AND sa.siparisler_id = ?
           AND sa.turu = '1'
-        WHERE bark.barkod = ?
+        LEFT JOIN birimler sb ON sa.sipbirimkey = sb._key
+        WHERE (bark.barkod = ? OR u.StokKodu = ?)
           AND u.aktif = 1
       ''';
-      params = [orderId, barcode];
+      params = [orderId, barcode, barcode];
     } else {
       // Genel arama: Tüm aktif ürünler içinde barkod ara
       sql = '''
@@ -881,9 +885,9 @@ class DatabaseHelper {
         FROM barkodlar bark
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
         JOIN urunler u ON b.StokKodu = u.StokKodu
-        WHERE bark.barkod = ?
+        WHERE (bark.barkod = ? OR u.StokKodu = ?)
       ''';
-      params = [barcode];
+      params = [barcode, barcode];
     }
 
     final result = await db.rawQuery(sql, params);
@@ -903,53 +907,47 @@ class DatabaseHelper {
     
     debugPrint("🔍 Searching for barcode: '$query'${orderId != null ? ' in order $orderId' : ''}");
     
-    String sql;
-    final params = <dynamic>['%$query%'];
-
-    if (orderId != null) {
-      sql = '''
-        SELECT 
-          u.*,
-          MIN(b.birimadi) as birimadi,
-          MIN(b.birimkod) as birimkod,
-          MIN(b.carpan) as carpan,
-          MIN(b._key) as birim_key,
-          bark.barkod,
-          MIN(bark._key) as barkod_key
-        FROM siparis_ayrintili sa
-        JOIN urunler u ON u.StokKodu = sa.kartkodu
-        JOIN birimler b ON b.StokKodu = u.StokKodu
-        JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-        WHERE bark.barkod LIKE ? 
-          AND sa.siparisler_id = ?
-          AND sa.turu = '1'
-        GROUP BY u.StokKodu, bark.barkod
-        ORDER BY u.UrunAdi ASC
-      ''';
-      params.add(orderId);
-    } else {
-      sql = '''
-        SELECT 
-          u.*,
-          MIN(b.birimadi) as birimadi,
-          MIN(b.birimkod) as birimkod,
-          MIN(b.carpan) as carpan,
-          MIN(b._key) as birim_key,
-          bark.barkod,
-          MIN(bark._key) as barkod_key
-        FROM barkodlar bark
-        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN urunler u ON b.StokKodu = u.StokKodu
-        WHERE bark.barkod LIKE ?
-        GROUP BY u.StokKodu, bark.barkod
-        ORDER BY u.UrunAdi ASC
-      ''';
-    }
+    // Always search ALL barcodes, but include order information when orderId is provided
+    String sql = '''
+      SELECT 
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b.carpan,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key,
+        COALESCE(sa.anamiktar, 0.0) as anamiktar,
+        COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+        sa.sipbirimkey,
+        sb.birimadi as sipbirimi_adi,
+        sb.birimkod as sipbirimi_kod,
+        sa.id as order_line_id,
+        CASE WHEN sa.id IS NOT NULL THEN 'order' ELSE 'out_of_order' END as source_type
+      FROM barkodlar bark
+      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+      JOIN urunler u ON b.StokKodu = u.StokKodu
+      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+        AND sa.sipbirimkey = b._key
+        ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
+        AND sa.turu = '1'
+      LEFT JOIN birimler sb ON sa.sipbirimkey = sb._key
+      WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?)
+        AND u.aktif = 1
+      ORDER BY 
+        CASE WHEN sa.id IS NOT NULL THEN 0 ELSE 1 END,
+        u.UrunAdi ASC
+    ''';
+    
+    final params = orderId != null 
+      ? [orderId, '%$query%', '%$query%'] 
+      : ['%$query%', '%$query%'];
+      
     final result = await db.rawQuery(sql, params);
     
     debugPrint("🔍 Found ${result.length} products matching barcode");
     if (result.isNotEmpty) {
-      debugPrint("First result: ${result.first['UrunAdi']} - ${result.first['barkod']}");
+      debugPrint("First result: ${result.first['UrunAdi']} - ${result.first['barkod']} - Unit: ${result.first['birimadi']}");
     }
     
     return result;
@@ -1132,7 +1130,7 @@ class DatabaseHelper {
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         sa.anamiktar as ordered_quantity,
-        sa.anabirimi as unit,
+        sa.sipbirimi as unit,
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
@@ -1255,7 +1253,7 @@ class DatabaseHelper {
         u.Birim1 as product_unit,
         u.qty as product_box_qty,
         sa.anamiktar as ordered_quantity,
-        sa.anabirimi as order_unit,
+        sa.sipbirimi as order_unit,
         sa.notes as order_line_notes,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
       FROM goods_receipt_items gri

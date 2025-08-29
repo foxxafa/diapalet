@@ -368,7 +368,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     // Metin yoksa normal barkod okuma akışı çalışır (intent service'den gelecek)
   }
 
-  Future<void> processScannedData(String field, String data) async {
+  Future<void> processScannedData(String field, String data, {BuildContext? context}) async {
     if (data.isEmpty) return;
 
     switch (field) {
@@ -417,7 +417,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         // Database'den bulunan ürün order'da var mı kontrol et - out-of-order flag zaten database'den geliyor
 
         if (foundProduct != null) {
-          selectProduct(foundProduct);
+          await selectProduct(foundProduct, context: context);
 
           // Auto-fill expiry date if found in GS1 barcode
           if (scannedExpiryDate != null) {
@@ -453,7 +453,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectProduct(ProductInfo product, {VoidCallback? onProductSelected}) {
+  Future<void> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
+    // Sipariş dışı ürün kontrolü
+    if (product.isOutOfOrder && context != null) {
+      final shouldAccept = await showOutOfOrderProductModal(context, product);
+      if (!shouldAccept) {
+        return; // Modal'da iptal'e basıldı, ürün seçilmedi
+      }
+    }
+    
     _selectedProduct = product;
     productController.text = product.productBarcode ?? product.stockCode;
     _productSearchResults.clear(); // Clear search results when a product is selected
@@ -927,6 +935,148 @@ class GoodsReceivingViewModel extends ChangeNotifier {
                 foregroundColor: theme.colorScheme.onError,
               ),
               child: Text('common.confirm'.tr()),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
+
+  /// Sipariş dışı ürün kabul modal'ı
+  Future<bool> showOutOfOrderProductModal(
+    BuildContext context,
+    ProductInfo product,
+  ) async {
+    final theme = Theme.of(context);
+    
+    return await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          icon: const Icon(
+            Icons.warning_rounded,
+            color: Colors.orange,
+            size: 32,
+          ),
+          title: Text(
+            'goods_receiving_screen.out_of_order_product_title'.tr(),
+            style: TextStyle(color: Colors.orange.shade800),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          color: Colors.orange.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('goods_receiving_screen.out_of_order_product_stock_code'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        )),
+                        Text(
+                          product.stockCode,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('goods_receiving_screen.out_of_order_product_unit'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        )),
+                        Text(
+                          product.displayUnitName ?? 'N/A',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('goods_receiving_screen.out_of_order_product_barcode'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        )),
+                        Text(
+                          product.productBarcode ?? 'N/A',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'goods_receiving_screen.out_of_order_product_message'.tr(),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.orange.shade800,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.justify,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'goods_receiving_screen.out_of_order_product_confirm'.tr(),
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('goods_receiving_screen.out_of_order_product_cancel'.tr()),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+              ),
+              child: Text('goods_receiving_screen.out_of_order_product_accept'.tr()),
             ),
           ],
         );
