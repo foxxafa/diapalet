@@ -1216,8 +1216,8 @@ class TerminalController extends Controller
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
             $poLineQuery = (new Query())
                 ->select([
-                    'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
-                    'sa.anabirimi', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
+                    'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar',
+                    'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
                     'sa._key_kalemturu'
                 ])
                 ->from(['sa' => 'siparis_ayrintili'])
@@ -1263,7 +1263,10 @@ class TerminalController extends Controller
         // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
         $receiptIds = array_column($data['goods_receipts'], 'id');
         if (!empty($receiptIds)) {
-            $receiptItemsQuery = (new Query())->from('goods_receipt_items')->where(['in', 'receipt_id', $receiptIds]);
+            $receiptItemsQuery = (new Query())
+                ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'expiry_date', 'created_at', 'updated_at'])
+                ->from('goods_receipt_items')
+                ->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {
                 $receiptItemsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
             }
@@ -1273,7 +1276,9 @@ class TerminalController extends Controller
 
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
-        $stockQuery = (new Query())->from('inventory_stock');
+        $stockQuery = (new Query())
+            ->select(['id', 'urun_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->from('inventory_stock');
         $stockConditions = ['or'];
 
         if (!empty($locationIds)) {
@@ -1308,7 +1313,9 @@ class TerminalController extends Controller
          $this->castNumericValues($data['inventory_stock'], ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
-        $transferQuery = (new Query())->from('inventory_transfers');
+        $transferQuery = (new Query())
+            ->select(['id', 'urun_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->from('inventory_transfers');
         $transferConditions = ['or'];
 
         // Warehouse'a ait location'lardan/location'lara yapılan transferler
@@ -1627,8 +1634,8 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar', 'sa.miktar',
-                     'sa.anabirimi', 'sa.sipbirimi', 'sa.sipbirimkey', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
+            ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar',
+                     'sa.sipbirimi', 'sa.sipbirimkey', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
                      'sa._key_kalemturu'])
             ->from(['sa' => 'siparis_ayrintili'])
             ->where(['in', 'sa.siparisler_id', $poIds])
@@ -1704,6 +1711,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
+            ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'expiry_date', 'created_at', 'updated_at'])
             ->from('goods_receipt_items')
             ->where(['in', 'receipt_id', $receiptIds]);
 
@@ -1747,6 +1755,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
+            ->select(['id', 'urun_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
             ->where($stockConditions);
 
@@ -1787,6 +1796,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
+            ->select(['id', 'urun_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers')
             ->where($transferConditions);
 

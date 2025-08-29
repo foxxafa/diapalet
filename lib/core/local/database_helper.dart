@@ -171,7 +171,6 @@ class DatabaseHelper {
           kartkodu TEXT,
           anamiktar REAL,
           miktar REAL,
-          anabirimi TEXT,
           sipbirimi TEXT,
           sipbirimkey TEXT,
           created_at TEXT,
@@ -782,8 +781,8 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'anamiktar', 'miktar',
-          'anabirimi', 'sipbirimi', 'sipbirimkey', 'created_at', 'updated_at', 'status', 'turu'
+          'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'anamiktar',
+          'sipbirimi', 'sipbirimkey', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
         // Sunucuda _key_kalemturu alanında ürünün _key'i var, bunu urun_key'e çevir
@@ -863,10 +862,10 @@ class DatabaseHelper {
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
         JOIN urunler u ON b.StokKodu = u.StokKodu
         LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
-          AND sa.sipbirimkey = b._key
+          AND CAST(sa.sipbirimkey AS TEXT) = b._key
           AND sa.siparisler_id = ?
           AND sa.turu = '1'
-        LEFT JOIN birimler sb ON sa.sipbirimkey = sb._key
+        LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
         WHERE (bark.barkod = ? OR u.StokKodu = ?)
           AND u.aktif = 1
       ''';
@@ -928,10 +927,10 @@ class DatabaseHelper {
       JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
       JOIN urunler u ON b.StokKodu = u.StokKodu
       LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
-        AND sa.sipbirimkey = b._key
+        AND CAST(sa.sipbirimkey AS TEXT) = b._key
         ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
         AND sa.turu = '1'
-      LEFT JOIN birimler sb ON sa.sipbirimkey = sb._key
+      LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
       WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?)
         AND u.aktif = 1
       ORDER BY 

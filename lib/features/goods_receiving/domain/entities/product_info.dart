@@ -48,7 +48,6 @@ class ProductInfo extends Equatable {
           'birimkod': map['birimkod'],
           'carpan': map['carpan'],
           'anamiktar': map['anamiktar'], // Sipariş miktarı
-          'anabirimi': map['anabirimi'], // Sipariş birimi (eski)
           'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
           'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)
           'sipbirimkey': map['sipbirimkey'], // Sipariş birim anahtarı

@@ -662,7 +662,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ElevatedButton.icon(
-        onPressed: viewModel.addedItems.isEmpty || viewModel.isSaving ? null : () async {
+        onPressed: viewModel.isSaving ? null : () async {
           final result = await _showConfirmationListDialog(viewModel);
           if (result != null) {
             await viewModel.saveAndConfirm(result);
@@ -1262,10 +1262,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
         final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.key == orderItem.productId).toList();
         final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
 
-        if (itemsBeingAdded.isEmpty && orderItem.expectedQuantity - orderItem.receivedQuantity <= 0) {
-          return const SizedBox.shrink();
-        }
-
+        // Tüm sipariş ürünlerini göster (eklenen veya eklenmemiş)
         return _OrderProductConfirmationCard(
           orderItem: orderItem,
           itemsBeingAdded: itemsBeingAdded,

@@ -247,13 +247,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         u.StokKodu,
         u._key as product_key,
         b.birimadi,
-        b.birimkod,
-        b.carpan,
         b._key as birim_key,
         bark.barkod
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
-      LEFT JOIN birimler b ON sa.sipbirimkey = b._key
+      LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
       ORDER BY sa.id
@@ -271,7 +269,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         continue;
       }
 
-      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimkod']}, Ordered: ${line['anamiktar']}");
+      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimadi']}, Ordered: ${line['anamiktar']}");
+      debugPrint("DEBUG: sipbirimkey: ${line['sipbirimkey']}, birim_key: ${line['birim_key']}");
 
       // Barcode zaten join ile alındı
       final barcode = line['barkod'] as String?;
@@ -308,14 +307,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       enrichedMap['urun_key'] = urunKey;
       
       // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
-      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimkod']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['anamiktar']}");
+      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['anamiktar']}");
       
       // Barkod bilgisini kontrol et
       if (barcode != null) {
         enrichedMap['barkod'] = barcode;
-        debugPrint("✅ Barcode found: $barcode for product $productCode (unit: ${line['birimkod']})");
+        debugPrint("✅ Barcode found: $barcode for product $productCode (unit: ${line['birimadi']})");
       } else {
-        debugPrint("❌ No barcode for product $productCode with unit ${line['birimkod']}");
+        debugPrint("❌ No barcode for product $productCode with unit ${line['birimadi']}");
       }
 
       items.add(PurchaseOrderItem.fromDb(enrichedMap));
