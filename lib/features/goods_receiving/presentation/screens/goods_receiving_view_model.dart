@@ -245,7 +245,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       debugPrint("DEBUG: Order items loaded for order $orderId:");
       for (var item in _orderItems) {
         final barcode = item.product?.productBarcode ?? 'null';
-        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Unit: ${item.unit}, Barcode: '$barcode'");
+        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Unit: ${item.product?.displayUnitName ?? item.unit ?? 'N/A'}, Barcode: '$barcode'");
       }
 
       if (_isDisposed) return;
@@ -521,7 +521,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       return;
     }
 
-    if (isOrderBased) {
+    if (isOrderBased && _selectedProduct?.isOutOfOrder != true) {
       if (_isOrderDetailsLoading) {
         _error = 'goods_receiving_screen.error_loading_order_details'.tr();
         notifyListeners();

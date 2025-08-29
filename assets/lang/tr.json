@@ -141,9 +141,20 @@
     "out_of_order_product_confirm": "Bu ürünü kabul etmek istediğinizden emin misiniz?",
     "out_of_order_product_stock_code": "Stok Kodu:",
     "out_of_order_product_unit": "Birim:",
+    "unit_label": "Birim:",
     "out_of_order_product_barcode": "Barkod:",
     "out_of_order_product_accept": "Kabul Et",
-    "out_of_order_product_cancel": "İptal"
+    "out_of_order_product_cancel": "İptal",
+    "out_of_order_products": "Sipariş Dışı Ürünler",
+    "confirmation": {
+      "quantity": "Miktar",
+      "ordered": "Sipariş Edilen",
+      "previously_received": "Önceden Alınan",
+      "currently_adding": "Şu An Eklenen",
+      "remaining_after": "Kalan"
+    },
+    "tooltip_remove_item": "Ürünü listeden kaldır",
+    "validator_expiry_date": "Son Kullanma Tarihi"
   },
   "pallet_assignment": {
     "title": "Transfer İşlemi",

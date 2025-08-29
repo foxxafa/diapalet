@@ -144,9 +144,20 @@
     "out_of_order_product_confirm": "Are you sure you want to accept this product?",
     "out_of_order_product_stock_code": "Stock Code:",
     "out_of_order_product_unit": "Unit:",
+    "unit_label": "Unit:",
     "out_of_order_product_barcode": "Barcode:",
     "out_of_order_product_accept": "Accept",
-    "out_of_order_product_cancel": "Cancel"
+    "out_of_order_product_cancel": "Cancel",
+    "out_of_order_products": "Out of Order Products",
+    "confirmation": {
+      "quantity": "Quantity",
+      "ordered": "Ordered",
+      "previously_received": "Previously Received",
+      "currently_adding": "Currently Adding",
+      "remaining_after": "Remaining After"
+    },
+    "tooltip_remove_item": "Remove item from list",
+    "validator_expiry_date": "Expiry Date"
   },
   "pallet_assignment": {
     "title": "Transfer Operation",

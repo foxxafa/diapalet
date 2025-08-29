@@ -935,12 +935,18 @@ class DatabaseHelper {
         AND u.aktif = 1
       ORDER BY 
         CASE WHEN sa.id IS NOT NULL THEN 0 ELSE 1 END,
+        CASE 
+          WHEN u.StokKodu = ? THEN 0
+          WHEN u.StokKodu LIKE ? THEN 1
+          WHEN bark.barkod LIKE ? THEN 2
+          ELSE 3
+        END,
         u.UrunAdi ASC
     ''';
     
     final params = orderId != null 
-      ? [orderId, '%$query%', '%$query%'] 
-      : ['%$query%', '%$query%'];
+      ? [orderId, '%$query%', '%$query%', query, '%$query%', '%$query%'] 
+      : ['%$query%', '%$query%', query, '%$query%', '%$query%'];
       
     final result = await db.rawQuery(sql, params);
     
