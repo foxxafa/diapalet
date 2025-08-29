@@ -1009,6 +1009,30 @@ class DatabaseHelper {
     return await db.rawQuery(sql, [orderId, stokKodu]);
   }
 
+  /// Bir ürünün tüm birimlerini getir (StokKodu'na göre)
+  Future<List<Map<String, dynamic>>> getAllUnitsForProduct(String stokKodu) async {
+    final db = await database;
+    
+    const sql = '''
+      SELECT DISTINCT 
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b.carpan,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key
+      FROM urunler u
+      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE u.StokKodu = ?
+        AND u.aktif = 1
+      ORDER BY b.birimadi ASC
+    ''';
+    
+    return await db.rawQuery(sql, [stokKodu]);
+  }
+
   Future<String?> getPoIdBySiparisId(int siparisId) async {
     final db = await database;
     final result = await db.query(

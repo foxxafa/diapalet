@@ -3,6 +3,7 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
@@ -456,10 +457,12 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   Future<void> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
     // Sipariş dışı ürün kontrolü
     if (product.isOutOfOrder && context != null) {
-      final shouldAccept = await showOutOfOrderProductModal(context, product);
-      if (!shouldAccept) {
+      final selectedProductWithUnit = await showOutOfOrderProductModal(context, product);
+      if (selectedProductWithUnit == null) {
         return; // Modal'da iptal'e basıldı, ürün seçilmedi
       }
+      // Seçilen birimle birlikte ürünü güncelle
+      product = selectedProductWithUnit;
     }
     
     _selectedProduct = product;
@@ -943,144 +946,271 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   /// Sipariş dışı ürün kabul modal'ı
-  Future<bool> showOutOfOrderProductModal(
+  Future<ProductInfo?> showOutOfOrderProductModal(
     BuildContext context,
     ProductInfo product,
   ) async {
     final theme = Theme.of(context);
     
-    return await showDialog<bool>(
+    // Ürünün tüm birimlerini getir
+    List<Map<String, dynamic>> availableUnits = [];
+    try {
+      availableUnits = await DatabaseHelper.instance.getAllUnitsForProduct(product.stockCode);
+    } catch (e) {
+      debugPrint('Error getting units for product: $e');
+      availableUnits = [];
+    }
+    
+    return await showDialog<ProductInfo>(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.warning_rounded,
-            color: Colors.orange,
-            size: 32,
-          ),
-          title: Text(
-            'goods_receiving_screen.out_of_order_product_title'.tr(),
-            style: TextStyle(color: Colors.orange.shade800),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  border: Border.all(color: Colors.orange.shade200),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.inventory_2_outlined,
-                          color: Colors.orange.shade700,
-                          size: 20,
+        return _OutOfOrderProductDialog(
+          product: product,
+          availableUnits: availableUnits,
+          theme: theme,
+        );
+      },
+    );
+  }
+}
+
+class _OutOfOrderProductDialog extends StatefulWidget {
+  final ProductInfo product;
+  final List<Map<String, dynamic>> availableUnits;
+  final ThemeData theme;
+
+  const _OutOfOrderProductDialog({
+    required this.product,
+    required this.availableUnits,
+    required this.theme,
+  });
+
+  @override
+  State<_OutOfOrderProductDialog> createState() => _OutOfOrderProductDialogState();
+}
+
+class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
+  int? selectedUnitIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    // Mevcut ürünün birimini seç (eğer varsa)
+    if (widget.availableUnits.isNotEmpty) {
+      // Önce mevcut barkoda göre birim ara
+      final currentBarcode = widget.product.productBarcode;
+      if (currentBarcode != null) {
+        selectedUnitIndex = widget.availableUnits.indexWhere(
+          (unit) => unit['barkod'] == currentBarcode,
+        );
+        if (selectedUnitIndex == -1) {
+          selectedUnitIndex = 0; // Bulamazsa ilkini seç
+        }
+      } else {
+        selectedUnitIndex = 0; // İlkini seç
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      icon: const Icon(
+        Icons.warning_rounded,
+        color: Colors.orange,
+        size: 32,
+      ),
+      title: Text(
+        'goods_receiving_screen.out_of_order_product_title'.tr(),
+        style: TextStyle(color: Colors.orange.shade800),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                border: Border.all(color: Colors.orange.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.inventory_2_outlined,
+                        color: Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.product.name,
+                          style: widget.theme.textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        const SizedBox(width: 8),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('goods_receiving_screen.out_of_order_product_stock_code'.tr(), 
+                           style: widget.theme.textTheme.bodyMedium?.copyWith(
+                             color: widget.theme.colorScheme.onSurfaceVariant,
+                           )),
+                      Text(
+                        widget.product.stockCode,
+                        style: widget.theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('goods_receiving_screen.out_of_order_product_barcode'.tr(), 
+                           style: widget.theme.textTheme.bodyMedium?.copyWith(
+                             color: widget.theme.colorScheme.onSurfaceVariant,
+                           )),
+                      Text(
+                        selectedUnitIndex != null ? widget.availableUnits[selectedUnitIndex!]['barkod'] ?? 'N/A' : 'N/A',
+                        style: widget.theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Birim seçimi dropdown'u
+                  if (widget.availableUnits.isNotEmpty) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('goods_receiving_screen.out_of_order_product_unit'.tr(), 
+                             style: widget.theme.textTheme.bodyMedium?.copyWith(
+                               color: widget.theme.colorScheme.onSurfaceVariant,
+                             )),
                         Expanded(
-                          child: Text(
-                            product.name,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: DropdownButtonFormField<int>(
+                              value: selectedUnitIndex,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              items: widget.availableUnits.asMap().entries.map((entry) {
+                                final index = entry.key;
+                                final unit = entry.value;
+                                return DropdownMenuItem<int>(
+                                  value: index,
+                                  child: Text(
+                                    '${unit['birimadi']} (${unit['barkod']})',
+                                    style: widget.theme.textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (int? newIndex) {
+                                setState(() {
+                                  selectedUnitIndex = newIndex;
+                                });
+                              },
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                  ] else ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('goods_receiving_screen.out_of_order_product_stock_code'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        )),
+                        Text('goods_receiving_screen.out_of_order_product_unit'.tr(), 
+                             style: widget.theme.textTheme.bodyMedium?.copyWith(
+                               color: widget.theme.colorScheme.onSurfaceVariant,
+                             )),
                         Text(
-                          product.stockCode,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          widget.product.displayUnitName ?? 'N/A',
+                          style: widget.theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('goods_receiving_screen.out_of_order_product_unit'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        )),
-                        Text(
-                          product.displayUnitName ?? 'N/A',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('goods_receiving_screen.out_of_order_product_barcode'.tr(), style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        )),
-                        Text(
-                          product.productBarcode ?? 'N/A',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'goods_receiving_screen.out_of_order_product_message'.tr(),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.justify,
-                      ),
                     ),
                   ],
-                ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'goods_receiving_screen.out_of_order_product_message'.tr(),
+                      style: widget.theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.justify,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'goods_receiving_screen.out_of_order_product_confirm'.tr(),
-                style: theme.textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text('goods_receiving_screen.out_of_order_product_cancel'.tr()),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-              ),
-              child: Text('goods_receiving_screen.out_of_order_product_accept'.tr()),
+            const SizedBox(height: 16),
+            Text(
+              'goods_receiving_screen.out_of_order_product_confirm'.tr(),
+              style: widget.theme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
             ),
           ],
-        );
-      },
-    ) ?? false;
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: Text('goods_receiving_screen.out_of_order_product_cancel'.tr()),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (selectedUnitIndex != null && selectedUnitIndex! < widget.availableUnits.length) {
+              final selectedUnit = widget.availableUnits[selectedUnitIndex!];
+              // Seçilen birimle güncellenmiş ProductInfo oluştur
+              final updatedProduct = ProductInfo.fromDbMap({
+                ...widget.product.toJson(),
+                'birimadi': selectedUnit['birimadi'],
+                'birimkod': selectedUnit['birimkod'],
+                'carpan': selectedUnit['carpan'],
+                'barkod': selectedUnit['barkod'],
+                '_key': widget.product.productKey,
+                'UrunId': widget.product.id,
+                'UrunAdi': widget.product.name,
+                'StokKodu': widget.product.stockCode,
+                'aktif': widget.product.isActive ? 1 : 0,
+                'source_type': 'out_of_order',
+                'is_out_of_order': true,
+              });
+              Navigator.of(context).pop(updatedProduct);
+            } else {
+              Navigator.of(context).pop(widget.product);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: widget.theme.colorScheme.primary,
+            foregroundColor: widget.theme.colorScheme.onPrimary,
+          ),
+          child: Text('goods_receiving_screen.out_of_order_product_accept'.tr()),
+        ),
+      ],
+    );
   }
 }
