@@ -717,7 +717,10 @@ class TerminalController extends Controller
         if ($newStatus !== null) {
             $currentStatus = (new Query())->select('status')->from('siparisler')->where(['id' => $siparisId])->scalar($db);
             if ($currentStatus != $newStatus) {
-                $db->createCommand()->update('siparisler', ['status' => $newStatus], ['id' => $siparisId])->execute();
+                $db->createCommand()->update('siparisler', [
+                    'status' => $newStatus,
+                    'updated_at' => new \yii\db\Expression('NOW()')
+                ], ['id' => $siparisId])->execute();
             }
         }
     }
@@ -756,7 +759,10 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
         // Statü: 2 (Manuel Kapatıldı)
-        $count = $db->createCommand()->update('siparisler', ['status' => 2], ['id' => $siparisId])->execute();
+        $count = $db->createCommand()->update('siparisler', [
+            'status' => 2,
+            'updated_at' => new \yii\db\Expression('NOW()')
+        ], ['id' => $siparisId])->execute();
 
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];

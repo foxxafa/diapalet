@@ -372,14 +372,14 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     // Metin yoksa normal barkod okuma akışı çalışır (intent service'den gelecek)
   }
 
-  Future<void> processScannedData(String field, String data, {BuildContext? context}) async {
-    if (data.isEmpty) return;
+  Future<bool> processScannedData(String field, String data, {BuildContext? context}) async {
+    if (data.isEmpty) return false;
 
     switch (field) {
       case 'pallet':
         palletIdController.text = data;
         productFocusNode.requestFocus();
-        break;
+        return true;
       case 'product':
         // Parse GS1 data to extract GTIN and expiry date
         final parsedData = GS1Parser.parse(data);
@@ -421,7 +421,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         // Database'den bulunan ürün order'da var mı kontrol et - out-of-order flag zaten database'den geliyor
 
         if (foundProduct != null) {
-          await selectProduct(foundProduct, context: context);
+          final productSelected = await selectProduct(foundProduct, context: context);
+          
+          if (!productSelected) {
+            return false; // Ürün seçimi iptal edildi
+          }
 
           // Auto-fill expiry date if found in GS1 barcode
           if (scannedExpiryDate != null) {
@@ -451,18 +455,20 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           productController.clear();
           _selectedProduct = null;
           _error = 'goods_receiving_screen.error_product_not_found'.tr(namedArgs: {'scannedData': data});
+          return false; // Ürün bulunamadı
         }
-        break;
+        return true; // Başarıyla işlendi
+      default:
+        return false; // Bilinmeyen field
     }
-    notifyListeners();
   }
 
-  Future<void> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
+  Future<bool> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
     // Sipariş dışı ürün kontrolü
     if (product.isOutOfOrder && context != null) {
       final selectedProductWithUnit = await showOutOfOrderProductModal(context, product);
       if (selectedProductWithUnit == null) {
-        return; // Modal'da iptal'e basıldı, ürün seçilmedi
+        return false; // Modal'da iptal'e basıldı, ürün seçilmedi
       }
       // Seçilen birimle birlikte ürünü güncelle
       product = selectedProductWithUnit;
@@ -492,6 +498,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         onProductSelected?.call();
       }
     });
+    return true; // Ürün başarıyla seçildi
   }
 
   Timer? _debounce;
@@ -1096,22 +1103,6 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('goods_receiving_screen.out_of_order_product_barcode'.tr(), 
-                           style: widget.theme.textTheme.bodyMedium?.copyWith(
-                             color: widget.theme.colorScheme.onSurfaceVariant,
-                           )),
-                      Text(
-                        selectedUnitIndex != null ? widget.availableUnits[selectedUnitIndex!]['barkod'] ?? 'N/A' : 'N/A',
-                        style: widget.theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 12),
                   // Birim seçimi dropdown'u
                   if (widget.availableUnits.isNotEmpty) ...[
@@ -1138,7 +1129,7 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                                 return DropdownMenuItem<int>(
                                   value: index,
                                   child: Text(
-                                    '${unit['birimadi']} (${unit['barkod']})',
+                                    unit['birimadi'] ?? '',
                                     style: widget.theme.textTheme.bodySmall,
                                     overflow: TextOverflow.ellipsis,
                                   ),

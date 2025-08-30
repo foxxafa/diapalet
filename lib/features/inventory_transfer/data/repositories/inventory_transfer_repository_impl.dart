@@ -408,6 +408,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       debugPrint("WARNING: Warehouse name not found for code $warehouseCode, getting all orders");
     }
 
+    // FIX: Only show orders that have 'receiving' stock items available for put-away
     final maps = await db.rawQuery('''
       SELECT DISTINCT
         o.id,
@@ -420,9 +421,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
+      INNER JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = 'receiving'
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
-      WHERE o.status IN (1, 2, 3)
+      WHERE o.status IN (0, 1, 2)
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.tarih DESC
     ''', [warehouseName ?? 'N/A']);
