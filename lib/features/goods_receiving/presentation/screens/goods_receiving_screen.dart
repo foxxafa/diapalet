@@ -441,7 +441,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          flex: 4,
+          flex: 3,
           child: TextFormField(
             controller: viewModel.quantityController,
             focusNode: viewModel.quantityFocusNode,
@@ -461,7 +461,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         ),
         const SizedBox(width: _smallGap),
         Expanded(
-          flex: 5,
+          flex: 6,
           child: _OrderStatusWidget(
             viewModel: viewModel,
             totalReceived: totalReceived,
@@ -1602,16 +1602,20 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    return InputDecorator(
-      decoration: _inputDecoration(context, 'goods_receiving_screen.label_order_status'.tr(), enabled: false),
-      child: Center(
-        child: (!widget.viewModel.isOrderBased || widget.viewModel.selectedProduct == null)
-            ? Text(
+    return SizedBox(
+      height: 52, // Quantity ile tam olarak aynı yükseklik
+      child: InputDecorator(
+        decoration: _inputDecoration(context, 'goods_receiving_screen.label_order_status'.tr(), enabled: false)
+            .copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+      child: (!widget.viewModel.isOrderBased || widget.viewModel.selectedProduct == null)
+          ? Center(
+              child: Text(
                 'common_labels.not_available'.tr(),
                 style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor),
                 textAlign: TextAlign.center,
-              )
-            : _buildOrderStatusContent(),
+              ),
+            )
+          : _buildOrderStatusContent(),
       ),
     );
   }
@@ -1621,9 +1625,11 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     final textTheme = theme.textTheme;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center, // Dikeyde ortala
       children: [
           // Quantity display - sol tarafta ve ortada
           Expanded(
+            flex: 6,
             child: Center(
               child: RichText(
                 textAlign: TextAlign.center,
@@ -1632,7 +1638,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                   children: [
                     TextSpan(
                       text: widget.totalReceived.toStringAsFixed(0),
-                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
+                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 16),
                     ),
                     TextSpan(text: '/', style: TextStyle(color: textTheme.bodyLarge?.color?.withValues(alpha: 0.7))),
                     TextSpan(text: '${widget.expectedQty.toStringAsFixed(0)} ', style: TextStyle(color: textTheme.bodyLarge?.color)),
@@ -1641,40 +1647,52 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
               ),
             ),
           ),
-          // Unit dropdown with barcode
-          if (_isLoadingUnits)
-            const SizedBox(
-              width: 80,
-              height: 20,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else if (_availableUnits.isNotEmpty && _selectedUnitIndex != null && _selectedUnitIndex! >= 0)
-            PopupMenuButton<int>(
+          const SizedBox(width: 4), // Çok az boşluk
+          // Unit dropdown with barcode - sağa yaslı
+          Expanded(
+            flex: 4,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_isLoadingUnits)
+                  const SizedBox(
+                    width: 80,
+                    height: 20,
+                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                else if (_availableUnits.isNotEmpty && _selectedUnitIndex != null && _selectedUnitIndex! >= 0)
+                  PopupMenuButton<int>(
               initialValue: _selectedUnitIndex,
               offset: const Offset(0, 5),
               constraints: const BoxConstraints(minWidth: 300, maxWidth: 350),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                height: 32, // Dropdown'un yüksekliğini arttır
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Padding'i de biraz arttır
                 decoration: BoxDecoration(
                   border: Border.all(color: theme.colorScheme.outline),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center, // İçeriği ortala
                   children: [
-                    Text(
-                      _availableUnits[_selectedUnitIndex!]['birimadi'] ?? '',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
+                    Flexible( // Text overflow'u engellemek için Flexible kullan
+                      child: Text(
+                        _availableUnits[_selectedUnitIndex!]['birimadi'] ?? '',
+                        style: TextStyle(
+                          fontSize: 15, // Font boyutunu biraz küçült
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                        overflow: TextOverflow.ellipsis, // Uzun metinleri kes
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6), // Boşluğu azalt
                     Icon(
                       Icons.arrow_drop_down,
                       color: theme.colorScheme.primary,
+                      size: 20, // Icon boyutunu küçült
                     ),
                   ],
                 ),
@@ -1747,8 +1765,11 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                 ),
               ),
             ),
-        ],
-      );
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   InputDecoration _inputDecoration(BuildContext context, String labelText, {bool enabled = true}) {
