@@ -9,6 +9,7 @@ enum PendingOperationType {
   goodsReceipt,
   inventoryTransfer,
   forceCloseOrder,
+  inventoryStock,
 }
 
 extension PendingOperationTypeExtension on PendingOperationType {
@@ -20,6 +21,8 @@ extension PendingOperationTypeExtension on PendingOperationType {
         return 'inventoryTransfer';
       case PendingOperationType.forceCloseOrder:
         return 'forceCloseOrder';
+      case PendingOperationType.inventoryStock:
+        return 'inventoryStock';
     }
   }
 
@@ -31,6 +34,8 @@ extension PendingOperationTypeExtension on PendingOperationType {
         return PendingOperationType.inventoryTransfer;
       case 'forceCloseOrder':
         return PendingOperationType.forceCloseOrder;
+      case 'inventoryStock':
+        return PendingOperationType.inventoryStock;
       default:
         throw ArgumentError('Unknown pending operation type: $type');
     }
@@ -67,12 +72,15 @@ class PendingOperation {
         return 'pending_operations.titles.inventory_transfer'.tr();
       case PendingOperationType.forceCloseOrder:
         return 'pending_operations.titles.force_close_order'.tr();
+      case PendingOperationType.inventoryStock:
+        return 'Inventory Stock Sync';
     }
   }
 
-  /// Force close order işlemleri history'de gösterilmeyecek
+  /// Force close order ve inventory stock işlemleri history'de gösterilmeyecek
   bool get shouldShowInHistory {
-    return type != PendingOperationType.forceCloseOrder;
+    return type != PendingOperationType.forceCloseOrder && 
+           type != PendingOperationType.inventoryStock;
   }
 
   String get displaySubtitle {
@@ -125,6 +133,9 @@ class PendingOperation {
           } else {
             return 'pending_operations.subtitles.force_close_order'.tr();
           }
+        case PendingOperationType.inventoryStock:
+          final stockCount = (dataMap['stocks'] as List?)?.length ?? 0;
+          return 'Syncing $stockCount inventory stock records';
       }
     } catch (e) {
       return 'pending_operations.subtitles.parsing_error'.tr();
@@ -156,6 +167,9 @@ class PendingOperation {
           break;
         case PendingOperationType.forceCloseOrder:
           identifier = dataMap['po_id']?.toString() ?? '';
+          break;
+        case PendingOperationType.inventoryStock:
+          identifier = 'stock';
           break;
       }
     } catch (e) {

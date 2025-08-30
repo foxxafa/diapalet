@@ -92,6 +92,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           createdAt: DateTime.now(),
         );
         await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
+
+        // inventory_stock kayıtlarını da sync'e ekle - backend goods receipt artık stock oluşturmuyor
+        // bu yüzden mobile'dan stock bilgilerini ayrıca göndermemiz gerekiyor
+        await _createInventoryStockPendingOperation(txn, receiptId);
       });
       debugPrint("Mal kabul işlemi ve sipariş durumu başarıyla lokale kaydedildi.");
     } catch (e) {
@@ -138,6 +142,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
+  // DEPRECATED: Stock management moved to backend only to prevent duplicate entries
+  // This method is kept for reference but should not be used
   Future<void> _updateStockWithKey(Transaction txn, String urunKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
     // NULL-safe WHERE clause construction
     final whereClauses = <String>[];
@@ -523,4 +529,46 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   // Duplicate functions removed - they already exist in the file
+
+  /// Goods receipt işleminden sonra oluşturulan inventory_stock kayıtlarını
+  /// backend'e sync için pending operations'a ekler
+  Future<void> _createInventoryStockPendingOperation(Transaction txn, dynamic receiptId) async {
+    // Bu receipt'a ait inventory_stock kayıtlarını çek
+    final stockRecords = await txn.query(
+      'inventory_stock',
+      where: 'goods_receipt_id = ?',
+      whereArgs: [receiptId],
+    );
+
+    if (stockRecords.isEmpty) {
+      debugPrint("Receipt $receiptId için inventory_stock kaydı bulunamadı");
+      return;
+    }
+
+    // Stock kayıtlarını backend API formatına çevir
+    final stocks = stockRecords.map((record) => {
+      'urun_key': record['urun_key'],
+      'location_id': record['location_id'],
+      'siparis_id': record['siparis_id'],
+      'goods_receipt_id': record['goods_receipt_id'],
+      'quantity': record['quantity'],
+      'pallet_barcode': record['pallet_barcode'],
+      'stock_status': record['stock_status'],
+      'expiry_date': record['expiry_date'],
+    }).toList();
+
+    // Backend'in beklediği format: sadece 'stocks' array'i
+    final stockSyncData = {
+      'stocks': stocks,
+    };
+
+    final stockPendingOp = PendingOperation.create(
+      type: PendingOperationType.inventoryStock,
+      data: jsonEncode(stockSyncData),
+      createdAt: DateTime.now(),
+    );
+
+    await txn.insert(DbTables.pendingOperations, stockPendingOp.toDbMap());
+    debugPrint("Inventory stock sync pending operation created for receipt $receiptId (${stocks.length} records)");
+  }
 }

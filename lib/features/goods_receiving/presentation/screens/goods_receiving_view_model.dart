@@ -46,6 +46,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   List<ProductInfo> _availableProducts = [];
   List<ProductInfo> _productSearchResults = [];
   ProductInfo? _selectedProduct;
+  List<Map<String, dynamic>> _availableUnitsForSelectedProduct = [];
   final List<ReceiptItemDraft> _addedItems = [];
 
   // Subscriptions
@@ -75,6 +76,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   List<ProductInfo> get availableProducts => _availableProducts;
   List<ProductInfo> get productSearchResults => _productSearchResults;
   ProductInfo? get selectedProduct => _selectedProduct;
+  List<Map<String, dynamic>> get availableUnitsForSelectedProduct => _availableUnitsForSelectedProduct;
   List<ReceiptItemDraft> get addedItems => _addedItems;
   int get addedItemsCount => _addedItems.length;
 
@@ -155,6 +157,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       }
     });
   }
+
 
   @override
   void dispose() {
@@ -466,7 +469,20 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
     
     _selectedProduct = product;
-    productController.text = product.productBarcode ?? product.stockCode;
+    
+    // Ürünün tüm birimlerini getir
+    try {
+      _availableUnitsForSelectedProduct = await DatabaseHelper.instance.getAllUnitsForProduct(product.stockCode);
+    } catch (e) {
+      debugPrint('Error getting units for product: $e');
+      _availableUnitsForSelectedProduct = [];
+    }
+    
+    // Product field'a barkod ve stok kodunu yaz
+    final barcode = product.productBarcode ?? '';
+    final stockCode = product.stockCode;
+    productController.text = barcode.isNotEmpty ? '$barcode ($stockCode)' : stockCode;
+    
     _productSearchResults.clear(); // Clear search results when a product is selected
     notifyListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -972,6 +988,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       },
     );
   }
+
+  /// Birim değiştiğinde product text field'ını günceller
+  void updateProductFieldWithNewBarcode(String newBarcode) {
+    if (_selectedProduct != null) {
+      final stockCode = _selectedProduct!.stockCode;
+      productController.text = newBarcode.isNotEmpty ? '$newBarcode ($stockCode)' : stockCode;
+      notifyListeners();
+    }
+  }
 }
 
 class _OutOfOrderProductDialog extends StatefulWidget {
@@ -1189,7 +1214,6 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                 ...widget.product.toJson(),
                 'birimadi': selectedUnit['birimadi'],
                 'birimkod': selectedUnit['birimkod'],
-                'carpan': selectedUnit['carpan'],
                 'barkod': selectedUnit['barkod'],
                 '_key': widget.product.productKey,
                 'UrunId': widget.product.id,

@@ -176,6 +176,8 @@ class TerminalController extends Controller
                     $result = $this->_createInventoryTransfer($opData, $db);
                 } elseif ($opType === 'forceCloseOrder') {
                     $result = $this->_forceCloseOrder($opData, $db);
+                } elseif ($opType === 'inventoryStock') {
+                    $result = $this->_syncInventoryStock($opData, $db);
                 }
 
                 // 4. Başarılı ise, sonucu hem yanıt dizisine hem de idempotency tablosuna ekle
@@ -345,11 +347,9 @@ class TerminalController extends Controller
                 'siparis_key' => $siparisKey,
             ])->execute();
 
-            // DÜZELTME: Stok, fiziksel bir 'Mal Kabul' rafına değil, location_id'si NULL olan
-            // sanal bir alana eklenir.
-            $stockStatus = 'receiving'; // Tüm mal kabulleri için, stok başlangıçta 'mal kabul' durumunda olmalıdır.
-            // _key değeri direkt kullanılıyor
-            $this->upsertStock($db, $urunKey, null, $item['quantity'], $item['pallet_barcode'] ?? null, $stockStatus, $siparisId, $item['expiry_date'] ?? null, $receiptId);
+            // STOK OLUŞTURMA KALDIRILDI: Mobile zaten inventory_stock oluşturuyor
+            // Backend'de tekrar oluşturmak gereksiz ve duplicate veri trafiğine neden oluyor
+            // Mobile'dan gelen inventory_stock sync ile backend'e gelecek
         }
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
@@ -409,14 +409,32 @@ class TerminalController extends Controller
             // Mobile'dan _key değeri geliyor, direkt kullanılıyor
             $urunKey = $item['urun_key']; // _key değeri
             
-            // _key'in gerçekten var olduğunu kontrol et
-            $exists = (new Query())
+            // _key'in gerçekten var olduğunu kontrol et ve detaylı hata mesajı ver
+            $productInfo = (new Query())
+                ->select(['_key', 'StokKodu', 'UrunAdi'])
                 ->from('urunler')
                 ->where(['_key' => $urunKey])
-                ->exists($db);
+                ->one($db);
             
-            if (!$exists) {
-                return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
+            if (!$productInfo) {
+                // Alternative: Try to find by UrunId if _key is actually a numeric value
+                if (is_numeric($urunKey)) {
+                    $productInfo = (new Query())
+                        ->select(['_key', 'StokKodu', 'UrunAdi'])
+                        ->from('urunler')
+                        ->where(['UrunId' => (int)$urunKey])
+                        ->one($db);
+                    
+                    if ($productInfo) {
+                        // Use the correct _key from database
+                        $urunKey = $productInfo['_key'];
+                        Yii::warning("Transfer: Converted UrunId {$item['urun_key']} to _key {$urunKey}", __METHOD__);
+                    }
+                }
+                
+                if (!$productInfo) {
+                    return ['status' => 'error', 'message' => "Ürün bulunamadı: {$item['urun_key']} (tip: " . gettype($item['urun_key']) . ")"];
+                }
             }
             
             $totalQuantityToTransfer = (float)$item['quantity'];
@@ -624,6 +642,16 @@ class TerminalController extends Controller
                     $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
                 }
             } elseif ($qtyChange > 0) {
+                // Verify urun_key exists before inserting
+                $productExists = (new Query())
+                    ->from('urunler')
+                    ->where(['_key' => $urunKey])
+                    ->exists($db);
+                    
+                if (!$productExists) {
+                    throw new \Exception("Cannot insert inventory_stock: urun_key '{$urunKey}' does not exist in urunler table");
+                }
+                
                 // _key urun_key olarak kullanılıyor
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_key' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
@@ -1071,7 +1099,7 @@ class TerminalController extends Controller
         // ########## BİRİMLER İÇİN İNKREMENTAL SYNC ##########
         try {
             $birimlerQuery = (new Query())
-                ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
+                ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu', 
                          'created_at', 'updated_at'])
                 ->from('birimler');
 
@@ -1081,7 +1109,7 @@ class TerminalController extends Controller
             }
 
             $birimlerData = $birimlerQuery->all();
-            $this->castNumericValues($birimlerData, ['id'], ['carpan']);
+            $this->castNumericValues($birimlerData, ['id'], []);
             $data['birimler'] = $birimlerData;
 
         } catch (\Exception $e) {
@@ -1488,7 +1516,7 @@ class TerminalController extends Controller
     private function getPaginatedBirimler($serverSyncTimestamp, $offset, $limit)
     {
         $query = (new Query())
-            ->select(['id', 'birimadi', 'birimkod', 'carpan', '_key', '_key_scf_stokkart', 'StokKodu', 
+            ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu', 
                      'created_at', 'updated_at'])
             ->from('birimler');
 
@@ -1499,7 +1527,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id'], ['carpan']);
+        $this->castNumericValues($data, ['id'], []);
         return $data;
     }
 
@@ -1906,5 +1934,140 @@ class TerminalController extends Controller
             ->all();
 
         return ['success' => true, 'data' => $receipts];
+    }
+
+    /**
+     * Mobile'dan gelen inventory_stock kayıtlarını backend'e sync eder
+     * Mobile zaten inventory_stock kayıtlarını doğru hesaplamış, backend sadece sync ediyor
+     */
+    private function _syncInventoryStock($data, $db)
+    {
+        try {
+            $stocks = $data['stocks'] ?? [];
+            
+            if (empty($stocks)) {
+                return ['status' => 'success', 'message' => 'No inventory stock to sync', 'synced_count' => 0];
+            }
+
+            Yii::info("Syncing " . count($stocks) . " inventory stock records from mobile", __METHOD__);
+            $syncedCount = 0;
+            $skippedCount = 0;
+            
+            foreach ($stocks as $stock) {
+                // Required fields validation
+                if (!isset($stock['urun_key']) || !isset($stock['quantity']) || !isset($stock['stock_status'])) {
+                    Yii::warning("Stock record missing required fields, skipping: " . json_encode($stock), __METHOD__);
+                    $skippedCount++;
+                    continue;
+                }
+
+                // Validate stock status
+                if (!in_array($stock['stock_status'], ['receiving', 'available'])) {
+                    Yii::warning("Invalid stock status: {$stock['stock_status']}, skipping", __METHOD__);
+                    $skippedCount++;
+                    continue;
+                }
+
+                // Validate quantity
+                $quantity = (float)$stock['quantity'];
+                if ($quantity <= 0) {
+                    Yii::warning("Invalid quantity: {$quantity}, skipping", __METHOD__);
+                    $skippedCount++;
+                    continue;
+                }
+
+                // Verify product exists
+                $productExists = (new Query())
+                    ->from('urunler')
+                    ->where(['_key' => $stock['urun_key']])
+                    ->exists($db);
+                    
+                if (!$productExists) {
+                    Yii::warning("Product {$stock['urun_key']} not found, skipping stock sync", __METHOD__);
+                    $skippedCount++;
+                    continue;
+                }
+
+                // Build composite unique key condition (same as mobile UNIQUE constraint)
+                $whereConditions = [
+                    'urun_key' => $stock['urun_key'],
+                    'stock_status' => $stock['stock_status']
+                ];
+
+                // Handle nullable fields properly
+                $nullableFields = ['location_id', 'pallet_barcode', 'siparis_id', 'expiry_date', 'goods_receipt_id'];
+                foreach ($nullableFields as $field) {
+                    if (isset($stock[$field]) && $stock[$field] !== null) {
+                        $whereConditions[$field] = $stock[$field];
+                    } else {
+                        // For null values, we need to use IS NULL in query
+                        $whereConditions[$field] = null;
+                    }
+                }
+
+                // Check if exact stock record already exists
+                $queryBuilder = (new Query())->from('inventory_stock');
+                foreach ($whereConditions as $field => $value) {
+                    if ($value === null) {
+                        $queryBuilder->andWhere([$field => null]);
+                    } else {
+                        $queryBuilder->andWhere([$field => $value]);
+                    }
+                }
+                $existingStock = $queryBuilder->one($db);
+
+                if ($existingStock) {
+                    // Update existing stock - mobile might have adjusted quantity
+                    $updatedRows = $db->createCommand()->update('inventory_stock', [
+                        'quantity' => $quantity,
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ], ['id' => $existingStock['id']])->execute();
+                    
+                    if ($updatedRows > 0) {
+                        Yii::info("Updated existing stock ID {$existingStock['id']}: quantity = {$quantity}", __METHOD__);
+                    }
+                } else {
+                    // Insert new stock record
+                    $stockRecord = [
+                        'urun_key' => $stock['urun_key'],
+                        'location_id' => $stock['location_id'] ?? null,
+                        'siparis_id' => $stock['siparis_id'] ?? null,
+                        'goods_receipt_id' => $stock['goods_receipt_id'] ?? null,
+                        'quantity' => $quantity,
+                        'pallet_barcode' => $stock['pallet_barcode'] ?? null,
+                        'stock_status' => $stock['stock_status'],
+                        'expiry_date' => $stock['expiry_date'] ?? null,
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ];
+                    
+                    $insertedRows = $db->createCommand()->insert('inventory_stock', $stockRecord)->execute();
+                    if ($insertedRows > 0) {
+                        Yii::info("Inserted new stock: product={$stock['urun_key']}, qty={$quantity}, status={$stock['stock_status']}", __METHOD__);
+                    }
+                }
+                
+                $syncedCount++;
+            }
+
+            $message = "Successfully synced {$syncedCount} inventory stock records";
+            if ($skippedCount > 0) {
+                $message .= " (skipped {$skippedCount} invalid records)";
+            }
+
+            Yii::info($message, __METHOD__);
+            
+            return [
+                'status' => 'success', 
+                'message' => $message,
+                'synced_count' => $syncedCount,
+                'skipped_count' => $skippedCount
+            ];
+            
+        } catch (\Exception $e) {
+            $errorMsg = "Inventory stock sync failed: " . $e->getMessage();
+            Yii::error($errorMsg . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
+            return ['status' => 'error', 'message' => $errorMsg];
+        }
     }
 }

@@ -5,7 +5,7 @@ import 'package:diapalet/core/utils/keyboard_utils.dart';
 
 /// QR kod tarama butonu ile birlikte gelen text field widget'ı
 /// Tüm sayfalarda ortak kullanım için tasarlandı
-class QrTextField extends StatelessWidget {
+class QrTextField extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode? focusNode;
   final String labelText;
@@ -19,6 +19,7 @@ class QrTextField extends StatelessWidget {
   final String? Function(String?)? validator;
   final TextInputAction? textInputAction;
   final int? maxLines;
+  final bool showClearButton;
 
   const QrTextField({
     super.key,
@@ -35,7 +36,33 @@ class QrTextField extends StatelessWidget {
     this.validator,
     this.textInputAction,
     this.maxLines = 1,
+    this.showClearButton = false,
   });
+
+  @override
+  State<QrTextField> createState() => _QrTextFieldState();
+}
+
+class _QrTextFieldState extends State<QrTextField> {
+  @override
+  void initState() {
+    super.initState();
+    // Controller değişikliklerini dinle
+    widget.controller.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    // Clear button görünürlüğü için rebuild tetikle
+    if (widget.showClearButton) {
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,15 +71,15 @@ class QrTextField extends StatelessWidget {
       children: [
         Expanded(
           child: TextFormField(
-            controller: controller,
-            focusNode: focusNode,
-            enabled: enabled,
-            maxLines: maxLines,
+            controller: widget.controller,
+            focusNode: widget.focusNode,
+            enabled: widget.enabled,
+            maxLines: widget.maxLines,
             decoration: _inputDecoration(context),
-            onChanged: onChanged,
-            onFieldSubmitted: onFieldSubmitted,
-            textInputAction: textInputAction ?? TextInputAction.next,
-            validator: validator,
+            onChanged: widget.onChanged,
+            onFieldSubmitted: widget.onFieldSubmitted,
+            textInputAction: widget.textInputAction ?? TextInputAction.next,
+            validator: widget.validator,
           ),
         ),
         const SizedBox(width: 8),
@@ -61,7 +88,7 @@ class QrTextField extends StatelessWidget {
           height: 56, // Text field ile aynı yükseklik
           width: 56,  // Kare yapı
           child: ElevatedButton(
-            onPressed: enabled ? () => _onQrButtonPressed(context) : null,
+            onPressed: widget.enabled ? () => _onQrButtonPressed(context) : null,
             style: ElevatedButton.styleFrom(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12.0)
@@ -77,15 +104,15 @@ class QrTextField extends StatelessWidget {
 
   void _onQrButtonPressed(BuildContext context) async {
     // Eğer özel QR tap callback'i varsa onu kullan
-    if (onQrTap != null) {
-      onQrTap!();
+    if (widget.onQrTap != null) {
+      widget.onQrTap!();
       return;
     }
     
     // Varsayılan QR scanner mantığı
     try {
       // Daha güçlü klavye kapatma - tüm odak noktalarını temizle
-      await KeyboardUtils.closeSoftKeyboard(context, specificFocusNode: focusNode);
+      await KeyboardUtils.closeSoftKeyboard(context, specificFocusNode: widget.focusNode);
       
       // QR scanner'ı aç
       final result = await Navigator.push<String>(
@@ -95,10 +122,10 @@ class QrTextField extends StatelessWidget {
       
       if (result != null && result.isNotEmpty) {
         // Text alanına yaz ama focus/selection yapma - klavye açılmasını önle
-        controller.text = result;
+        widget.controller.text = result;
         
         // Callback'i çağır
-        onQrScanned?.call(result);
+        widget.onQrScanned?.call(result);
       }
     } catch (e) {
       debugPrint('QR scanning error: $e');
@@ -108,11 +135,11 @@ class QrTextField extends StatelessWidget {
 
   InputDecoration _inputDecoration(BuildContext context) {
     final theme = Theme.of(context);
-    final borderColor = isValid ? Colors.green : theme.dividerColor;
+    final borderColor = widget.isValid ? Colors.green : theme.dividerColor;
     
     return InputDecoration(
-      labelText: labelText,
-      hintText: hintText,
+      labelText: widget.labelText,
+      hintText: widget.hintText,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12.0),
         borderSide: BorderSide(color: borderColor),
@@ -138,6 +165,16 @@ class QrTextField extends StatelessWidget {
         borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      suffixIcon: widget.showClearButton && widget.controller.text.isNotEmpty ? 
+        IconButton(
+          icon: const Icon(Icons.clear, size: 20),
+          onPressed: () {
+            widget.controller.clear();
+            if (widget.onChanged != null) {
+              widget.onChanged!('');
+            }
+          },
+        ) : null,
     );
   }
 }

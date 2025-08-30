@@ -42,11 +42,10 @@ class ProductInfo extends Equatable {
     Map<String, dynamic>? birimInfoMap = map['birim_info'] as Map<String, dynamic>?;
     if (birimInfoMap == null) {
       // Veritabanından gelen birim bilgilerini kullan
-      if (map.containsKey('birimadi') || map.containsKey('birimkod') || map.containsKey('carpan')) {
+      if (map.containsKey('birimadi') || map.containsKey('birimkod')) {
         birimInfoMap = {
           'birimadi': map['birimadi'],
           'birimkod': map['birimkod'],
-          'carpan': map['carpan'],
           'anamiktar': map['anamiktar'], // Sipariş miktarı
           'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
           'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)

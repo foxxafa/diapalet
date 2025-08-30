@@ -44,6 +44,10 @@ class PdfService {
           final dataMap = jsonDecode(operation.data);
           identifier = dataMap['po_id']?.toString() ?? '';
           break;
+        case PendingOperationType.inventoryStock:
+          // Inventory stock sync operations don't have a specific identifier
+          identifier = 'stock_sync';
+          break;
       }
     } catch (e) {
       debugPrint('Error generating enriched PDF filename: $e');
@@ -92,6 +96,9 @@ class PdfService {
       case PendingOperationType.forceCloseOrder:
         // Placeholder for future implementation
         return _generateForceCloseOrderOperationPdf(operation, enrichedData, font, boldFont);
+      case PendingOperationType.inventoryStock:
+        // Inventory stock sync operations don't generate PDFs (internal operation)
+        return _generateInventoryStockOperationPdf(operation, enrichedData, font, boldFont);
     }
   }
 
@@ -915,6 +922,52 @@ class PdfService {
         ),
       ],
     );
+  }
+
+  /// Generates a basic PDF for inventory stock sync operations (not typically needed)
+  static Future<Uint8List> _generateInventoryStockOperationPdf(
+    PendingOperation operation,
+    Map<String, dynamic> data,
+    pw.Font font,
+    pw.Font boldFont,
+  ) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Inventory Stock Sync Report',
+                style: pw.TextStyle(font: boldFont, fontSize: 16),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Operation ID: ${operation.uniqueId}',
+                style: pw.TextStyle(font: font, fontSize: 12),
+              ),
+              pw.Text(
+                'Created: ${DateFormat('dd/MM/yyyy HH:mm').format(operation.createdAt)}',
+                style: pw.TextStyle(font: font, fontSize: 12),
+              ),
+              pw.Text(
+                'Status: ${operation.status}',
+                style: pw.TextStyle(font: font, fontSize: 12),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Note: Inventory stock sync operations are internal system operations and do not require detailed PDF reports.',
+                style: pw.TextStyle(font: font, fontSize: 10),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
   }
 
 }

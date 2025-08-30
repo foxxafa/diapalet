@@ -113,7 +113,6 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           birimadi TEXT,
           birimkod TEXT,
-          carpan REAL,
           _key TEXT,
           _key_scf_stokkart TEXT,
           StokKodu TEXT,
@@ -639,6 +638,20 @@ class DatabaseHelper {
           }
         }
 
+        // inventory_stock için incremental sync - updated_at ile değişenleri güncelle
+        if (data.containsKey('inventory_stock')) {
+          final inventoryData = List<Map<String, dynamic>>.from(data['inventory_stock']);
+          
+          for (final stock in inventoryData) {
+            final sanitizedRecord = _sanitizeRecord('inventory_stock', stock);
+            // ConflictAlgorithm.replace ile updated_at'e göre güncelleme yapılır
+            batch.insert('inventory_stock', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            
+            processedItems++;
+            updateProgress('inventory_stock');
+          }
+        }
+
         // Diğer tablolar için eski mantık (full replacement)
         const deletionOrder = [
           // Tüm tablolar incremental olarak işlendiği için bu liste boş
@@ -823,6 +836,23 @@ class DatabaseHelper {
         }
         break;
 
+      case 'birimler':
+        // Only keep fields that exist in local schema
+        final localRecord = <String, dynamic>{}; 
+        final localColumns = [
+          'id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu', 
+          'created_at', 'updated_at'
+        ];
+        
+        // Copy only existing local columns
+        for (String column in localColumns) {
+          if (newRecord.containsKey(column)) {
+            localRecord[column] = newRecord[column];
+          }
+        }
+        
+        return localRecord;
+
       // siparis_ayrintili case already handled above with early return
     }
 
@@ -847,7 +877,6 @@ class DatabaseHelper {
           u.*,
           b.birimadi,
           b.birimkod,
-          b.carpan,
           b._key as birim_key,
           bark.barkod,
           bark._key as barkod_key,
@@ -877,7 +906,6 @@ class DatabaseHelper {
           u.*,
           b.birimadi,
           b.birimkod,
-          b.carpan,
           b._key as birim_key,
           bark.barkod,
           bark._key as barkod_key
@@ -912,7 +940,6 @@ class DatabaseHelper {
         u.*,
         b.birimadi,
         b.birimkod,
-        b.carpan,
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key,
@@ -991,7 +1018,6 @@ class DatabaseHelper {
         u.*,
         b.birimadi,
         b.birimkod,
-        b.carpan,
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key
@@ -1018,7 +1044,6 @@ class DatabaseHelper {
         u.*,
         b.birimadi,
         b.birimkod,
-        b.carpan,
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key

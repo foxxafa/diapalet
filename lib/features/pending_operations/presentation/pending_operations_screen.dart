@@ -373,6 +373,9 @@ class _OperationCard extends StatelessWidget {
       case PendingOperationType.forceCloseOrder:
         leadingIcon = Icons.task_alt_rounded;
         break;
+      case PendingOperationType.inventoryStock:
+        leadingIcon = Icons.inventory_2_outlined;
+        break;
     }
 
     final Widget trailingWidget;
@@ -475,6 +478,8 @@ class _OperationDetailsView extends StatelessWidget {
           return await _buildInventoryTransferDetailsAsync(context, data);
         case PendingOperationType.forceCloseOrder:
           return await _buildForceCloseOrderDetailsAsync(context, data);
+        case PendingOperationType.inventoryStock:
+          return await _buildInventoryStockDetailsAsync(context, data);
       }
     } catch (e) {
       return _buildFormattedDetails(context, operation);
@@ -830,6 +835,8 @@ class _OperationDetailsView extends StatelessWidget {
           return _buildInventoryTransferDetails(context, data);
         case PendingOperationType.forceCloseOrder:
           return _buildForceCloseOrderDetails(context, data);
+        case PendingOperationType.inventoryStock:
+          return _buildInventoryStockDetails(context, data);
       }
     } catch (e) {
       // Fallback for parsing errors or unknown types
@@ -990,6 +997,25 @@ class _OperationDetailsView extends StatelessWidget {
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
         ),
       ),
+    );
+  }
+
+  Future<Widget> _buildInventoryStockDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
+    return _buildInventoryStockDetails(context, data);
+  }
+
+  Widget _buildInventoryStockDetails(BuildContext context, Map<String, dynamic> data) {
+    final stocks = data['stocks'] as List? ?? [];
+    final stockCount = stocks.length;
+    
+    return _buildDetailSection(
+      context: context,
+      title: 'Inventory Stock Sync',
+      details: {
+        'Stock Records': '$stockCount items',
+        'Operation Type': 'Stock synchronization',
+        'Status': 'Internal system operation',
+      },
     );
   }
 }

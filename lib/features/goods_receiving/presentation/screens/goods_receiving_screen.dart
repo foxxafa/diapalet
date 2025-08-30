@@ -11,6 +11,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -268,6 +269,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           focusNode: viewModel.productFocusNode,
           enabled: viewModel.areFieldsEnabled,
           maxLines: 1,
+          showClearButton: true,
           labelText: viewModel.selectedProduct == null 
             ? (viewModel.isOrderBased
                 ? 'goods_receiving_screen.label_select_product_in_order'.tr()
@@ -397,8 +399,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildQuantityAndStatusRow(GoodsReceivingViewModel viewModel) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
 
     PurchaseOrderItem? orderItem;
     if (viewModel.selectedProduct != null && viewModel.isOrderBased) {
@@ -462,38 +462,10 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         const SizedBox(width: _smallGap),
         Expanded(
           flex: 5,
-          child: InputDecorator(
-            decoration: _inputDecoration('goods_receiving_screen.label_order_status'.tr(), enabled: false),
-            child: Center(
-              child: (!viewModel.isOrderBased || viewModel.selectedProduct == null)
-                  ? Text(
-                      'common_labels.not_available'.tr(),
-                      style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).hintColor),
-                      textAlign: TextAlign.center,
-                    )
-                  : RichText(
-                      textAlign: TextAlign.center,
-                      text: TextSpan(
-                        style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                        children: [
-                          TextSpan(
-                            text: totalReceived.toStringAsFixed(0),
-                            style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
-                          ),
-                          TextSpan(text: '/', style: TextStyle(color: textTheme.bodyLarge?.color?.withAlpha(179))),
-                          TextSpan(text: '${expectedQty.toStringAsFixed(0)} ', style: TextStyle(color: textTheme.bodyLarge?.color)),
-                          TextSpan(
-                            text: viewModel.selectedProduct?.displayUnitName ?? '',
-                            style: TextStyle(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
+          child: _OrderStatusWidget(
+            viewModel: viewModel,
+            totalReceived: totalReceived,
+            expectedQty: expectedQty,
           ),
         ),
       ],
@@ -1402,6 +1374,7 @@ class _OrderProductConfirmationCard extends StatelessWidget {
     );
   }
 
+
   Widget _buildStatRow(BuildContext context, String label, double value, String unit, {bool highlight = false, bool bold = false}) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
@@ -1558,6 +1531,245 @@ class _OutOfOrderProductConfirmationCard extends StatelessWidget {
           Text('${value.toStringAsFixed(0)} $unit', style: valueStyle),
         ],
       ),
+    );
+  }
+}
+
+class _OrderStatusWidget extends StatefulWidget {
+  final GoodsReceivingViewModel viewModel;
+  final double totalReceived;
+  final double expectedQty;
+
+  const _OrderStatusWidget({
+    required this.viewModel,
+    required this.totalReceived,
+    required this.expectedQty,
+  });
+
+  @override
+  State<_OrderStatusWidget> createState() => _OrderStatusWidgetState();
+}
+
+class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
+  List<Map<String, dynamic>> _availableUnits = [];
+  int? _selectedUnitIndex;
+  bool _isLoadingUnits = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvailableUnits();
+  }
+
+  @override
+  void didUpdateWidget(_OrderStatusWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Product değiştiğinde yeniden yükle
+    if (oldWidget.viewModel.selectedProduct?.stockCode != widget.viewModel.selectedProduct?.stockCode) {
+      _loadAvailableUnits();
+    }
+  }
+
+  Future<void> _loadAvailableUnits() async {
+    if (widget.viewModel.selectedProduct?.stockCode != null) {
+      try {
+        final dbHelper = DatabaseHelper.instance;
+        final units = await dbHelper.getAllUnitsForProduct(widget.viewModel.selectedProduct!.stockCode);
+        
+        setState(() {
+          _availableUnits = units;
+          // Mevcut product'ın unit'ini seç
+          final currentUnitName = widget.viewModel.selectedProduct?.displayUnitName;
+          _selectedUnitIndex = units.indexWhere((unit) => unit['birimadi'] == currentUnitName);
+          if (_selectedUnitIndex == -1) _selectedUnitIndex = 0;
+          _isLoadingUnits = false;
+        });
+      } catch (e) {
+        setState(() {
+          _isLoadingUnits = false;
+        });
+        debugPrint('Error loading units for order status: $e');
+      }
+    } else {
+      setState(() {
+        _isLoadingUnits = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    return InputDecorator(
+      decoration: _inputDecoration(context, 'goods_receiving_screen.label_order_status'.tr(), enabled: false),
+      child: Center(
+        child: (!widget.viewModel.isOrderBased || widget.viewModel.selectedProduct == null)
+            ? Text(
+                'common_labels.not_available'.tr(),
+                style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: theme.hintColor),
+                textAlign: TextAlign.center,
+              )
+            : _buildOrderStatusContent(),
+      ),
+    );
+  }
+
+  Widget _buildOrderStatusContent() {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    return Row(
+      children: [
+          // Quantity display - sol tarafta ve ortada
+          Expanded(
+            child: Center(
+              child: RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  children: [
+                    TextSpan(
+                      text: widget.totalReceived.toStringAsFixed(0),
+                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 18),
+                    ),
+                    TextSpan(text: '/', style: TextStyle(color: textTheme.bodyLarge?.color?.withValues(alpha: 0.7))),
+                    TextSpan(text: '${widget.expectedQty.toStringAsFixed(0)} ', style: TextStyle(color: textTheme.bodyLarge?.color)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Unit dropdown with barcode
+          if (_isLoadingUnits)
+            const SizedBox(
+              width: 80,
+              height: 20,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (_availableUnits.isNotEmpty && _selectedUnitIndex != null && _selectedUnitIndex! >= 0)
+            PopupMenuButton<int>(
+              initialValue: _selectedUnitIndex,
+              offset: const Offset(0, 5),
+              constraints: const BoxConstraints(minWidth: 300, maxWidth: 350),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.colorScheme.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _availableUnits[_selectedUnitIndex!]['birimadi'] ?? '',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+              itemBuilder: (BuildContext popupContext) {
+                return _availableUnits.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final unit = entry.value;
+                  final unitName = unit['birimadi'] ?? '';
+                  final barcode = unit['barkod'] ?? '';
+                  
+                  return PopupMenuItem<int>(
+                    value: index,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            unitName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (barcode.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              barcode,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList();
+              },
+              onSelected: (newIndex) {
+                if (newIndex < _availableUnits.length) {
+                  setState(() {
+                    _selectedUnitIndex = newIndex;
+                  });
+                  
+                  // Product text alanını temizle ve seçilen barkodu hazırla
+                  final selectedUnit = _availableUnits[newIndex];
+                  final barcode = selectedUnit['barkod'] ?? '';
+                  
+                  widget.viewModel.productController.clear();
+                  
+                  // Direkt viewModel üzerinden process et
+                  widget.viewModel.processScannedData('product', barcode, context: context);
+                }
+              },
+            )
+          else
+            Container(
+              alignment: Alignment.center,
+              child: Text(
+                widget.viewModel.selectedProduct?.displayUnitName ?? '',
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+        ],
+      );
+  }
+
+  InputDecoration _inputDecoration(BuildContext context, String labelText, {bool enabled = true}) {
+    final theme = Theme.of(context);
+    final borderColor = theme.dividerColor;
+    
+    return InputDecoration(
+      labelText: labelText,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12.0),
+        borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
   }
 }
