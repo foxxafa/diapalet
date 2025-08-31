@@ -275,7 +275,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         continue;
       }
 
-      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimadi']}, Ordered: ${line['anamiktar']}");
+      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimadi']}, Ordered: ${line['miktar']}");
       debugPrint("DEBUG: sipbirimkey: ${line['sipbirimkey']}, birim_key: ${line['birim_key']}");
 
       // Barcode zaten join ile alındı
@@ -313,7 +313,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       enrichedMap['urun_key'] = urunKey;
       
       // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
-      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['anamiktar']}");
+      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['miktar']}");
       
       // Barkod bilgisini kontrol et
       if (barcode != null) {
@@ -445,7 +445,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         final orderUnits = results.where((r) => r['source_type'] == 'order');
         if (orderUnits.isNotEmpty) {
           final orderUnit = orderUnits.first;
-          debugPrint("✅ DEBUG: Sipariş içi birim bulundu: ${orderUnit['birimadi']}, miktar: ${orderUnit['anamiktar']}");
+          debugPrint("✅ DEBUG: Sipariş içi birim bulundu: ${orderUnit['birimadi']}, miktar: ${orderUnit['miktar']}");
           return ProductInfo.fromDbMap(orderUnit);
         }
         

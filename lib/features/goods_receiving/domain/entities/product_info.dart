@@ -46,7 +46,7 @@ class ProductInfo extends Equatable {
         birimInfoMap = {
           'birimadi': map['birimadi'],
           'birimkod': map['birimkod'],
-          'anamiktar': map['anamiktar'], // Sipariş miktarı
+          'miktar': map['miktar'], // Sipariş miktarı
           'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
           'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)
           'sipbirimkey': map['sipbirimkey'], // Sipariş birim anahtarı
@@ -88,8 +88,8 @@ class ProductInfo extends Equatable {
   /// Yeni barkod sistemi için barkod bilgisi
   String? get productBarcode => barkodInfo?['barkod'] as String?;
 
-  /// Sipariş miktarı - siparişli ürünlerde anamiktar, sipariş dışında 0
-  double get orderQuantity => birimInfo?['anamiktar']?.toDouble() ?? 0.0;
+  /// Sipariş miktarı - siparişli ürünlerde miktar, sipariş dışında 0
+  double get orderQuantity => birimInfo?['miktar']?.toDouble() ?? 0.0;
 
   /// Birim adı (barkod üzerinden gelen birim)
   String? get unitName => birimInfo?['birimadi'] as String?;

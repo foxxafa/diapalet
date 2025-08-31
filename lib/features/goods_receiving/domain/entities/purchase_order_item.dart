@@ -36,17 +36,17 @@ class PurchaseOrderItem {
   /// Repository katmanı bu temel nesneyi oluşturduktan sonra yeni bir
   /// nesne yaratarak bu alanı doldurur.
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
-    debugPrint("Creating PurchaseOrderItem from map. anamiktar value: ${map['anamiktar']}, type: ${map['anamiktar'].runtimeType}");
+    debugPrint("Creating PurchaseOrderItem from map. miktar value: ${map['miktar']}, type: ${map['miktar'].runtimeType}");
     debugPrint("DEBUG: PurchaseOrderItem.fromDb map urun_key: ${map['urun_key']}, _key: ${map['_key']}");
     
-    // anamiktar değerini güvenli şekilde parse et
+    // miktar değerini güvenli şekilde parse et
     double expectedQty = 0.0;
-    final anamiktarValue = map['anamiktar'];
-    if (anamiktarValue != null) {
-      if (anamiktarValue is num) {
-        expectedQty = anamiktarValue.toDouble();
+    final miktarValue = map['miktar'];
+    if (miktarValue != null) {
+      if (miktarValue is num) {
+        expectedQty = miktarValue.toDouble();
       } else {
-        expectedQty = double.tryParse(anamiktarValue.toString()) ?? 0.0;
+        expectedQty = double.tryParse(miktarValue.toString()) ?? 0.0;
       }
     }
     

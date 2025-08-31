@@ -297,12 +297,24 @@ class TerminalController extends Controller
             return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı. Employee warehouse_code: ' . ($employeeInfo['warehouse_code'] ?? 'null')];
         }
 
+        // Sipariş fisno bilgisini al
+        $sipFisno = null;
+        if ($siparisId) {
+            $sipFisno = (new Query())
+                ->select(['fisno'])
+                ->from('siparisler')
+                ->where(['id' => $siparisId])
+                ->scalar($db);
+        }
+
         $db->createCommand()->insert('goods_receipts', [
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
             'warehouse_id' => $warehouseId,
             'employee_id' => $header['employee_id'],
             'siparis_id' => $siparisId,
             'delivery_note_number' => $deliveryNoteNumber,
+            'warehouse_code' => $employeeInfo['warehouse_code'] ?? null,
+            'sip_fisno' => $sipFisno,
         ])->execute();
         $receiptId = $db->getLastInsertID();
 
@@ -320,32 +332,73 @@ class TerminalController extends Controller
                 return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
             
-            // Sipariş bazlı mal kabulde siparis_key'i bul
+            // Sipariş bazlı mal kabulde siparis_key'i bul ve free kontrolü yap
             $siparisKey = null;
-            if ($siparisId) {
-                // Ürünün StokKodu'nu al
-                $stokKodu = (new Query())
-                    ->select('StokKodu')
-                    ->from('urunler')
-                    ->where(['_key' => $urunKey])
-                    ->scalar($db);
+            $stokKodu = null;
+            $isFree = 1; // Varsayılan olarak free (sipariş dışı)
+            
+            // Ürünün StokKodu'nu al
+            $stokKodu = (new Query())
+                ->select('StokKodu')
+                ->from('urunler')
+                ->where(['_key' => $urunKey])
+                ->scalar($db);
+            
+            if ($siparisId && $stokKodu) {
+                // Gelen ürünün birim bilgisini al (item'dan geliyor olmalı)
+                $birimKey = $item['birim_key'] ?? null;
                 
-                if ($stokKodu) {
-                    // siparis_ayrintili tablosundan _key değerini bul
-                    // siparis_ayrintili'de stok_kodu değil kartkodu var
+                // Siparişte bu ürün ve birim kombinasyonu var mı kontrol et
+                if ($birimKey) {
+                    $isInOrder = (new Query())
+                        ->from('siparis_ayrintili')
+                        ->where([
+                            'siparisler_id' => $siparisId,
+                            'kartkodu' => $stokKodu,
+                            'sipbirimkey' => $birimKey,
+                            'turu' => '1'
+                        ])
+                        ->exists($db);
+                    
+                    // Eğer siparişteki ürün ve birimle eşleşiyorsa free=0
+                    if ($isInOrder) {
+                        $isFree = 0;
+                        
+                        // siparis_ayrintili tablosundan _key değerini bul
+                        $siparisKey = (new Query())
+                            ->select('_key')
+                            ->from('siparis_ayrintili')
+                            ->where([
+                                'siparisler_id' => $siparisId, 
+                                'kartkodu' => $stokKodu,
+                                'sipbirimkey' => $birimKey,
+                                'turu' => '1'
+                            ])
+                            ->scalar($db);
+                    }
+                } else {
+                    // Birim bilgisi yoksa sadece ürün kontrolü yap (geriye uyumluluk için)
                     $siparisKey = (new Query())
                         ->select('_key')
                         ->from('siparis_ayrintili')
-                        ->where(['siparisler_id' => $siparisId, 'kartkodu' => $stokKodu])
+                        ->where(['siparisler_id' => $siparisId, 'kartkodu' => $stokKodu, 'turu' => '1'])
                         ->scalar($db);
+                    
+                    if ($siparisKey) {
+                        $isFree = 0; // Siparişteki ürün bulundu
+                    }
                 }
             }
             
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId, 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
-                'quantity_received' => $item['quantity'], 'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                'receipt_id' => $receiptId, 
+                'urun_key' => $urunKey, // _key değeri direkt yazılıyor
+                'quantity_received' => $item['quantity'], 
+                'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
                 'siparis_key' => $siparisKey,
+                'StokKodu' => $stokKodu,
+                'free' => $isFree, // Siparişteki ürün+birim ise 0, değilse 1
             ])->execute();
 
             // Backend'de inventory_stock oluştur - mobile sync pending operation kaldırıldığından gerekli
@@ -360,6 +413,9 @@ class TerminalController extends Controller
                 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'stock_status' => $stockStatus,
                 'expiry_date' => $item['expiry_date'] ?? null,
+                'StokKodu' => $stokKodu,
+                'shelf_code' => null, // Mal kabul aşamasında lokasyon yok
+                'sip_fisno' => $sipFisno,
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
             ])->execute();
@@ -546,6 +602,34 @@ class TerminalController extends Controller
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
                 // _key urun_key olarak kullanılıyor
+                
+                // StokKodu'nu urun_key'den al
+                $stokKodu = (new Query())
+                    ->select('StokKodu')
+                    ->from('urunler')
+                    ->where(['_key' => $urunKey])
+                    ->scalar($db);
+                    
+                // Shelf code'ları al
+                $fromShelfCode = $sourceLocationId ? (new Query())
+                    ->select('code')
+                    ->from('shelfs')
+                    ->where(['id' => $sourceLocationId])
+                    ->scalar($db) : null;
+                    
+                $toShelfCode = $targetLocationId ? (new Query())
+                    ->select('code')
+                    ->from('shelfs')
+                    ->where(['id' => $targetLocationId])
+                    ->scalar($db) : null;
+                    
+                // Sipariş fisno'sunu al
+                $sipFisno = $siparisId ? (new Query())
+                    ->select('fisno')
+                    ->from('siparisler')
+                    ->where(['id' => $siparisId])
+                    ->scalar($db) : null;
+                
                 $transferData = [
                     'urun_key'            => $urunKey, // _key yazılıyor
                     'from_location_id'    => $sourceLocationId,
@@ -557,6 +641,10 @@ class TerminalController extends Controller
                     'delivery_note_number' => $deliveryNoteNumber,
                     'employee_id'         => $header['employee_id'],
                     'transfer_date'       => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                    'StokKodu'            => $stokKodu,
+                    'from_shelf'          => $fromShelfCode,
+                    'to_shelf'            => $toShelfCode,
+                    'sip_fisno'           => $sipFisno,
                 ];
 
                 if ($siparisId) {
@@ -669,11 +757,38 @@ class TerminalController extends Controller
                 }
                 
                 // _key urun_key olarak kullanılıyor
+                
+                // Yeni sütunlar için veri al
+                $stokKodu = (new Query())
+                    ->select('StokKodu')
+                    ->from('urunler')
+                    ->where(['_key' => $urunKey])
+                    ->scalar($db);
+                    
+                $shelfCode = $locationId ? (new Query())
+                    ->select('code')
+                    ->from('shelfs')
+                    ->where(['id' => $locationId])
+                    ->scalar($db) : null;
+                    
+                $sipFisno = $siparisId ? (new Query())
+                    ->select('fisno')
+                    ->from('siparisler')
+                    ->where(['id' => $siparisId])
+                    ->scalar($db) : null;
+                
                 $db->createCommand()->insert('inventory_stock', [
-                    'urun_key' => $urunKey, 'location_id' => $locationId, 'siparis_id' => $siparisId,
-                    'quantity' => (float)$qtyChange, 'pallet_barcode' => $palletBarcode,
-                    'stock_status' => $stockStatus, 'expiry_date' => $expiryDate,
+                    'urun_key' => $urunKey, 
+                    'location_id' => $locationId, 
+                    'siparis_id' => $siparisId,
+                    'quantity' => (float)$qtyChange, 
+                    'pallet_barcode' => $palletBarcode,
+                    'stock_status' => $stockStatus, 
+                    'expiry_date' => $expiryDate,
                     'goods_receipt_id' => $goodsReceiptId,
+                    'StokKodu' => $stokKodu,
+                    'shelf_code' => $shelfCode,
+                    'sip_fisno' => $sipFisno,
                 ])->execute();
             }
         }
@@ -693,7 +808,7 @@ class TerminalController extends Controller
         $sql = "
             SELECT
                 s.id,
-                s.anamiktar,
+                s.miktar,
                 u._key,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
@@ -712,7 +827,7 @@ class TerminalController extends Controller
         $anyLineReceived = false;
 
         foreach ($lines as $line) {
-            $ordered = (float)$line['anamiktar'];
+            $ordered = (float)$line['miktar'];
             $received = (float)$line['received_quantity'];
 
             if ($received > 0.001) {
@@ -746,7 +861,7 @@ class TerminalController extends Controller
 
         // Sipariş satırlarını ve yerleştirilmiş miktarları wms_putaway_status'tan al
         $orderLines = (new Query())
-            ->select(['s.id', 's.anamiktar', 'w.putaway_quantity'])
+            ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
             ->from(['s' => 'siparis_ayrintili'])
             ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.purchase_order_line_id')
             ->where(['s.siparisler_id' => $siparisId, 's.turu' => '1'])
@@ -756,7 +871,7 @@ class TerminalController extends Controller
 
         $allLinesCompleted = true;
         foreach ($orderLines as $line) {
-            $ordered = (float)$line['anamiktar'];
+            $ordered = (float)$line['miktar'];
             $putaway = (float)($line['putaway_quantity'] ?? 0);
             if ($putaway < $ordered - 0.001) { // Kayan nokta hataları için tolerans
                 $allLinesCompleted = false;
@@ -1271,7 +1386,7 @@ class TerminalController extends Controller
             // ########## SATIN ALMA SİPARİS FİŞ SATIR İÇİN İNKREMENTAL SYNC ##########
             $poLineQuery = (new Query())
                 ->select([
-                    'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar',
+                    'sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.miktar',
                     'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
                     'sa._key_kalemturu'
                 ])
@@ -1283,7 +1398,7 @@ class TerminalController extends Controller
             } else {
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
-            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['anamiktar']);
+            $this->castNumericValues($data['siparis_ayrintili'], ['id', 'siparisler_id', 'status'], ['miktar']);
 
             $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {
@@ -1689,7 +1804,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.anamiktar',
+            ->select(['sa.id', 'sa.siparisler_id', 'sa.kartkodu', 'sa.miktar',
                      'sa.sipbirimi', 'sa.sipbirimkey', 'sa.created_at', 'sa.updated_at', 'sa.status', 'sa.turu',
                      'sa._key_kalemturu'])
             ->from(['sa' => 'siparis_ayrintili'])
@@ -1703,7 +1818,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['anamiktar']);
+        $this->castNumericValues($data, ['id', 'siparisler_id', 'status'], ['miktar']);
         return $data;
     }
 

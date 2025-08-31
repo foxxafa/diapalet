@@ -40,7 +40,7 @@ class DbColumns {
   // Order lines (siparis_ayrintili) table
   static const String orderLinesOrderId = 'siparisler_id';
   static const String orderLinesProductId = 'urun_key';
-  static const String orderLinesQuantity = 'anamiktar';
+  static const String orderLinesQuantity = 'miktar';
   static const String orderLinesType = 'turu';
   static const String orderLinesTypeValue = '1';
   static const String orderLinesProductCode = 'kartkodu';

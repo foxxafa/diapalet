@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 58; // sipbirimi ve sipbirimkey alanları eklendi
+  static const _databaseVersion = 59; // Yeni sütunlar eklendi: inventory_stock, goods_receipts, goods_receipt_items, inventory_transfers
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -200,6 +200,8 @@ class DatabaseHelper {
           delivery_note_number TEXT,
           employee_id INTEGER,
           receipt_date TEXT,
+          warehouse_code TEXT,
+          sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT
         )
@@ -214,6 +216,8 @@ class DatabaseHelper {
           quantity_received REAL,
           pallet_barcode TEXT,
           expiry_date TEXT,
+          StokKodu TEXT,
+          free INTEGER DEFAULT 0,
           created_at TEXT,
           updated_at TEXT,
           FOREIGN KEY(receipt_id) REFERENCES goods_receipts(goods_receipt_id),
@@ -233,6 +237,9 @@ class DatabaseHelper {
           pallet_barcode TEXT,
           expiry_date TEXT,
           stock_status TEXT NOT NULL CHECK(stock_status IN ('receiving', 'available')),
+          StokKodu TEXT,
+          shelf_code TEXT,
+          sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT,
           UNIQUE(urun_key, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
@@ -266,6 +273,10 @@ class DatabaseHelper {
           delivery_note_number TEXT,
           employee_id INTEGER,
           transfer_date TEXT,
+          StokKodu TEXT,
+          from_shelf TEXT,
+          to_shelf TEXT,
+          sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT,
           FOREIGN KEY(urun_key) REFERENCES urunler(_key),
@@ -781,7 +792,7 @@ class DatabaseHelper {
         // Only keep fields that exist in optimized local schema
         final localRecord = <String, dynamic>{};
         final localColumns = [
-          'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'anamiktar',
+          'id', 'siparisler_id', 'urun_key', '_key_kalemturu', 'kartkodu', 'miktar',
           'sipbirimi', 'sipbirimkey', 'created_at', 'updated_at', 'status', 'turu'
         ];
         
@@ -867,7 +878,7 @@ class DatabaseHelper {
           b._key as birim_key,
           bark.barkod,
           bark._key as barkod_key,
-          COALESCE(sa.anamiktar, 0.0) as anamiktar,
+          COALESCE(sa.miktar, 0.0) as miktar,
           COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
           sa.sipbirimkey,
           sb.birimadi as sipbirimi_adi,
@@ -930,7 +941,7 @@ class DatabaseHelper {
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key,
-        COALESCE(sa.anamiktar, 0.0) as anamiktar,
+        COALESCE(sa.miktar, 0.0) as miktar,
         COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
         sa.sipbirimkey,
         sb.birimadi as sipbirimi_adi,
@@ -1125,7 +1136,7 @@ class DatabaseHelper {
       SELECT
         sa.id,
         COALESCE(sa.urun_key, sa._key_kalemturu) as urun_key,
-        sa.anamiktar as ordered_quantity,
+        sa.miktar as ordered_quantity,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         COALESCE(received.total_received, 0) as received_quantity,
@@ -1170,7 +1181,7 @@ class DatabaseHelper {
         gri.pallet_barcode,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        sa.anamiktar as ordered_quantity,
+        sa.miktar as ordered_quantity,
         sa.sipbirimi as unit,
         COALESCE(previous.previous_received, 0) as previous_received,
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
@@ -1293,7 +1304,7 @@ class DatabaseHelper {
         u.StokKodu as product_code,
         u.Birim1 as product_unit,
         u.qty as product_box_qty,
-        sa.anamiktar as ordered_quantity,
+        sa.miktar as ordered_quantity,
         sa.sipbirimi as order_unit,
         sa.notes as order_line_notes,
         COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
