@@ -10,6 +10,7 @@ use Yii;
  * @property int $id
  * @property int $receipt_id
  * @property string|null $pallet_barcode
+ * @property string|null $barcode
  * @property string|null $expiry_date
  * @property string|null $created_at
  * @property string|null $updated_at
@@ -37,13 +38,13 @@ class GoodsReceiptItems extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
-            [['urun_key', 'pallet_barcode', 'expiry_date', 'siparis_key', 'StokKodu'], 'default', 'value' => null],
+            [['urun_key', 'pallet_barcode', 'barcode', 'expiry_date', 'siparis_key', 'StokKodu'], 'default', 'value' => null],
             [['receipt_id', 'quantity_received'], 'required'],
             [['receipt_id'], 'integer'],
             [['quantity_received'], 'number'],
             [['expiry_date', 'created_at', 'updated_at'], 'safe'],
             [['urun_key', 'siparis_key'], 'string', 'max' => 10],
-            [['pallet_barcode', 'StokKodu'], 'string', 'max' => 50],
+            [['pallet_barcode', 'barcode', 'StokKodu'], 'string', 'max' => 50],
             [['receipt_id'], 'exist', 'skipOnError' => true, 'targetClass' => GoodsReceipts::class, 'targetAttribute' => ['receipt_id' => 'goods_receipt_id']],
             [['StokKodu'], 'exist', 'skipOnError' => true, 'targetClass' => Urunler::class, 'targetAttribute' => ['StokKodu' => 'StokKodu']],
         ];
@@ -60,6 +61,7 @@ class GoodsReceiptItems extends \yii\db\ActiveRecord
             'urun_key' => 'Urun Key',
             'quantity_received' => 'Quantity Received',
             'pallet_barcode' => 'Pallet Barcode',
+            'barcode' => 'Barcode',
             'expiry_date' => 'Expiry Date',
             'created_at' => 'Created At',
             'updated_at' => 'Updated At',

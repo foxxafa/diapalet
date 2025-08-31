@@ -48,12 +48,14 @@ class GoodsReceiptItemPayload {
   final String productId; // _key değeri string olarak
   final double quantity;
   final String? palletBarcode;
+  final String? barcode;
   final DateTime? expiryDate;
 
   const GoodsReceiptItemPayload({
     required this.productId,
     required this.quantity,
     this.palletBarcode,
+    this.barcode,
     this.expiryDate,
   });
 
@@ -61,6 +63,7 @@ class GoodsReceiptItemPayload {
     'urun_key': productId, // _key değeri urun_key alanına gönderiliyor
     'quantity': quantity,
     'pallet_barcode': palletBarcode,
+    'barcode': barcode,
     'expiry_date': expiryDate?.toIso8601String(),
   };
 }

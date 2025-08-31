@@ -3028,10 +3028,39 @@ class Dia extends Component{
             $urun=Urunler::find()->where(["_key"=>$k->urun_key])->one();
             $sira++;
             if($urun){
+                // Unit key belirleme: Sipariş bazlı ise sipbirimkey, serbest ise barcode unit
+                $unitKey = null;
+                
+                if(!empty($k->siparis_key)) {
+                    // Sipariş bazlı mal kabul - siparis_ayrintili'den sipbirimkey al
+                    $siparisAyrintili = (new \yii\db\Query())
+                        ->select(['sipbirimkey'])
+                        ->from('siparis_ayrintili')
+                        ->where(['_key' => $k->siparis_key])
+                        ->one();
+                    if($siparisAyrintili && !empty($siparisAyrintili['sipbirimkey'])) {
+                        $unitKey = $siparisAyrintili['sipbirimkey'];
+                    }
+                } else if(!empty($k->barcode)) {
+                    // Serbest mal kabul - barkodlar tablosundan _key_scf_stokkart_birimleri al
+                    $barkod = (new \yii\db\Query())
+                        ->select(['_key_scf_stokkart_birimleri'])
+                        ->from('barkodlar')
+                        ->where(['barkod' => $k->barcode])
+                        ->one();
+                    if($barkod && !empty($barkod['_key_scf_stokkart_birimleri'])) {
+                        $unitKey = $barkod['_key_scf_stokkart_birimleri'];
+                    }
+                }
+                
+                if(!$unitKey) {
+                    throw new \Exception("Unit key bulunamadı. Receipt item: " . $k->id . ", Siparis key: " . $k->siparis_key . ", Barcode: " . $k->barcode);
+                }
+                
                 $kalem= [
                     "_key_kalemturu" => $urun->_key, // DIA bu alanı zorunlu istiyor
                     "_key_scf_stokkart" => ["stokkodu" => $urun->StokKodu], // Stok kartı referansı
-                    "_key_scf_kalem_birimleri" => $urun->BirimKey2,
+                    "_key_scf_kalem_birimleri" => $unitKey,
                     "_key_sis_depo_source" => $fis->warehouse->_key,
                     "_key_sis_doviz" => ["adi" => "GBP"],
                     "anamiktar" => floatval($k->quantity_received),
@@ -3089,7 +3118,7 @@ class Dia extends Component{
                     "_key_sis_sube_source" => $fis->warehouse->branch->_key,
                     "belgeno" => "000009",
                     "belgeno2" => "WS000001",
-                    "dovizkuru" => "1.000000", // Duplicate kaldırıldı
+                    "dovizkuru" => "1.000000",
                     "fisno" => "WS00001",
                     "karsifirma" => "C",
                     "m_kalemler" => $tumkalemler,

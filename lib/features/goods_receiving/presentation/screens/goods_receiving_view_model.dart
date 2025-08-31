@@ -694,6 +694,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         productId: draft.product.key, // _key değeri kullanılıyor
         quantity: draft.quantity,
         palletBarcode: draft.palletBarcode,
+        barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
         expiryDate: draft.expiryDate, // Now always has a value
       )).toList(),
     );

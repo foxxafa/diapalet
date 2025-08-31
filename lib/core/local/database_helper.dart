@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 59; // Yeni sütunlar eklendi: inventory_stock, goods_receipts, goods_receipt_items, inventory_transfers
+  static const _databaseVersion = 60; // barcode field added to goods_receipt_items
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -215,6 +215,7 @@ class DatabaseHelper {
           siparis_key TEXT,
           quantity_received REAL,
           pallet_barcode TEXT,
+          barcode TEXT,
           expiry_date TEXT,
           StokKodu TEXT,
           free INTEGER DEFAULT 0,
