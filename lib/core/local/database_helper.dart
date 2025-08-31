@@ -558,23 +558,21 @@ class DatabaseHelper {
             );
             
             if (existingStock.isNotEmpty) {
-              // Mevcut stok varsa, miktarı güncelle (quantity'leri topla)
+              // Backend'den gelen quantity değeri mutlak değerdir, toplama değil
               final existingId = existingStock.first['id'];
-              final existingQuantity = (existingStock.first['quantity'] as num).toDouble();
               final newQuantity = (sanitizedStock['quantity'] as num).toDouble();
-              final totalQuantity = existingQuantity + newQuantity;
               
-              if (totalQuantity > 0.001) {
+              if (newQuantity > 0.001) {
                 await txn.update(
                   'inventory_stock',
                   {
-                    'quantity': totalQuantity,
+                    'quantity': newQuantity,
                     'updated_at': DateTime.now().toIso8601String()
                   },
                   where: 'id = ?',
                   whereArgs: [existingId]
                 );
-                debugPrint('SYNC INFO: Updated existing inventory stock quantity: $existingQuantity + $newQuantity = $totalQuantity');
+                debugPrint('SYNC INFO: Updated inventory stock quantity to: $newQuantity');
               } else {
                 // Miktar 0 veya negatifse kaydı sil
                 await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existingId]);
@@ -638,19 +636,8 @@ class DatabaseHelper {
           }
         }
 
-        // inventory_stock için incremental sync - updated_at ile değişenleri güncelle
-        if (data.containsKey('inventory_stock')) {
-          final inventoryData = List<Map<String, dynamic>>.from(data['inventory_stock']);
-          
-          for (final stock in inventoryData) {
-            final sanitizedRecord = _sanitizeRecord('inventory_stock', stock);
-            // ConflictAlgorithm.replace ile updated_at'e göre güncelleme yapılır
-            batch.insert('inventory_stock', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
-            
-            processedItems++;
-            updateProgress('inventory_stock');
-          }
-        }
+        // inventory_stock sync zaten yukarıda (500-591 satırları) yapıldı
+        // Bu duplicate sync kodunu kaldırdık - sonsuz döngü riskini önler
 
         // Diğer tablolar için eski mantık (full replacement)
         const deletionOrder = [
@@ -2108,7 +2095,10 @@ class DatabaseHelper {
       enrichedMaps.add(enrichedMap);
     }
 
-    return enrichedMaps.map((map) => PendingOperation.fromMap(map)).toList();
+    final operations = enrichedMaps.map((map) => PendingOperation.fromMap(map)).toList();
+    
+    // Internal sync operasyonlarını filtrele (inventory stock sync gibi)
+    return operations.where((op) => op.shouldShowInPending).toList();
   }
 
   Future<List<PendingOperation>> getSyncedOperations() async {

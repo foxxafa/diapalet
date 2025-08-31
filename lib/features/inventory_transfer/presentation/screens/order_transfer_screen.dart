@@ -278,9 +278,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         _scannedContainerIdController.text = selectedContainer.id;
         _dynamicProductLabel = null; // Pallet için label değişmez
       } else {
-        // For products, show barcode if available, otherwise product name
-        final barcode = selectedContainer.items.first.product.productBarcode;
-        _scannedContainerIdController.text = barcode ?? selectedContainer.displayName;
+        // For products, show only barcode
+        final product = selectedContainer.items.first.product;
+        // barkod field'ı barkodlar tablosundan geliyor
+        final barcode = product.productBarcode ?? product.stockCode;
+        _scannedContainerIdController.text = barcode;
         // Label'ı ürün adıyla güncelle
         _dynamicProductLabel = selectedContainer.displayName;
       }
@@ -689,6 +691,10 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         _targetLocationController.clear();
         _isTargetLocationValid = false;
         
+        // Container listelerini yenile (stok değişti)
+        await _loadAllContainers();
+        _filterContainersByMode();
+        
         // Transfer tamamlandı - klavye açmadan bekle
         // Kullanıcı field'a tıkladığında klavye açılacak
       }
@@ -719,6 +725,21 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                       ? 'order_transfer.label_pallet'.tr()
                       : _dynamicProductLabel ?? 'order_transfer.label_product'.tr(),
                   enabled: true,
+                  suffixIcon: _scannedContainerIdController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            setState(() {
+                              _scannedContainerIdController.clear();
+                              _containerSearchResults = [];
+                              _dynamicProductLabel = null;
+                              _resetContainerAndProducts();
+                            });
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        )
+                      : null,
                 ),
                 onChanged: (value) {
                   _onContainerTextChanged(value);

@@ -441,22 +441,22 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (isPutaway) {
       if (orderId != null) {
         // Order-based putaway
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'siparis_id = ? AND stock_status = ?', whereArgs: [orderId, 'receiving']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'siparis_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [orderId, 'receiving']);
       } else if (deliveryNoteNumber != null) {
         // Free receipt putaway - find stocks by delivery note
         final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
         if (goodsReceiptId == null) {
           return [];
         }
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ?', whereArgs: [goodsReceiptId, 'receiving']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [goodsReceiptId, 'receiving']);
       } else {
         stockMaps = [];
       }
     } else {
       if (locationId == null) {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ?', whereArgs: ['available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: ['available']);
       } else {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ?', whereArgs: [locationId, 'available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [locationId, 'available']);
       }
     }
 
@@ -468,7 +468,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final productsQuery = await db.rawQuery('''
       SELECT 
         u.*,
-        bark.barkod
+        MAX(bark.barkod) as barkod
       FROM urunler u
       LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key

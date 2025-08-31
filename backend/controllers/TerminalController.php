@@ -177,7 +177,8 @@ class TerminalController extends Controller
                 } elseif ($opType === 'forceCloseOrder') {
                     $result = $this->_forceCloseOrder($opData, $db);
                 } elseif ($opType === 'inventoryStock') {
-                    $result = $this->_syncInventoryStock($opData, $db);
+                    // Inventory stock sync removed - use normal table sync instead
+                    $result = ['status' => 'error', 'message' => 'Inventory stock sync operations are no longer supported via pending operations'];
                 }
 
                 // 4. Başarılı ise, sonucu hem yanıt dizisine hem de idempotency tablosuna ekle
@@ -347,10 +348,25 @@ class TerminalController extends Controller
                 'siparis_key' => $siparisKey,
             ])->execute();
 
-            // STOK OLUŞTURMA KALDIRILDI: Mobile zaten inventory_stock oluşturuyor
-            // Backend'de tekrar oluşturmak gereksiz ve duplicate veri trafiğine neden oluyor
-            // Mobile'dan gelen inventory_stock sync ile backend'e gelecek
+            // Backend'de inventory_stock oluştur - mobile sync pending operation kaldırıldığından gerekli
+            $stockStatus = 'receiving'; // Mal kabul aşamasında receiving status
+            
+            $db->createCommand()->insert('inventory_stock', [
+                'urun_key' => $urunKey,
+                'location_id' => null, // Mal kabul alanı
+                'siparis_id' => $siparisId,
+                'goods_receipt_id' => $receiptId,
+                'quantity' => $item['quantity'],
+                'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                'stock_status' => $stockStatus,
+                'expiry_date' => $item['expiry_date'] ?? null,
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s')
+            ])->execute();
         }
+
+        // Eksik inventory_stock kayıtlarını oluştur (geçmiş mal kabulleri için)
+        $this->ensureInventoryStockExists($db, $receiptId);
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
          try {
@@ -1020,6 +1036,11 @@ class TerminalController extends Controller
     }
     $warehouseId = (int)$warehouseId;
     
+    // Inventory stock eksikliklerini kontrol et ve oluştur (sadece ilk sync'te)
+    if (!$lastSyncTimestamp) {
+        $this->createMissingInventoryStocks($warehouseId);
+    }
+
     // Eğer table_name belirtilmişse, paginated mode
     if ($tableName) {
         return $this->handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit);
@@ -1943,137 +1964,108 @@ class TerminalController extends Controller
     }
 
     /**
-     * Mobile'dan gelen inventory_stock kayıtlarını backend'e sync eder
-     * Mobile zaten inventory_stock kayıtlarını doğru hesaplamış, backend sadece sync ediyor
+     * Geçmiş mal kabulleri için eksik inventory_stock kayıtlarını oluşturur
      */
-    private function _syncInventoryStock($data, $db)
+    private function ensureInventoryStockExists($db, $receiptId)
     {
         try {
-            $stocks = $data['stocks'] ?? [];
-            
-            if (empty($stocks)) {
-                return ['status' => 'success', 'message' => 'No inventory stock to sync', 'synced_count' => 0];
-            }
+            // Bu receipt için goods_receipt_items'dan inventory_stock olmayan kayıtları bul
+            $receiptItems = (new Query())
+                ->select(['gri.urun_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
+                ->from(['gri' => 'goods_receipt_items'])
+                ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
+                ->where(['gri.receipt_id' => $receiptId])
+                ->all($db);
 
-            Yii::info("Syncing " . count($stocks) . " inventory stock records from mobile", __METHOD__);
-            $syncedCount = 0;
-            $skippedCount = 0;
-            
-            foreach ($stocks as $stock) {
-                // Required fields validation
-                if (!isset($stock['urun_key']) || !isset($stock['quantity']) || !isset($stock['stock_status'])) {
-                    Yii::warning("Stock record missing required fields, skipping: " . json_encode($stock), __METHOD__);
-                    $skippedCount++;
-                    continue;
-                }
-
-                // Validate stock status
-                if (!in_array($stock['stock_status'], ['receiving', 'available'])) {
-                    Yii::warning("Invalid stock status: {$stock['stock_status']}, skipping", __METHOD__);
-                    $skippedCount++;
-                    continue;
-                }
-
-                // Validate quantity
-                $quantity = (float)$stock['quantity'];
-                if ($quantity <= 0) {
-                    Yii::warning("Invalid quantity: {$quantity}, skipping", __METHOD__);
-                    $skippedCount++;
-                    continue;
-                }
-
-                // Verify product exists
-                $productExists = (new Query())
-                    ->from('urunler')
-                    ->where(['_key' => $stock['urun_key']])
+            foreach ($receiptItems as $item) {
+                // Bu kombinasyon için inventory_stock var mı kontrol et
+                $existingStock = (new Query())
+                    ->from('inventory_stock')
+                    ->where([
+                        'urun_key' => $item['urun_key'],
+                        'goods_receipt_id' => $receiptId,
+                        'stock_status' => 'receiving'
+                    ])
                     ->exists($db);
-                    
-                if (!$productExists) {
-                    Yii::warning("Product {$stock['urun_key']} not found, skipping stock sync", __METHOD__);
-                    $skippedCount++;
-                    continue;
-                }
 
-                // Build composite unique key condition (same as mobile UNIQUE constraint)
-                $whereConditions = [
-                    'urun_key' => $stock['urun_key'],
-                    'stock_status' => $stock['stock_status']
-                ];
-
-                // Handle nullable fields properly
-                $nullableFields = ['location_id', 'pallet_barcode', 'siparis_id', 'expiry_date', 'goods_receipt_id'];
-                foreach ($nullableFields as $field) {
-                    if (isset($stock[$field]) && $stock[$field] !== null) {
-                        $whereConditions[$field] = $stock[$field];
-                    } else {
-                        // For null values, we need to use IS NULL in query
-                        $whereConditions[$field] = null;
-                    }
-                }
-
-                // Check if exact stock record already exists
-                $queryBuilder = (new Query())->from('inventory_stock');
-                foreach ($whereConditions as $field => $value) {
-                    if ($value === null) {
-                        $queryBuilder->andWhere([$field => null]);
-                    } else {
-                        $queryBuilder->andWhere([$field => $value]);
-                    }
-                }
-                $existingStock = $queryBuilder->one($db);
-
-                if ($existingStock) {
-                    // Update existing stock - mobile might have adjusted quantity
-                    $updatedRows = $db->createCommand()->update('inventory_stock', [
-                        'quantity' => $quantity,
-                        'updated_at' => date('Y-m-d H:i:s')
-                    ], ['id' => $existingStock['id']])->execute();
-                    
-                    if ($updatedRows > 0) {
-                        Yii::info("Updated existing stock ID {$existingStock['id']}: quantity = {$quantity}", __METHOD__);
-                    }
-                } else {
-                    // Insert new stock record
-                    $stockRecord = [
-                        'urun_key' => $stock['urun_key'],
-                        'location_id' => $stock['location_id'] ?? null,
-                        'siparis_id' => $stock['siparis_id'] ?? null,
-                        'goods_receipt_id' => $stock['goods_receipt_id'] ?? null,
-                        'quantity' => $quantity,
-                        'pallet_barcode' => $stock['pallet_barcode'] ?? null,
-                        'stock_status' => $stock['stock_status'],
-                        'expiry_date' => $stock['expiry_date'] ?? null,
+                if (!$existingStock) {
+                    // Eksik inventory_stock'ı oluştur
+                    $db->createCommand()->insert('inventory_stock', [
+                        'urun_key' => $item['urun_key'],
+                        'location_id' => null,
+                        'siparis_id' => $item['siparis_id'],
+                        'goods_receipt_id' => $receiptId,
+                        'quantity' => $item['quantity_received'],
+                        'pallet_barcode' => $item['pallet_barcode'],
+                        'stock_status' => 'receiving',
+                        'expiry_date' => $item['expiry_date'],
                         'created_at' => date('Y-m-d H:i:s'),
                         'updated_at' => date('Y-m-d H:i:s')
-                    ];
+                    ])->execute();
                     
-                    $insertedRows = $db->createCommand()->insert('inventory_stock', $stockRecord)->execute();
-                    if ($insertedRows > 0) {
-                        Yii::info("Inserted new stock: product={$stock['urun_key']}, qty={$quantity}, status={$stock['stock_status']}", __METHOD__);
-                    }
+                    Yii::info("Created missing inventory_stock for receipt $receiptId, product {$item['urun_key']}, quantity {$item['quantity_received']}", __METHOD__);
                 }
-                
-                $syncedCount++;
             }
-
-            $message = "Successfully synced {$syncedCount} inventory stock records";
-            if ($skippedCount > 0) {
-                $message .= " (skipped {$skippedCount} invalid records)";
-            }
-
-            Yii::info($message, __METHOD__);
-            
-            return [
-                'status' => 'success', 
-                'message' => $message,
-                'synced_count' => $syncedCount,
-                'skipped_count' => $skippedCount
-            ];
-            
         } catch (\Exception $e) {
-            $errorMsg = "Inventory stock sync failed: " . $e->getMessage();
-            Yii::error($errorMsg . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
-            return ['status' => 'error', 'message' => $errorMsg];
+            Yii::warning("Error ensuring inventory stock exists: " . $e->getMessage(), __METHOD__);
         }
     }
+
+    /**
+     * Tüm geçmiş mal kabulleri için eksik inventory_stock kayıtlarını oluşturur
+     */
+    private function createMissingInventoryStocks($warehouseId)
+    {
+        try {
+            $db = Yii::$app->db;
+            
+            // Bu warehouse'a ait goods_receipts'leri bul
+            $receipts = (new Query())
+                ->select('goods_receipt_id')
+                ->from('goods_receipts')
+                ->where(['warehouse_id' => $warehouseId])
+                ->column($db);
+
+            if (empty($receipts)) {
+                return;
+            }
+
+            // Bu receipt'lere ait goods_receipt_items'dan inventory_stock olmayan kayıtları bul
+            $missingStocks = (new Query())
+                ->select(['gri.receipt_id', 'gri.urun_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
+                ->from(['gri' => 'goods_receipt_items'])
+                ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
+                ->leftJoin(['ist' => 'inventory_stock'], 'ist.goods_receipt_id = gri.receipt_id AND ist.urun_key = gri.urun_key AND ist.stock_status = \'receiving\'')
+                ->where(['in', 'gri.receipt_id', $receipts])
+                ->andWhere(['ist.id' => null]) // LEFT JOIN ile inventory_stock olmayan kayıtları bul
+                ->all($db);
+
+            $createdCount = 0;
+            foreach ($missingStocks as $item) {
+                $db->createCommand()->insert('inventory_stock', [
+                    'urun_key' => $item['urun_key'],
+                    'location_id' => null,
+                    'siparis_id' => $item['siparis_id'],
+                    'goods_receipt_id' => $item['receipt_id'],
+                    'quantity' => $item['quantity_received'],
+                    'pallet_barcode' => $item['pallet_barcode'],
+                    'stock_status' => 'receiving',
+                    'expiry_date' => $item['expiry_date'],
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s')
+                ])->execute();
+                
+                $createdCount++;
+            }
+
+            if ($createdCount > 0) {
+                Yii::info("Created $createdCount missing inventory_stock records for warehouse $warehouseId", __METHOD__);
+            }
+
+        } catch (\Exception $e) {
+            Yii::warning("Error creating missing inventory stocks: " . $e->getMessage(), __METHOD__);
+        }
+    }
+
+    // Inventory stock sync method removed - use normal table sync instead
 }

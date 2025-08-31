@@ -83,6 +83,11 @@ class PendingOperation {
            type != PendingOperationType.inventoryStock;
   }
 
+  /// Inventory stock işlemleri pending listesinde gösterilmeyecek (internal sync operation)
+  bool get shouldShowInPending {
+    return type != PendingOperationType.inventoryStock;
+  }
+
   String get displaySubtitle {
     try {
       final dataMap = jsonDecode(data);
