@@ -628,7 +628,7 @@ class PdfService {
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
-                _buildTableCell('Barcode', boldFont, isHeader: true),
+                _buildTableCell('StokKodu', boldFont, isHeader: true),
                 _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Quantity', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
@@ -647,8 +647,8 @@ class PdfService {
 
               return pw.TableRow(
                 children: [
-                  _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                  _buildTableCell(productNameAndCode, font),
+                  _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
+                  _buildTableCell(productName, font),
                   _buildTableCell(quantity, font),
                   _buildTableCell(container, font),
                 ],
@@ -813,7 +813,7 @@ class PdfService {
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                 children: [
-                  _buildTableCell('Barcode', boldFont, isHeader: true),
+                  _buildTableCell('StokKodu', boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
                   _buildTableCell('Ordered', boldFont, isHeader: true),
                   _buildTableCell('Total Received', boldFont, isHeader: true),
@@ -826,7 +826,7 @@ class PdfService {
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                 children: [
-                  _buildTableCell('Barcode', boldFont, isHeader: true),
+                  _buildTableCell('StokKodu', boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
                   _buildTableCell('Quantity', boldFont, isHeader: true),
                   _buildTableCell('Expiry Date', boldFont, isHeader: true),
@@ -869,8 +869,8 @@ class PdfService {
 
                 return pw.TableRow(
                   children: [
-                    _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                    _buildTableCell(productNameAndCode, font),
+                    _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
+                    _buildTableCell(productName, font),
                     _buildTableCell(orderedQty.toStringAsFixed(0), font),
                     _buildTableCell(totalReceivedDisplay, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
@@ -884,8 +884,8 @@ class PdfService {
 
                 return pw.TableRow(
                   children: [
-                    _buildTableCell(productBarcode.isNotEmpty ? productBarcode : '-', font),
-                    _buildTableCell(productNameAndCode, font),
+                    _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
+                    _buildTableCell(productName, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
                     _buildTableCell(expiryDisplay, font),
                     if (isMixedMode) _buildTableCell(containerDisplay, font),

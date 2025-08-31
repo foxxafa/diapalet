@@ -1248,15 +1248,15 @@ class Dia extends Component{
            $sonuc=["code"=>0,"hata"=>$hataMesaji];
         } else {
              $json = json_decode($result, true);
-            //   echo $result;
+              echo json_encode($json);
      
              if($json["code"]==200){
                 if($json["key"]){
                     $fis->diakey=$json["key"];
                     if(!$fis->save()){
-                        // echo "<pre>";
-                        // print_r(json_encode($fis->errors)); // API'nin dönüşünü yazdır
-                        // echo "</pre>";
+                        echo "<pre>";
+                        print_r(json_encode($fis->errors)); // API'nin dönüşünü yazdır
+                        echo "</pre>";
                     }
                  }
                  $sonuc= $json;
@@ -1758,13 +1758,8 @@ class Dia extends Component{
                 "filters" => [
                     ["field" => "_cdate", "operator" => ">=", "value" => $startDate],
                     ["field" => "_cdate", "operator" => "<=", "value" => $endDate],
-                    ["field" => "turu", "operator" => "=", "value" => 1],
-                    ["field" => 'onay', "operator" => "=", "value" => "KABUL" ]
+                    ["field" => "turu", "operator" => "IN", "value" => "1,2,3"],
                 ],
-                "sorts" => "",
-                "params" => "",
-                "limit" => 1000, // Limit ekle
-                "offset" => 0
             ]
         ];
 
@@ -1816,9 +1811,6 @@ class Dia extends Component{
                     ["field" => "_cdate", "operator" => "<=", "value" => $endDate],
                     ["field" => "turu", "operator" => "IN", "value" => "1,2,3"],
                 ],
-                "sorts" => "",
-                "params" => "",
-                "offset" => 0
             ]
         ];
 
@@ -2521,7 +2513,7 @@ class Dia extends Component{
                 "filters" => [
                     ["field" => "tarih", "operator" => ">=", "value" => $startDateFormatted],
                     ["field" => "tarih", "operator" => "<=", "value" => $endDateFormatted],
-                    ["field" => "turu", "operator" => "IN", "value" => "1,2,3"]
+                    ["field" => "turu", "operator" => "IN", "value" => "3"]
                 ],
                 "sorts" => "",
                 "params" => "",
@@ -2659,7 +2651,7 @@ class Dia extends Component{
                 "filters" => [
                     ["field" => "tarih", "operator" => ">=", "value" => $startDateFormatted],
                     ["field" => "tarih", "operator" => "<=", "value" => $endDateFormatted],
-                    ["field" => "turu", "operator" => "IN", "value" => "1,2,3"]
+                    ["field" => "turu", "operator" => "IN", "value" => "3"]
                 ],
                 "sorts" => "",
                 "params" => "",
@@ -3020,6 +3012,7 @@ class Dia extends Component{
     public static function goodReceiptIrsaliyeEkle($fis,$kalemler)
     {
         
+    
         $url = self::getDiaUrl('scf');
         $session_id = Dia::getsessionid();
 
@@ -3029,13 +3022,6 @@ class Dia extends Component{
         $sira=0;
         $tumkalemler=[];
         
-        // Depo key değerini belirle (sipariş varsa ondan al, yoksa warehouse'dan)
-        $depo_key = null;
-        if($fis->siparis && isset($fis->siparis->_key_sis_depo_source)) {
-            $depo_key = $fis->siparis->_key_sis_depo_source;
-        } elseif($fis->warehouse && isset($fis->warehouse->_key)) {
-            $depo_key = $fis->warehouse->_key;
-        }
         
         foreach($kalemler as $k){
             // urun_key kullan (veritabanında bu şekilde tanımlı)
@@ -3046,7 +3032,7 @@ class Dia extends Component{
                     "_key_kalemturu" => $urun->_key, // DIA bu alanı zorunlu istiyor
                     "_key_scf_stokkart" => ["stokkodu" => $urun->StokKodu], // Stok kartı referansı
                     "_key_scf_kalem_birimleri" => $urun->BirimKey2,
-                    "_key_sis_depo_source" => $depo_key,
+                    "_key_sis_depo_source" => $fis->warehouse->_key,
                     "_key_sis_doviz" => ["adi" => "GBP"],
                     "anamiktar" => floatval($k->quantity_received),
                     "dovizkuru" => "1.000000",
@@ -3073,12 +3059,23 @@ class Dia extends Component{
             }
         }
         
+       
+        // Warehouse ve branch kontrolü
+        if (!$fis->warehouse || !$fis->warehouse->_key) {
+            throw new \Exception("Warehouse bilgisi bulunamadı veya _key değeri eksik. Receipt ID: " . $fis->goods_receipt_id);
+        }
+        
+        if (!$fis->warehouse->branch || !$fis->warehouse->branch->_key) {
+            throw new \Exception("Branch bilgisi bulunamadı veya _key değeri eksik. Warehouse: " . $fis->warehouse->warehouse_code);
+        }
+
         // Cari kodu belirle
         $carikod = "C00000001";
         if($fis->siparis && isset($fis->siparis->__carikodu) && !empty($fis->siparis->__carikodu)) {
             $carikod = $fis->siparis->__carikodu;
         }
-        
+    
+    
         $data = [
             "scf_irsaliye_ekle" => [
                 "session_id" => $session_id,
@@ -3103,10 +3100,10 @@ class Dia extends Component{
                 ]
             ]
         ];
-
+       
 
         $jsonData = json_encode($data);
-        
+
         // Debug: Gönderilen veriyi logla
         Yii::info("DIA'ya gönderilen JSON: " . $jsonData, __METHOD__);
      

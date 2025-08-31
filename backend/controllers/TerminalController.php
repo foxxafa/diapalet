@@ -426,7 +426,10 @@ class TerminalController extends Controller
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
          try {
-            $goodsReceipt = GoodsReceipts::findOne($receiptId);
+            $goodsReceipt = GoodsReceipts::find()
+                ->where(['goods_receipt_id' => $receiptId])
+                ->with(['warehouse', 'warehouse.branch'])
+                ->one();
             $goodsReceiptItems = GoodsReceiptItems::find()->where(['receipt_id' => $receiptId])->all();
             
             Yii::info("DIA entegrasyonu başlatılıyor - Receipt ID: $receiptId, Item sayısı: " . count($goodsReceiptItems), __METHOD__);

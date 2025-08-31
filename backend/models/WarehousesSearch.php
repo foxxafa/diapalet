@@ -4,12 +4,12 @@ namespace app\models;
 
 use yii\base\Model;
 use yii\data\ActiveDataProvider;
-use app\models\GoodsReceipts;
+use app\models\Warehouses;
 
 /**
- * GoodsReceiptsSearch represents the model behind the search form of `app\models\GoodsReceipts`.
+ * WarehousesSearch represents the model behind the search form of `app\models\Warehouses`.
  */
-class GoodsReceiptsSearch extends GoodsReceipts
+class WarehousesSearch extends Warehouses
 {
     /**
      * {@inheritdoc}
@@ -17,8 +17,8 @@ class GoodsReceiptsSearch extends GoodsReceipts
     public function rules()
     {
         return [
-            [['goods_receipt_id', 'warehouse_id', 'siparis_id', 'employee_id'], 'integer'],
-            [['invoice_number', 'delivery_note_number', 'receipt_date', 'created_at', 'updated_at', 'warehouse_code', 'sip_fisno'], 'safe'],
+            [['id'], 'integer'],
+            [['name', 'post_code', 'ap', 'warehouse_code', 'branch_code'], 'safe'],
         ];
     }
 
@@ -41,7 +41,7 @@ class GoodsReceiptsSearch extends GoodsReceipts
      */
     public function search($params, $formName = null)
     {
-        $query = GoodsReceipts::find();
+        $query = Warehouses::find();
 
         // add conditions that should always apply here
 
@@ -59,19 +59,14 @@ class GoodsReceiptsSearch extends GoodsReceipts
 
         // grid filtering conditions
         $query->andFilterWhere([
-            'goods_receipt_id' => $this->goods_receipt_id,
-            'warehouse_id' => $this->warehouse_id,
-            'siparis_id' => $this->siparis_id,
-            'employee_id' => $this->employee_id,
-            'receipt_date' => $this->receipt_date,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            'id' => $this->id,
         ]);
 
-        $query->andFilterWhere(['like', 'invoice_number', $this->invoice_number])
-            ->andFilterWhere(['like', 'delivery_note_number', $this->delivery_note_number])
-            ->andFilterWhere(['like', 'warehouse_code', $this->warehouse_code])
-            ->andFilterWhere(['like', 'sip_fisno', $this->sip_fisno]);
+        $query->andFilterWhere(['like', 'name', $this->name])
+            ->andFilterWhere(['like', 'post_code', $this->post_code])
+            ->andFilterWhere(['like', 'ap', $this->ap])
+            ->andFilterWhere(['like', 'branch_code', $this->branch_code])
+            ->andFilterWhere(['like', 'warehouse_code', $this->warehouse_code]);
 
         return $dataProvider;
     }

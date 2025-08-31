@@ -16,6 +16,8 @@ use Yii;
  * @property string $receipt_date Mal kabul tarihi
  * @property string $created_at
  * @property string|null $updated_at
+ * @property string|null $warehouse_code
+ * @property string|null $sip_fisno
  *
  * @property Employees $employee
  * @property GoodsReceiptItems[] $goodsReceiptItems
@@ -40,11 +42,12 @@ class GoodsReceipts extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
-            [['siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id'], 'default', 'value' => null],
+            [['siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'warehouse_code', 'sip_fisno'], 'default', 'value' => null],
             [['warehouse_id', 'receipt_date'], 'required'],
             [['warehouse_id', 'siparis_id', 'employee_id'], 'integer'],
             [['receipt_date', 'created_at', 'updated_at'], 'safe'],
             [['invoice_number', 'delivery_note_number'], 'string', 'max' => 255],
+            [['warehouse_code', 'sip_fisno'], 'string', 'max' => 45],
             [['employee_id'], 'exist', 'skipOnError' => true, 'targetClass' => Employees::class, 'targetAttribute' => ['employee_id' => 'id']],
             [['warehouse_id'], 'exist', 'skipOnError' => true, 'targetClass' => Warehouses::class, 'targetAttribute' => ['warehouse_id' => 'id']],
         ];
@@ -65,6 +68,8 @@ class GoodsReceipts extends \yii\db\ActiveRecord
             'receipt_date' => 'Receipt Date',
             'created_at' => 'Created At',
             'updated_at' => 'Updated At',
+            'warehouse_code' => 'Warehouse Code',
+            'sip_fisno' => 'Sipariş Fiş No',
         ];
     }
 
@@ -97,6 +102,12 @@ class GoodsReceipts extends \yii\db\ActiveRecord
     {
         return $this->hasMany(InventoryStock::class, ['goods_receipt_id' => 'goods_receipt_id']);
     }
+    public function getSiparis()
+    {
+        // return $this->hasOne(Siparisler::class, ['fisno' => 'sip_fisno']);
+        return $this->hasOne(Siparisler::class, ['id' => 'siparis_id']);
+    }
+
 
     /**
      * Gets query for [[Warehouse]].
@@ -105,17 +116,7 @@ class GoodsReceipts extends \yii\db\ActiveRecord
      */
     public function getWarehouse()
     {
-        return $this->hasOne(Warehouses::class, ['id' => 'warehouse_id']);
-    }
-
-    /**
-     * Gets query for [[Siparis]].
-     *
-     * @return \yii\db\ActiveQuery
-     */
-    public function getSiparis()
-    {
-        return $this->hasOne(Siparisler::class, ['id' => 'siparis_id']);
+        return $this->hasOne(Warehouses::class, ['warehouse_code' => 'warehouse_code']);
     }
 
 }
