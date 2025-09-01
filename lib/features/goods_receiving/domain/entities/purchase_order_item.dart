@@ -10,6 +10,7 @@ class PurchaseOrderItem {
   final double receivedQuantity;
   final double transferredQuantity;
   final String? unit;
+  final String? unitName; // Birim adı (birimadi)
   final ProductInfo? product;
 
   // HATA DÜZELTMESİ: Palet bilgisini tutmak için bu alan eklendi.
@@ -25,6 +26,7 @@ class PurchaseOrderItem {
     required this.receivedQuantity,
     required this.transferredQuantity,
     this.unit,
+    this.unitName,
     this.product,
     // HATA DÜZELTMESİ: Constructor'a eklendi.
     this.palletBarcode,
@@ -63,6 +65,7 @@ class PurchaseOrderItem {
       receivedQuantity: (map['receivedQuantity'] as num? ?? 0).toDouble(),
       transferredQuantity: (map['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: map['birimkod'] as String?,
+      unitName: map['birimadi'] as String?,
       product: ProductInfo.fromDbMap(map), // Bu repository tarafından doldurulacak
       // palletBarcode burada null'dır, repository'de doldurulacak.
     );
@@ -77,6 +80,7 @@ class PurchaseOrderItem {
       receivedQuantity: (json['receivedQuantity'] as num).toDouble(),
       transferredQuantity: (json['transferredQuantity'] as num? ?? 0).toDouble(),
       unit: json['unit'],
+      unitName: json['unitName'],
       product: json['product'] != null ? ProductInfo.fromJson(json['product']) : null,
       // HATA DÜZELTMESİ: JSON'dan okunuyor.
       palletBarcode: json['palletBarcode'] as String?,
@@ -92,6 +96,7 @@ class PurchaseOrderItem {
       'receivedQuantity': receivedQuantity,
       'transferredQuantity': transferredQuantity,
       'unit': unit,
+      'unitName': unitName,
       'product': product?.toJson(),
       // HATA DÜZELTMESİ: JSON'a ekleniyor.
       'palletBarcode': palletBarcode,

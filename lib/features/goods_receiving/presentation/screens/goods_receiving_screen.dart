@@ -1292,6 +1292,7 @@ class _OrderProductConfirmationCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final product = orderItem.product!;
     final unit = orderItem.unit ?? '';
+    final unitName = orderItem.unitName ?? unit; // Birim adı yoksa birim kodunu kullan
 
     final totalReceivedAfter = orderItem.receivedQuantity + quantityBeingAdded;
     final remaining = (orderItem.expectedQuantity - totalReceivedAfter).clamp(0.0, double.infinity);
@@ -1320,11 +1321,11 @@ class _OrderProductConfirmationCard extends StatelessWidget {
               ],
             ),
             const Divider(height: 16),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem.expectedQuantity, unit),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), orderItem.receivedQuantity, unit),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), quantityBeingAdded, unit, highlight: true),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem.expectedQuantity, unitName),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), orderItem.receivedQuantity, unitName),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), quantityBeingAdded, unitName, highlight: true),
             const Divider(thickness: 1, height: 24, color: Colors.black12),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), remaining, unit, bold: true),
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), remaining, unitName, bold: true),
             if (itemsBeingAdded.isNotEmpty) ...[
               const SizedBox(height: 16),
               ...itemsBeingAdded.map((item) {
@@ -1354,7 +1355,7 @@ class _OrderProductConfirmationCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Text('${item.quantity.toStringAsFixed(0)} $unit', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+                      Text('${item.quantity.toStringAsFixed(0)} $unitName', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
                       const SizedBox(width: 8),
                       IconButton(
                         icon: Icon(Icons.delete_outline, color: colorScheme.error, size: 22),
