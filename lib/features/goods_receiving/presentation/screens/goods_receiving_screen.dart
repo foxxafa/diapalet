@@ -7,11 +7,11 @@ import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/utils/keyboard_utils.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
+import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
-import 'package:diapalet/core/local/database_helper.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -1223,51 +1223,68 @@ class _FullscreenConfirmationPage extends StatelessWidget {
       return Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()));
     }
     
-    // Sipariş dışı ürünleri al
-    final outOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder == true).toList();
+    return FutureBuilder<List<ProductInfo>>(
+      future: viewModel.getOutOfOrderReceiptItems(),
+      builder: (context, snapshot) {
+        final outOfOrderItems = snapshot.data ?? [];
+        debugPrint('DEBUG: Out of order items from DB: ${outOfOrderItems.length}');
     
-    return ListView(
-      padding: const EdgeInsets.all(8),
-      children: [
-        // Sipariş ürünleri
-        ...viewModel.orderItems.map((orderItem) {
-          final product = orderItem.product;
-          if (product == null) return const SizedBox.shrink();
-
-          // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
-          final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.key == orderItem.productId).toList();
-          final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
-
-          // Tüm sipariş ürünlerini göster (eklenen veya eklenmemiş)
-          return _OrderProductConfirmationCard(
-            orderItem: orderItem,
-            itemsBeingAdded: itemsBeingAdded,
-            quantityBeingAdded: quantityBeingAdded,
-            onRemoveItem: onItemRemoved,
-          );
-        }),
+        // Memory'deki sipariş dışı ürünleri al
+        final memoryOutOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder).toList();
+        final hasOutOfOrderItems = outOfOrderItems.isNotEmpty || memoryOutOfOrderItems.isNotEmpty;
         
-        // Sipariş dışı ürünler için başlık
-        if (outOfOrderItems.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              'goods_receiving_screen.out_of_order_products'.tr(),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-        
-        // Sipariş dışı ürünleri göster
-        ...outOfOrderItems.map((item) {
-          return _OutOfOrderProductConfirmationCard(
-            item: item,
-            onRemoveItem: onItemRemoved,
-          );
-        }),
-      ],
+        return ListView(
+          padding: const EdgeInsets.all(8),
+          children: [
+            
+            // Sipariş ürünleri
+            ...viewModel.orderItems.map((orderItem) {
+              final product = orderItem.product;
+              if (product == null) return const SizedBox.shrink();
+
+              // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
+              final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.key == orderItem.productId).toList();
+              final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
+
+              // Tüm sipariş ürünlerini göster (eklenen veya eklenmemiş)
+              return _OrderProductConfirmationCard(
+                orderItem: orderItem,
+                itemsBeingAdded: itemsBeingAdded,
+                quantityBeingAdded: quantityBeingAdded,
+                onRemoveItem: onItemRemoved,
+              );
+            }),
+            
+            // Sipariş dışı ürünler için başlık
+            if (hasOutOfOrderItems) ...[
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'goods_receiving_screen.out_of_order_products'.tr(),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            
+            // Memory'deki sipariş dışı ürünleri göster (silinebilir)
+            ...memoryOutOfOrderItems.map((item) {
+              return _MemoryOutOfOrderItemCard(
+                item: item,
+                onRemoveItem: onItemRemoved,
+              );
+            }),
+            
+            // Veritabanındaki sipariş dışı ürünleri göster (sadece bilgi amaçlı - silinemez)
+            ...outOfOrderItems.map((productInfo) {
+              return _OutOfOrderProductInfoCard(
+                productInfo: productInfo,
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 }
@@ -1397,144 +1414,6 @@ class _OrderProductConfirmationCard extends StatelessWidget {
   }
 }
 
-class _OutOfOrderProductConfirmationCard extends StatelessWidget {
-  final ReceiptItemDraft item;
-  final ValueChanged<ReceiptItemDraft> onRemoveItem;
-
-  const _OutOfOrderProductConfirmationCard({
-    required this.item,
-    required this.onRemoveItem,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final colorScheme = theme.colorScheme;
-    final product = item.product;
-    final unit = product.displayUnitName ?? '';
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Icon(Icons.info_outline, color: colorScheme.secondary, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    product.name,
-                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text("(${product.stockCode})", style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)),
-              ],
-            ),
-            const Divider(height: 16),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.quantity'.tr(), item.quantity, unit, highlight: true),
-            if (item.palletBarcode != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text('goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': ''}), style: textTheme.bodyLarge),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Text(item.palletBarcode!, 
-                           style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                           textAlign: TextAlign.end),
-                    ),
-                  ],
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text('goods_receiving_screen.validator_expiry_date'.tr(), style: textTheme.bodyLarge),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Text('${item.expiryDate?.day.toString().padLeft(2, '0')}/${item.expiryDate?.month.toString().padLeft(2, '0')}/${item.expiryDate?.year}', 
-                         style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                         textAlign: TextAlign.end),
-                  ),
-                ],
-              ),
-            ),
-            if (item.palletBarcode != null || item.expiryDate != null) ...[
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.palletBarcode != null
-                              ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                              : 'goods_receiving_screen.mode_box'.tr(),
-                          style: textTheme.bodyMedium,
-                        ),
-                        Text(
-                          '${item.quantity.toStringAsFixed(0)} $unit',
-                          style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.delete_outline, color: colorScheme.error),
-                    onPressed: () => onRemoveItem(item),
-                    tooltip: 'goods_receiving_screen.tooltip_remove_item'.tr(),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatRow(BuildContext context, String label, double value, String unit, {bool highlight = false, bool bold = false}) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    final valueStyle = textTheme.titleMedium?.copyWith(
-      fontWeight: bold ? FontWeight.w900 : FontWeight.bold,
-      color: highlight ? colorScheme.primary : (bold ? colorScheme.onSurface : textTheme.bodyLarge?.color),
-      fontSize: bold ? 18 : null,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: textTheme.bodyLarge),
-          Text('${value.toStringAsFixed(0)} $unit', style: valueStyle),
-        ],
-      ),
-    );
-  }
-}
 
 class _OrderStatusWidget extends StatelessWidget {
   final GoodsReceivingViewModel viewModel;
@@ -1636,6 +1515,151 @@ class _OrderStatusWidget extends StatelessWidget {
         borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    );
+  }
+}
+
+/// Sipariş dışı kabul edilen ürünleri veritabanından göstermek için kullanılan kart
+class _OutOfOrderProductInfoCard extends StatelessWidget {
+  final ProductInfo productInfo;
+
+  const _OutOfOrderProductInfoCard({
+    required this.productInfo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    
+    // Quantity information from the database (if available)
+    final quantityReceived = productInfo.quantityReceived ?? 0.0;
+    final unit = productInfo.displayUnitName ?? '';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
+                    productInfo.name,
+                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  "(${productInfo.stockCode})", 
+                  style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: theme.colorScheme.secondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'goods_receiving_screen.out_of_order_received'.tr(namedArgs: {
+                      'quantity': quantityReceived.toString(),
+                      'unit': unit,
+                    }),
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.secondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Memory'deki sipariş dışı ürün kartı (silinebilir)
+class _MemoryOutOfOrderItemCard extends StatelessWidget {
+  final ReceiptItemDraft item;
+  final ValueChanged<ReceiptItemDraft> onRemoveItem;
+
+  const _MemoryOutOfOrderItemCard({
+    required this.item,
+    required this.onRemoveItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.product.name,
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "(${item.product.stockCode})", 
+                    style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Quantity: ${item.quantity.toString()} ${item.product.unitName ?? ''}',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () => onRemoveItem(item),
+              icon: Icon(
+                Icons.remove_circle_outline,
+                color: theme.colorScheme.error,
+              ),
+              tooltip: 'Remove item',
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

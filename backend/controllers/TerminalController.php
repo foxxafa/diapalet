@@ -1438,7 +1438,7 @@ class TerminalController extends Controller
         $receiptIds = array_column($data['goods_receipts'], 'id');
         if (!empty($receiptIds)) {
             $receiptItemsQuery = (new Query())
-                ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'created_at', 'updated_at'])
+                ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
                 ->from('goods_receipt_items')
                 ->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {
@@ -1885,7 +1885,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'created_at', 'updated_at'])
+            ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
             ->from('goods_receipt_items')
             ->where(['in', 'receipt_id', $receiptIds]);
 

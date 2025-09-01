@@ -266,6 +266,18 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
   }
 
+  /// Belirli bir sipariş için sipariş dışı kabul edilen ürünleri getirir
+  Future<List<ProductInfo>> getOutOfOrderReceiptItems() async {
+    if (_selectedOrder == null) return [];
+    return await _repository.getOutOfOrderReceiptItems(_selectedOrder!.id);
+  }
+
+  /// DEBUG: Manuel olarak free değerini güncelle
+  Future<void> debugUpdateFreeValues(String urunKey) async {
+    if (_selectedOrder == null) return;
+    await _repository.debugUpdateFreeValues(_selectedOrder!.id, urunKey);
+  }
+
   void _setInitialFocus() {
     if (_isDisposed) return;
 
@@ -696,6 +708,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         palletBarcode: draft.palletBarcode,
         barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
         expiryDate: draft.expiryDate, // Now always has a value
+        isFree: draft.product.isOutOfOrder, // Sipariş dışı ürün bilgisi
       )).toList(),
     );
     await _repository.saveGoodsReceipt(payload);

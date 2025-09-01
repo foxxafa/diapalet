@@ -47,7 +47,6 @@ class PdfService {
         case PendingOperationType.inventoryStock:
           // Inventory stock sync operations should not generate PDFs (internal operation)
           throw UnsupportedError('Inventory stock sync operations do not support PDF generation');
-          break;
       }
     } catch (e) {
       debugPrint('Error generating enriched PDF filename: $e');
@@ -628,7 +627,7 @@ class PdfService {
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
-                _buildTableCell('StokKodu', boldFont, isHeader: true),
+                _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                 _buildTableCell('Product Name', boldFont, isHeader: true),
                 _buildTableCell('Quantity', boldFont, isHeader: true),
                 _buildTableCell('Container', boldFont, isHeader: true),
@@ -638,12 +637,8 @@ class PdfService {
             ...items.map((item) {
               final productName = item['product_name'] ?? 'Unknown Product';
               final productCode = item['product_code'] ?? 'N/A';
-              final productBarcode = item['product_barcode'] ?? '';
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
               final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Product';
-
-              // Product Name + Code birleştirme
-              final productNameAndCode = productCode != 'N/A' ? '$productName ($productCode)' : productName;
 
               return pw.TableRow(
                 children: [
@@ -813,7 +808,7 @@ class PdfService {
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                 children: [
-                  _buildTableCell('StokKodu', boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
                   _buildTableCell('Ordered', boldFont, isHeader: true),
                   _buildTableCell('Total Received', boldFont, isHeader: true),
@@ -826,7 +821,7 @@ class PdfService {
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                 children: [
-                  _buildTableCell('StokKodu', boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
                   _buildTableCell('Quantity', boldFont, isHeader: true),
                   _buildTableCell('Expiry Date', boldFont, isHeader: true),
@@ -834,12 +829,9 @@ class PdfService {
                 ],
               ),
             ...items.map((item) {
-              final productBarcode = item['product_barcode']?.toString() ?? '';
               final productName = item['product_name'] ?? 'Unknown';
               final productCode = item['product_code'] ?? 'N/A';
-              final productNameAndCode = '$productName ($productCode)';
               final containerDisplay = item['pallet_barcode']?.toString() ?? 'Product';
-              
 
               // Get expiry date
               final expiryDate = item['expiry_date'];

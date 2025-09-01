@@ -489,7 +489,14 @@ class DatabaseHelper {
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
+            // DEBUG: Sunucudan gelen free değerini kontrol et
+            debugPrint("SYNC DEBUG: Raw item from server - ID: ${item['id']}, urun_key/urun_id: ${item['urun_key'] ?? item['urun_id']}, free: ${item['free']}");
+            
             final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
+            
+            // DEBUG: Sanitize sonrası free değerini kontrol et
+            debugPrint("SYNC DEBUG: After sanitize - free: ${sanitizedItem['free']}");
+            
             batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
@@ -825,6 +832,19 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
+        
+        // free değerini integer olarak kaydet
+        if (newRecord.containsKey('free')) {
+          final freeValue = newRecord['free'];
+          if (freeValue is String) {
+            newRecord['free'] = int.tryParse(freeValue) ?? 0;
+          } else if (freeValue is bool) {
+            newRecord['free'] = freeValue ? 1 : 0;
+          } else if (freeValue is num) {
+            newRecord['free'] = freeValue.toInt();
+          }
+          debugPrint("SYNC DEBUG: Converted free value from $freeValue to ${newRecord['free']}");
+        }
         break;
 
       case 'inventory_transfers':
@@ -985,6 +1005,39 @@ class DatabaseHelper {
   }
 
   /// TEST: Siparişteki tüm barkodları listele
+  /// DEBUG: Manuel olarak free değerini güncelle
+  Future<void> debugUpdateFreeValues(int orderId, String urunKey) async {
+    final db = await database;
+    
+    debugPrint("DEBUG: Updating free value for order $orderId, urun_key $urunKey");
+    
+    final updated = await db.update(
+      'goods_receipt_items',
+      {'free': 1},
+      where: '''
+        receipt_id IN (
+          SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ?
+        ) AND urun_key = ?
+      ''',
+      whereArgs: [orderId, urunKey],
+    );
+    
+    debugPrint("DEBUG: Updated $updated records with free = 1");
+    
+    // Kontrol et
+    final result = await db.rawQuery('''
+      SELECT gri.*, gr.siparis_id
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      WHERE gr.siparis_id = ? AND gri.urun_key = ?
+    ''', [orderId, urunKey]);
+    
+    debugPrint("DEBUG: After update - found ${result.length} records:");
+    for (final record in result) {
+      debugPrint("  - ID: ${record['id']}, urun_key: ${record['urun_key']}, free: ${record['free']}");
+    }
+  }
+
   Future<List<Map<String, dynamic>>> debugOrderBarcodes(int orderId) async {
     final db = await database;
     

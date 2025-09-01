@@ -149,6 +149,7 @@
     "out_of_order_product_accept": "Accept",
     "out_of_order_product_cancel": "Cancel",
     "out_of_order_products": "Out of Order Products",
+    "out_of_order_received": "Received: {quantity} {unit}",
     "confirmation": {
       "quantity": "Quantity",
       "ordered": "Ordered",
@@ -739,6 +740,7 @@
       "invoice": "Invoice",
       "notes": "Notes",
       "barcode": "Barcode",
+      "stock_code": "Stock Code",
       "product_name_code": "Product Name + Code",
       "quantity": "Quantity",
       "container": "Container",

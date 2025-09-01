@@ -11,6 +11,7 @@ class ProductInfo extends Equatable {
   final Map<String, dynamic>? birimInfo;
   final Map<String, dynamic>? barkodInfo;
   final bool isOutOfOrder; // Sipariş dışı ürün flag
+  final double? quantityReceived; // Out-of-order items için alınan miktar
 
   const ProductInfo({
     required this.id,
@@ -21,6 +22,7 @@ class ProductInfo extends Equatable {
     this.birimInfo,
     this.barkodInfo,
     this.isOutOfOrder = false, // Default false
+    this.quantityReceived, // Default null
   });
 
   /// Ürün anahtarı - _key varsa onu kullan, yoksa id'yi string'e çevir
@@ -65,6 +67,7 @@ class ProductInfo extends Equatable {
       birimInfo: birimInfoMap,
       barkodInfo: barkodInfoMap,
       isOutOfOrder: map['is_out_of_order'] as bool? ?? (map['source_type'] == 'out_of_order'),
+      quantityReceived: (map['quantity_received'] as num?)?.toDouble(),
     );
   }
 
@@ -82,6 +85,7 @@ class ProductInfo extends Equatable {
       birimInfo: json['birimInfo'] as Map<String, dynamic>?,
       barkodInfo: json['barkodInfo'] as Map<String, dynamic>?,
       isOutOfOrder: json['isOutOfOrder'] as bool? ?? false,
+      quantityReceived: (json['quantityReceived'] as num?)?.toDouble(),
     );
   }
 
@@ -120,6 +124,7 @@ class ProductInfo extends Equatable {
       'birimInfo': birimInfo,
       'barkodInfo': barkodInfo,
       'isOutOfOrder': isOutOfOrder,
+      'quantityReceived': quantityReceived,
     };
   }
 
@@ -135,9 +140,10 @@ class ProductInfo extends Equatable {
       birimInfo: birimInfo,
       barkodInfo: barkodInfo,
       isOutOfOrder: isOutOfOrder,
+      quantityReceived: quantityReceived,
     );
   }
 
   @override
-  List<Object?> get props => [id, productKey, name, stockCode, isActive, birimInfo, barkodInfo, isOutOfOrder];
+  List<Object?> get props => [id, productKey, name, stockCode, isActive, birimInfo, barkodInfo, isOutOfOrder, quantityReceived];
 }

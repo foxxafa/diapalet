@@ -42,4 +42,10 @@ abstract class GoodsReceivingRepository {
 
   /// Bir siparişi tamamlar.
   Future<void> markOrderAsComplete(int orderId);
+
+  /// Belirli bir sipariş için sipariş dışı kabul edilen ürünleri getirir (free = 1).
+  Future<List<ProductInfo>> getOutOfOrderReceiptItems(int orderId);
+
+  /// DEBUG: Manuel olarak free değerini güncelle
+  Future<void> debugUpdateFreeValues(int orderId, String urunKey);
 }

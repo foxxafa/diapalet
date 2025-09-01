@@ -63,6 +63,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'quantity_received': item.quantity,
             DbColumns.stockPalletBarcode: item.palletBarcode,
             DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
+            'free': item.isFree ? 1 : 0, // Sipariş dışı ürün işaretleme
           });
           debugPrint("Item inserted with ID: $itemId");
 
@@ -529,6 +530,77 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   }
 
   // Duplicate functions removed - they already exist in the file
+
+  /// DEBUG: Manuel olarak free değerini güncelle  
+  @override
+  Future<void> debugUpdateFreeValues(int orderId, String urunKey) async {
+    await dbHelper.debugUpdateFreeValues(orderId, urunKey);
+  }
+
+  @override
+  Future<List<ProductInfo>> getOutOfOrderReceiptItems(int orderId) async {
+    final db = await dbHelper.database;
+    
+    // DEBUG: Önce bu sipariş için tüm receipt items'ları kontrol et
+    final allItems = await db.rawQuery('''
+      SELECT gri.*, gr.siparis_id, gri.free
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      WHERE gr.siparis_id = ?
+    ''', [orderId]);
+    
+    debugPrint("DEBUG: All receipt items for order $orderId:");
+    for (final item in allItems) {
+      debugPrint("  - ID: ${item['receipt_id']}, urun_key: ${item['urun_key']}, quantity: ${item['quantity_received']}, free: ${item['free']}");
+    }
+    
+    // DEBUG: Özellikle free=1 olan items'ları kontrol et
+    final freeItems = await db.rawQuery('''
+      SELECT gri.*, gr.siparis_id, gri.free
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      WHERE gr.siparis_id = ? AND gri.free = 1
+    ''', [orderId]);
+    
+    debugPrint("DEBUG: Items with free=1 for order $orderId: ${freeItems.length}");
+    for (final item in freeItems) {
+      debugPrint("  - FREE ITEM: ID: ${item['receipt_id']}, urun_key: ${item['urun_key']}, quantity: ${item['quantity_received']}");
+    }
+    
+    // DEBUG: 99488 key'li items'ları özel kontrol et  
+    final items99488 = allItems.where((item) => item['urun_key'] == '99488').toList();
+    debugPrint("DEBUG: Items with urun_key=99488: ${items99488.length}");
+    for (final item in items99488) {
+      debugPrint("  - 99488 ITEM: ID: ${item['receipt_id']}, free: ${item['free']}, quantity: ${item['quantity_received']}");
+    }
+    
+    // Sipariş dışı kabul edilen ürünleri al (free = 1) - JOIN'leri kaldır duplicate count'u önlemek için
+    final outOfOrderMaps = await db.rawQuery('''
+      SELECT 
+        u.*,
+        u._key as product_key,
+        u.UrunAdi as name,
+        u.StokKodu as code,
+        SUM(gri.quantity_received) as quantity_received,
+        MAX(gri.free) as free,
+        'out_of_order' as source_type
+      FROM goods_receipt_items gri
+      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      JOIN urunler u ON u._key = gri.urun_key
+      WHERE gr.siparis_id = ? AND gri.free = 1
+      GROUP BY u._key, u.UrunAdi, u.StokKodu
+      ORDER BY MAX(gri.receipt_id) DESC
+    ''', [orderId]);
+    
+    debugPrint("DEBUG: Found ${outOfOrderMaps.length} out-of-order receipt items for order $orderId");
+    
+    // DEBUG: Her bir out-of-order item'ın detaylarını göster
+    for (final map in outOfOrderMaps) {
+      debugPrint("DEBUG: OUT-OF-ORDER ITEM - urun_key: ${map['product_key']}, name: ${map['name']}, quantity_received: ${map['quantity_received']}, birimadi: ${map['birimadi']}");
+    }
+    
+    return outOfOrderMaps.map((map) => ProductInfo.fromDbMap(map)).toList();
+  }
 
   // Inventory stock pending operation sync removed - normal table sync kullanılacak
 }
