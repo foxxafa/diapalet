@@ -235,7 +235,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       FROM ${DbTables.orders} o
       LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.suppliersCode} = o.${DbColumns.ordersSupplierCode}
       WHERE o.${DbColumns.status} IN (0, 1)
-      ORDER BY o.${DbColumns.ordersDate} DESC
+      ORDER BY o.${DbColumns.createdAt} DESC
     ''');
     return openOrdersMaps.map((orderMap) => PurchaseOrder.fromMap(orderMap)).toList();
   }

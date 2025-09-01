@@ -424,9 +424,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       INNER JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = 'receiving'
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
-      WHERE o.status IN (0, 1, 2)
+      WHERE o.status IN (0, 1, 2, 3)
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
-      ORDER BY o.tarih DESC
+      ORDER BY o.created_at DESC
     ''', [warehouseName ?? 'N/A']);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
   }

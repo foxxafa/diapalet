@@ -315,10 +315,11 @@
   "orders": {
     "title": "Satınalma Siparişleri",
   "search_hint": "Sipariş Ara...",
-  "search_by_po": "PO numarasına göre ara...",
+  "search_by_po": "Sipariş numarasına göre ara...",
     "no_results": "Uygun sipariş bulunamadı.",
     "error_loading": "Siparişler yüklenemedi: {error}",
     "no_supplier": "Tedarikçi Bilinmiyor",
+    "no_date": "Tarih Yok",
     "status": {
       "partially_received": "Kısmi Kabul"
     }
@@ -346,7 +347,7 @@
   },
   "order_selection": {
     "title": "Transfer için Sipariş Seç",
-  "search_hint": "Sipariş adına göre ara...",
+  "search_hint": "Sipariş numarasına göre ara...",
     "no_results": "Transfer edilebilir sipariş bulunamadı.",
     "error_loading": "Siparişler yüklenemedi: {error}",
     "no_date": "Tarih Yok"

@@ -283,10 +283,11 @@
     },
     "title": "Purchase Orders",
   "search_hint": "Search Purchase Orders...",
-  "search_by_po": "Search by PO number...",
+  "search_by_po": "Search by order number...",
     "no_results": "No matching orders found.",
     "error_loading": "Failed to load orders: {error}",
     "no_supplier": "Unknown Supplier",
+    "no_date": "No Date",
     "menu": {
       "mark_as_complete": "Save & Complete Order"
     },
@@ -491,7 +492,7 @@
   },
   "order_selection": {
     "title": "Select Order for Put-away",
-  "search_hint": "Search by order name...",
+  "search_hint": "Search by order number...",
     "error_loading": "Error loading orders: {error}",
     "no_results": "No open orders found for putaway.",
     "order_date": "Date",

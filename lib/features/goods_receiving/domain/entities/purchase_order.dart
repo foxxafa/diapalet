@@ -7,6 +7,7 @@ class PurchaseOrder {
   final int id;
   final String? poId; // Purchase Order ID (fisno)
   final DateTime? date;
+  final DateTime? createdAt; // Siparişin oluşturulma tarihi
   final String? notes;
   final int? status;
   final String? supplierName; // Bu alan şu anki API'de yok, ileride eklenebilir.
@@ -16,6 +17,7 @@ class PurchaseOrder {
     required this.id,
     this.poId,
     this.date,
+    this.createdAt,
     this.notes,
     this.status,
     this.supplierName,
@@ -28,6 +30,7 @@ class PurchaseOrder {
       id: map['id'] as int,
       poId: map['fisno'] as String?,
       date: map['tarih'] != null ? DateTime.tryParse(map['tarih']) : null,
+      createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at']) : null,
       notes: map.containsKey('notlar') ? map['notlar'] as String? : null,
       // ANA DÜZELTME: Sunucudan gelen `status` alanı burada doğru bir şekilde okunuyor.
       status: map['status'] as int?,

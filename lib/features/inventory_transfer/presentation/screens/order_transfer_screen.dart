@@ -110,12 +110,21 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   @override
   void dispose() {
     _intentSub?.cancel();
+    
+    // Clear product data and controllers first
+    _clearProductControllers();
+    
+    // Then dispose focus nodes and controllers
+    if (_targetLocationFocusNode.hasFocus) _targetLocationFocusNode.unfocus();
+    if (_containerFocusNode.hasFocus) _containerFocusNode.unfocus();
+    
+    _targetLocationFocusNode.dispose();
+    _containerFocusNode.dispose();
+    
     _sourceLocationController.dispose();
     _targetLocationController.dispose();
     _scannedContainerIdController.dispose();
-    _targetLocationFocusNode.dispose();
-    _containerFocusNode.dispose();
-    _clearProductControllers();
+    
     super.dispose();
   }
 
@@ -136,8 +145,22 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   void _clearProductControllers() {
+    // First clear the products list to prevent widgets from using the nodes
+    _productsInContainer.clear();
+    
+    // Then dispose controllers and focus nodes
     _productQuantityControllers.forEach((_, controller) => controller.dispose());
-    _productQuantityFocusNodes.forEach((_, focusNode) => focusNode.dispose());
+    _productQuantityFocusNodes.forEach((_, focusNode) {
+      try {
+        if (focusNode.hasFocus) {
+          focusNode.unfocus();
+        }
+        focusNode.dispose();
+      } catch (e) {
+        // Focus node might already be disposed, ignore the error
+      }
+    });
+    
     _productQuantityControllers.clear();
     _productQuantityFocusNodes.clear();
   }
@@ -340,10 +363,12 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     final container = _selectedContainer;
     if (container == null) return;
 
+    // Clear product controllers first, outside setState
+    _clearProductControllers();
+    
     setState(() {
       _isLoadingContainerContents = true;
       _productsInContainer = [];
-      _clearProductControllers();
     });
 
     try {
@@ -906,8 +931,13 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
             ),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
-              final controller = _productQuantityControllers[product.key]!;
-              final focusNode = _productQuantityFocusNodes[product.key]!;
+              final controller = _productQuantityControllers[product.key];
+              final focusNode = _productQuantityFocusNodes[product.key];
+              
+              // Safety check: if controllers are null, skip this item
+              if (controller == null || focusNode == null) {
+                return const SizedBox.shrink();
+              }
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
@@ -953,12 +983,27 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                           return null;
                         },
                         onFieldSubmitted: (value) {
+                          if (!mounted) return;
+                          
                           final productIds = _productQuantityFocusNodes.keys.toList();
                           final currentIndex = productIds.indexOf(product.key);
                           if (currentIndex < productIds.length - 1) {
-                            _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
+                            final nextFocusNode = _productQuantityFocusNodes[productIds[currentIndex + 1]];
+                            try {
+                              if (nextFocusNode != null) {
+                                nextFocusNode.requestFocus();
+                              }
+                            } catch (e) {
+                              // Focus node might be disposed, ignore
+                            }
                           } else {
-                            _targetLocationFocusNode.requestFocus();
+                            try {
+                              if (mounted) {
+                                _targetLocationFocusNode.requestFocus();
+                              }
+                            } catch (e) {
+                              // Focus node might be disposed, ignore
+                            }
                           }
                         },
                       ),
