@@ -602,8 +602,8 @@ class TerminalController extends Controller
                     $portion['qty'],
                     $targetPallet,
                     'available',
-                    // GÜNCELLEME: Null yerine kaynak stoktaki ID'leri gönderiyoruz
-                    $portion['siparis_id'],
+                    // KRITIK FIX: 'available' durumunda siparis_id = null - konsolidasyon için
+                    null,
                     $portion['expiry'],
                     null // KRITIK FIX: goods_receipt_id NULL - consolidation için
                 );
@@ -665,14 +665,25 @@ class TerminalController extends Controller
             // 6. Sipariş bazlı işlemler için rafa yerleştirme durumunu güncelle
             if ($isPutawayOperation && $siparisId) {
                  // _key ile ürün bulup sipariş satırını bul
+                 Yii::info("WMS_PUTAWAY_STATUS update - urunKey: $urunKey, siparisId: $siparisId, qty: $totalQuantityToTransfer", __METHOD__);
+                 
                  $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['_key' => $urunKey])->scalar($db);
+                 Yii::info("WMS_PUTAWAY_STATUS - Found productCode: " . ($productCode ?: 'NULL'), __METHOD__);
+                 
                  if ($productCode) {
                      $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
+                     Yii::info("WMS_PUTAWAY_STATUS - Found orderLine: " . json_encode($orderLine), __METHOD__);
+                     
                      if ($orderLine) {
                          $orderLineId = $orderLine['id'];
-                         $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity) VALUES (:line_id, :qty) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity)";
-                         $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
+                         $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity, created_at, updated_at) VALUES (:line_id, :qty, NOW(), NOW()) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity), updated_at = NOW()";
+                         $result = $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
+                         Yii::info("WMS_PUTAWAY_STATUS - INSERT/UPDATE result: $result rows affected", __METHOD__);
+                     } else {
+                         Yii::warning("WMS_PUTAWAY_STATUS - No order line found for productCode: $productCode in order: $siparisId", __METHOD__);
                      }
+                 } else {
+                     Yii::warning("WMS_PUTAWAY_STATUS - No product code found for urunKey: $urunKey", __METHOD__);
                  }
             }
         }
@@ -698,6 +709,10 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($availabilityQuery, 'birim_key', $birimKey);
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
+            // KRITIK FIX: Receiving durumunda siparis_id ile match et
+            if ($stockStatus === 'receiving' && $siparisId !== null) {
+                $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
+            }
             $totalAvailable = (float)$availabilityQuery->sum('quantity', $db);
 
             if ($totalAvailable < $toDecrement - 0.001) {
@@ -710,6 +725,10 @@ class TerminalController extends Controller
                 $this->addNullSafeWhere($query, 'birim_key', $birimKey);
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
+                // KRITIK FIX: Receiving durumunda siparis_id ile match et
+                if ($stockStatus === 'receiving' && $siparisId !== null) {
+                    $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                }
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
 
                 $stock = $query->one($db);
@@ -732,8 +751,8 @@ class TerminalController extends Controller
             }
         } else {
             // --- Stok Ekleme Mantığı ---
-            // FIX: goods_receipt_id'yi IGNORE et - sadece core alanlarla birleştir
-            // Aynı ürün+birim+lokasyon+pallet+expiry = tek kayıt olmalı
+            // KRITIK FIX: 'receiving' durumunda siparis_id'yi de konsolidasyon kontrolüne dahil et
+            // 'available' durumunda ise siparis_id'yi ignore et (konsolidasyon için)
             $query = new Query();
             $query->from('inventory_stock')
                   ->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
@@ -743,7 +762,11 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
             
-            // KRITIK FIX: goods_receipt_id'yi dahil ETME - bu duplicate soruna neden oluyor!
+            // KRITIK FIX: 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
+            if ($stockStatus === 'receiving' && $siparisId !== null) {
+                $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+            }
+            // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
 
             $stock = $query->one($db);
 

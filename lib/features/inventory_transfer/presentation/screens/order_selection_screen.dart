@@ -149,16 +149,52 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
                           isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
-                            // FIX: Navigate to the correct screen for order-based put-away.
-                            final result = await Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => OrderTransferScreen(order: order),
-                              ),
-                            );
+                            try {
+                              debugPrint('🔄 Starting navigation to OrderTransferScreen for order: ${order.id}');
+                              
+                              // FIX: Navigate to the correct screen for order-based put-away.
+                              // Disable hero animations to prevent Hero widget conflicts
+                              final result = await Navigator.of(context).push(
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation, secondaryAnimation) {
+                                    debugPrint('🏗️ Building OrderTransferScreen for order: ${order.id}');
+                                    return OrderTransferScreen(order: order);
+                                  },
+                                  transitionDuration: const Duration(milliseconds: 300),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    return SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(1.0, 0.0),
+                                        end: Offset.zero,
+                                      ).animate(CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeInOut,
+                                      )),
+                                      child: child,
+                                    );
+                                  },
+                                ),
+                              );
 
-                            // Refresh the list if an operation was completed on the next screen.
-                            if (result == true && mounted) {
-                              _loadOrders();
+                              debugPrint('✅ Navigation completed, result: $result');
+                              
+                              // Refresh the list if an operation was completed on the next screen.
+                              if (result == true && mounted) {
+                                debugPrint('🔄 Refreshing orders list');
+                                _loadOrders();
+                              }
+                            } catch (e) {
+                              debugPrint('❌ Navigation error: $e');
+                              debugPrint('❌ Stack trace: ${StackTrace.current}');
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Navigation error: $e'),
+                                    backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 5),
+                                  ),
+                                );
+                              }
                             }
                           },
                         ),

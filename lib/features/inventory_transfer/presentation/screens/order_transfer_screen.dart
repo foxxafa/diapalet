@@ -27,7 +27,10 @@ class OrderTransferScreen extends StatefulWidget {
   const OrderTransferScreen({super.key, required this.order});
 
   @override
-  State<OrderTransferScreen> createState() => _OrderTransferScreenState();
+  State<OrderTransferScreen> createState() {
+    debugPrint('🎯 Creating OrderTransferScreenState for order: ${order.id}');
+    return _OrderTransferScreenState();
+  }
 }
 
 class _OrderTransferScreenState extends State<OrderTransferScreen> {
@@ -82,6 +85,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('🚀 OrderTransferScreen initState for order: ${widget.order.id}');
+    
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
     _barcodeService = BarcodeIntentService();
@@ -101,6 +106,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _sourceLocationController.text = '000';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('📋 OrderTransferScreen loading initial data for order: ${widget.order.id}');
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
       _loadInitialData();
       _initBarcode();
@@ -111,8 +117,8 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   void dispose() {
     _intentSub?.cancel();
     
-    // Clear product data and controllers first
-    _clearProductControllers();
+    // Clear product data and controllers with isDisposing flag
+    _clearProductControllers(isDisposing: true);
     
     // Then dispose focus nodes and controllers
     if (_targetLocationFocusNode.hasFocus) _targetLocationFocusNode.unfocus();
@@ -144,7 +150,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     }
   }
 
-  void _clearProductControllers() {
+  void _clearProductControllers({bool isDisposing = false}) {
     // First clear maps to prevent widgets from accessing disposed nodes
     final controllersToDispose = Map<String, TextEditingController>.from(_productQuantityControllers);
     final focusNodesToDispose = Map<String, FocusNode>.from(_productQuantityFocusNodes);
@@ -153,15 +159,19 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _productQuantityControllers.clear();
     _productQuantityFocusNodes.clear();
     
-    // Clear products list to trigger widget rebuild without disposed nodes
-    if (mounted) {
+    // Only call setState if not disposing (widget is still active)
+    if (!isDisposing && mounted) {
       setState(() {
         _productsInContainer.clear();
       });
+    } else {
+      // If disposing, just clear the list without setState
+      _productsInContainer.clear();
     }
     
-    // Then dispose controllers and focus nodes asynchronously
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Dispose controllers and focus nodes
+    if (isDisposing) {
+      // Dispose immediately when called from dispose()
       controllersToDispose.forEach((_, controller) {
         try {
           controller.dispose();
@@ -180,26 +190,54 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           // Already disposed, ignore
         }
       });
-    });
+    } else {
+      // Dispose asynchronously when called during normal operation
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controllersToDispose.forEach((_, controller) {
+          try {
+            controller.dispose();
+          } catch (e) {
+            // Already disposed, ignore
+          }
+        });
+        
+        focusNodesToDispose.forEach((_, focusNode) {
+          try {
+            if (focusNode.hasFocus) {
+              focusNode.unfocus();
+            }
+            focusNode.dispose();
+          } catch (e) {
+            // Already disposed, ignore
+          }
+        });
+      });
+    }
   }
 
   Future<void> _loadInitialData() async {
+    debugPrint('📊 _loadInitialData started for order: ${widget.order.id}');
     if (!mounted) return;
     setState(() => _isLoadingInitialData = true);
     try {
+      debugPrint('📍 Loading target locations...');
       // FIX: For putaway operations, exclude receiving area from target locations
       final targetLocations = await _repo.getTargetLocations(excludeReceivingArea: true);
+      debugPrint('📍 Found ${targetLocations.length} target locations');
       if (!mounted) return;
 
       setState(() {
         _availableTargetLocations = targetLocations;
       });
 
+      debugPrint('📦 Loading containers...');
       await _loadAllContainers();
+      debugPrint('📦 Found ${_allContainers.length} containers');
       if (!mounted) return;
 
       // GÜNCELLEME: Eğer hiç konteyner yoksa geri dön
       if (_allContainers.isEmpty) {
+        debugPrint('⚠️ No containers found, returning to previous screen');
         if (mounted) {
           _showErrorSnackBar('order_transfer.all_items_transferred'.tr());
           Navigator.of(context).pop(true);
@@ -438,6 +476,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('🎨 OrderTransferScreen build() called for order: ${widget.order.id}');
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
@@ -446,7 +485,16 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       bottomNavigationBar: isKeyboardVisible ? null : _buildBottomBar(),
       body: SafeArea(
         child: _isLoadingInitialData
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text('Loading order ${widget.order.id}...'),
+                  ],
+                ),
+              )
             : GestureDetector(
                 onTap: () => FocusScope.of(context).unfocus(),
                 child: AnimatedPadding(

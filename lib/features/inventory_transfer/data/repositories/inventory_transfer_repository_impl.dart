@@ -284,6 +284,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             sourceWhereArgs.add(item.palletId);
           }
           
+          // KRITIK FIX: Putaway işlemleri (receiving → available) için siparis_id filtresi
+          if (sourceLocationId == null || sourceLocationId == 0) {
+            // Bu receiving area'dan putaway işlemi, siparis_id ile filtrelemek gerekli
+            if (header.siparisId != null) {
+              sourceWhereClause += ' AND siparis_id = ?';
+              sourceWhereArgs.add(header.siparisId);
+            }
+          }
+          
           final sourceStockQuery = await txn.query(
             'inventory_stock',
             where: sourceWhereClause,
@@ -308,8 +317,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: -item.quantity,
             palletId: item.palletId,
             status: (sourceLocationId == null) ? 'receiving' : 'available',
-            siparisIdForAddition: null, // Azaltma için null
-            goodsReceiptIdForAddition: null, // Azaltma için null
+            siparisIdForAddition: sourceSiparisId, // KRITIK FIX: Receiving'de siparis_id ile match et
+            goodsReceiptIdForAddition: sourceGoodsReceiptId, // KRITIK FIX: Receiving'de goods_receipt_id ile match et
             expiryDateForAddition: item.expiryDate,
           );
 
@@ -324,8 +333,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: item.quantity,
             palletId: targetPalletId,
             status: 'available',
-            siparisIdForAddition: sourceSiparisId, // YENİ: Kaynaktan gelen ID'yi aktar
-            goodsReceiptIdForAddition: sourceGoodsReceiptId, // YENİ: Kaynaktan gelen ID'yi aktar
+            siparisIdForAddition: null, // KRITIK FIX: 'available' durumunda siparis_id = null - konsolidasyon için
+            goodsReceiptIdForAddition: null, // KRITIK FIX: 'available' durumunda goods_receipt_id = null - konsolidasyon için
             expiryDateForAddition: item.expiryDate,
           );
 
@@ -446,6 +455,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   Future<List<TransferableContainer>> getTransferableContainers(int? locationId, {int? orderId, String? deliveryNoteNumber}) async {
+    debugPrint('🔍 getTransferableContainers called with orderId: $orderId, deliveryNoteNumber: $deliveryNoteNumber');
     final db = await dbHelper.database;
     final isPutaway = orderId != null || deliveryNoteNumber != null;
 
@@ -453,8 +463,137 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     if (isPutaway) {
       if (orderId != null) {
-        // Order-based putaway
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'siparis_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [orderId, 'receiving']);
+        debugPrint('📦 Processing order-based putaway for order: $orderId');
+        
+        // Önce order için inventory_stock kayıtları var mı kontrol edelim
+        final stockCheck = await db.rawQuery('''
+          SELECT COUNT(*) as count 
+          FROM inventory_stock 
+          WHERE stock_status = 'receiving' 
+            AND siparis_id = ?
+        ''', [orderId]);
+        debugPrint('📊 Found ${stockCheck.first['count']} inventory_stock records for order $orderId');
+        
+        // Goods receipt items kontrol
+        final grcCheck = await db.rawQuery('''
+          SELECT COUNT(*) as count 
+          FROM goods_receipt_items gri
+          JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id 
+          WHERE gr.siparis_id = ?
+        ''', [orderId]);
+        debugPrint('📊 Found ${grcCheck.first['count']} goods_receipt_items for order $orderId');
+        
+        // Quantity calculation debug - her inventory_stock kaydı için detayları görelim
+        final quantityDebug = await db.rawQuery('''
+          SELECT 
+            i.id,
+            i.urun_key,
+            i.quantity as stock_quantity,
+            -- Bu sipariş için kabul edilen toplam miktar
+            (SELECT COALESCE(SUM(gri.quantity_received), 0)
+             FROM goods_receipt_items gri
+             JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+             WHERE gr.siparis_id = ?
+               AND gri.urun_key = i.urun_key
+               AND (gri.birim_key = i.birim_key OR gri.birim_key IS NULL OR i.birim_key IS NULL)
+               AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
+               AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+            ) as received_quantity,
+            -- Bu siparişten transfer edilmiş miktar
+            (SELECT COALESCE(SUM(it.quantity), 0)
+             FROM inventory_transfers it
+             WHERE it.urun_key = i.urun_key
+               AND it.siparis_id = ?
+               AND it.from_location_id IS NULL
+               AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+            ) as transferred_quantity
+          FROM inventory_stock i
+          WHERE i.stock_status = 'receiving'
+            AND i.siparis_id = ?
+        ''', [orderId, orderId, orderId]);
+        
+        debugPrint('🔍 Quantity calculation debug for order $orderId:');
+        for (final row in quantityDebug) {
+          final received = row['received_quantity'] as num? ?? 0;
+          final transferred = row['transferred_quantity'] as num? ?? 0;
+          final remaining = received - transferred;
+          debugPrint('  📦 Product ${row['urun_key']}: received=$received, transferred=$transferred, remaining=$remaining');
+        }
+        
+        // Direct inventory_transfers table check
+        final transfersCheck = await db.rawQuery('''
+          SELECT * FROM inventory_transfers 
+          WHERE urun_key = '614090' 
+            AND siparis_id = ?
+            AND from_location_id IS NULL
+        ''', [orderId]);
+        debugPrint('🔍 Direct inventory_transfers check for order $orderId:');
+        debugPrint('  📦 Found ${transfersCheck.length} transfer records');
+        for (final transfer in transfersCheck) {
+          debugPrint('  📦 Transfer: id=${transfer['id']}, quantity=${transfer['quantity']}, date=${transfer['transfer_date']}');
+        }
+        
+        // Order-based putaway - inventory_stock'tan al ama quantity'yi goods_receipt_items'dan hesapla
+        // Bu hibrit yaklaşım hem consolidation'ı hem de doğru miktarları sağlar
+        stockMaps = await db.rawQuery('''
+          SELECT 
+            i.id,
+            i.urun_key,
+            i.birim_key,
+            i.location_id,
+            i.pallet_barcode,
+            i.expiry_date,
+            i.stock_status,
+            i.siparis_id,
+            i.goods_receipt_id,
+            -- Bu sipariş için kabul edilen toplam miktar
+            (SELECT COALESCE(SUM(gri.quantity_received), 0)
+             FROM goods_receipt_items gri
+             JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+             WHERE gr.siparis_id = ?
+               AND gri.urun_key = i.urun_key
+               AND (gri.birim_key = i.birim_key OR gri.birim_key IS NULL OR i.birim_key IS NULL)
+               AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
+               AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+            ) -
+            -- Bu siparişten transfer edilmiş miktar
+            (SELECT COALESCE(SUM(it.quantity), 0)
+             FROM inventory_transfers it
+             WHERE it.urun_key = i.urun_key
+               AND it.siparis_id = ?
+               AND it.from_location_id IS NULL
+               AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+            ) as quantity
+          FROM inventory_stock i
+          WHERE i.stock_status = 'receiving'
+            AND i.siparis_id = ?
+            AND EXISTS (
+              SELECT 1 FROM goods_receipt_items gri
+              JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+              WHERE gr.siparis_id = ?
+                AND gri.urun_key = i.urun_key
+            )
+            AND ((SELECT COALESCE(SUM(gri.quantity_received), 0)
+                 FROM goods_receipt_items gri
+                 JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+                 WHERE gr.siparis_id = ?
+                   AND gri.urun_key = i.urun_key
+                   AND (gri.birim_key = i.birim_key OR gri.birim_key IS NULL OR i.birim_key IS NULL)
+                   AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
+                   AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+                ) -
+                (SELECT COALESCE(SUM(it.quantity), 0)
+                 FROM inventory_transfers it
+                 WHERE it.urun_key = i.urun_key
+                   AND it.siparis_id = ?
+                   AND it.from_location_id IS NULL
+                   AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+                )) > 0
+        ''', [orderId, orderId, orderId, orderId, orderId, orderId]);
+        debugPrint('📦 SQL query returned ${stockMaps.length} stock records');
+        for (final stock in stockMaps) {
+          debugPrint('📦 Stock: id=${stock['id']}, urun_key=${stock['urun_key']}, quantity=${stock['quantity']}, status=${stock['stock_status']}, siparis_id=${stock['siparis_id']}');
+        }
       } else if (deliveryNoteNumber != null) {
         // Free receipt putaway - find stocks by delivery note
         final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
@@ -507,14 +646,35 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     for (final stock in stockMaps) {
       final productId = stock['urun_key'] as String;
-      final productInfo = productDetails[productId];
+      var productInfo = productDetails[productId];
       if (productInfo == null) continue;
+      
+      // KRITIK FIX: inventory_stock'taki birim_key değerini kullan
+      final stockBirimKey = stock['birim_key'] as String?;
+      if (stockBirimKey != null) {
+        // ProductInfo'nun birimInfo'sunu güncelle
+        final updatedBirimInfo = Map<String, dynamic>.from(productInfo.birimInfo ?? {});
+        updatedBirimInfo['birim_key'] = stockBirimKey;
+        
+        productInfo = ProductInfo(
+          id: productInfo.id,
+          productKey: productInfo.productKey,
+          name: productInfo.name,
+          stockCode: productInfo.stockCode,
+          isActive: productInfo.isActive,
+          birimInfo: updatedBirimInfo,
+          barkodInfo: productInfo.barkodInfo,
+          isOutOfOrder: productInfo.isOutOfOrder,
+          quantityReceived: productInfo.quantityReceived,
+        );
+      }
 
       final pallet = stock['pallet_barcode'] as String?;
       final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date'].toString()) : null;
       final containerId = pallet ?? 'box_${productInfo.stockCode}';
 
-      final groupingKey = containerId;
+      // KRITIK FIX: Aynı ürünü farklı barkodlarla gruplamak için urun_key kullan
+      final groupingKey = isPutaway ? containerId : 'product_${productInfo.productKey}';
 
       aggregatedItems.putIfAbsent(groupingKey, () => {});
 
@@ -715,6 +875,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         whereClause += ' AND pallet_barcode = ?';
         whereArgs.add(palletId);
       }
+      
+      // KRITIK FIX: Receiving durumunda siparis_id ile match et
+      if (status == 'receiving' && siparisIdForAddition != null) {
+        whereClause += ' AND siparis_id = ?';
+        whereArgs.add(siparisIdForAddition);
+      }
+      
+      // KRITIK FIX: Receiving durumunda goods_receipt_id ile match et
+      if (status == 'receiving' && goodsReceiptIdForAddition != null) {
+        whereClause += ' AND goods_receipt_id = ?';
+        whereArgs.add(goodsReceiptIdForAddition);
+      }
 
       debugPrint("DEBUG: SQL sorgusu: $whereClause");
       debugPrint("DEBUG: SQL parametreleri: $whereArgs");
@@ -768,7 +940,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
       }
     } else {
-      final expiryDateStr = expiryDateForAddition?.toIso8601String();
+      // KRITIK FIX: expiry_date'i normalize et - konsolidasyon için consistent format gerekli
+      final expiryDateStr = expiryDateForAddition != null 
+        ? DateTime(expiryDateForAddition.year, expiryDateForAddition.month, expiryDateForAddition.day).toIso8601String().split('T')[0]
+        : null;
 
       // NULL-safe existing stock sorgusu
       String existingWhereClause = 'urun_key = ? AND stock_status = ?';
@@ -806,6 +981,41 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         existingWhereArgs.add(expiryDateStr);
       }
 
+      // KRITIK FIX: 'available' durumunda konsolidasyon için siparis_id ve goods_receipt_id kontrolü
+      if (status == 'available') {
+        // Available durumunda siparis_id=null olan kayıtları konsolide et
+        if (siparisIdForAddition == null) {
+          existingWhereClause += ' AND siparis_id IS NULL';
+        } else {
+          existingWhereClause += ' AND siparis_id = ?';
+          existingWhereArgs.add(siparisIdForAddition);
+        }
+        
+        // Available durumunda goods_receipt_id=null olan kayıtları konsolide et  
+        if (goodsReceiptIdForAddition == null) {
+          existingWhereClause += ' AND goods_receipt_id IS NULL';
+        } else {
+          existingWhereClause += ' AND goods_receipt_id = ?';
+          existingWhereArgs.add(goodsReceiptIdForAddition);
+        }
+      } else if (status == 'receiving') {
+        // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et - farklı siparişler ayrı tutulmalı
+        if (siparisIdForAddition == null) {
+          existingWhereClause += ' AND siparis_id IS NULL';
+        } else {
+          existingWhereClause += ' AND siparis_id = ?';
+          existingWhereArgs.add(siparisIdForAddition);
+        }
+        
+        // Receiving durumunda goods_receipt_id kontrolü de yapılmalı
+        if (goodsReceiptIdForAddition == null) {
+          existingWhereClause += ' AND goods_receipt_id IS NULL';
+        } else {
+          existingWhereClause += ' AND goods_receipt_id = ?';
+          existingWhereArgs.add(goodsReceiptIdForAddition);
+        }
+      }
+
       final existing = await txn.query(
         'inventory_stock',
         where: existingWhereClause,
@@ -816,6 +1026,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (existing.isNotEmpty) {
         final currentQty = (existing.first['quantity'] as num).toDouble();
         final newQty = currentQty + quantityChange;
+        debugPrint('🔄 KONSOLIDASYON: Mevcut stok bulundu ID=${existing.first['id']}, quantity=$currentQty → $newQty');
         await txn.update(
           'inventory_stock',
           {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
@@ -823,6 +1034,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           whereArgs: [existing.first['id']],
         );
       } else {
+        debugPrint('➕ YENİ STOK: Konsolidasyon için eşleşme bulunamadı, yeni kayıt oluşturuluyor');
+        debugPrint('   Parametreler: status=$status, location=$locationId, siparis=$siparisIdForAddition, quantity=$quantityChange');
         await txn.insert(DbTables.inventoryStock, {
           'urun_key': productId,
           'birim_key': birimKey,

@@ -564,8 +564,15 @@ class DatabaseHelper {
               queryArgs.add(sanitizedStock['expiry_date']);
             }
             
+            // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et
+            // 'available' durumunda siparis_id'yi ignore et (konsolidasyon için)
+            final stockStatus = sanitizedStock['stock_status'] as String?;
+            if (stockStatus == 'receiving' && sanitizedStock['siparis_id'] != null) {
+              existingStockQuery.write(' AND siparis_id = ?');
+              queryArgs.add(sanitizedStock['siparis_id']);
+            }
+            
             // KRITIK FIX: goods_receipt_id'yi IGNORE et - sadece core alanlarla birleştir
-            // Aynı ürün+birim+lokasyon+pallet+expiry = tek kayıt olmalı (goods_receipt_id görmezden gel)
             
             final existingStock = await txn.query(
               'inventory_stock',
@@ -842,7 +849,11 @@ class DatabaseHelper {
           newRecord.remove('urun_id');
         }
         
-        // birim_key is already in the correct format from server, just keep it
+        // KRITIK FIX: birim_key field handling - ensure it's properly saved
+        if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
+          newRecord['birim_key'] = newRecord['birim_key'].toString();
+          debugPrint("SYNC DEBUG: birim_key processed: ${newRecord['birim_key']}");
+        }
         
         // free değerini integer olarak kaydet
         if (newRecord.containsKey('free')) {
@@ -2111,7 +2122,7 @@ class DatabaseHelper {
 
     // Temizlenmiş verilerle sorgula
     const sql = '''
-      SELECT DISTINCT
+      SELECT 
         gr.goods_receipt_id,
         gr.delivery_note_number,
         gr.receipt_date,
@@ -2124,7 +2135,7 @@ class DatabaseHelper {
       LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id AND ist.stock_status = 'receiving'
       WHERE gr.siparis_id IS NULL
         AND ist.id IS NOT NULL
-      GROUP BY gr.delivery_note_number  -- Group by delivery_note to ensure uniqueness
+      GROUP BY gr.delivery_note_number, gr.goods_receipt_id, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
       HAVING gr.goods_receipt_id = MIN(gr.goods_receipt_id)  -- Keep only the first receipt for each delivery note
       ORDER BY gr.receipt_date DESC
     ''';
