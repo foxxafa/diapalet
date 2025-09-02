@@ -638,6 +638,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
         contents = container.items.map((transferableItem) => ProductItem(
           productKey: transferableItem.product.key,
+          birimKey: transferableItem.product.birimKey, // KRITIK FIX: birimKey eklendi
           name: transferableItem.product.name,
           productCode: transferableItem.product.stockCode,
           currentQuantity: transferableItem.quantity,
@@ -680,6 +681,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
           productKey: product.key, // _key değeri kullanılıyor
+          birimKey: product.birimKey, // KRITIK FIX: birimKey eklendi
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,

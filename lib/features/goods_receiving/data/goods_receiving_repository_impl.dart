@@ -224,7 +224,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'stock_status': stockStatus,
         'siparis_id': siparisId,
         'expiry_date': expiryDate,
-        'goods_receipt_id': goodsReceiptId
+        // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
       });
     }
   }

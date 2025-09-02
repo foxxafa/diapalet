@@ -145,24 +145,42 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   void _clearProductControllers() {
-    // First clear the products list to prevent widgets from using the nodes
-    _productsInContainer.clear();
+    // First clear maps to prevent widgets from accessing disposed nodes
+    final controllersToDispose = Map<String, TextEditingController>.from(_productQuantityControllers);
+    final focusNodesToDispose = Map<String, FocusNode>.from(_productQuantityFocusNodes);
     
-    // Then dispose controllers and focus nodes
-    _productQuantityControllers.forEach((_, controller) => controller.dispose());
-    _productQuantityFocusNodes.forEach((_, focusNode) {
-      try {
-        if (focusNode.hasFocus) {
-          focusNode.unfocus();
-        }
-        focusNode.dispose();
-      } catch (e) {
-        // Focus node might already be disposed, ignore the error
-      }
-    });
-    
+    // Clear maps immediately to prevent widget access
     _productQuantityControllers.clear();
     _productQuantityFocusNodes.clear();
+    
+    // Clear products list to trigger widget rebuild without disposed nodes
+    if (mounted) {
+      setState(() {
+        _productsInContainer.clear();
+      });
+    }
+    
+    // Then dispose controllers and focus nodes asynchronously
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controllersToDispose.forEach((_, controller) {
+        try {
+          controller.dispose();
+        } catch (e) {
+          // Already disposed, ignore
+        }
+      });
+      
+      focusNodesToDispose.forEach((_, focusNode) {
+        try {
+          if (focusNode.hasFocus) {
+            focusNode.unfocus();
+          }
+          focusNode.dispose();
+        } catch (e) {
+          // Already disposed, ignore
+        }
+      });
+    });
   }
 
   Future<void> _loadInitialData() async {
@@ -375,6 +393,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       final products = container.items.map((item) {
         return ProductItem(
           productKey: item.product.key,
+          birimKey: item.product.birimKey, // KRITIK FIX: birimKey eklendi
           name: item.product.name,
           productCode: item.product.stockCode,
           currentQuantity: item.quantity,
@@ -653,6 +672,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
           productKey: product.key, // _key değeri kullanılıyor
+          birimKey: product.birimKey, // KRITIK FIX: birimKey eklendi
           productName: product.name,
           productCode: product.productCode,
           quantity: qty,
@@ -983,27 +1003,29 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                           return null;
                         },
                         onFieldSubmitted: (value) {
-                          if (!mounted) return;
+                          if (!mounted || _productQuantityFocusNodes.isEmpty) return;
                           
-                          final productIds = _productQuantityFocusNodes.keys.toList();
-                          final currentIndex = productIds.indexOf(product.key);
-                          if (currentIndex < productIds.length - 1) {
-                            final nextFocusNode = _productQuantityFocusNodes[productIds[currentIndex + 1]];
-                            try {
-                              if (nextFocusNode != null) {
+                          try {
+                            final productIds = _productQuantityFocusNodes.keys.toList();
+                            final currentIndex = productIds.indexOf(product.key);
+                            if (currentIndex >= 0 && currentIndex < productIds.length - 1) {
+                              final nextKey = productIds[currentIndex + 1];
+                              final nextFocusNode = _productQuantityFocusNodes[nextKey];
+                              if (nextFocusNode != null && !nextFocusNode.hasListeners == false) {
                                 nextFocusNode.requestFocus();
                               }
-                            } catch (e) {
-                              // Focus node might be disposed, ignore
-                            }
-                          } else {
-                            try {
-                              if (mounted) {
-                                _targetLocationFocusNode.requestFocus();
+                            } else {
+                              // Last item, focus on target location
+                              try {
+                                if (mounted) {
+                                  _targetLocationFocusNode.requestFocus();
+                                }
+                              } catch (e) {
+                                // Focus node might be disposed, ignore
                               }
-                            } catch (e) {
-                              // Focus node might be disposed, ignore
                             }
+                          } catch (e) {
+                            // Focus node disposed or other error, ignore
                           }
                         },
                       ),

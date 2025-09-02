@@ -418,7 +418,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       debugPrint("WARNING: Warehouse name not found for code $warehouseCode, getting all orders");
     }
 
-    // FIX: Only show orders that have 'receiving' stock items available for put-away
+    // FIX: Show orders that have either inventory_stock OR goods_receipt_items for put-away
     final maps = await db.rawQuery('''
       SELECT DISTINCT
         o.id,
@@ -431,10 +431,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
-      INNER JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = 'receiving'
+      LEFT JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = 'receiving' AND i.quantity > 0
+      LEFT JOIN goods_receipts gr ON gr.siparis_id = o.id
+      LEFT JOIN goods_receipt_items gri ON gri.receipt_id = gr.goods_receipt_id AND gri.quantity_received > 0
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.status IN (0, 1, 2, 3)
+        AND (i.id IS NOT NULL OR gri.id IS NOT NULL)
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.created_at DESC
     ''', [warehouseName ?? 'N/A']);
@@ -475,10 +478,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     final productIds = stockMaps.map((e) => e['urun_key'] as String).toSet();
+    
     final productsQuery = await db.rawQuery('''
       SELECT 
         u.*,
-        MAX(bark.barkod) as barkod
+        MAX(bark.barkod) as barkod,
+        b._key as birim_key,
+        b.birimadi as birimadi,
+        b.birimkod as birimkod
       FROM urunler u
       LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
@@ -491,7 +498,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (productMap['barkod'] != null) {
         productMap['barkod_info'] = {'barkod': productMap['barkod']};
       }
-      productDetails[p['_key'] as String] = ProductInfo.fromDbMap(productMap);
+      
+      final productInfo = ProductInfo.fromDbMap(productMap);
+      productDetails[p['_key'] as String] = productInfo;
     }
 
     final Map<String, Map<String, TransferableItem>> aggregatedItems = {};

@@ -564,6 +564,9 @@ class DatabaseHelper {
               queryArgs.add(sanitizedStock['expiry_date']);
             }
             
+            // KRITIK FIX: goods_receipt_id'yi IGNORE et - sadece core alanlarla birleştir
+            // Aynı ürün+birim+lokasyon+pallet+expiry = tek kayıt olmalı (goods_receipt_id görmezden gel)
+            
             final existingStock = await txn.query(
               'inventory_stock',
               where: existingStockQuery.toString(),
@@ -651,6 +654,9 @@ class DatabaseHelper {
 
         // inventory_stock sync zaten yukarıda (500-591 satırları) yapıldı
         // Bu duplicate sync kodunu kaldırdık - sonsuz döngü riskini önler
+        
+        // KRITIK FIX: Mevcut NULL birim_key kayıtlarını goods_receipt_items'dan güncelle
+        await _fixNullBirimKeyInInventoryStock(txn);
 
         // Diğer tablolar için eski mantık (full replacement)
         const deletionOrder = [
@@ -818,7 +824,15 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
-        // birim_key is already in the correct format from server, just keep it
+        
+        // KRITIK FIX: birim_key alanını sunucudan gelen veriyle güncelle
+        // Eğer sunucudan gelen kayıtta birim_key varsa, onu kullan
+        if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
+          // birim_key değeri korunuyor - sunucudan gelen değer doğru
+        } else {
+          // Eğer birim_key yoksa, log at (bu durumda hata var)
+          print('WARNING: inventory_stock kaydında birim_key eksik: ${newRecord}');
+        }
         break;
 
       case 'goods_receipt_items':
@@ -2028,6 +2042,7 @@ class DatabaseHelper {
               'pallet_barcode': item['pallet_barcode'],
               'stock_status': 'receiving',
               'expiry_date': item['expiry_date'],
+              'birim_key': item['birim_key'], // KRITIK FIX: birim_key alanı eklendi
               'created_at': DateTime.now().toIso8601String(),
               'updated_at': DateTime.now().toIso8601String(),
             });
@@ -2424,5 +2439,53 @@ class DatabaseHelper {
     }
 
     _database = null;
+  }
+  
+  /// KRITIK FIX: Mevcut inventory_stock kayıtlarındaki NULL birim_key değerlerini 
+  /// goods_receipt_items tablosundan alarak günceller
+  Future<void> _fixNullBirimKeyInInventoryStock(Transaction txn) async {
+    try {
+      // NULL birim_key'li inventory_stock kayıtlarını bul
+      final nullBirimKeyStocks = await txn.query(
+        'inventory_stock',
+        where: 'birim_key IS NULL'
+      );
+      
+      if (nullBirimKeyStocks.isEmpty) {
+        debugPrint("✅ Tüm inventory_stock kayıtlarında birim_key mevcut");
+        return;
+      }
+      
+      debugPrint("🔧 ${nullBirimKeyStocks.length} adet NULL birim_key kaydı bulundu, düzeltiliyor...");
+      
+      int fixedCount = 0;
+      for (final stock in nullBirimKeyStocks) {
+        // Bu stock için goods_receipt_items'dan birim_key al
+        final goodsReceiptItems = await txn.query(
+          'goods_receipt_items',
+          where: 'urun_key = ? AND quantity_received = ?',
+          whereArgs: [stock['urun_key'], stock['quantity']],
+          limit: 1
+        );
+        
+        if (goodsReceiptItems.isNotEmpty) {
+          final birimKey = goodsReceiptItems.first['birim_key'];
+          if (birimKey != null) {
+            await txn.update(
+              'inventory_stock',
+              {'birim_key': birimKey},
+              where: 'id = ?',
+              whereArgs: [stock['id']]
+            );
+            fixedCount++;
+          }
+        }
+      }
+      
+      debugPrint("✅ $fixedCount adet inventory_stock kaydının birim_key değeri güncellendi");
+      
+    } catch (e) {
+      debugPrint("❌ birim_key fix işleminde hata: $e");
+    }
   }
 }

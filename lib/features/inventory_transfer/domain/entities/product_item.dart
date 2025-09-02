@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 @immutable
 class ProductItem {
   final String productKey; // _key değeri
+  final String? birimKey; // Birim _key değeri
   final String name;
   final String productCode;
   final String? barcode;
@@ -12,6 +13,7 @@ class ProductItem {
 
   const ProductItem({
     required this.productKey,
+    this.birimKey,
     required this.name,
     required this.productCode,
     this.barcode,
@@ -30,6 +32,7 @@ class ProductItem {
     final dynamic qtyValue = json['currentQuantity'] ?? json['quantity'];
     final dynamic expiryValue = json['expiryDate'];
     final dynamic keyValue = json['_key'] ?? json['productKey'];
+    final dynamic birimKeyValue = json['birim_key'];
 
     num parseToNum(dynamic val) {
       if (val == null) return 0;
@@ -40,6 +43,7 @@ class ProductItem {
 
     return ProductItem(
       productKey: keyValue?.toString() ?? '',
+      birimKey: birimKeyValue?.toString(),
       name: nameValue?.toString() ?? '',
       productCode: codeValue?.toString() ?? '',
       barcode: barcodeValue?.toString(),
@@ -51,6 +55,7 @@ class ProductItem {
   factory ProductItem.fromMap(Map<String, dynamic> map) {
     return ProductItem(
       productKey: map['_key']?.toString() ?? map['productKey']?.toString() ?? '',
+      birimKey: map['birim_key']?.toString(),
       name: (map['name'] ?? '').toString(),
       productCode: (map['code'] ?? '').toString(),
       barcode: map['barcode']?.toString(),
@@ -62,6 +67,7 @@ class ProductItem {
   Map<String, dynamic> toJson() {
     return {
       'productKey': productKey,
+      'birim_key': birimKey,
       'name': name,
       'productCode': productCode,
       'barcode': barcode,

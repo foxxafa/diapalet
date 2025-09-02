@@ -419,7 +419,7 @@ class TerminalController extends Controller
                 $stockStatus, // stock_status
                 $siparisId, // siparis_id
                 $item['expiry_date'] ?? null, // expiry_date
-                $receiptId // goods_receipt_id
+                null // KRITIK FIX: goods_receipt_id NULL - consolidation için
             );
         }
 
@@ -605,7 +605,7 @@ class TerminalController extends Controller
                     // GÜNCELLEME: Null yerine kaynak stoktaki ID'leri gönderiyoruz
                     $portion['siparis_id'],
                     $portion['expiry'],
-                    $portion['goods_receipt_id']
+                    null // KRITIK FIX: goods_receipt_id NULL - consolidation için
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
@@ -732,6 +732,8 @@ class TerminalController extends Controller
             }
         } else {
             // --- Stok Ekleme Mantığı ---
+            // FIX: goods_receipt_id'yi IGNORE et - sadece core alanlarla birleştir
+            // Aynı ürün+birim+lokasyon+pallet+expiry = tek kayıt olmalı
             $query = new Query();
             $query->from('inventory_stock')
                   ->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
@@ -740,6 +742,8 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'location_id', $locationId);
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
+            
+            // KRITIK FIX: goods_receipt_id'yi dahil ETME - bu duplicate soruna neden oluyor!
 
             $stock = $query->one($db);
 
@@ -763,6 +767,7 @@ class TerminalController extends Controller
                     ->exists($db);
                     
                 if (!$productExists) {
+                    Yii::error("CRITICAL ERROR: urun_key '{$urunKey}' does not exist in urunler table", __METHOD__);
                     throw new \Exception("Cannot insert inventory_stock: urun_key '{$urunKey}' does not exist in urunler table");
                 }
                 
@@ -799,7 +804,7 @@ class TerminalController extends Controller
                     'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus, 
                     'expiry_date' => $expiryDate,
-                    'goods_receipt_id' => $goodsReceiptId,
+                    // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
                     'StokKodu' => $stokKodu,
                     'shelf_code' => $shelfCode,
                     'sip_fisno' => $sipFisno,
@@ -1060,37 +1065,43 @@ class TerminalController extends Controller
 
     private function getInventoryStockCount($warehouseId, $timestamp = null) 
     {
-        // Kompleks stok sorgusu - location bazlı ve goods_receipt bazlı
-        $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
-        $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['warehouse_id' => $warehouseId])->column();
+        // KRITIK REFACTOR: Sadece warehouse ile ilgili inventory_stock kayıtlarını say
+        // Location'ı olan kayıtlar (available status) + receiving status'lu kayıtlar
         
-        // DEBUG: Count alma sorununu tespit et
+        $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
+        
         Yii::info("DEBUG getInventoryStockCount - warehouse_id: $warehouseId", __METHOD__);
         Yii::info("DEBUG locationIds count: " . count($locationIds), __METHOD__);
-        Yii::info("DEBUG receiptIds count: " . count($receiptIds), __METHOD__);
-        
-        // DEBUG: Mevcut receipt 71'i kontrol et
-        $receipt71 = (new Query())
-            ->select(['goods_receipt_id', 'warehouse_id', 'delivery_note_number'])
-            ->from('goods_receipts')
-            ->where(['goods_receipt_id' => 71])
-            ->one();
-        Yii::info("DEBUG Receipt 71: " . json_encode($receipt71), __METHOD__);
         
         $query = (new Query())->from('inventory_stock');
         $conditions = ['or'];
         
+        // 1. Available stock'lar (shelfs'te olan)
         if (!empty($locationIds)) {
             $conditions[] = ['in', 'location_id', $locationIds];
             Yii::info("DEBUG: location_id condition added", __METHOD__);
         }
-        if (!empty($receiptIds)) {
+        
+        // 2. Receiving stock'lar (mal kabul alanında, location_id NULL)
+        // Sipariş ID'si bu warehouse'dan olan siparişler
+        $warehouseOrderIds = (new Query())
+            ->select('id')
+            ->from('siparisler') 
+            ->where(['_key_sis_depo_source' => (new Query())
+                ->select('_key')
+                ->from('warehouses')
+                ->where(['id' => $warehouseId])
+            ])
+            ->column();
+            
+        if (!empty($warehouseOrderIds)) {
             $conditions[] = [
                 'and',
                 ['is', 'location_id', new \yii\db\Expression('NULL')],
-                ['in', 'goods_receipt_id', $receiptIds]
+                ['=', 'stock_status', 'receiving'],
+                ['in', 'siparis_id', $warehouseOrderIds]
             ];
-            Yii::info("DEBUG: goods_receipt_id condition added", __METHOD__);
+            Yii::info("DEBUG: receiving stock condition added with " . count($warehouseOrderIds) . " orders", __METHOD__);
         }
         
         Yii::info("DEBUG conditions count: " . count($conditions), __METHOD__);
@@ -1912,25 +1923,37 @@ class TerminalController extends Controller
 
     private function getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit)
     {
+        // Count metodu ile aynı logic kullan
         $locationIds = (new Query())
             ->select('id')
             ->from('shelfs')
             ->where(['warehouse_id' => $warehouseId])
             ->column();
 
-        $allReceiptIds = $this->getReceiptIdsForWarehouse($warehouseId);
-
         $stockConditions = ['or'];
 
+        // 1. Available stock'lar (shelfs'te olan)
         if (!empty($locationIds)) {
             $stockConditions[] = ['in', 'location_id', $locationIds];
         }
-
-        if (!empty($allReceiptIds)) {
+        
+        // 2. Receiving stock'lar - sipariş ID'si warehouse'dan olan
+        $warehouseOrderIds = (new Query())
+            ->select('id')
+            ->from('siparisler') 
+            ->where(['_key_sis_depo_source' => (new Query())
+                ->select('_key')
+                ->from('warehouses')
+                ->where(['id' => $warehouseId])
+            ])
+            ->column();
+            
+        if (!empty($warehouseOrderIds)) {
             $stockConditions[] = [
                 'and',
                 ['is', 'location_id', new \yii\db\Expression('NULL')],
-                ['in', 'goods_receipt_id', $allReceiptIds]
+                ['=', 'stock_status', 'receiving'],
+                ['in', 'siparis_id', $warehouseOrderIds]
             ];
         }
 
@@ -1939,7 +1962,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'urun_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
             ->where($stockConditions);
 
@@ -2100,7 +2123,7 @@ class TerminalController extends Controller
         try {
             // Bu receipt için goods_receipt_items'dan inventory_stock olmayan kayıtları bul
             $receiptItems = (new Query())
-                ->select(['gri.urun_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
+                ->select(['gri.urun_key', 'gri.birim_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
                 ->from(['gri' => 'goods_receipt_items'])
                 ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
                 ->where(['gri.receipt_id' => $receiptId])
@@ -2108,11 +2131,11 @@ class TerminalController extends Controller
 
             foreach ($receiptItems as $item) {
                 // Bu kombinasyon için inventory_stock var mı kontrol et
+                // KRITIK FIX: goods_receipt_id kullanma - consolidation için
                 $existingStock = (new Query())
                     ->from('inventory_stock')
                     ->where([
                         'urun_key' => $item['urun_key'],
-                        'goods_receipt_id' => $receiptId,
                         'stock_status' => 'receiving'
                     ])
                     ->exists($db);
@@ -2121,9 +2144,10 @@ class TerminalController extends Controller
                     // Eksik inventory_stock'ı oluştur
                     $db->createCommand()->insert('inventory_stock', [
                         'urun_key' => $item['urun_key'],
+                        'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
                         'location_id' => null,
                         'siparis_id' => $item['siparis_id'],
-                        'goods_receipt_id' => $receiptId,
+                        // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
                         'quantity' => $item['quantity_received'],
                         'pallet_barcode' => $item['pallet_barcode'],
                         'stock_status' => 'receiving',
@@ -2161,10 +2185,10 @@ class TerminalController extends Controller
 
             // Bu receipt'lere ait goods_receipt_items'dan inventory_stock olmayan kayıtları bul
             $missingStocks = (new Query())
-                ->select(['gri.receipt_id', 'gri.urun_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
+                ->select(['gri.receipt_id', 'gri.urun_key', 'gri.birim_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
                 ->from(['gri' => 'goods_receipt_items'])
                 ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
-                ->leftJoin(['ist' => 'inventory_stock'], 'ist.goods_receipt_id = gri.receipt_id AND ist.urun_key = gri.urun_key AND ist.stock_status = \'receiving\'')
+                ->leftJoin(['ist' => 'inventory_stock'], 'ist.urun_key = gri.urun_key AND ist.stock_status = \'receiving\'')
                 ->where(['in', 'gri.receipt_id', $receipts])
                 ->andWhere(['ist.id' => null]) // LEFT JOIN ile inventory_stock olmayan kayıtları bul
                 ->all($db);
@@ -2173,9 +2197,10 @@ class TerminalController extends Controller
             foreach ($missingStocks as $item) {
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_key' => $item['urun_key'],
+                    'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
                     'location_id' => null,
                     'siparis_id' => $item['siparis_id'],
-                    'goods_receipt_id' => $item['receipt_id'],
+                    // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
                     'quantity' => $item['quantity_received'],
                     'pallet_barcode' => $item['pallet_barcode'],
                     'stock_status' => 'receiving',
