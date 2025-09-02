@@ -704,6 +704,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       ),
       items: _addedItems.map((draft) => GoodsReceiptItemPayload(
         productId: draft.product.key, // _key değeri kullanılıyor
+        birimKey: draft.product.birimKey, // Birim _key değeri eklendi
         quantity: draft.quantity,
         palletBarcode: draft.palletBarcode,
         barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
@@ -1220,6 +1221,7 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                 'birimadi': selectedUnit['birimadi'],
                 'birimkod': selectedUnit['birimkod'],
                 'barkod': selectedUnit['barkod'],
+                'birim_key': selectedUnit['birim_key'], // Birim anahtarı eklendi
                 '_key': widget.product.productKey,
                 'UrunId': widget.product.id,
                 'UrunAdi': widget.product.name,

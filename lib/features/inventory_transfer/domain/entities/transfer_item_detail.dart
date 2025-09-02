@@ -2,6 +2,7 @@
 
 class TransferItemDetail {
   final String productKey; // _key değeri
+  final String? birimKey; // Birim _key değeri
   final String productName;
   final String productCode;
   final double quantity;
@@ -20,6 +21,7 @@ class TransferItemDetail {
 
   TransferItemDetail({
     required this.productKey,
+    this.birimKey,
     required this.productName,
     required this.productCode,
     required this.quantity,
@@ -33,6 +35,7 @@ class TransferItemDetail {
   Map<String, dynamic> toApiJson() {
     return {
       'urun_key': productKey, // _key değeri
+      'birim_key': birimKey, // Birim _key değeri
       'quantity': quantity,
       'pallet_id': palletId,
       'expiry_date': expiryDate?.toIso8601String(),

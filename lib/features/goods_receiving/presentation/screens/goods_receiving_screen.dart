@@ -423,7 +423,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (orderItem != null) {
       for (final item in viewModel.addedItems) {
         // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır
-        if (item.product.key == orderItem.productId) {
+        // Sadece sipariş kapsamındaki (free=false) item'ları dahil et
+        if (item.product.key == orderItem.productId && !item.product.isOutOfOrder) {
           alreadyAddedInUI += item.quantity;
         }
       }
@@ -555,11 +556,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     String unitText = '';
     if (viewModel.isOrderBased) {
       try {
-        final orderItem = viewModel.orderItems.firstWhere((oi) => oi.product?.id == item.product.id);
-        unitText = orderItem.unit ?? '';
+        final orderItem = viewModel.orderItems.firstWhere((oi) => oi.productId == item.product.key);
+        // Dropdown'dan seçilen birim adını kullan (displayUnitName)
+        unitText = item.product.displayUnitName ?? orderItem.unit ?? '';
       } catch (e) {
-        // Safe fallback.
+        // Safe fallback - dropdown'dan seçilen birimi kullan
+        unitText = item.product.displayUnitName ?? '';
       }
+    } else {
+      // Sipariş bazlı değilse dropdown'dan seçilen birimi kullan
+      unitText = item.product.displayUnitName ?? '';
     }
 
     // Format expiry date
@@ -1196,7 +1202,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                                   item.quantity.toStringAsFixed(0),
                                   style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 16),
                                 IconButton(
                                   icon: Icon(Icons.delete_outline, color: theme.colorScheme.error, size: 22),
                                   onPressed: () => onItemRemoved(item),
@@ -1244,7 +1250,10 @@ class _FullscreenConfirmationPage extends StatelessWidget {
               if (product == null) return const SizedBox.shrink();
 
               // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
-              final itemsBeingAdded = viewModel.addedItems.where((item) => item.product.key == orderItem.productId).toList();
+              // Sadece sipariş kapsamındaki (free=false) item'ları dahil et
+              final itemsBeingAdded = viewModel.addedItems.where((item) => 
+                item.product.key == orderItem.productId && !item.product.isOutOfOrder
+              ).toList();
               final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
 
               // Tüm sipariş ürünlerini göster (eklenen veya eklenmemiş)
@@ -1688,6 +1697,7 @@ class _OutOfOrderProductInfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
     
     // Quantity information from the database (if available)
     final quantityReceived = productInfo.quantityReceived ?? 0.0;
@@ -1702,6 +1712,7 @@ class _OutOfOrderProductInfoCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header: Product name + stock code (same as order items)
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
@@ -1709,43 +1720,54 @@ class _OutOfOrderProductInfoCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     productInfo.name,
-                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   "(${productInfo.stockCode})", 
-                  style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)
+                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: theme.colorScheme.secondary,
+            const Divider(height: 16),
+            
+            // Content: Already received status + Quantity/Unit info
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'goods_receiving_screen.out_of_order_already_received'.tr(),
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.secondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${quantityReceived.toStringAsFixed(0)} $unit',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold, 
+                              color: colorScheme.secondary
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'goods_receiving_screen.out_of_order_received'.tr(namedArgs: {
-                      'quantity': quantityReceived.toString(),
-                      'unit': unit,
-                    }),
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.secondary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                // Info icon instead of delete (since it's already received)
+                Icon(
+                  Icons.info_outline,
+                  color: colorScheme.secondary,
+                  size: 24,
+                ),
+              ],
             ),
           ],
         ),
@@ -1768,51 +1790,88 @@ class _MemoryOutOfOrderItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+    
+    // Format expiry date if exists
+    String expiryText = '';
+    if (item.expiryDate != null) {
+      expiryText = DateFormat('dd/MM/yyyy').format(item.expiryDate!);
+    }
     
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+            // Header: Product name + stock code (same as order items)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
                     item.product.name,
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "(${item.product.stockCode})", 
-                    style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'Quantity: ${item.quantity.toString()} ${item.product.unitName ?? ''}',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  "(${item.product.stockCode})", 
+                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
+                ),
+              ],
             ),
-            IconButton(
-              onPressed: () => onRemoveItem(item),
-              icon: Icon(
-                Icons.remove_circle_outline,
-                color: theme.colorScheme.error,
-              ),
-              tooltip: 'Remove item',
+            const Divider(height: 16),
+            
+            // Content: Expiry + Quantity/Unit + Delete button
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (item.palletBarcode != null) ...[
+                        Text(
+                          'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!}),
+                          style: textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      Row(
+                        children: [
+                          if (expiryText.isNotEmpty) ...[
+                            Text(
+                              'Expires: $expiryText',
+                              style: textTheme.bodyMedium?.copyWith(color: colorScheme.secondary),
+                            ),
+                          ],
+                          const Spacer(),
+                          Text(
+                            '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold, 
+                              color: colorScheme.primary
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => onRemoveItem(item),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: colorScheme.error,
+                    size: 24,
+                  ),
+                  tooltip: 'common_labels.delete'.tr(),
+                ),
+              ],
             ),
           ],
         ),

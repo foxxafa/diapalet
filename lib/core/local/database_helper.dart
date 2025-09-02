@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 60; // barcode field added to goods_receipt_items
+  static const _databaseVersion = 61; // birim_key added to inventory_stock and goods_receipt_items
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -212,6 +212,7 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY,
           receipt_id INTEGER,
           urun_key TEXT,
+          birim_key TEXT,
           siparis_key TEXT,
           quantity_received REAL,
           pallet_barcode TEXT,
@@ -231,6 +232,7 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           urun_key TEXT NOT NULL,
+          birim_key TEXT,
           location_id INTEGER,
           siparis_id INTEGER,
           goods_receipt_id INTEGER,
@@ -243,7 +245,7 @@ class DatabaseHelper {
           sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT,
-          UNIQUE(urun_key, location_id, pallet_barcode, stock_status, siparis_id, expiry_date, goods_receipt_id),
+          UNIQUE(urun_key, birim_key, location_id, pallet_barcode, stock_status, expiry_date),
           FOREIGN KEY(urun_key) REFERENCES urunler(_key),
           FOREIGN KEY(location_id) REFERENCES shelfs(id),
           FOREIGN KEY(siparis_id) REFERENCES siparisler(id),
@@ -523,12 +525,20 @@ class DatabaseHelper {
             final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
             
             // Inventory stock unique constraint kontrol (composite key)
-            // Simplified NULL-safe WHERE clause to avoid parameter count issues
+            // Updated to include birim_key in unique constraint
             final existingStockQuery = StringBuffer();
             final queryArgs = <dynamic>[];
             
             existingStockQuery.write('urun_key = ? AND stock_status = ?');
             queryArgs.addAll([sanitizedStock['urun_key'], sanitizedStock['stock_status']]);
+            
+            // Handle birim_key
+            if (sanitizedStock['birim_key'] == null) {
+              existingStockQuery.write(' AND birim_key IS NULL');
+            } else {
+              existingStockQuery.write(' AND birim_key = ?');
+              queryArgs.add(sanitizedStock['birim_key']);
+            }
             
             // Handle location_id
             if (sanitizedStock['location_id'] == null) {
@@ -546,28 +556,12 @@ class DatabaseHelper {
               queryArgs.add(sanitizedStock['pallet_barcode']);
             }
             
-            // Handle siparis_id
-            if (sanitizedStock['siparis_id'] == null) {
-              existingStockQuery.write(' AND siparis_id IS NULL');
-            } else {
-              existingStockQuery.write(' AND siparis_id = ?');
-              queryArgs.add(sanitizedStock['siparis_id']);
-            }
-            
             // Handle expiry_date
             if (sanitizedStock['expiry_date'] == null) {
               existingStockQuery.write(' AND expiry_date IS NULL');
             } else {
               existingStockQuery.write(' AND expiry_date = ?');
               queryArgs.add(sanitizedStock['expiry_date']);
-            }
-            
-            // Handle goods_receipt_id
-            if (sanitizedStock['goods_receipt_id'] == null) {
-              existingStockQuery.write(' AND goods_receipt_id IS NULL');
-            } else {
-              existingStockQuery.write(' AND goods_receipt_id = ?');
-              queryArgs.add(sanitizedStock['goods_receipt_id']);
             }
             
             final existingStock = await txn.query(
@@ -824,6 +818,7 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
+        // birim_key is already in the correct format from server, just keep it
         break;
 
       case 'goods_receipt_items':
@@ -832,6 +827,8 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
+        
+        // birim_key is already in the correct format from server, just keep it
         
         // free değerini integer olarak kaydet
         if (newRecord.containsKey('free')) {

@@ -52,6 +52,7 @@ class ProductInfo extends Equatable {
           'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
           'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)
           'sipbirimkey': map['sipbirimkey'], // Sipariş birim anahtarı
+          'birim_key': map['birim_key'], // Birim anahtarı (yeni)
           'source_type': map['source_type'], // 'order' veya 'out_of_order'
         };
       }
@@ -112,6 +113,9 @@ class ProductInfo extends Equatable {
 
   /// Sipariş içi/dışı durumu
   bool get isOrderedUnit => birimInfo?['source_type'] == 'order';
+
+  /// Birim anahtarı (birim_key) - siparişteki birim anahtarı
+  String? get birimKey => birimInfo?['birim_key'] as String?;
 
   /// Nesneyi JSON formatına dönüştürür.
   Map<String, dynamic> toJson() {

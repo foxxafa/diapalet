@@ -393,6 +393,7 @@ class TerminalController extends Controller
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId, 
                 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
+                'birim_key' => $item['birim_key'] ?? null, // Birim _key değeri
                 'quantity_received' => $item['quantity'], 
                 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'barcode' => $item['barcode'] ?? null,
@@ -402,24 +403,24 @@ class TerminalController extends Controller
                 'free' => $isFree, // Siparişteki ürün+birim ise 0, değilse 1
             ])->execute();
 
-            // Backend'de inventory_stock oluştur - mobile sync pending operation kaldırıldığından gerekli
+            // Backend'de inventory_stock oluştur veya güncelle - upsertStock kullanarak birleştir
             $stockStatus = 'receiving'; // Mal kabul aşamasında receiving status
             
-            $db->createCommand()->insert('inventory_stock', [
-                'urun_key' => $urunKey,
-                'location_id' => null, // Mal kabul alanı
-                'siparis_id' => $siparisId,
-                'goods_receipt_id' => $receiptId,
-                'quantity' => $item['quantity'],
-                'pallet_barcode' => $item['pallet_barcode'] ?? null,
-                'stock_status' => $stockStatus,
-                'expiry_date' => $item['expiry_date'] ?? null,
-                'StokKodu' => $stokKodu,
-                'shelf_code' => null, // Mal kabul aşamasında lokasyon yok
-                'sip_fisno' => $sipFisno,
-                'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s')
-            ])->execute();
+            // DEBUG: Birim key kontrolü için log ekle
+            Yii::info("DEBUG upsertStock call - urunKey: $urunKey, birimKey: " . ($item['birim_key'] ?? 'NULL') . ", quantity: " . $item['quantity'], __METHOD__);
+            
+            $this->upsertStock(
+                $db,
+                $urunKey,
+                $item['birim_key'] ?? null, // Birim _key değeri
+                null, // location_id - Mal kabul aşamasında lokasyon yok
+                $item['quantity'], // quantity
+                $item['pallet_barcode'] ?? null, // pallet_barcode
+                $stockStatus, // stock_status
+                $siparisId, // siparis_id
+                $item['expiry_date'] ?? null, // expiry_date
+                $receiptId // goods_receipt_id
+            );
         }
 
         // Eksik inventory_stock kayıtlarını oluştur (geçmiş mal kabulleri için)
@@ -484,6 +485,7 @@ class TerminalController extends Controller
         foreach ($items as $item) {
             // Mobile'dan _key değeri geliyor, direkt kullanılıyor
             $urunKey = $item['urun_key']; // _key değeri
+            $birimKey = $item['birim_key'] ?? null; // Birim _key değeri
             
             // _key'in gerçekten var olduğunu kontrol et ve detaylı hata mesajı ver
             $productInfo = (new Query())
@@ -521,6 +523,7 @@ class TerminalController extends Controller
             $sourceStocksQuery = new Query();
             $sourceStocksQuery->from('inventory_stock')
                 ->where(['urun_key' => $urunKey, 'stock_status' => $sourceStatus]);
+            $this->addNullSafeWhere($sourceStocksQuery, 'birim_key', $birimKey);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
@@ -594,6 +597,7 @@ class TerminalController extends Controller
                 $this->upsertStock(
                     $db,
                     $urunKey, // _key kullanılıyor
+                    $birimKey, // Birim _key değeri
                     $targetLocationId,
                     $portion['qty'],
                     $targetPallet,
@@ -680,7 +684,7 @@ class TerminalController extends Controller
         return ['status' => 'success'];
     }
 
-    private function upsertStock($db, $urunKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
+    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -691,10 +695,9 @@ class TerminalController extends Controller
 
             $availabilityQuery = new Query();
             $availabilityQuery->from('inventory_stock')->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
+            $this->addNullSafeWhere($availabilityQuery, 'birim_key', $birimKey);
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
-            $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
-            $this->addNullSafeWhere($availabilityQuery, 'goods_receipt_id', $goodsReceiptId);
             $totalAvailable = (float)$availabilityQuery->sum('quantity', $db);
 
             if ($totalAvailable < $toDecrement - 0.001) {
@@ -704,10 +707,9 @@ class TerminalController extends Controller
             while ($toDecrement > 0.001) {
                 $query = new Query();
                 $query->from('inventory_stock')->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
+                $this->addNullSafeWhere($query, 'birim_key', $birimKey);
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
-                $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
-                $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
 
                 $stock = $query->one($db);
@@ -734,20 +736,24 @@ class TerminalController extends Controller
             $query->from('inventory_stock')
                   ->where(['urun_key' => $urunKey, 'stock_status' => $stockStatus]);
 
+            $this->addNullSafeWhere($query, 'birim_key', $birimKey);
             $this->addNullSafeWhere($query, 'location_id', $locationId);
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
-            $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
-            $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
 
             $stock = $query->one($db);
 
             if ($stock) {
+                // DEBUG: Stok birleştirme kontrolü
+                Yii::info("DEBUG stock merge - Found existing stock ID: {$stock['id']}, current: {$stock['quantity']}, adding: $qtyChange", __METHOD__);
+                
                 $newQty = (float)($stock['quantity']) + (float)$qtyChange;
                 if ($newQty > 0.001) {
                     $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stock['id']])->execute();
+                    Yii::info("DEBUG stock merge - Updated quantity to: $newQty", __METHOD__);
                 } else {
                     $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
+                    Yii::info("DEBUG stock merge - Deleted zero quantity stock", __METHOD__);
                 }
             } elseif ($qtyChange > 0) {
                 // Verify urun_key exists before inserting
@@ -781,8 +787,12 @@ class TerminalController extends Controller
                     ->where(['id' => $siparisId])
                     ->scalar($db) : null;
                 
+                // DEBUG: Yeni stok kaydı oluşturma
+                Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);
+                
                 $db->createCommand()->insert('inventory_stock', [
                     'urun_key' => $urunKey, 
+                    'birim_key' => $birimKey, // Birim _key değeri
                     'location_id' => $locationId, 
                     'siparis_id' => $siparisId,
                     'quantity' => (float)$qtyChange, 
@@ -1438,7 +1448,7 @@ class TerminalController extends Controller
         $receiptIds = array_column($data['goods_receipts'], 'id');
         if (!empty($receiptIds)) {
             $receiptItemsQuery = (new Query())
-                ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+                ->select(['id', 'receipt_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
                 ->from('goods_receipt_items')
                 ->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {
@@ -1451,7 +1461,7 @@ class TerminalController extends Controller
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
         $stockQuery = (new Query())
-            ->select(['id', 'urun_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock');
         $stockConditions = ['or'];
 

@@ -60,6 +60,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           final itemId = await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
             'urun_key': item.productId, // _key değeri direkt kullanılıyor
+            'birim_key': item.birimKey, // Birim _key değeri
             'quantity_received': item.quantity,
             DbColumns.stockPalletBarcode: item.palletBarcode,
             DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
@@ -71,6 +72,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _updateStockWithKey(
               txn,
               item.productId, // _key değeri string olarak
+              item.birimKey, // birim_key değeri
               null, // locationId is null for receiving area
               item.quantity,
               item.palletBarcode,
@@ -145,7 +147,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   // DEPRECATED: Stock management moved to backend only to prevent duplicate entries
   // This method is kept for reference but should not be used
-  Future<void> _updateStockWithKey(Transaction txn, String urunKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
+  Future<void> _updateStockWithKey(Transaction txn, String urunKey, String? birimKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
     // NULL-safe WHERE clause construction
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
@@ -155,6 +157,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     whereClauses.add('stock_status = ?');
     whereArgs.add(stockStatus);
+    
+    if (birimKey == null) {
+      whereClauses.add('birim_key IS NULL');
+    } else {
+      whereClauses.add('birim_key = ?');
+      whereArgs.add(birimKey);
+    }
     
     if (locationId == null) {
       whereClauses.add('location_id IS NULL');
@@ -207,6 +216,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     } else if (quantityChange > 0) {
       await txn.insert('inventory_stock', {
         'urun_key': urunKey,
+        'birim_key': birimKey,
         'location_id': locationId,
         'quantity': quantityChange,
         'pallet_barcode': palletBarcode,
@@ -312,6 +322,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
       enrichedMap['urun_key'] = urunKey;
+      // Ensure birim_key is preserved for payload creation
+      enrichedMap['birim_key'] = line['birim_key'];
       
       // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
       debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['miktar']}");

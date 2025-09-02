@@ -260,6 +260,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available'
           ];
           
+          // birim_key kontrolü
+          if (item.birimKey == null) {
+            sourceWhereClause += ' AND birim_key IS NULL';
+          } else {
+            sourceWhereClause += ' AND birim_key = ?';
+            sourceWhereArgs.add(item.birimKey);
+          }
+          
           // Location_id kontrolü
           if (sourceLocationId == null || sourceLocationId == 0) {
             sourceWhereClause += ' AND location_id IS NULL';
@@ -295,6 +303,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           await _updateStockSmart(
             txn,
             productId: item.productKey,
+            birimKey: item.birimKey,
             locationId: sourceLocationId,
             quantityChange: -item.quantity,
             palletId: item.palletId,
@@ -310,6 +319,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           await _updateStockSmart(
             txn,
             productId: item.productKey,
+            birimKey: item.birimKey,
             locationId: targetLocationId,
             quantityChange: item.quantity,
             palletId: targetPalletId,
@@ -653,6 +663,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<void> _updateStockSmart(
     DatabaseExecutor txn, {
     required String productId, // urun_key değeri String olarak
+    String? birimKey, // birim_key değeri
     required int? locationId,
     required double quantityChange,
     required String? palletId,
@@ -671,6 +682,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       // NULL-safe SQL sorgusu oluştur
       String whereClause = 'urun_key = ? AND stock_status = ?';
       List<dynamic> whereArgs = [productId, status];
+      
+      // birim_key kontrolü
+      if (birimKey == null) {
+        whereClause += ' AND birim_key IS NULL';
+      } else {
+        whereClause += ' AND birim_key = ?';
+        whereArgs.add(birimKey);
+      }
       
       // Location_id kontrolü
       if (locationId == null) {
@@ -746,6 +765,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       String existingWhereClause = 'urun_key = ? AND stock_status = ?';
       List<dynamic> existingWhereArgs = [productId, status];
       
+      // birim_key kontrolü
+      if (birimKey == null) {
+        existingWhereClause += ' AND birim_key IS NULL';
+      } else {
+        existingWhereClause += ' AND birim_key = ?';
+        existingWhereArgs.add(birimKey);
+      }
+      
       // Location ID kontrolü
       if (locationId == null) {
         existingWhereClause += ' AND location_id IS NULL';
@@ -762,15 +789,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         existingWhereArgs.add(palletId);
       }
       
-      // Siparis ID kontrolü
-      if (siparisIdForAddition == null) {
-        existingWhereClause += ' AND siparis_id IS NULL';
-      } else {
-        existingWhereClause += ' AND siparis_id = ?';
-        existingWhereArgs.add(siparisIdForAddition);
-      }
-      
-      // Expiry date kontrolü
+      // Expiry date kontrolü (siparis_id ve goods_receipt_id artık unique constraint'te yok)
       if (expiryDateStr == null) {
         existingWhereClause += ' AND expiry_date IS NULL';
       } else {
@@ -797,6 +816,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       } else {
         await txn.insert(DbTables.inventoryStock, {
           'urun_key': productId,
+          'birim_key': birimKey,
           'location_id': locationId, // Artık null ise null kalıyor
           'quantity': quantityChange,
           'pallet_barcode': palletId,

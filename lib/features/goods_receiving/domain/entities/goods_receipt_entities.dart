@@ -46,6 +46,7 @@ class GoodsReceiptHeader {
 @immutable
 class GoodsReceiptItemPayload {
   final String productId; // _key değeri string olarak
+  final String? birimKey; // Birim _key değeri
   final double quantity;
   final String? palletBarcode;
   final String? barcode;
@@ -54,6 +55,7 @@ class GoodsReceiptItemPayload {
 
   const GoodsReceiptItemPayload({
     required this.productId,
+    this.birimKey,
     required this.quantity,
     this.palletBarcode,
     this.barcode,
@@ -63,6 +65,7 @@ class GoodsReceiptItemPayload {
 
   Map<String, dynamic> toJson() => {
     'urun_key': productId, // _key değeri urun_key alanına gönderiliyor
+    'birim_key': birimKey, // Birim _key değeri
     'quantity': quantity,
     'pallet_barcode': palletBarcode,
     'barcode': barcode,
