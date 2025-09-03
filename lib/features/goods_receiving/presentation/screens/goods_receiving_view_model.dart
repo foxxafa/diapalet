@@ -1061,6 +1061,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           product: product,
           availableUnits: availableUnits,
           theme: theme,
+          orderItems: orderItems, // Order items'ı da gönder
         );
       },
     );
@@ -1081,11 +1082,13 @@ class _OutOfOrderProductDialog extends StatefulWidget {
   final ProductInfo product;
   final List<Map<String, dynamic>> availableUnits;
   final ThemeData theme;
+  final List<PurchaseOrderItem> orderItems;
 
   const _OutOfOrderProductDialog({
     required this.product,
     required this.availableUnits,
     required this.theme,
+    required this.orderItems,
   });
 
   @override
@@ -1279,7 +1282,29 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
           onPressed: () {
             if (selectedUnitIndex != null && selectedUnitIndex! < widget.availableUnits.length) {
               final selectedUnit = widget.availableUnits[selectedUnitIndex!];
-              debugPrint("✅ Modal accepted with unit: ${selectedUnit['birimadi']} (key: ${selectedUnit['birim_key']})");
+              final selectedBirimKey = selectedUnit['birim_key'];
+              debugPrint("✅ Modal accepted with unit: ${selectedUnit['birimadi']} (key: $selectedBirimKey)");
+              
+              // Seçilen birimin sipariş içi mi dışı mı olduğunu kontrol et
+              bool isOrderUnit = false;
+              String sourceType = 'out_of_order';
+              
+              for (var orderItem in widget.orderItems) {
+                final orderBirimKey = orderItem.product?.birimKey;
+                final orderStockCode = orderItem.product?.stockCode;
+                
+                if (orderStockCode == widget.product.stockCode && 
+                    orderBirimKey == selectedBirimKey) {
+                  isOrderUnit = true;
+                  sourceType = 'order';
+                  debugPrint("  ✅ Selected unit is IN ORDER");
+                  break;
+                }
+              }
+              
+              if (!isOrderUnit) {
+                debugPrint("  ❌ Selected unit is OUT OF ORDER");
+              }
               
               // Seçilen birimle güncellenmiş ProductInfo oluştur
               final updatedProduct = ProductInfo.fromDbMap({
@@ -1287,35 +1312,52 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                 'birimadi': selectedUnit['birimadi'],
                 'birimkod': selectedUnit['birimkod'],
                 'barkod': selectedUnit['barkod'],
-                'birim_key': selectedUnit['birim_key'], // Birim anahtarı eklendi
+                'birim_key': selectedBirimKey,
                 '_key': widget.product.productKey,
                 'UrunId': widget.product.id,
                 'UrunAdi': widget.product.name,
                 'StokKodu': widget.product.stockCode,
                 'aktif': widget.product.isActive ? 1 : 0,
-                'source_type': 'out_of_order',
-                'is_order_unit': 0, // Sipariş dışı olduğu için 0
+                'source_type': sourceType, // Dinamik olarak belirlenen source_type
+                'is_order_unit': isOrderUnit ? 1 : 0, // Dinamik olarak belirlenen is_order_unit
               });
               Navigator.of(context).pop(updatedProduct);
             } else {
               // Eğer birim seçilmediyse ve mevcut üründe birim_key yoksa, ilk birimi kullan
               if (widget.product.birimKey == null && widget.availableUnits.isNotEmpty) {
                 final firstUnit = widget.availableUnits.first;
-                debugPrint("⚠️ No selection, using first unit: ${firstUnit['birimadi']} (key: ${firstUnit['birim_key']})");
+                final firstBirimKey = firstUnit['birim_key'];
+                debugPrint("⚠️ No selection, using first unit: ${firstUnit['birimadi']} (key: $firstBirimKey)");
+                
+                // İlk birimin sipariş içi mi dışı mı olduğunu kontrol et
+                bool isOrderUnit = false;
+                String sourceType = 'out_of_order';
+                
+                for (var orderItem in widget.orderItems) {
+                  final orderBirimKey = orderItem.product?.birimKey;
+                  final orderStockCode = orderItem.product?.stockCode;
+                  
+                  if (orderStockCode == widget.product.stockCode && 
+                      orderBirimKey == firstBirimKey) {
+                    isOrderUnit = true;
+                    sourceType = 'order';
+                    break;
+                  }
+                }
                 
                 final updatedProduct = ProductInfo.fromDbMap({
                   ...widget.product.toJson(),
                   'birimadi': firstUnit['birimadi'],
                   'birimkod': firstUnit['birimkod'],
                   'barkod': firstUnit['barkod'],
-                  'birim_key': firstUnit['birim_key'],
+                  'birim_key': firstBirimKey,
                   '_key': widget.product.productKey,
                   'UrunId': widget.product.id,
                   'UrunAdi': widget.product.name,
                   'StokKodu': widget.product.stockCode,
                   'aktif': widget.product.isActive ? 1 : 0,
-                  'source_type': 'out_of_order',
-                  'is_order_unit': 0, // Sipariş dışı olduğu için 0
+                  'source_type': sourceType,
+                  'is_order_unit': isOrderUnit ? 1 : 0,
                 });
                 Navigator.of(context).pop(updatedProduct);
               } else {

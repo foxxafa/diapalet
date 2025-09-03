@@ -1471,9 +1471,35 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
   @override
   void didUpdateWidget(_OrderStatusWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Product değiştiğinde yeniden yükle
+    // Product veya birim değiştiğinde güncelle
     if (oldWidget.viewModel.selectedProduct?.stockCode != widget.viewModel.selectedProduct?.stockCode) {
+      // Farklı ürün, birimleri yeniden yükle
       _loadAvailableUnits();
+    } else if (widget.viewModel.selectedProduct != null) {
+      // Aynı ürün, seçili birimi kontrol et ve gerekirse güncelle
+      // Her durumda kontrol et çünkü modal'dan aynı birim seçilmiş olabilir
+      _updateSelectedUnit();
+    }
+  }
+  
+  void _updateSelectedUnit() {
+    if (widget.viewModel.selectedProduct?.birimKey != null && _availableUnits.isNotEmpty) {
+      final newBirimKey = widget.viewModel.selectedProduct!.birimKey;
+      final newIndex = _availableUnits.indexWhere(
+        (unit) => unit['birim_key'] == newBirimKey || unit['_key'] == newBirimKey
+      );
+      
+      debugPrint("📍 Order status dropdown check - Current index: $_selectedUnitIndex, New index: $newIndex, birim_key: $newBirimKey");
+      
+      // Her zaman güncelle, aynı index olsa bile (dropdown senkronizasyonu için)
+      if (newIndex != -1) {
+        setState(() {
+          _selectedUnitIndex = newIndex;
+        });
+        debugPrint("📍 Order status dropdown SET to index: $newIndex");
+      } else {
+        debugPrint("⚠️ Order status dropdown - Could not find birim_key: $newBirimKey in available units");
+      }
     }
   }
 
@@ -1485,11 +1511,22 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
         
         setState(() {
           _availableUnits = units;
-          // Mevcut product'ın unit'ini seç
-          final currentUnitName = widget.viewModel.selectedProduct?.displayUnitName;
-          _selectedUnitIndex = units.indexWhere((unit) => unit['birimadi'] == currentUnitName);
+          // Mevcut product'ın birim_key'ine göre seç
+          final currentBirimKey = widget.viewModel.selectedProduct?.birimKey;
+          if (currentBirimKey != null) {
+            _selectedUnitIndex = units.indexWhere(
+              (unit) => unit['birim_key'] == currentBirimKey || unit['_key'] == currentBirimKey
+            );
+          } else {
+            // Fallback: birim adına göre ara
+            final currentUnitName = widget.viewModel.selectedProduct?.displayUnitName;
+            _selectedUnitIndex = units.indexWhere((unit) => unit['birimadi'] == currentUnitName);
+          }
+          
           if (_selectedUnitIndex == -1) _selectedUnitIndex = 0;
           _isLoadingUnits = false;
+          
+          debugPrint("📍 Order status units loaded. Selected index: $_selectedUnitIndex (birim_key: $currentBirimKey)");
         });
       } catch (e) {
         setState(() {
