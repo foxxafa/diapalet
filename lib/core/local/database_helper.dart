@@ -990,52 +990,90 @@ class DatabaseHelper {
     
     debugPrint("🔍 Searching for barcode: '$query'${orderId != null ? ' in order $orderId' : ''}");
     
-    // Always search ALL barcodes, but include order information when orderId is provided
+    // Birleşik sorgu: hem barkod hem stok kodu araması
     String sql = '''
-      SELECT 
-        u.*,
-        b.birimadi,
-        b.birimkod,
-        b._key as birim_key,
-        bark.barkod,
-        bark._key as barkod_key,
-        COALESCE(sa.miktar, 0.0) as miktar,
-        COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
-        sa.sipbirimkey,
-        sb.birimadi as sipbirimi_adi,
-        sb.birimkod as sipbirimi_kod,
-        sa.id as order_line_id,
-        CASE WHEN sa.id IS NOT NULL THEN 'order' ELSE 'out_of_order' END as source_type
-      FROM barkodlar bark
-      JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-      JOIN urunler u ON b.StokKodu = u.StokKodu
-      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
-        AND CAST(sa.sipbirimkey AS TEXT) = b._key
-        ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
-        AND sa.turu = '1'
-      LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
-      WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?)
-        AND u.aktif = 1
+      SELECT * FROM (
+        -- Barkod araması
+        SELECT 
+          u.*,
+          b.birimadi,
+          b.birimkod,
+          b._key as birim_key,
+          bark.barkod,
+          bark._key as barkod_key,
+          COALESCE(sa.miktar, 0.0) as miktar,
+          COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+          sa.sipbirimkey,
+          sb.birimadi as sipbirimi_adi,
+          sb.birimkod as sipbirimi_kod,
+          sa.id as order_line_id,
+          CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+          CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
+        FROM barkodlar bark
+        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
+        JOIN urunler u ON b.StokKodu = u.StokKodu
+        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+          ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
+          AND sa.turu = '1'
+        LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
+        WHERE bark.barkod LIKE ?
+          AND u.aktif = 1
+        
+        UNION ALL
+        
+        -- Stok kodu araması (barkodu olmayan birimler dahil)
+        SELECT 
+          u.*,
+          b.birimadi,
+          b.birimkod,
+          b._key as birim_key,
+          bark.barkod,
+          bark._key as barkod_key,
+          COALESCE(sa.miktar, 0.0) as miktar,
+          COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+          sa.sipbirimkey,
+          sb.birimadi as sipbirimi_adi,
+          sb.birimkod as sipbirimi_kod,
+          sa.id as order_line_id,
+          CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+          CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
+        FROM urunler u
+        JOIN birimler b ON b.StokKodu = u.StokKodu
+        LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+          ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
+          AND sa.turu = '1'
+        LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
+        WHERE u.StokKodu LIKE ?
+          AND u.aktif = 1
+      )
       ORDER BY 
-        CASE WHEN sa.id IS NOT NULL THEN 0 ELSE 1 END,
         CASE 
-          WHEN u.StokKodu = ? THEN 0
-          WHEN u.StokKodu LIKE ? THEN 1
-          WHEN bark.barkod LIKE ? THEN 2
-          ELSE 3
+          WHEN StokKodu = ? THEN 0
+          WHEN StokKodu LIKE ? THEN 1
+          WHEN barkod = ? THEN 2
+          WHEN barkod LIKE ? THEN 3
+          ELSE 4
         END,
-        u.UrunAdi ASC
+        is_order_unit DESC,
+        LENGTH(StokKodu) ASC,
+        UrunAdi ASC
     ''';
     
     final params = orderId != null 
-      ? [orderId, '%$query%', '%$query%', query, '%$query%', '%$query%'] 
-      : ['%$query%', '%$query%', query, '%$query%', '%$query%'];
+      ? [orderId, '%$query%', orderId, '%$query%', query, '%$query%', query, '%$query%'] 
+      : ['%$query%', '%$query%', query, '%$query%', query, '%$query%'];
       
     final result = await db.rawQuery(sql, params);
     
     debugPrint("🔍 Found ${result.length} products matching barcode");
-    if (result.isNotEmpty) {
-      debugPrint("First result: ${result.first['UrunAdi']} - ${result.first['barkod']} - Unit: ${result.first['birimadi']}");
+    for (int i = 0; i < result.length && i < 3; i++) {
+      final item = result[i];
+      debugPrint("Result $i: ${item['UrunAdi']} - ${item['barkod']} - Unit: ${item['birimadi']}");
+      debugPrint("  - Order unit (sipbirimi_adi): ${item['sipbirimi_adi']}");
+      debugPrint("  - Is order unit: ${item['is_order_unit']}");
+      debugPrint("  - birim_key: ${item['birim_key']}, sipbirimkey: ${item['sipbirimkey']}");
+      debugPrint("  - source_type: ${item['source_type']}");
     }
     
     return result;
@@ -1138,13 +1176,18 @@ class DatabaseHelper {
         bark._key as barkod_key
       FROM urunler u
       JOIN birimler b ON b.StokKodu = u.StokKodu
-      JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE u.StokKodu = ?
         AND u.aktif = 1
       ORDER BY b.birimadi ASC
     ''';
     
-    return await db.rawQuery(sql, [stokKodu]);
+    final result = await db.rawQuery(sql, [stokKodu]);
+    debugPrint("📦 Found ${result.length} units for product $stokKodu");
+    for (var unit in result) {
+      debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod']}");
+    }
+    return result;
   }
 
   Future<String?> getPoIdBySiparisId(int siparisId) async {
@@ -1484,6 +1527,31 @@ class DatabaseHelper {
             enrichedItem['product_name'] = product['UrunAdi'];
             enrichedItem['product_code'] = product['StokKodu'];
             
+            // Birim bilgisini ekle - birim_key ile birimler tablosundan birim adını al
+            final birimKey = enrichedItem['birim_key'] as String?;
+            if (birimKey != null && birimKey.isNotEmpty) {
+              try {
+                final db = await database;
+                final birimResult = await db.rawQuery('''
+                  SELECT birimadi 
+                  FROM birimler 
+                  WHERE _key = ? 
+                  LIMIT 1
+                ''', [birimKey]);
+                
+                if (birimResult.isNotEmpty) {
+                  enrichedItem['unit'] = birimResult.first['birimadi'] as String? ?? '';
+                } else {
+                  enrichedItem['unit'] = '';
+                }
+              } catch (e) {
+                debugPrint('Transfer PDF için birim adı alınırken hata: $e');
+                enrichedItem['unit'] = '';
+              }
+            } else {
+              enrichedItem['unit'] = '';
+            }
+            
             // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
             String productBarcode = '';
             try {
@@ -1598,6 +1666,30 @@ class DatabaseHelper {
             mutableItem['product_name'] = product['UrunAdi'];
             mutableItem['product_code'] = product['StokKodu'];
             mutableItem['urun_key'] = product['_key'] ?? productId; // Use _key if available, otherwise use productId
+            
+            // Birim bilgisini ekle - birim_key ile birimler tablosundan birim adını al
+            final birimKey = mutableItem['birim_key'] as String?;
+            if (birimKey != null && birimKey.isNotEmpty) {
+              try {
+                final birimResult = await db.rawQuery('''
+                  SELECT birimadi 
+                  FROM birimler 
+                  WHERE _key = ? 
+                  LIMIT 1
+                ''', [birimKey]);
+                
+                if (birimResult.isNotEmpty) {
+                  mutableItem['unit'] = birimResult.first['birimadi'] as String? ?? '';
+                } else {
+                  mutableItem['unit'] = '';
+                }
+              } catch (e) {
+                debugPrint('PDF için birim adı alınırken hata: $e');
+                mutableItem['unit'] = '';
+              }
+            } else {
+              mutableItem['unit'] = '';
+            }
             
             // Yeni barkod sistemi için: ürünün ilgili barkodunu bul
             String productBarcode = '';

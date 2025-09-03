@@ -355,10 +355,14 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   subtitle: Text(
-                    "${context.tr('goods_receiving_screen.out_of_order_product_barcode')} ${product.productBarcode ?? 'N/A'} | ${context.tr('goods_receiving_screen.out_of_order_product_stock_code')} ${product.stockCode} | ${context.tr('goods_receiving_screen.unit_label')} ${product.displayUnitName ?? 'N/A'}",
+                    "${context.tr('goods_receiving_screen.out_of_order_product_barcode')} ${product.displayBarcode} | ${context.tr('goods_receiving_screen.out_of_order_product_stock_code')} ${product.stockCode} | ${context.tr('goods_receiving_screen.unit_label')} ${product.displayUnitName ?? 'N/A'}",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   onTap: () async {
+                    debugPrint("🎯 User selected product from list:");
+                    debugPrint("  - Unit: ${product.displayUnitName}");
+                    debugPrint("  - birim_key: ${product.birimKey}");
+                    debugPrint("  - Barcode: ${product.displayBarcode}");
                     await viewModel.selectProduct(product, context: context);
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted && viewModel.isExpiryDateEnabled) {
@@ -432,7 +436,20 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final totalReceived = (orderItem?.receivedQuantity ?? 0.0) + alreadyAddedInUI;
     final expectedQty = orderItem?.expectedQuantity ?? viewModel.selectedProduct?.orderQuantity ?? 0.0;
-    debugPrint("DEBUG: Order status display - expectedQty: $expectedQty, totalReceived: $totalReceived");
+    debugPrint("🔢 Order status calculation:");
+    debugPrint("  - Selected product: ${viewModel.selectedProduct?.name} (${viewModel.selectedProduct?.stockCode})");
+    debugPrint("  - Selected unit: ${viewModel.selectedProduct?.displayUnitName}");
+    debugPrint("  - Product key: ${viewModel.selectedProduct?.key}");
+    debugPrint("  - Is out of order: ${viewModel.selectedProduct?.isOutOfOrder}");
+    debugPrint("  - Source type: ${viewModel.selectedProduct?.birimInfo?['source_type']}");
+    debugPrint("  - OrderItem found: ${orderItem != null}");
+    if (orderItem != null) {
+      debugPrint("  - OrderItem productId: ${orderItem.productId}");
+      debugPrint("  - OrderItem expectedQuantity: ${orderItem.expectedQuantity}");
+    }
+    debugPrint("  - ProductInfo orderQuantity: ${viewModel.selectedProduct?.orderQuantity}");
+    debugPrint("  - Final expectedQty: $expectedQty");
+    debugPrint("  - Total received: $totalReceived");
     
     // Sipariş dışı ürün debug
     if (orderItem == null && viewModel.selectedProduct != null) {
@@ -1610,23 +1627,21 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          if (barcode.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              barcode,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
+                          const SizedBox(height: 4),
+                          Text(
+                            barcode.isNotEmpty ? barcode : 'N/A',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
                   );
                 }).toList();
               },
-              onSelected: (newIndex) {
+              onSelected: (newIndex) async {
                 if (newIndex < _availableUnits.length) {
                   setState(() {
                     _selectedUnitIndex = newIndex;
@@ -1639,28 +1654,100 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                   // Mevcut product'ı seçilen birim bilgisiyle güncelle
                   final currentProduct = widget.viewModel.selectedProduct;
                   if (currentProduct != null) {
+                    // Seçilen birim anahtarını al
+                    final selectedBirimKey = selectedUnit['birim_key'];
+                    
+                    // Bu birimin sipariş birimi olup olmadığını kontrol et
+                    // Eğer sipariş tabanlı modda isek ve seçilen birim sipariş birimi ise 'order', değilse 'out_of_order'
+                    String sourceType = 'out_of_order';
+                    bool isOrderUnit = false;
+                    
+                    if (widget.viewModel.isOrderBased && widget.viewModel.selectedOrder != null) {
+                      // Mevcut sipariş detaylarından sipariş birimlerini kontrol et
+                      final orderItems = widget.viewModel.orderItems;
+                      debugPrint("📦 Checking order items (count: ${orderItems.length}) for matching unit");
+                      debugPrint("  - Looking for: StockCode=${currentProduct.stockCode}, BirimKey=$selectedBirimKey");
+                      
+                      for (var orderItem in orderItems) {
+                        final orderBirimKey = orderItem.product?.birimKey; // ProductInfo'dan birim_key
+                        final orderStockCode = orderItem.product?.stockCode;
+                        
+                        debugPrint("  - Order item: StockCode=$orderStockCode, BirimKey=$orderBirimKey");
+                        
+                        // Stok kodu ve birim anahtarı eşleşirse bu bir sipariş birimi
+                        if (orderStockCode == currentProduct.stockCode && 
+                            orderBirimKey == selectedBirimKey) {
+                          sourceType = 'order';
+                          isOrderUnit = true;
+                          debugPrint("  ✅ MATCH FOUND! Setting as 'order'");
+                          break;
+                        }
+                      }
+                      
+                      if (!isOrderUnit) {
+                        debugPrint("  ❌ No match found. Setting as 'out_of_order'");
+                      }
+                    } else {
+                      debugPrint("⚠️ Not in order-based mode or no selected order");
+                    }
+                    
+                    debugPrint("🔄 Dropdown selection - birim_key: $selectedBirimKey, sourceType: $sourceType");
+                    
                     // Yeni ProductInfo oluştur - seçilen birim bilgileriyle
                     final updatedProduct = ProductInfo.fromDbMap({
                       ...currentProduct.toJson(),
                       'birimadi': selectedUnit['birimadi'],
                       'birimkod': selectedUnit['birimkod'],
-                      'birim_key': selectedUnit['birim_key'], // KRITIK: birim_key eklendi
+                      'birim_key': selectedBirimKey, // KRITIK: birim_key eklendi
                       'barkod': selectedUnit['barkod'],
                       '_key': currentProduct.productKey,
                       'UrunId': currentProduct.id,
                       'UrunAdi': currentProduct.name,
                       'StokKodu': currentProduct.stockCode,
                       'aktif': currentProduct.isActive ? 1 : 0,
-                      'source_type': currentProduct.isOrderedUnit ? 'order' : 'out_of_order',
+                      'source_type': sourceType, // Doğru source_type hesaplaması
+                      'is_order_unit': isOrderUnit ? 1 : 0, // is_order_unit flag'i
                     });
                     
-                    // ViewModel'de selected product'ı güncelle
-                    widget.viewModel.updateSelectedProduct(updatedProduct);
-                    
-                    // Product text alanını güncelle
-                    widget.viewModel.productController.text = barcode.isNotEmpty 
-                        ? '$barcode (${currentProduct.stockCode})' 
-                        : currentProduct.stockCode;
+                    // Eğer sipariş dışı bir ürün seçildiyse modal aç
+                    if (updatedProduct.isOutOfOrder) {
+                      debugPrint("🚨 Out-of-order unit selected. Opening modal...");
+                      final confirmedProduct = await widget.viewModel.showOutOfOrderProductModal(
+                        context, 
+                        updatedProduct
+                      );
+                      
+                      if (confirmedProduct != null) {
+                        // Modal'dan onaylanan ürünü kullan
+                        widget.viewModel.updateSelectedProduct(confirmedProduct);
+                        
+                        // Product text alanını güncelle
+                        final confirmedBarcode = confirmedProduct.productBarcode ?? '';
+                        widget.viewModel.productController.text = confirmedBarcode.isNotEmpty 
+                            ? '$confirmedBarcode (${confirmedProduct.stockCode})' 
+                            : confirmedProduct.stockCode;
+                      } else {
+                        // İptal edildi, önceki seçime geri dön
+                        debugPrint("🚫 Out-of-order selection cancelled. Reverting...");
+                        setState(() {
+                          // Önceki birim index'ini geri yükle
+                          for (int i = 0; i < _availableUnits.length; i++) {
+                            if (_availableUnits[i]['birim_key'] == currentProduct.birimKey) {
+                              _selectedUnitIndex = i;
+                              break;
+                            }
+                          }
+                        });
+                      }
+                    } else {
+                      // Sipariş içi ürün, direkt güncelle
+                      widget.viewModel.updateSelectedProduct(updatedProduct);
+                      
+                      // Product text alanını güncelle
+                      widget.viewModel.productController.text = barcode.isNotEmpty 
+                          ? '$barcode (${currentProduct.stockCode})' 
+                          : currentProduct.stockCode;
+                    }
                   }
                 }
               },

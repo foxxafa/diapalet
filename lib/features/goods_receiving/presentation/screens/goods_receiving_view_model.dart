@@ -491,15 +491,31 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     // Ürünün tüm birimlerini getir
     try {
       _availableUnitsForSelectedProduct = await DatabaseHelper.instance.getAllUnitsForProduct(product.stockCode);
+      
+      // Mevcut seçili birimi işaretle
+      if (product.birimKey != null) {
+        debugPrint('Selected product birim_key: ${product.birimKey}');
+        _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
+          if (unit['birim_key'] == product.birimKey || unit['_key'] == product.birimKey) {
+            return {...unit, 'selected': true};
+          }
+          return {...unit, 'selected': false};
+        }).toList();
+      }
+      
+      debugPrint('Available units for ${product.stockCode}: ${_availableUnitsForSelectedProduct.length}');
+      for (var unit in _availableUnitsForSelectedProduct) {
+        debugPrint('  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key'] ?? unit['_key']}, selected: ${unit['selected'] ?? false}');
+      }
     } catch (e) {
       debugPrint('Error getting units for product: $e');
       _availableUnitsForSelectedProduct = [];
     }
     
     // Product field'a barkod ve stok kodunu yaz
-    final barcode = product.productBarcode ?? '';
+    final barcode = product.displayBarcode;
     final stockCode = product.stockCode;
-    productController.text = barcode.isNotEmpty ? '$barcode ($stockCode)' : stockCode;
+    productController.text = barcode != 'N/A' ? '$barcode ($stockCode)' : stockCode;
     
     _productSearchResults.clear(); // Clear search results when a product is selected
     notifyListeners();
@@ -546,15 +562,31 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   /// Dropdown'dan birim seçildiğinde selected product'ı günceller
   void updateSelectedProduct(ProductInfo updatedProduct) {
+    debugPrint("🔄 Updating selected product:");
+    debugPrint("  - Old product: ${_selectedProduct?.name} - ${_selectedProduct?.displayUnitName}");
+    debugPrint("  - Old source type: ${_selectedProduct?.birimInfo?['source_type']}");
+    debugPrint("  - Old is out of order: ${_selectedProduct?.isOutOfOrder}");
+    debugPrint("  - New birim_key: ${updatedProduct.birimKey}");
+    debugPrint("  - New unit name: ${updatedProduct.displayUnitName}");
+    debugPrint("  - New is out of order: ${updatedProduct.isOutOfOrder}");
+    debugPrint("  - New source type: ${updatedProduct.birimInfo?['source_type']}");
+    debugPrint("  - New order quantity: ${updatedProduct.orderQuantity}");
+    
     _selectedProduct = updatedProduct;
+    
     // Ürünün tüm birimlerini güncelle
     _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
-      if (unit['birim_key'] == updatedProduct.birimKey) {
+      if (unit['birim_key'] == updatedProduct.birimKey || unit['_key'] == updatedProduct.birimKey) {
         // Seçilen birimi işaretle
         return {...unit, 'selected': true};
       }
       return {...unit, 'selected': false};
     }).toList();
+    
+    // Hata durumunu temizle 
+    _error = null;
+    
+    debugPrint("🔄 Selected product updated successfully. Notifying listeners...");
     notifyListeners();
   }
 
@@ -1038,7 +1070,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   void updateProductFieldWithNewBarcode(String newBarcode) {
     if (_selectedProduct != null) {
       final stockCode = _selectedProduct!.stockCode;
-      productController.text = newBarcode.isNotEmpty ? '$newBarcode ($stockCode)' : stockCode;
+      final displayBarcode = newBarcode.isNotEmpty ? newBarcode : 'N/A';
+      productController.text = displayBarcode != 'N/A' ? '$displayBarcode ($stockCode)' : stockCode;
       notifyListeners();
     }
   }
@@ -1067,17 +1100,25 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
     super.initState();
     // Mevcut ürünün birimini seç (eğer varsa)
     if (widget.availableUnits.isNotEmpty) {
-      // Önce mevcut barkoda göre birim ara
-      final currentBarcode = widget.product.productBarcode;
-      if (currentBarcode != null) {
+      // Birim anahtarına göre mevcut birimi ara
+      final currentBirimKey = widget.product.birimKey;
+      debugPrint("🎯 Modal opening - looking for birim_key: $currentBirimKey");
+      debugPrint("  - Available units: ${widget.availableUnits.map((u) => '${u['birimadi']} (key: ${u['birim_key']})').join(', ')}");
+      
+      if (currentBirimKey != null) {
         selectedUnitIndex = widget.availableUnits.indexWhere(
-          (unit) => unit['barkod'] == currentBarcode,
+          (unit) => unit['birim_key'] == currentBirimKey || unit['_key'] == currentBirimKey,
         );
+        debugPrint("  - Found at index: $selectedUnitIndex");
+        
         if (selectedUnitIndex == -1) {
-          selectedUnitIndex = 0; // Bulamazsa ilkini seç
+          // Bulamazsa ilkini seç
+          selectedUnitIndex = 0;
+          debugPrint("  - Not found, defaulting to index 0");
         }
       } else {
         selectedUnitIndex = 0; // İlkini seç
+        debugPrint("  - No birim_key, defaulting to index 0");
       }
     }
   }
@@ -1238,6 +1279,8 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
           onPressed: () {
             if (selectedUnitIndex != null && selectedUnitIndex! < widget.availableUnits.length) {
               final selectedUnit = widget.availableUnits[selectedUnitIndex!];
+              debugPrint("✅ Modal accepted with unit: ${selectedUnit['birimadi']} (key: ${selectedUnit['birim_key']})");
+              
               // Seçilen birimle güncellenmiş ProductInfo oluştur
               final updatedProduct = ProductInfo.fromDbMap({
                 ...widget.product.toJson(),
@@ -1251,13 +1294,15 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                 'StokKodu': widget.product.stockCode,
                 'aktif': widget.product.isActive ? 1 : 0,
                 'source_type': 'out_of_order',
-                'is_out_of_order': true,
+                'is_order_unit': 0, // Sipariş dışı olduğu için 0
               });
               Navigator.of(context).pop(updatedProduct);
             } else {
               // Eğer birim seçilmediyse ve mevcut üründe birim_key yoksa, ilk birimi kullan
               if (widget.product.birimKey == null && widget.availableUnits.isNotEmpty) {
                 final firstUnit = widget.availableUnits.first;
+                debugPrint("⚠️ No selection, using first unit: ${firstUnit['birimadi']} (key: ${firstUnit['birim_key']})");
+                
                 final updatedProduct = ProductInfo.fromDbMap({
                   ...widget.product.toJson(),
                   'birimadi': firstUnit['birimadi'],
@@ -1270,7 +1315,7 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                   'StokKodu': widget.product.stockCode,
                   'aktif': widget.product.isActive ? 1 : 0,
                   'source_type': 'out_of_order',
-                  'is_out_of_order': true,
+                  'is_order_unit': 0, // Sipariş dışı olduğu için 0
                 });
                 Navigator.of(context).pop(updatedProduct);
               } else {

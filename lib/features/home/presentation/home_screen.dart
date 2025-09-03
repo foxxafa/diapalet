@@ -109,7 +109,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
         showBackButton: false,
@@ -196,6 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       }),
+      ),
     );
   }
 

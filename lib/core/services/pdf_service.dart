@@ -157,6 +157,9 @@ class PdfService {
 
     final pdf = pw.Document();
 
+    // Build table
+    final itemsTable = _buildDetailedGoodsReceiptItemsTable(items, isOrderBased, warehouseReceivingMode, font, boldFont);
+    
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -186,7 +189,7 @@ class PdfService {
               boldFont: boldFont,
             ),
             pw.SizedBox(height: 20),
-            _buildDetailedGoodsReceiptItemsTable(items, isOrderBased, warehouseReceivingMode, font, boldFont),
+            itemsTable,
             pw.SizedBox(height: 30),
             _buildFooter(font),
           ];
@@ -231,6 +234,9 @@ class PdfService {
 
     // Calculate totals - not used in transfer report
 
+    // Build table
+    final transferItemsTable = _buildTransferItemsTable(items, font, boldFont);
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -271,7 +277,7 @@ class PdfService {
             pw.SizedBox(height: 20),
 
             // Items Table
-            _buildTransferItemsTable(items, font, boldFont),
+            transferItemsTable,
 
             pw.SizedBox(height: 30),
 
@@ -617,10 +623,11 @@ class PdfService {
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey400),
           columnWidths: const {
-            0: pw.FlexColumnWidth(2.5), // Barcode
-            1: pw.FlexColumnWidth(3.5), // Product Name + Code
-            2: pw.FlexColumnWidth(1.5), // Quantity
-            3: pw.FlexColumnWidth(2.5), // Container
+            0: pw.FlexColumnWidth(1.8), // Barcode
+            1: pw.FlexColumnWidth(2.8), // Product Name - azaltıldı
+            2: pw.FlexColumnWidth(0.8), // Unit - arttırıldı
+            3: pw.FlexColumnWidth(1.0), // Qty
+            4: pw.FlexColumnWidth(2.0), // Pallet
           },
           children: [
             // Header
@@ -629,23 +636,26 @@ class PdfService {
               children: [
                 _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                 _buildTableCell('Product Name', boldFont, isHeader: true),
-                _buildTableCell('Quantity', boldFont, isHeader: true),
-                _buildTableCell('Container', boldFont, isHeader: true),
+                _buildTableCell('pdf.fields.unit'.tr(), boldFont, isHeader: true),
+                _buildTableCell('pdf.fields.quantity'.tr(), boldFont, isHeader: true),
+                _buildTableCell('pdf.fields.pallet'.tr(), boldFont, isHeader: true),
               ],
             ),
             // Data rows
             ...items.map((item) {
               final productName = item['product_name'] ?? 'Unknown Product';
               final productCode = item['product_code'] ?? 'N/A';
+              final unit = item['unit'] ?? '';
               final quantity = (item['quantity_transferred'] ?? item['quantity'])?.toString() ?? '0';
-              final container = item['pallet_id'] ?? item['pallet_barcode'] ?? 'Product';
+              final pallet = item['pallet_id'] ?? item['pallet_barcode'] ?? '-';
 
               return pw.TableRow(
                 children: [
                   _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
                   _buildTableCell(productName, font),
+                  _buildTableCell(unit, font),
                   _buildTableCell(quantity, font),
-                  _buildTableCell(container, font),
+                  _buildTableCell(pallet, font),
                 ],
               );
             }),
@@ -654,6 +664,7 @@ class PdfService {
               decoration: const pw.BoxDecoration(color: PdfColors.blue50),
               children: [
                 _buildTableCell('TOTAL', boldFont, isHeader: true),
+                _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
                 _buildTableCell(totalQuantity.toStringAsFixed(0), boldFont, isHeader: true),
                 _buildTableCell('', boldFont, isHeader: true),
@@ -740,6 +751,7 @@ class PdfService {
     );
   }
 
+
   static pw.Widget _buildDetailedGoodsReceiptItemsTable(
     List<dynamic> items,
     bool isOrderBased,
@@ -775,32 +787,36 @@ class PdfService {
           // Sütun genişlikleri - sipariş bazlı olup olmadığına ve mixed mode olup olmadığına göre
           columnWidths: isOrderBased
             ? (isMixedMode ? const {
-                0: pw.FlexColumnWidth(1.5), // Barcode
-                1: pw.FlexColumnWidth(2), // Product Name
-                2: pw.FlexColumnWidth(1.0), // Ordered
-                3: pw.FlexColumnWidth(1.1), // Total Received
-                4: pw.FlexColumnWidth(1.0), // This Receipt
-                5: pw.FlexColumnWidth(1.2), // Expiry Date
-                6: pw.FlexColumnWidth(1.5), // Container
+                0: pw.FlexColumnWidth(1.2), // Barcode
+                1: pw.FlexColumnWidth(1.8), // Product Name - azaltıldı
+                2: pw.FlexColumnWidth(0.8), // Unit - arttırıldı
+                3: pw.FlexColumnWidth(0.7), // Ord.
+                4: pw.FlexColumnWidth(0.8), // Tot. Rec.
+                5: pw.FlexColumnWidth(0.7), // This Rec.
+                6: pw.FlexColumnWidth(1.1), // Exp. Date - arttırıldı
+                7: pw.FlexColumnWidth(1.2), // Pallet
               } : const {
-                0: pw.FlexColumnWidth(1.8), // Barcode
-                1: pw.FlexColumnWidth(2.5), // Product Name
-                2: pw.FlexColumnWidth(1.0), // Ordered
-                3: pw.FlexColumnWidth(1.1), // Total Received
-                4: pw.FlexColumnWidth(1.0), // This Receipt
-                5: pw.FlexColumnWidth(1.6), // Expiry Date
+                0: pw.FlexColumnWidth(1.5), // Barcode
+                1: pw.FlexColumnWidth(2.2), // Product Name - azaltıldı
+                2: pw.FlexColumnWidth(0.8), // Unit - arttırıldı
+                3: pw.FlexColumnWidth(0.7), // Ord.
+                4: pw.FlexColumnWidth(0.8), // Tot. Rec.
+                5: pw.FlexColumnWidth(0.7), // This Rec.
+                6: pw.FlexColumnWidth(1.3), // Exp. Date - arttırıldı
               })
             : (isMixedMode ? const {
-                0: pw.FlexColumnWidth(2), // Barcode
-                1: pw.FlexColumnWidth(2.5), // Product Name
-                2: pw.FlexColumnWidth(1.5), // Quantity
-                3: pw.FlexColumnWidth(1.5), // Expiry Date
-                4: pw.FlexColumnWidth(2), // Container
+                0: pw.FlexColumnWidth(1.5), // Barcode
+                1: pw.FlexColumnWidth(2.2), // Product Name - azaltıldı
+                2: pw.FlexColumnWidth(0.8), // Unit - arttırıldı
+                3: pw.FlexColumnWidth(1.0), // Qty
+                4: pw.FlexColumnWidth(1.3), // Exp. Date - arttırıldı
+                5: pw.FlexColumnWidth(1.4), // Pallet
               } : const {
-                0: pw.FlexColumnWidth(2.5), // Barcode
-                1: pw.FlexColumnWidth(3), // Product Name
-                2: pw.FlexColumnWidth(1.5), // Quantity
-                3: pw.FlexColumnWidth(2), // Expiry Date
+                0: pw.FlexColumnWidth(2.0), // Barcode
+                1: pw.FlexColumnWidth(2.4), // Product Name - azaltıldı
+                2: pw.FlexColumnWidth(0.8), // Unit - arttırıldı
+                3: pw.FlexColumnWidth(1.0), // Qty
+                4: pw.FlexColumnWidth(1.5), // Exp. Date - arttırıldı
               }),
           children: [
             // Header row - sipariş bazlı olup olmadığına ve mixed mode olup olmadığına göre farklı
@@ -810,11 +826,12 @@ class PdfService {
                 children: [
                   _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
-                  _buildTableCell('Ordered', boldFont, isHeader: true),
-                  _buildTableCell('Total Received', boldFont, isHeader: true),
-                  _buildTableCell('This Receipt', boldFont, isHeader: true),
-                  _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                  if (isMixedMode) _buildTableCell('Container', boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.unit'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.ordered'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.total_received'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.this_receipt'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.expiry_date'.tr(), boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('pdf.fields.pallet'.tr(), boldFont, isHeader: true),
                 ],
               )
             else
@@ -823,15 +840,18 @@ class PdfService {
                 children: [
                   _buildTableCell('pdf.fields.stock_code'.tr(), boldFont, isHeader: true),
                   _buildTableCell('Product Name', boldFont, isHeader: true),
-                  _buildTableCell('Quantity', boldFont, isHeader: true),
-                  _buildTableCell('Expiry Date', boldFont, isHeader: true),
-                  if (isMixedMode) _buildTableCell('Container', boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.unit'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.quantity'.tr(), boldFont, isHeader: true),
+                  _buildTableCell('pdf.fields.expiry_date'.tr(), boldFont, isHeader: true),
+                  if (isMixedMode) _buildTableCell('pdf.fields.pallet'.tr(), boldFont, isHeader: true),
                 ],
               ),
+            // Data rows with enriched units
             ...items.map((item) {
               final productName = item['product_name'] ?? 'Unknown';
               final productCode = item['product_code'] ?? 'N/A';
-              final containerDisplay = item['pallet_barcode']?.toString() ?? 'Product';
+              final unit = item['unit'] ?? '';
+              final palletDisplay = item['pallet_barcode']?.toString() ?? '-';
 
               // Get expiry date
               final expiryDate = item['expiry_date'];
@@ -863,11 +883,12 @@ class PdfService {
                   children: [
                     _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
                     _buildTableCell(productName, font),
+                    _buildTableCell(unit, font),
                     _buildTableCell(orderedQty.toStringAsFixed(0), font),
                     _buildTableCell(totalReceivedDisplay, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
                     _buildTableCell(expiryDisplay, font),
-                    if (isMixedMode) _buildTableCell(containerDisplay, font),
+                    if (isMixedMode) _buildTableCell(palletDisplay, font),
                   ],
                 );
               } else {
@@ -878,9 +899,10 @@ class PdfService {
                   children: [
                     _buildTableCell(productCode != 'N/A' ? productCode : '-', font),
                     _buildTableCell(productName, font),
+                    _buildTableCell(unit, font),
                     _buildTableCell(currentReceived.toStringAsFixed(0), font),
                     _buildTableCell(expiryDisplay, font),
-                    if (isMixedMode) _buildTableCell(containerDisplay, font),
+                    if (isMixedMode) _buildTableCell(palletDisplay, font),
                   ],
                 );
               }
@@ -892,6 +914,7 @@ class PdfService {
                 children: [
                   _buildTableCell('', boldFont, isHeader: true),
                   _buildTableCell('TOTAL', boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
                   _buildTableCell(totalOrdered.toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['total_received'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
@@ -905,6 +928,7 @@ class PdfService {
                 children: [
                   _buildTableCell('', boldFont, isHeader: true),
                   _buildTableCell('TOTAL', boldFont, isHeader: true),
+                  _buildTableCell('', boldFont, isHeader: true),
                   _buildTableCell(items.fold<double>(0.0, (sum, item) => sum + ((item['current_received'] as num?)?.toDouble() ?? (item['quantity'] as num?)?.toDouble() ?? 0.0)).toStringAsFixed(0), boldFont, isHeader: true),
                   _buildTableCell('', boldFont, isHeader: true),
                   if (isMixedMode) _buildTableCell('', boldFont, isHeader: true),

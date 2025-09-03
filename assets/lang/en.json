@@ -743,8 +743,13 @@
       "barcode": "Barcode",
       "stock_code": "Stock Code",
       "product_name_code": "Product Name + Code",
-      "quantity": "Quantity",
-      "container": "Container",
+      "unit": "Unit",
+      "ordered": "Ord.",
+      "total_received": "Tot. Rec.",
+      "this_receipt": "This Rec.",
+      "expiry_date": "Exp. Date",
+      "quantity": "Qty",
+      "pallet": "Pallet",
       "total": "TOTAL"
     },
     "operation_types": {

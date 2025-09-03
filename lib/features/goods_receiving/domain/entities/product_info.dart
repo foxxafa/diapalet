@@ -45,15 +45,23 @@ class ProductInfo extends Equatable {
     if (birimInfoMap == null) {
       // Veritabanından gelen birim bilgilerini kullan
       if (map.containsKey('birimadi') || map.containsKey('birimkod')) {
+        // Her zaman o satırdaki birimin adını kullan, sipariş birimi adını değil
+        final displayBirimAdi = map['birimadi'];
+        final displayBirimKod = map['birimkod'];
+        // Ama birim_key için sipariş birimi mi kontrol et
+        final isOrderUnit = map['is_order_unit'] == 1;
+        final displayBirimKey = map['birim_key'].toString();
+            
         birimInfoMap = {
-          'birimadi': map['birimadi'],
-          'birimkod': map['birimkod'],
+          'birimadi': displayBirimAdi,
+          'birimkod': displayBirimKod,
           'miktar': map['miktar'], // Sipariş miktarı
           'sipbirimi_adi': map['sipbirimi_adi'], // Sipariş birimi adı (yeni)
           'sipbirimi_kod': map['sipbirimi_kod'], // Sipariş birimi kodu (yeni)
           'sipbirimkey': map['sipbirimkey'], // Sipariş birim anahtarı
-          'birim_key': map['birim_key'], // Birim anahtarı (yeni)
+          'birim_key': displayBirimKey, // Doğru birim anahtarı (sipariş birimi ise sipbirimkey)
           'source_type': map['source_type'], // 'order' veya 'out_of_order'
+          'is_order_unit': map['is_order_unit'], // Sipariş birimi mi?
         };
       }
     }
@@ -93,6 +101,12 @@ class ProductInfo extends Equatable {
   /// Yeni barkod sistemi için barkod bilgisi
   String? get productBarcode => barkodInfo?['barkod'] as String?;
 
+  /// Barkod gösterimi - barkod yoksa N/A döner
+  String get displayBarcode {
+    final barcode = productBarcode;
+    return (barcode == null || barcode.isEmpty) ? 'N/A' : barcode;
+  }
+
   /// Sipariş miktarı - siparişli ürünlerde miktar, sipariş dışında 0
   double get orderQuantity => birimInfo?['miktar']?.toDouble() ?? 0.0;
 
@@ -108,8 +122,8 @@ class ProductInfo extends Equatable {
   /// Sipariş birimi kodu (sipbirimkey üzerinden gelen)  
   String? get orderUnitCode => birimInfo?['sipbirimi_kod'] as String?;
 
-  /// Görüntüleme için birim adı - sipariş varsa sipariş birimi, yoksa barkod birimi
-  String? get displayUnitName => orderUnitName ?? unitName;
+  /// Görüntüleme için birim adı - her zaman o satırdaki birimin adını gösterir
+  String? get displayUnitName => unitName;
 
   /// Sipariş içi/dışı durumu
   bool get isOrderedUnit => birimInfo?['source_type'] == 'order';
