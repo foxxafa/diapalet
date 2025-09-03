@@ -29,6 +29,18 @@ class TerminalController extends Controller
         return parent::beforeAction($action);
     }
 
+    private function logToFile($message, $level = 'INFO')
+    {
+        $logDir = Yii::getAlias('@runtime/logs');
+        if (!is_dir($logDir)) {
+            mkdir($logDir, 0755, true);
+        }
+        $logFile = $logDir . '/terminal_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[$timestamp] [$level] $message" . PHP_EOL;
+        file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
+    }
+
     private function getJsonBody()
     {
         $rawBody = Yii::$app->request->getRawBody();
@@ -112,11 +124,11 @@ class TerminalController extends Controller
                 return $this->asJson(['status' => 401, 'message' => 'Kullanıcı adı veya şifre hatalı.']);
             }
         } catch (\yii\db\Exception $e) {
-            Yii::error("Login DB Hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Login DB Hatası: " . $e->getMessage(), 'ERROR');
             Yii::$app->response->statusCode = 500;
             return $this->asJson(['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu: ' . $e->getMessage()]);
         } catch (\Exception $e) {
-            Yii::error("Login Genel Hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Login Genel Hatası: " . $e->getMessage(), 'ERROR');
             Yii::$app->response->statusCode = 500;
             return $this->asJson(['status' => 500, 'message' => 'Beklenmeyen hata: ' . $e->getMessage()]);
         }
@@ -171,7 +183,9 @@ class TerminalController extends Controller
 
 
                 if ($opType === 'goodsReceipt') {
+                    $this->logToFile("Creating goods receipt for local_id: $localId", 'DEBUG');
                     $result = $this->_createGoodsReceipt($opData, $db);
+                    $this->logToFile("Goods receipt result: " . json_encode($result), 'DEBUG');
                 } elseif ($opType === 'inventoryTransfer') {
                     $result = $this->_createInventoryTransfer($opData, $db);
                 } elseif ($opType === 'forceCloseOrder') {
@@ -200,7 +214,7 @@ class TerminalController extends Controller
                     ])->execute();
 
                     $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
-                    Yii::error($errorMsg, __METHOD__);
+                    $this->logToFile($errorMsg, 'ERROR');
                     throw new \Exception($errorMsg);
                 }
             }
@@ -211,7 +225,7 @@ class TerminalController extends Controller
         } catch (\Exception $e) {
             $transaction->rollBack();
             $errorDetail = "SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}";
-            Yii::error($errorDetail, __METHOD__);
+            $this->logToFile($errorDetail, 'ERROR');
             Yii::$app->response->setStatusCode(500);
             return [
                 'success' => false,
@@ -391,10 +405,8 @@ class TerminalController extends Controller
             }
             
             // KRITIK DEBUG: birim_key değerini kontrol et
-            error_log("BACKEND DEBUG: Inserting goods_receipt_item");
-            error_log("  - urun_key: " . $urunKey);
-            error_log("  - birim_key from item: " . ($item['birim_key'] ?? 'NULL'));
-            error_log("  - raw item data: " . json_encode($item));
+            $this->logToFile("Inserting goods_receipt_item - urun_key: $urunKey, birim_key: " . ($item['birim_key'] ?? 'NULL'), 'DEBUG');
+            $this->logToFile("Raw item data: " . json_encode($item), 'DEBUG');
             
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId, 

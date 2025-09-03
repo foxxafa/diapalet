@@ -28,7 +28,6 @@ class OrderTransferScreen extends StatefulWidget {
 
   @override
   State<OrderTransferScreen> createState() {
-    debugPrint('🎯 Creating OrderTransferScreenState for order: ${order.id}');
     return _OrderTransferScreenState();
   }
 }
@@ -85,7 +84,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('🚀 OrderTransferScreen initState for order: ${widget.order.id}');
     
     _containerFocusNode.addListener(_onFocusChange);
     _targetLocationFocusNode.addListener(_onFocusChange);
@@ -106,7 +104,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     _sourceLocationController.text = '000';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('📋 OrderTransferScreen loading initial data for order: ${widget.order.id}');
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
       _loadInitialData();
       _initBarcode();
@@ -216,28 +213,22 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    debugPrint('📊 _loadInitialData started for order: ${widget.order.id}');
     if (!mounted) return;
     setState(() => _isLoadingInitialData = true);
     try {
-      debugPrint('📍 Loading target locations...');
       // FIX: For putaway operations, exclude receiving area from target locations
       final targetLocations = await _repo.getTargetLocations(excludeReceivingArea: true);
-      debugPrint('📍 Found ${targetLocations.length} target locations');
       if (!mounted) return;
 
       setState(() {
         _availableTargetLocations = targetLocations;
       });
 
-      debugPrint('📦 Loading containers...');
       await _loadAllContainers();
-      debugPrint('📦 Found ${_allContainers.length} containers');
       if (!mounted) return;
 
       // GÜNCELLEME: Eğer hiç konteyner yoksa geri dön
       if (_allContainers.isEmpty) {
-        debugPrint('⚠️ No containers found, returning to previous screen');
         if (mounted) {
           _showErrorSnackBar('order_transfer.all_items_transferred'.tr());
           Navigator.of(context).pop(true);
@@ -474,9 +465,34 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     return container.displayName;
   }
 
+  // Birim key'den birim adını getir
+  Future<String?> _getUnitName(String? birimKey) async {
+    if (birimKey == null || birimKey.isEmpty) return null;
+    
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final db = await dbHelper.database;
+      
+      final result = await db.query(
+        'birimler',
+        columns: ['birimadi'],
+        where: '_key = ?',
+        whereArgs: [birimKey],
+        limit: 1,
+      );
+      
+      if (result.isNotEmpty) {
+        return result.first['birimadi'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Error getting unit name for $birimKey: $e');
+    }
+    
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    debugPrint('🎨 OrderTransferScreen build() called for order: ${widget.order.id}');
     final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
@@ -1012,7 +1028,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1031,7 +1047,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                     ),
                     const SizedBox(width: _gap),
                     Expanded(
-                      flex: 2,
+                      flex: 2, // Quantity input alanını biraz genişlet (4:2 oranı = 1.5 kat gibi)
                       child: TextFormField(
                         controller: controller,
                         focusNode: focusNode,
@@ -1059,7 +1075,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                             if (currentIndex >= 0 && currentIndex < productIds.length - 1) {
                               final nextKey = productIds[currentIndex + 1];
                               final nextFocusNode = _productQuantityFocusNodes[nextKey];
-                              if (nextFocusNode != null && !nextFocusNode.hasListeners == false) {
+                              if (nextFocusNode != null && nextFocusNode.canRequestFocus) {
                                 nextFocusNode.requestFocus();
                               }
                             } else {
@@ -1077,6 +1093,25 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                           }
                         },
                       ),
+                    ),
+                    const SizedBox(width: _smallGap),
+                    // Birim adı için alan
+                    FutureBuilder<String?>(
+                      future: _getUnitName(product.birimKey),
+                      builder: (context, snapshot) {
+                        final unitName = snapshot.data ?? '';
+                        return SizedBox(
+                          width: 50,
+                          child: Text(
+                            unitName,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold, // Birim adını kalın yap
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

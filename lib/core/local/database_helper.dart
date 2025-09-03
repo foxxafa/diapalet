@@ -491,13 +491,13 @@ class DatabaseHelper {
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
-            // DEBUG: Sunucudan gelen free değerini kontrol et
-            debugPrint("SYNC DEBUG: Raw item from server - ID: ${item['id']}, urun_key/urun_id: ${item['urun_key'] ?? item['urun_id']}, free: ${item['free']}");
+            // DEBUG: Sunucudan gelen değerleri kontrol et
+            debugPrint("SYNC DEBUG: Raw item from server - ID: ${item['id']}, urun_key/urun_id: ${item['urun_key'] ?? item['urun_id']}, birim_key: ${item['birim_key']}, free: ${item['free']}");
             
             final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
             
-            // DEBUG: Sanitize sonrası free değerini kontrol et
-            debugPrint("SYNC DEBUG: After sanitize - free: ${sanitizedItem['free']}");
+            // DEBUG: Sanitize sonrası değerleri kontrol et
+            debugPrint("SYNC DEBUG: After sanitize - birim_key: ${sanitizedItem['birim_key']}, free: ${sanitizedItem['free']}");
             
             batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -699,6 +699,21 @@ class DatabaseHelper {
         // End of first pass sync
 
         await batch.commit(noResult: true);
+        
+        // DEBUG: Batch commit sonrası goods_receipt_items birim_key değerlerini kontrol et
+        if (data.containsKey('goods_receipt_items')) {
+          final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
+          for (final item in goodsReceiptItemsData) {
+            final itemId = item['id'];
+            final dbResult = await txn.rawQuery(
+              'SELECT id, birim_key FROM goods_receipt_items WHERE id = ?',
+              [itemId]
+            );
+            if (dbResult.isNotEmpty) {
+              debugPrint("SYNC VERIFY: goods_receipt_items ID: $itemId, DB birim_key: ${dbResult.first['birim_key']}");
+            }
+          }
+        }
 
         // --- SECOND PASS for siparis_ayrintili ---
         // This runs after all other data is committed in the same transaction,
@@ -838,7 +853,7 @@ class DatabaseHelper {
           // birim_key değeri korunuyor - sunucudan gelen değer doğru
         } else {
           // Eğer birim_key yoksa, log at (bu durumda hata var)
-          print('WARNING: inventory_stock kaydında birim_key eksik: ${newRecord}');
+          debugPrint('WARNING: inventory_stock kaydında birim_key eksik: $newRecord');
         }
         break;
 

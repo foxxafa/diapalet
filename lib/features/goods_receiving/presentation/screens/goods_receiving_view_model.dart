@@ -718,11 +718,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       ),
       items: _addedItems.map((draft) {
         // KRITIK DEBUG: birimKey değerini logla
-        print('GOODS_RECEIPT DEBUG: Creating item payload for product ${draft.product.key}');
-        print('  - Product name: ${draft.product.name}');
-        print('  - birimKey: ${draft.product.birimKey}');
-        print('  - birimInfo: ${draft.product.birimInfo}');
-        print('  - isOutOfOrder: ${draft.product.isOutOfOrder}');
+        debugPrint('GOODS_RECEIPT DEBUG: Creating item payload for product ${draft.product.key}');
+        debugPrint('  - Product name: ${draft.product.name}');
+        debugPrint('  - birimKey: ${draft.product.birimKey}');
+        debugPrint('  - birimInfo: ${draft.product.birimInfo}');
+        debugPrint('  - isOutOfOrder: ${draft.product.isOutOfOrder}');
         
         return GoodsReceiptItemPayload(
           productId: draft.product.key, // _key değeri kullanılıyor
