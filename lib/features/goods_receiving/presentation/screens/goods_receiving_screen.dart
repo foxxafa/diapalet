@@ -1632,14 +1632,36 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                     _selectedUnitIndex = newIndex;
                   });
                   
-                  // Product text alanını temizle ve seçilen barkodu hazırla
+                  // Seçilen birimi al
                   final selectedUnit = _availableUnits[newIndex];
                   final barcode = selectedUnit['barkod'] ?? '';
                   
-                  widget.viewModel.productController.clear();
-                  
-                  // Direkt viewModel üzerinden process et
-                  widget.viewModel.processScannedData('product', barcode, context: context);
+                  // Mevcut product'ı seçilen birim bilgisiyle güncelle
+                  final currentProduct = widget.viewModel.selectedProduct;
+                  if (currentProduct != null) {
+                    // Yeni ProductInfo oluştur - seçilen birim bilgileriyle
+                    final updatedProduct = ProductInfo.fromDbMap({
+                      ...currentProduct.toJson(),
+                      'birimadi': selectedUnit['birimadi'],
+                      'birimkod': selectedUnit['birimkod'],
+                      'birim_key': selectedUnit['birim_key'], // KRITIK: birim_key eklendi
+                      'barkod': selectedUnit['barkod'],
+                      '_key': currentProduct.productKey,
+                      'UrunId': currentProduct.id,
+                      'UrunAdi': currentProduct.name,
+                      'StokKodu': currentProduct.stockCode,
+                      'aktif': currentProduct.isActive ? 1 : 0,
+                      'source_type': currentProduct.isOrderedUnit ? 'order' : 'out_of_order',
+                    });
+                    
+                    // ViewModel'de selected product'ı güncelle
+                    widget.viewModel.updateSelectedProduct(updatedProduct);
+                    
+                    // Product text alanını güncelle
+                    widget.viewModel.productController.text = barcode.isNotEmpty 
+                        ? '$barcode (${currentProduct.stockCode})' 
+                        : currentProduct.stockCode;
+                  }
                 }
               },
             )

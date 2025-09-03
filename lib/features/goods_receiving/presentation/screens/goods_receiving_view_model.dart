@@ -544,6 +544,20 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
   }
 
+  /// Dropdown'dan birim seçildiğinde selected product'ı günceller
+  void updateSelectedProduct(ProductInfo updatedProduct) {
+    _selectedProduct = updatedProduct;
+    // Ürünün tüm birimlerini güncelle
+    _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
+      if (unit['birim_key'] == updatedProduct.birimKey) {
+        // Seçilen birimi işaretle
+        return {...unit, 'selected': true};
+      }
+      return {...unit, 'selected': false};
+    }).toList();
+    notifyListeners();
+  }
+
   Future<void> addItemToList(BuildContext context) async {
     final quantity = double.tryParse(quantityController.text);
     if (_selectedProduct == null || quantity == null || quantity <= 0) {
@@ -702,15 +716,24 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         receiptDate: DateTime.now(),
         employeeId: employeeId,
       ),
-      items: _addedItems.map((draft) => GoodsReceiptItemPayload(
-        productId: draft.product.key, // _key değeri kullanılıyor
-        birimKey: draft.product.birimKey, // Birim _key değeri eklendi
-        quantity: draft.quantity,
-        palletBarcode: draft.palletBarcode,
-        barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
-        expiryDate: draft.expiryDate, // Now always has a value
-        isFree: draft.product.isOutOfOrder, // Sipariş dışı ürün bilgisi
-      )).toList(),
+      items: _addedItems.map((draft) {
+        // KRITIK DEBUG: birimKey değerini logla
+        print('GOODS_RECEIPT DEBUG: Creating item payload for product ${draft.product.key}');
+        print('  - Product name: ${draft.product.name}');
+        print('  - birimKey: ${draft.product.birimKey}');
+        print('  - birimInfo: ${draft.product.birimInfo}');
+        print('  - isOutOfOrder: ${draft.product.isOutOfOrder}');
+        
+        return GoodsReceiptItemPayload(
+          productId: draft.product.key, // _key değeri kullanılıyor
+          birimKey: draft.product.birimKey, // Birim _key değeri eklendi
+          quantity: draft.quantity,
+          palletBarcode: draft.palletBarcode,
+          barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
+          expiryDate: draft.expiryDate, // Now always has a value
+          isFree: draft.product.isOutOfOrder, // Sipariş dışı ürün bilgisi
+        );
+      }).toList(),
     );
     await _repository.saveGoodsReceipt(payload);
   }
@@ -1232,7 +1255,27 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
               });
               Navigator.of(context).pop(updatedProduct);
             } else {
-              Navigator.of(context).pop(widget.product);
+              // Eğer birim seçilmediyse ve mevcut üründe birim_key yoksa, ilk birimi kullan
+              if (widget.product.birimKey == null && widget.availableUnits.isNotEmpty) {
+                final firstUnit = widget.availableUnits.first;
+                final updatedProduct = ProductInfo.fromDbMap({
+                  ...widget.product.toJson(),
+                  'birimadi': firstUnit['birimadi'],
+                  'birimkod': firstUnit['birimkod'],
+                  'barkod': firstUnit['barkod'],
+                  'birim_key': firstUnit['birim_key'],
+                  '_key': widget.product.productKey,
+                  'UrunId': widget.product.id,
+                  'UrunAdi': widget.product.name,
+                  'StokKodu': widget.product.stockCode,
+                  'aktif': widget.product.isActive ? 1 : 0,
+                  'source_type': 'out_of_order',
+                  'is_out_of_order': true,
+                });
+                Navigator.of(context).pop(updatedProduct);
+              } else {
+                Navigator.of(context).pop(widget.product);
+              }
             }
           },
           style: ElevatedButton.styleFrom(

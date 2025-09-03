@@ -499,13 +499,17 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
                AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
                AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
             ) as received_quantity,
-            -- Bu siparişten transfer edilmiş miktar
+            -- Bu siparişten transfer edilmiş miktar (KRITIK FIX: transfer_date ile eşleştir)
             (SELECT COALESCE(SUM(it.quantity), 0)
              FROM inventory_transfers it
              WHERE it.urun_key = i.urun_key
-               AND it.siparis_id = ?
                AND it.from_location_id IS NULL
                AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
+               AND EXISTS (
+                 SELECT 1 FROM goods_receipts gr2 
+                 WHERE gr2.siparis_id = ?
+                   AND DATE(it.transfer_date) >= DATE(gr2.receipt_date)
+               )
             ) as transferred_quantity
           FROM inventory_stock i
           WHERE i.stock_status = 'receiving'
@@ -514,10 +518,23 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         
         debugPrint('🔍 Quantity calculation debug for order $orderId:');
         for (final row in quantityDebug) {
+          final stockQuantity = row['stock_quantity'] as num? ?? 0;
           final received = row['received_quantity'] as num? ?? 0;
           final transferred = row['transferred_quantity'] as num? ?? 0;
           final remaining = received - transferred;
-          debugPrint('  📦 Product ${row['urun_key']}: received=$received, transferred=$transferred, remaining=$remaining');
+          debugPrint('  📦 Product ${row['urun_key']}: stock_quantity=$stockQuantity, received=$received, transferred=$transferred, remaining=$remaining');
+        }
+        
+        // goods_receipt_items'daki gerçek verileri kontrol et
+        final grcItemsDebug = await db.rawQuery('''
+          SELECT gri.*, gr.siparis_id, gr.receipt_date
+          FROM goods_receipt_items gri
+          JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+          WHERE gr.siparis_id = ?
+        ''', [orderId]);
+        debugPrint('🔍 goods_receipt_items for order $orderId:');
+        for (final item in grcItemsDebug) {
+          debugPrint('  📦 ${item['urun_key']}: quantity_received=${item['quantity_received']}, birim_key=${item['birim_key']}');
         }
         
         // Direct inventory_transfers table check
@@ -533,8 +550,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           debugPrint('  📦 Transfer: id=${transfer['id']}, quantity=${transfer['quantity']}, date=${transfer['transfer_date']}');
         }
         
-        // Order-based putaway - inventory_stock'tan al ama quantity'yi goods_receipt_items'dan hesapla
-        // Bu hibrit yaklaşım hem consolidation'ı hem de doğru miktarları sağlar
+        // BASIT YAKLAŞIM: Sadece inventory_stock'taki miktarı kullan
+        // Transfer hesaplaması şimdilik devre dışı - sadece mevcut stok miktarını göster
         stockMaps = await db.rawQuery('''
           SELECT 
             i.id,
@@ -546,50 +563,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             i.stock_status,
             i.siparis_id,
             i.goods_receipt_id,
-            -- Bu sipariş için kabul edilen toplam miktar
-            (SELECT COALESCE(SUM(gri.quantity_received), 0)
-             FROM goods_receipt_items gri
-             JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-             WHERE gr.siparis_id = ?
-               AND gri.urun_key = i.urun_key
-               AND (gri.birim_key = i.birim_key OR gri.birim_key IS NULL OR i.birim_key IS NULL)
-               AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
-               AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
-            ) -
-            -- Bu siparişten transfer edilmiş miktar
-            (SELECT COALESCE(SUM(it.quantity), 0)
-             FROM inventory_transfers it
-             WHERE it.urun_key = i.urun_key
-               AND it.siparis_id = ?
-               AND it.from_location_id IS NULL
-               AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
-            ) as quantity
+            i.quantity
           FROM inventory_stock i
           WHERE i.stock_status = 'receiving'
             AND i.siparis_id = ?
-            AND EXISTS (
-              SELECT 1 FROM goods_receipt_items gri
-              JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-              WHERE gr.siparis_id = ?
-                AND gri.urun_key = i.urun_key
-            )
-            AND ((SELECT COALESCE(SUM(gri.quantity_received), 0)
-                 FROM goods_receipt_items gri
-                 JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-                 WHERE gr.siparis_id = ?
-                   AND gri.urun_key = i.urun_key
-                   AND (gri.birim_key = i.birim_key OR gri.birim_key IS NULL OR i.birim_key IS NULL)
-                   AND (gri.expiry_date = i.expiry_date OR (gri.expiry_date IS NULL AND i.expiry_date IS NULL))
-                   AND (gri.pallet_barcode = i.pallet_barcode OR (gri.pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
-                ) -
-                (SELECT COALESCE(SUM(it.quantity), 0)
-                 FROM inventory_transfers it
-                 WHERE it.urun_key = i.urun_key
-                   AND it.siparis_id = ?
-                   AND it.from_location_id IS NULL
-                   AND (it.from_pallet_barcode = i.pallet_barcode OR (it.from_pallet_barcode IS NULL AND i.pallet_barcode IS NULL))
-                )) > 0
-        ''', [orderId, orderId, orderId, orderId, orderId, orderId]);
+            AND i.quantity > 0
+        ''', [orderId]);
         debugPrint('📦 SQL query returned ${stockMaps.length} stock records');
         for (final stock in stockMaps) {
           debugPrint('📦 Stock: id=${stock['id']}, urun_key=${stock['urun_key']}, quantity=${stock['quantity']}, status=${stock['stock_status']}, siparis_id=${stock['siparis_id']}');

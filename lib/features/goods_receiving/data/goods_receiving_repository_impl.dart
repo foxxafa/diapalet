@@ -56,6 +56,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         debugPrint("Processing ${payload.items.length} items...");
         for (final item in payload.items) {
           debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity}");
+          // KRITIK DEBUG: birimKey değerini kontrol et
+          debugPrint("GOODS_RECEIPT_REPO DEBUG: birimKey = ${item.birimKey}");
           
           final itemId = await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
@@ -262,7 +264,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         sa.*,
         u.UrunAdi,
         u.StokKodu,
-        u._key as product_key,
+        u._key as urun_key,
         b.birimadi,
         b._key as birim_key,
         bark.barkod
@@ -278,7 +280,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     
     // Her sipariş satırı için zaten doğru birim bilgisi mevcut
     for (final line in orderLines) {
-      final urunKey = line['product_key'] as String?;
+      final urunKey = line['urun_key'] as String?;
       final productCode = line['StokKodu'] as String?;
       
       if (urunKey == null || productCode == null) {
@@ -288,9 +290,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
       debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimadi']}, Ordered: ${line['miktar']}");
       debugPrint("DEBUG: sipbirimkey: ${line['sipbirimkey']}, birim_key: ${line['birim_key']}");
-
-      // Barcode zaten join ile alındı
-      final barcode = line['barkod'] as String?;
 
       // Alınan miktarı hesapla - bulunan urunKey'i kullan
       final receivedQuantityResult = await db.rawQuery('''
@@ -321,21 +320,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final enrichedMap = Map<String, dynamic>.from(line);
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
-      enrichedMap['urun_key'] = urunKey;
-      // Ensure birim_key is preserved for payload creation
-      enrichedMap['birim_key'] = line['birim_key'];
       
       // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
       debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['miktar']}");
       
-      // Barkod bilgisini kontrol et
-      if (barcode != null) {
-        enrichedMap['barkod'] = barcode;
-        debugPrint("✅ Barcode found: $barcode for product $productCode (unit: ${line['birimadi']})");
-      } else {
-        debugPrint("❌ No barcode for product $productCode with unit ${line['birimadi']}");
-      }
-
       items.add(PurchaseOrderItem.fromDb(enrichedMap));
     }
 

@@ -390,6 +390,12 @@ class TerminalController extends Controller
                 }
             }
             
+            // KRITIK DEBUG: birim_key değerini kontrol et
+            error_log("BACKEND DEBUG: Inserting goods_receipt_item");
+            error_log("  - urun_key: " . $urunKey);
+            error_log("  - birim_key from item: " . ($item['birim_key'] ?? 'NULL'));
+            error_log("  - raw item data: " . json_encode($item));
+            
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId, 
                 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
@@ -1929,7 +1935,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'receipt_id', 'urun_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+            ->select(['id', 'receipt_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
             ->from('goods_receipt_items')
             ->where(['in', 'receipt_id', $receiptIds]);
 
@@ -2170,7 +2176,7 @@ class TerminalController extends Controller
                         'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
                         'location_id' => null,
                         'siparis_id' => $item['siparis_id'],
-                        // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
+                        // KRITIK FIX: goods_receipt_idKALDIRILDI - consolidation için
                         'quantity' => $item['quantity_received'],
                         'pallet_barcode' => $item['pallet_barcode'],
                         'stock_status' => 'receiving',
@@ -2223,7 +2229,7 @@ class TerminalController extends Controller
                     'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
                     'location_id' => null,
                     'siparis_id' => $item['siparis_id'],
-                    // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
+                    // KRITIK FIX: goods_receipt_idKALDIRILDI - consolidation için
                     'quantity' => $item['quantity_received'],
                     'pallet_barcode' => $item['pallet_barcode'],
                     'stock_status' => 'receiving',
