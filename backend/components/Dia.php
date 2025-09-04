@@ -3028,33 +3028,15 @@ class Dia extends Component{
             $urun=Urunler::find()->where(["_key"=>$k->urun_key])->one();
             $sira++;
             if($urun){
-                // Unit key belirleme: Sipariş bazlı ise sipbirimkey, serbest ise barcode unit
-                $unitKey = null;
-                
-                if(!empty($k->siparis_key)) {
-                    // Sipariş bazlı mal kabul - siparis_ayrintili'den sipbirimkey al
-                    $siparisAyrintili = (new \yii\db\Query())
-                        ->select(['sipbirimkey'])
-                        ->from('siparis_ayrintili')
-                        ->where(['_key' => $k->siparis_key])
-                        ->one();
-                    if($siparisAyrintili && !empty($siparisAyrintili['sipbirimkey'])) {
-                        $unitKey = $siparisAyrintili['sipbirimkey'];
-                    }
-                } else if(!empty($k->barcode)) {
-                    // Serbest mal kabul - barkodlar tablosundan _key_scf_stokkart_birimleri al
-                    $barkod = (new \yii\db\Query())
-                        ->select(['_key_scf_stokkart_birimleri'])
-                        ->from('barkodlar')
-                        ->where(['barkod' => $k->barcode])
-                        ->one();
-                    if($barkod && !empty($barkod['_key_scf_stokkart_birimleri'])) {
-                        $unitKey = $barkod['_key_scf_stokkart_birimleri'];
-                    }
-                }
+                // birim_key direkt kullanılıyor
+                $unitKey = $k->birim_key ?? null;
                 
                 if(!$unitKey) {
-                    throw new \Exception("Unit key bulunamadı. Receipt item: " . $k->id . ", Siparis key: " . $k->siparis_key . ", Barcode: " . $k->barcode);
+                    $errorMsg = "Unit key bulunamadı. Receipt item: " . $k->id . 
+                        ", urun_key: " . $k->urun_key . 
+                        ", birim_key: " . ($k->birim_key ?? 'null');
+                    Yii::error($errorMsg, __METHOD__);
+                    throw new \Exception($errorMsg);
                 }
                 
                 $kalem= [
@@ -3091,11 +3073,15 @@ class Dia extends Component{
        
         // Warehouse ve branch kontrolü
         if (!$fis->warehouse || !$fis->warehouse->_key) {
-            throw new \Exception("Warehouse bilgisi bulunamadı veya _key değeri eksik. Receipt ID: " . $fis->goods_receipt_id);
+            $errorMsg = "Warehouse bilgisi bulunamadı veya _key değeri eksik. Receipt ID: " . $fis->goods_receipt_id;
+            Yii::error($errorMsg, __METHOD__);
+            throw new \Exception($errorMsg);
         }
         
         if (!$fis->warehouse->branch || !$fis->warehouse->branch->_key) {
-            throw new \Exception("Branch bilgisi bulunamadı veya _key değeri eksik. Warehouse: " . $fis->warehouse->warehouse_code);
+            $errorMsg = "Branch bilgisi bulunamadı veya _key değeri eksik. Warehouse: " . $fis->warehouse->warehouse_code;
+            Yii::error($errorMsg, __METHOD__);
+            throw new \Exception($errorMsg);
         }
 
         // Cari kodu belirle

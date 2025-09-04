@@ -1227,7 +1227,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false, String? hintText}) {
     final theme = Theme.of(context);
     final borderColor = isValid ? Colors.green : theme.dividerColor;
     final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
@@ -1235,6 +1235,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     return InputDecoration(
       labelText: label,
+      hintText: hintText,
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),

@@ -66,4 +66,69 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     // Yeni barkod sisteminde barkod bulunamadıysa sonuç yok
     return [];
   }
+
+  @override
+  Future<List<ProductLocation>> searchProductLocationsByStockCode(String query) async {
+    final db = await dbHelper.database;
+    
+    final sql = '''
+      SELECT DISTINCT
+        s.urun_key,
+        u.${DbColumns.productsName} as UrunAdi,
+        u.${DbColumns.productsCode} as StokKodu,
+        unit.BirimAdi as unit_name,
+        s.${DbColumns.stockQuantity} as quantity,
+        s.${DbColumns.stockPalletBarcode} as pallet_barcode,
+        s.${DbColumns.stockExpiryDate} as expiry_date,
+        s.${DbColumns.stockLocationId} as location_id,
+        sh.${DbColumns.locationsName} as location_name,
+        sh.${DbColumns.locationsCode} as location_code
+      FROM ${DbTables.inventoryStock} s
+      JOIN ${DbTables.products} u ON u._key = s.urun_key
+      LEFT JOIN birimler unit ON unit._key = s.birim_key
+      LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+      WHERE s.id IN (
+        SELECT DISTINCT s2.id
+        FROM ${DbTables.inventoryStock} s2
+        JOIN ${DbTables.products} u2 ON u2._key = s2.urun_key
+        LEFT JOIN birimler b ON b.StokKodu = u2.${DbColumns.productsCode}
+        LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+        WHERE (u2.${DbColumns.productsCode} LIKE ? OR bark.barkod LIKE ?)
+      )
+        AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+        AND s.${DbColumns.stockQuantity} > 0
+        AND s.${DbColumns.stockLocationId} IS NOT NULL
+      ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.createdAt} ASC, u.${DbColumns.productsCode} ASC
+    ''';
+    
+    final results = await db.rawQuery(sql, ['%$query%', '%$query%']);
+    return results.map((map) => ProductLocation.fromMap(map)).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getProductSuggestions(String query) async {
+    final db = await dbHelper.database;
+    
+    final sql = '''
+      SELECT DISTINCT
+        u._key as urun_key,
+        u.${DbColumns.productsName} as UrunAdi,
+        u.${DbColumns.productsCode} as StokKodu,
+        bark.barkod as barcode,
+        unit.BirimAdi as unit_name
+      FROM ${DbTables.inventoryStock} s
+      JOIN ${DbTables.products} u ON u._key = s.urun_key
+      LEFT JOIN birimler unit ON unit._key = s.birim_key
+      LEFT JOIN birimler b ON b.StokKodu = u.${DbColumns.productsCode}
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      WHERE (u.${DbColumns.productsCode} LIKE ? OR bark.barkod LIKE ?)
+        AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+        AND s.${DbColumns.stockQuantity} > 0
+        AND s.${DbColumns.stockLocationId} IS NOT NULL
+      ORDER BY u.${DbColumns.productsCode} ASC
+      LIMIT 10
+    ''';
+    
+    return await db.rawQuery(sql, ['%$query%', '%$query%']);
+  }
 }

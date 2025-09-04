@@ -1023,9 +1023,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
     
-    // Search by new barcode system (barkodlar table)
-    whereClauses.add('bark.barkod LIKE ?');
-    whereArgs.add('%$query%');
+    // Search by barcode or StokKodu (moved to WHERE clause for LEFT JOIN compatibility)
+    // Will be handled separately in SQL query
     
     // Add stock status filter
     if (stockStatuses.isNotEmpty) {
@@ -1050,6 +1049,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       // Search all available products (no additional filter)
     }
     
+    // Add search parameters for barcode and StokKodu
+    whereArgs.insert(0, '%$query%');  // For StokKodu search
+    whereArgs.insert(0, '%$query%');  // For barcode search
+    
+    final whereClause = whereClauses.isNotEmpty ? ' AND ' + whereClauses.join(' AND ') : '';
+    
     final sql = '''
       SELECT DISTINCT
         u._key,
@@ -1059,10 +1064,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         bark.barkod
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_key = u._key
-      INNER JOIN birimler b ON b.StokKodu = u.StokKodu
-      INNER JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
-      WHERE ${whereClauses.join(' AND ')} AND s.quantity > 0
+      WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?) $whereClause AND s.quantity > 0
       ORDER BY u.UrunAdi ASC
     ''';
     

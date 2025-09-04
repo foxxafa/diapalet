@@ -21,12 +21,12 @@ class InventoryInquiryScreen extends StatefulWidget {
 }
 
 class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
-  final _barcodeController = TextEditingController();
-  final _barcodeFocusNode = FocusNode();
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   bool _isLoading = false;
   List<ProductLocation>? _locations;
-  String? _lastSearchedBarcode;
-  String? _fullScannedBarcode;
+  List<Map<String, dynamic>> _productSuggestions = [];
+  String? _lastSearchQuery;
 
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -36,7 +36,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
     super.initState();
     _barcodeService = BarcodeIntentService();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).requestFocus(_barcodeFocusNode);
+      FocusScope.of(context).requestFocus(_searchFocusNode);
       _initBarcode();
     });
   }
@@ -44,8 +44,8 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   @override
   void dispose() {
     _intentSub?.cancel();
-    _barcodeController.dispose();
-    _barcodeFocusNode.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -58,8 +58,6 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   void _handleBarcode(String code) {
     if (!mounted) return;
-    _fullScannedBarcode = code; // Store the full raw code
-
     final parsedData = GS1Parser.parse(code);
     String displayCode = code;
 
@@ -72,45 +70,102 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
         displayCode = gtin;
       }
     }
-    _barcodeController.text = displayCode;
-    _search();
+    _searchController.text = displayCode;
+    _searchByBarcode();
   }
 
-  Future<void> _search() async {
-    final displayBarcode = _barcodeController.text.trim();
-    if (displayBarcode.isEmpty) {
-      return;
-    }
+  Future<void> _searchByBarcode() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
 
-    // For the actual backend search, use the complete barcode if it came from a scan.
-    final barcodeToSearch = _fullScannedBarcode ?? displayBarcode;
-    _fullScannedBarcode = null; // Consume the value so it's not used again for manual search
-
-    _barcodeFocusNode.unfocus();
+    _searchFocusNode.unfocus();
     setState(() {
       _isLoading = true;
       _locations = null;
-      _lastSearchedBarcode = displayBarcode; // Use the display barcode for UI messages
+      _productSuggestions = [];
+      _lastSearchQuery = query;
     });
 
     try {
       final repo = context.read<InventoryInquiryRepository>();
-      final results = await repo.findProductLocationsByBarcode(barcodeToSearch);
+      final results = await repo.findProductLocationsByBarcode(query);
       if (!mounted) return;
       setState(() {
         _locations = results;
+        _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      _showErrorSnackBar(
-          'inventory_inquiry.error_searching'.tr(namedArgs: {'error': e.toString()}));
-    } finally {
       if (mounted) {
         setState(() {
+          _locations = [];
           _isLoading = false;
+        });
+        _showErrorSnackBar('inventory_inquiry.error_searching'.tr(namedArgs: {'error': e.toString()}));
+      }
+    }
+  }
+
+  Future<void> _searchByStockCode() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    _searchFocusNode.unfocus();
+    setState(() {
+      _isLoading = true;
+      _locations = null;
+      _productSuggestions = [];
+      _lastSearchQuery = query;
+    });
+
+    try {
+      final repo = context.read<InventoryInquiryRepository>();
+      final results = await repo.searchProductLocationsByStockCode(query);
+      if (!mounted) return;
+      setState(() {
+        _locations = results;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _locations = [];
+          _isLoading = false;
+        });
+        _showErrorSnackBar('inventory_inquiry.error_searching'.tr(namedArgs: {'error': e.toString()}));
+      }
+    }
+  }
+
+  Future<void> _searchProductSuggestions(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _productSuggestions = [];
+      });
+      return;
+    }
+
+    try {
+      final repo = context.read<InventoryInquiryRepository>();
+      final results = await repo.getProductSuggestions(query);
+      if (!mounted) return;
+      setState(() {
+        _productSuggestions = results;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _productSuggestions = [];
         });
       }
     }
+  }
+
+  void _selectProduct(String stockCode) {
+    _searchController.text = stockCode;
+    setState(() {
+      _productSuggestions = [];
+    });
+    _searchByStockCode();
   }
 
   @override
@@ -133,12 +188,78 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: QrTextField(
-        controller: _barcodeController,
-        focusNode: _barcodeFocusNode,
-        labelText: 'inventory_inquiry.barcode_label'.tr(),
-        onFieldSubmitted: (_) => _search(),
-        onQrScanned: (scannedData) => _handleBarcode(scannedData),
+      child: Column(
+        children: [
+          QrTextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            labelText: 'inventory_inquiry.search_label'.tr(),
+            onChanged: (value) {
+              if (value.trim().isEmpty) {
+                setState(() {
+                  _productSuggestions = [];
+                });
+              } else {
+                _searchProductSuggestions(value);
+              }
+            },
+            onFieldSubmitted: (value) {
+              if (value.trim().isNotEmpty) {
+                if (_productSuggestions.isNotEmpty) {
+                  _selectProduct(_productSuggestions.first['StokKodu'] ?? '');
+                } else {
+                  // Enter'a basınca hem barkod hem StokKodu ile arama yap
+                  _searchByStockCode();
+                }
+              }
+            },
+            onQrScanned: (scannedData) => _handleBarcode(scannedData),
+          ),
+          if (_productSuggestions.isNotEmpty) _buildProductSuggestions(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductSuggestions() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: _productSuggestions.take(5).map((product) {
+          return ListTile(
+            dense: true,
+            title: Text(
+              product['UrunAdi'] ?? '',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${'inventory_inquiry.stock_code'.tr()}: ${product['StokKodu'] ?? ''}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  '${'inventory_inquiry.barcode'.tr()}: ${product['barcode'] ?? 'N/A'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
+                Text(
+                  '${'inventory_inquiry.unit'.tr()}: ${product['unit_name'] ?? 'N/A'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            onTap: () => _selectProduct(product['StokKodu'] ?? ''),
+          );
+        }).toList(),
       ),
     );
   }
@@ -162,7 +283,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       return Center(
         child: Text(
           'inventory_inquiry.no_results'
-              .tr(namedArgs: {'barcode': _lastSearchedBarcode ?? ''}),
+              .tr(namedArgs: {'query': _lastSearchQuery ?? ''}),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium,
         ),
@@ -188,14 +309,14 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  location.productCode,
+                  '${'inventory_inquiry.stock_code'.tr()}: ${location.productCode}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const Divider(height: 24),
                 _buildInfoRow(
                     Icons.inventory,
                     'inventory_inquiry.quantity'.tr(),
-                    location.quantity.toString()),
+                    '${location.quantity.toString()} ${location.unitName ?? 'N/A'}'),
                 const SizedBox(height: 8),
                 _buildInfoRow(
                     Icons.location_on,
