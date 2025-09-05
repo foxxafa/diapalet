@@ -217,9 +217,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final query = '''
       SELECT
-        u._key as productId,
+        u._key as productKey,
         u.UrunAdi as productName,
         u.StokKodu as productCode,
+        s.birim_key,
         (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
@@ -333,8 +334,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: item.quantity,
             palletId: targetPalletId,
             status: 'available',
-            siparisIdForAddition: null, // KRITIK FIX: 'available' durumunda siparis_id = null - konsolidasyon için
-            goodsReceiptIdForAddition: null, // KRITIK FIX: 'available' durumunda goods_receipt_id = null - konsolidasyon için
+            siparisIdForAddition: sourceSiparisId, // KRITIK FIX: Kaynak bilgilerini koru - yanlış konsolidasyon önlenir
+            goodsReceiptIdForAddition: sourceGoodsReceiptId, // KRITIK FIX: Kaynak bilgilerini koru - yanlış konsolidasyon önlenir
             expiryDateForAddition: item.expiryDate,
           );
 
@@ -868,9 +869,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         existingWhereArgs.add(expiryDateStr);
       }
 
-      // KRITIK FIX: 'available' durumunda konsolidasyon için siparis_id ve goods_receipt_id kontrolü
-      if (status == 'available') {
-        // Available durumunda siparis_id=null olan kayıtları konsolide et
+      // KRITIK FIX: Transfer işlemlerinde konsolidasyon YAPMAMA - her transfer yeni kayıt oluştursun
+      // Transfer sırasında sadece birebir kayıt oluştur, konsolide etme
+      if (status == 'available' && (siparisIdForAddition != null || goodsReceiptIdForAddition != null)) {
+        // Transfer edilen kayıtlar için konsolidasyon yapma - her zaman yeni kayıt oluştur
+        // Bu sayede çift sayma önlenir
+      } else if (status == 'available') {
+        // Normal available stoklarda konsolidasyon yap (transfer dışı durumlar)
         if (siparisIdForAddition == null) {
           existingWhereClause += ' AND siparis_id IS NULL';
         } else {
@@ -878,7 +883,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           existingWhereArgs.add(siparisIdForAddition);
         }
         
-        // Available durumunda goods_receipt_id=null olan kayıtları konsolide et  
         if (goodsReceiptIdForAddition == null) {
           existingWhereClause += ' AND goods_receipt_id IS NULL';
         } else {
@@ -903,12 +907,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         }
       }
 
-      final existing = await txn.query(
-        'inventory_stock',
-        where: existingWhereClause,
-        whereArgs: existingWhereArgs,
-        limit: 1,
-      );
+      // KRITIK FIX: Transfer durumunda existing sorgusu yapmama - her zaman yeni kayıt oluştur
+      List<Map<String, Object?>> existing = [];
+      
+      // Sadece transfer dışı durumlarda konsolidasyon kontrolü yap
+      if (!(status == 'available' && (siparisIdForAddition != null || goodsReceiptIdForAddition != null))) {
+        existing = await txn.query(
+          'inventory_stock',
+          where: existingWhereClause,
+          whereArgs: existingWhereArgs,
+          limit: 1,
+        );
+      }
 
       if (existing.isNotEmpty) {
         final currentQty = (existing.first['quantity'] as num).toDouble();
@@ -932,6 +942,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           'stock_status': status,
           'siparis_id': siparisIdForAddition,
           'goods_receipt_id': goodsReceiptIdForAddition,
+          'created_at': DateTime.now().toIso8601String(), // DÜZELTME: created_at eklendi
           'updated_at': DateTime.now().toIso8601String(),
           'expiry_date': expiryDateStr,
         });

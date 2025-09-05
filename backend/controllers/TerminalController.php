@@ -441,8 +441,6 @@ class TerminalController extends Controller
             );
         }
 
-        // Eksik inventory_stock kayıtlarını oluştur (geçmiş mal kabulleri için)
-        $this->ensureInventoryStockExists($db, $receiptId);
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
          try {
@@ -1217,10 +1215,6 @@ class TerminalController extends Controller
     }
     $warehouseId = (int)$warehouseId;
     
-    // Inventory stock eksikliklerini kontrol et ve oluştur (sadece ilk sync'te)
-    if (!$lastSyncTimestamp) {
-        $this->createMissingInventoryStocks($warehouseId);
-    }
 
     // Eğer table_name belirtilmişse, paginated mode
     if ($tableName) {
@@ -2155,112 +2149,4 @@ class TerminalController extends Controller
 
         return ['success' => true, 'data' => $receipts];
     }
-
-    /**
-     * Geçmiş mal kabulleri için eksik inventory_stock kayıtlarını oluşturur
-     */
-    private function ensureInventoryStockExists($db, $receiptId)
-    {
-        try {
-            // Bu receipt için goods_receipt_items'dan inventory_stock olmayan kayıtları bul
-            $receiptItems = (new Query())
-                ->select(['gri.urun_key', 'gri.birim_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
-                ->from(['gri' => 'goods_receipt_items'])
-                ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
-                ->where(['gri.receipt_id' => $receiptId])
-                ->all($db);
-
-            foreach ($receiptItems as $item) {
-                // Bu kombinasyon için inventory_stock var mı kontrol et
-                // KRITIK FIX: goods_receipt_id kullanma - consolidation için
-                $existingStock = (new Query())
-                    ->from('inventory_stock')
-                    ->where([
-                        'urun_key' => $item['urun_key'],
-                        'stock_status' => 'receiving'
-                    ])
-                    ->exists($db);
-
-                if (!$existingStock) {
-                    // Eksik inventory_stock'ı oluştur
-                    $db->createCommand()->insert('inventory_stock', [
-                        'urun_key' => $item['urun_key'],
-                        'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
-                        'location_id' => null,
-                        'siparis_id' => $item['siparis_id'],
-                        // KRITIK FIX: goods_receipt_idKALDIRILDI - consolidation için
-                        'quantity' => $item['quantity_received'],
-                        'pallet_barcode' => $item['pallet_barcode'],
-                        'stock_status' => 'receiving',
-                        'expiry_date' => $item['expiry_date'],
-                        'created_at' => date('Y-m-d H:i:s'),
-                        'updated_at' => date('Y-m-d H:i:s')
-                    ])->execute();
-                    
-                    Yii::info("Created missing inventory_stock for receipt $receiptId, product {$item['urun_key']}, quantity {$item['quantity_received']}", __METHOD__);
-                }
-            }
-        } catch (\Exception $e) {
-            Yii::warning("Error ensuring inventory stock exists: " . $e->getMessage(), __METHOD__);
-        }
-    }
-
-    /**
-     * Tüm geçmiş mal kabulleri için eksik inventory_stock kayıtlarını oluşturur
-     */
-    private function createMissingInventoryStocks($warehouseId)
-    {
-        try {
-            $db = Yii::$app->db;
-            
-            // Bu warehouse'a ait goods_receipts'leri bul
-            $receipts = (new Query())
-                ->select('goods_receipt_id')
-                ->from('goods_receipts')
-                ->where(['warehouse_id' => $warehouseId])
-                ->column($db);
-
-            if (empty($receipts)) {
-                return;
-            }
-
-            // Bu receipt'lere ait goods_receipt_items'dan inventory_stock olmayan kayıtları bul
-            $missingStocks = (new Query())
-                ->select(['gri.receipt_id', 'gri.urun_key', 'gri.birim_key', 'gri.quantity_received', 'gri.pallet_barcode', 'gri.expiry_date', 'gr.siparis_id'])
-                ->from(['gri' => 'goods_receipt_items'])
-                ->leftJoin(['gr' => 'goods_receipts'], 'gr.goods_receipt_id = gri.receipt_id')
-                ->leftJoin(['ist' => 'inventory_stock'], 'ist.urun_key = gri.urun_key AND ist.stock_status = \'receiving\'')
-                ->where(['in', 'gri.receipt_id', $receipts])
-                ->andWhere(['ist.id' => null]) // LEFT JOIN ile inventory_stock olmayan kayıtları bul
-                ->all($db);
-
-            $createdCount = 0;
-            foreach ($missingStocks as $item) {
-                $db->createCommand()->insert('inventory_stock', [
-                    'urun_key' => $item['urun_key'],
-                    'birim_key' => $item['birim_key'], // KRITIK FIX: birim_key eklendi
-                    'location_id' => null,
-                    'siparis_id' => $item['siparis_id'],
-                    // KRITIK FIX: goods_receipt_idKALDIRILDI - consolidation için
-                    'quantity' => $item['quantity_received'],
-                    'pallet_barcode' => $item['pallet_barcode'],
-                    'stock_status' => 'receiving',
-                    'expiry_date' => $item['expiry_date'],
-                    'created_at' => date('Y-m-d H:i:s'),
-                    'updated_at' => date('Y-m-d H:i:s')
-                ])->execute();
-                
-                $createdCount++;
-            }
-
-            if ($createdCount > 0) {
-                Yii::info("Created $createdCount missing inventory_stock records for warehouse $warehouseId", __METHOD__);
-            }
-
-        } catch (\Exception $e) {
-            Yii::warning("Error creating missing inventory stocks: " . $e->getMessage(), __METHOD__);
-        }
-    }
-
-    // Inventory stock sync method removed - use normal table sync instead
 }
