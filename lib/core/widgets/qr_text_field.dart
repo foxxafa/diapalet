@@ -136,21 +136,23 @@ class _QrTextFieldState extends State<QrTextField> {
   InputDecoration _inputDecoration(BuildContext context) {
     final theme = Theme.of(context);
     final borderColor = widget.isValid ? Colors.green : theme.dividerColor;
+    final borderWidth = widget.isValid ? 2.5 : 1.0; // Yeşil border için kalın çizgi
+    final focusedBorderColor = widget.isValid ? Colors.green : theme.primaryColor;
     
     return InputDecoration(
       labelText: widget.labelText,
       hintText: widget.hintText,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: borderColor),
+        borderSide: BorderSide(color: borderColor, width: borderWidth),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: borderColor),
+        borderSide: BorderSide(color: borderColor, width: borderWidth),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: theme.primaryColor, width: 2),
+        borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5),
       ),
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12.0),
