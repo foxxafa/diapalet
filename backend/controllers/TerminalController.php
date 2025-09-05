@@ -656,6 +656,7 @@ class TerminalController extends Controller
                 
                 $transferData = [
                     'urun_key'            => $urunKey, // _key yazılıyor
+                    'birim_key'           => $birimKey, // DÜZELTME: $birimKey değişkenini kullan
                     'from_location_id'    => $sourceLocationId,
                     'to_location_id'      => $targetLocationId,
                     'quantity'            => $portion['qty'],
@@ -1544,7 +1545,7 @@ class TerminalController extends Controller
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())
-            ->select(['id', 'urun_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers');
         $transferConditions = ['or'];
 
@@ -2038,7 +2039,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'urun_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers')
             ->where($transferConditions);
 

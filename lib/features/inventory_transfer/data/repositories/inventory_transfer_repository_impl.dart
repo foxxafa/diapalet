@@ -247,6 +247,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   ) async {
     final db = await dbHelper.database;
     try {
+      // KRITIK DEBUG: Transfer öncesi birimKey kontrolü
+      for (var item in items) {
+        debugPrint("DEBUG Transfer Item - productKey: ${item.productKey}, birimKey: ${item.birimKey}, quantity: ${item.quantity}");
+      }
+      
       await db.transaction((txn) async {
         final String opId = const Uuid().v4();
         final List<Map<String, dynamic>> itemsForJson = [];
@@ -321,11 +326,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             siparisIdForAddition: sourceSiparisId, // KRITIK FIX: Receiving'de siparis_id ile match et
             goodsReceiptIdForAddition: sourceGoodsReceiptId, // KRITIK FIX: Receiving'de goods_receipt_id ile match et
             expiryDateForAddition: item.expiryDate,
+            isTransferOperation: false, // DÜZELTME: FIFO mantığının düzgün çalışması için false olmalı
           );
 
           final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
 
-          // 3. Stoğu hedefe ekle (yeni ID'lerle birlikte)
+          // 3. Stoğu hedefe ekle 
+          // KRITIK FIX: 'available' durumunda siparis_id ve goods_receipt_id NULL olmalı (konsolidasyon için)
           await _updateStockSmart(
             txn,
             productId: item.productKey,
@@ -334,13 +341,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             quantityChange: item.quantity,
             palletId: targetPalletId,
             status: 'available',
-            siparisIdForAddition: sourceSiparisId, // KRITIK FIX: Kaynak bilgilerini koru - yanlış konsolidasyon önlenir
-            goodsReceiptIdForAddition: sourceGoodsReceiptId, // KRITIK FIX: Kaynak bilgilerini koru - yanlış konsolidasyon önlenir
+            siparisIdForAddition: null, // ÇÖZÜM: Available durumunda NULL - konsolidasyon için
+            goodsReceiptIdForAddition: null, // ÇÖZÜM: Available durumunda NULL - konsolidasyon için
             expiryDateForAddition: item.expiryDate,
+            isTransferOperation: false, // DÜZELTME: Konsolidasyon yapması için false olmalı
           );
 
           await txn.insert(DbTables.inventoryTransfers, {
             'urun_key': item.productKey,
+            'birim_key': item.birimKey, // KRITIK FIX: birim_key'i de kaydet
             'from_location_id': sourceLocationId, // Artık null ise null kalıyor
             'to_location_id': targetLocationId,
             'quantity': item.quantity,
@@ -729,6 +738,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     int? siparisIdForAddition,
     int? goodsReceiptIdForAddition,
     DateTime? expiryDateForAddition,
+    bool isTransferOperation = false, // YENI: Transfer işlemi olup olmadığını belirler
   }) async {
     if (quantityChange == 0) return;
 
@@ -872,7 +882,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       // KRITIK FIX: Transfer işlemlerinde konsolidasyon YAPMAMA - her transfer yeni kayıt oluştursun
       // Transfer sırasında sadece birebir kayıt oluştur, konsolide etme
-      if (status == 'available' && (siparisIdForAddition != null || goodsReceiptIdForAddition != null)) {
+      if (isTransferOperation) {
         // Transfer edilen kayıtlar için konsolidasyon yapma - her zaman yeni kayıt oluştur
         // Bu sayede çift sayma önlenir
       } else if (status == 'available') {
@@ -911,8 +921,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       // KRITIK FIX: Transfer durumunda existing sorgusu yapmama - her zaman yeni kayıt oluştur
       List<Map<String, Object?>> existing = [];
       
-      // Sadece transfer dışı durumlarda konsolidasyon kontrolü yap
-      if (!(status == 'available' && (siparisIdForAddition != null || goodsReceiptIdForAddition != null))) {
+      // Transfer işlemi değilse konsolidasyon kontrolü yap
+      if (!isTransferOperation) {
         existing = await txn.query(
           'inventory_stock',
           where: existingWhereClause,

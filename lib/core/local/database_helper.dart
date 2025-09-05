@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 61; // birim_key added to inventory_stock and goods_receipt_items
+  static const _databaseVersion = 62; // birim_key added to inventory_transfers
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -266,6 +266,7 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           id INTEGER PRIMARY KEY,
           urun_key TEXT,
+          birim_key TEXT,
           from_location_id INTEGER,
           to_location_id INTEGER,
           quantity REAL,
@@ -522,7 +523,13 @@ class DatabaseHelper {
         if (data.containsKey('inventory_stock')) {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
+            // DEBUG: Raw data from server
+            debugPrint('SYNC DEBUG: Raw inventory_stock from server: $stock');
+            
             final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
+            
+            // DEBUG: After sanitization
+            debugPrint('SYNC DEBUG: Sanitized inventory_stock: $sanitizedStock');
             
             // Inventory stock unique constraint kontrol (composite key)
             // Updated to include birim_key in unique constraint
@@ -586,16 +593,18 @@ class DatabaseHelper {
               final newQuantity = (sanitizedStock['quantity'] as num).toDouble();
               
               if (newQuantity > 0.001) {
+                // KRITIK FIX: Update sırasında birim_key'i de güncelle
                 await txn.update(
                   'inventory_stock',
                   {
                     'quantity': newQuantity,
+                    'birim_key': sanitizedStock['birim_key'], // birim_key'i de güncelle
                     'updated_at': DateTime.now().toIso8601String()
                   },
                   where: 'id = ?',
                   whereArgs: [existingId]
                 );
-                debugPrint('SYNC INFO: Updated inventory stock quantity to: $newQuantity');
+                debugPrint('SYNC INFO: Updated inventory stock quantity to: $newQuantity, birim_key: ${sanitizedStock['birim_key']}');
               } else {
                 // Miktar 0 veya negatifse kaydı sil
                 await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existingId]);
@@ -889,6 +898,11 @@ class DatabaseHelper {
         if (newRecord.containsKey('urun_id')) {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
+        }
+        // KRITIK FIX: birim_key'i de koru
+        if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
+          newRecord['birim_key'] = newRecord['birim_key'].toString();
+          debugPrint("SYNC DEBUG: inventory_transfers birim_key processed: ${newRecord['birim_key']}");
         }
         break;
 
