@@ -76,6 +76,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   dynamic _selectedContainer;
   final _scannedContainerIdController = TextEditingController();
   final _containerFocusNode = FocusNode();
+  String? _dynamicProductLabel; // Dinamik product label için
 
   List<ProductItem> _productsInContainer = [];
   final Map<String, TextEditingController> _productQuantityControllers = {};
@@ -398,11 +399,39 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
+  // Birim key'den birim adını getir
+  Future<String?> _getUnitName(String? birimKey) async {
+    if (birimKey == null || birimKey.isEmpty) return null;
+    
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final db = await dbHelper.database;
+      
+      final result = await db.query(
+        'birimler',
+        columns: ['birimadi'],
+        where: '_key = ?',
+        whereArgs: [birimKey],
+        limit: 1,
+      );
+      
+      if (result.isNotEmpty) {
+        return result.first['birimadi'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Error getting unit name for $birimKey: $e');
+    }
+    
+    return null;
+  }
+
   void _selectProductFromSearch(ProductInfo product) async {
-    // Create a synthetic container from the selected product
-    _scannedContainerIdController.text = '${product.name} (${product.stockCode})';
+    // Show product barcode in the field and update label with product name
+    final barcode = product.productBarcode ?? product.stockCode;
+    _scannedContainerIdController.text = barcode;
     setState(() {
       _productSearchResults = [];
+      _dynamicProductLabel = product.name; // Update label with product name
     });
     
     // Find the matching container in available containers
@@ -764,6 +793,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _isSearchingProducts = false;
     _productsInContainer = [];
     _selectedContainer = null;
+    _dynamicProductLabel = null; // Label'ı da temizle
     _clearProductControllers();
     _availableContainers = [];
   }
@@ -1125,14 +1155,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 0),
-            child: Text(
-              'inventory_transfer.content_title'.tr(namedArgs: {'containerId': _scannedContainerIdController.text}),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Divider(height: 1),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1141,30 +1163,39 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16, thickness: 0.2),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
-              final controller = _productQuantityControllers[product.key]!;
-              final focusNode = _productQuantityFocusNodes[product.key]!;
+              final controller = _productQuantityControllers[product.key];
+              final focusNode = _productQuantityFocusNodes[product.key];
+              
+              // Safety check: if controllers are null, skip this item
+              if (controller == null || focusNode == null) {
+                return const SizedBox.shrink();
+              }
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(product.name, style: Theme.of(context).textTheme.bodyLarge, overflow: TextOverflow.ellipsis),
                           Text(
-                              'inventory_transfer.label_current_quantity'.tr(
-                                  namedArgs: {'productCode': product.productCode, 'quantity': product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}),
-                              style: Theme.of(context).textTheme.bodySmall),
+                            'inventory_transfer.label_current_quantity'.tr(namedArgs: {
+                              'productCode': product.productCode,
+                              'quantity': product.currentQuantity.toStringAsFixed(
+                                product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
+                              )
+                            }),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(width: _gap),
                     Expanded(
-                      flex: 2,
+                      flex: 2, // Quantity input alanını biraz genişlet
                       child: TextFormField(
                         controller: controller,
                         focusNode: focusNode,
@@ -1182,19 +1213,29 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           return null;
                         },
                         onFieldSubmitted: (value) {
-                          // Otomatik focus geçişini kaldır - klavye açılmasını önle
-                          // final productIds = _productQuantityFocusNodes.keys.toList();
-                          // final currentIndex = productIds.indexOf(product.key);
-                          // if (currentIndex < productIds.length - 1) {
-                          //   _productQuantityFocusNodes[productIds[currentIndex + 1]]?.requestFocus();
-                          // } else {
-                          //   _targetLocationFocusNode.requestFocus();
-                          // }
-                          
                           // Sadece klavyeyi kapat
                           FocusScope.of(context).unfocus();
                         },
                       ),
+                    ),
+                    const SizedBox(width: _smallGap),
+                    // Birim adı için alan
+                    FutureBuilder<String?>(
+                      future: _getUnitName(product.birimKey),
+                      builder: (context, snapshot) {
+                        final unitName = snapshot.data ?? '';
+                        return SizedBox(
+                          width: 50,
+                          child: Text(
+                            unitName,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold, // Birim adını kalın yap
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -1290,7 +1331,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 controller: _selectedMode == AssignmentMode.product ? _productSearchController : _scannedContainerIdController,
                 focusNode: _selectedMode == AssignmentMode.product ? _productSearchFocusNode : _containerFocusNode,
                 decoration: _inputDecoration(
-                  _selectedMode == AssignmentMode.pallet ? 'inventory_transfer.label_pallet'.tr() : 'inventory_transfer.label_product'.tr(),
+                  _selectedMode == AssignmentMode.pallet 
+                      ? 'inventory_transfer.label_pallet'.tr() 
+                      : _dynamicProductLabel ?? 'inventory_transfer.label_product'.tr(),
                   suffixIcon: _selectedMode == AssignmentMode.product && _isSearchingProducts
                       ? const SizedBox(
                           width: 20,
@@ -1305,6 +1348,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         if (value.isEmpty) {
                           setState(() {
                             _productSearchResults = [];
+                            _dynamicProductLabel = null; // Clear label when text is cleared
                           });
                         } else {
                           _searchProductsForTransfer(value);
