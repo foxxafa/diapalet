@@ -78,6 +78,7 @@ abstract class InventoryTransferRepository {
       int? orderId,
       String? deliveryNoteNumber, 
       int? locationId,
-      List<String> stockStatuses = const ['available', 'receiving']
+      List<String> stockStatuses = const ['available', 'receiving'],
+      bool excludePalletizedProducts = false,
     });
 }

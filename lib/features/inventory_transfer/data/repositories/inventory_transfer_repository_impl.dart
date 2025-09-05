@@ -561,8 +561,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date'].toString()) : null;
       final containerId = pallet ?? 'box_${productInfo.stockCode}';
 
-      // KRITIK FIX: Aynı ürünü farklı barkodlarla gruplamak için urun_key kullan
-      final groupingKey = isPutaway ? containerId : 'product_${productInfo.productKey}';
+      // KRITIK FIX: Paletin içindeki ve serbest ürünleri ayırmak için containerId kullan
+      // Normal transfer için de container bazında grupla (pallet var mı yok mu diye)
+      final groupingKey = containerId;
 
       aggregatedItems.putIfAbsent(groupingKey, () => {});
 
@@ -1026,7 +1027,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     int? orderId,
     String? deliveryNoteNumber, 
     int? locationId,
-    List<String> stockStatuses = const ['available', 'receiving']
+    List<String> stockStatuses = const ['available', 'receiving'],
+    bool excludePalletizedProducts = false, // YENI: Paletin içindeki ürünleri hariç tut
   }) async {
     final db = await dbHelper.database;
     
@@ -1041,6 +1043,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (stockStatuses.isNotEmpty) {
       whereClauses.add('s.stock_status IN (${stockStatuses.map((_) => '?').join(',')})');
       whereArgs.addAll(stockStatuses);
+    }
+    
+    // YENI: Paletin içindeki ürünleri hariç tut (Product Mode için)
+    if (excludePalletizedProducts) {
+      whereClauses.add('s.pallet_barcode IS NULL');
     }
     
     // Add context-specific filters

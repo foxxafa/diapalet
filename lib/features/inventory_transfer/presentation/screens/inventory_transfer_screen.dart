@@ -380,6 +380,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         deliveryNoteNumber: deliveryNoteNumber,
         locationId: locationId,
         stockStatuses: stockStatuses,
+        excludePalletizedProducts: true, // YENI: Product Mode'da paletin içindeki ürünleri hariç tut
       );
 
       if (mounted) {
