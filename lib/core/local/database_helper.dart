@@ -2646,56 +2646,38 @@ class DatabaseHelper {
             
             debugPrint('  ✅ siparis_id eşleşiyor');
             
-            // Tarih kontrolü - daha esnek yaklaşım
-            final serverDateStr = serverRecord['receipt_date'].toString();
-            final pendingDateStr = receiptDate.toString();
+            // Tarih kontrolü - UTC ISO 8601 standardı ile toleranslı karşılaştırma
+            final serverDateStr = _normalizeToUtcIso(serverRecord['receipt_date'].toString());
+            final pendingDateStr = _normalizeToUtcIso(receiptDate.toString());
             
-            // Basit string karşılaştırması
-            bool datesMatch = false;
+            debugPrint('  - Server tarih (normalized): $serverDateStr');
+            debugPrint('  - Pending tarih (normalized): $pendingDateStr');
             
-            // 1. Önce tam string eşleşmesi dene
-            if (serverDateStr == pendingDateStr) {
-              datesMatch = true;
-              debugPrint('  ✅ Tam tarih string eşleşmesi');
-            } else {
-              // 2. İlk 19 karakter eşleşmesi (saniye seviyesinde)
-              try {
-                final serverPart = serverDateStr.substring(0, Math.min(19, serverDateStr.length));
-                final pendingPart = pendingDateStr.substring(0, Math.min(19, pendingDateStr.length));
-                
-                if (serverPart == pendingPart) {
-                  datesMatch = true;
-                  debugPrint('  ✅ Tarih substring eşleşmesi: $serverPart');
-                } else {
-                  debugPrint('  ❌ Tarih substring eşleşmiyor: "$serverPart" != "$pendingPart"');
-                  
-                  // 3. DateTime parsing ile toleranslı karşılaştırma
-                  try {
-                    final serverDate = DateTime.parse(serverDateStr.replaceAll(' ', 'T'));
-                    final pendingDate = DateTime.parse(pendingDateStr.replaceAll(' ', 'T'));
-                    
-                    final serverSeconds = serverDate.millisecondsSinceEpoch ~/ 1000;
-                    final pendingSeconds = pendingDate.millisecondsSinceEpoch ~/ 1000;
-                    final timeDiff = (serverSeconds - pendingSeconds).abs();
-                    
-                    if (timeDiff <= 5) { // 5 saniye tolerans
-                      datesMatch = true;
-                      debugPrint('  ✅ Toleranslı tarih eşleşmesi: ${timeDiff}s fark');
-                    } else {
-                      debugPrint('  ❌ Tarih farkı çok büyük: ${timeDiff}s');
-                    }
-                  } catch (e) {
-                    debugPrint('  ❌ DateTime parsing hatası: $e');
-                  }
-                }
-              } catch (e) {
-                debugPrint('  ❌ String substring hatası: $e');
+            // DateTime parse ederek toleranslı karşılaştırma yap
+            try {
+              final serverDateTime = DateTime.parse(serverDateStr);
+              final pendingDateTime = DateTime.parse(pendingDateStr);
+              final timeDiff = (serverDateTime.millisecondsSinceEpoch - pendingDateTime.millisecondsSinceEpoch).abs();
+              final toleranceMs = 5000; // 5 saniye tolerans
+              
+              final datesMatch = timeDiff <= toleranceMs;
+              
+              debugPrint('  - Zaman farkı: ${timeDiff}ms (Tolerans: ${toleranceMs}ms)');
+              debugPrint('  - Tarih eşleşmesi: ${datesMatch ? "✅" : "❌"}');
+              
+              if (datesMatch) {
+                debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
+                return true;
               }
-            }
-            
-            if (datesMatch) {
-              debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
-              return true;
+            } catch (e) {
+              debugPrint('⚠️ Tarih parse hatası: $e');
+              // Parse hatası durumunda string karşılaştırması yap
+              final datesMatch = serverDateStr == pendingDateStr;
+              debugPrint('  - String eşleşmesi: ${datesMatch ? "✅" : "❌"}');
+              if (datesMatch) {
+                debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! (String match)');
+                return true;
+              }
             }
           } else {
             debugPrint('❌ Header bulunamadı');
@@ -2709,6 +2691,17 @@ class DatabaseHelper {
       debugPrint('❌ isOwnOperation kritik hatası: $e');
       debugPrint('Stack trace: $stackTrace');
       return false;
+    }
+  }
+  
+  /// UTC ISO 8601 formatına normalize eder
+  String _normalizeToUtcIso(String dateStr) {
+    try {
+      final dt = DateTime.parse(dateStr.replaceAll(' ', 'T'));
+      return dt.toUtc().toIso8601String();
+    } catch (e) {
+      debugPrint('⚠️ Tarih normalize hatası: $e, original: $dateStr');
+      return dateStr; // Hata varsa orijinal string döndür
     }
   }
   
