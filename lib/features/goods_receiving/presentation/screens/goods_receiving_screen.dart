@@ -2007,27 +2007,37 @@ class _MemoryOutOfOrderItemCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                       ],
-                      Row(
-                        children: [
-                          if (expiryText.isNotEmpty) ...[
-                            Text(
-                              'Expires: $expiryText',
-                              style: textTheme.bodyMedium?.copyWith(color: colorScheme.secondary),
-                            ),
-                          ],
-                          const Spacer(),
-                          Text(
-                            '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold, 
-                              color: colorScheme.primary
-                            ),
-                          ),
-                        ],
-                      ),
+                      if (expiryText.isNotEmpty) ...[
+                        Text(
+                          'Expires: $expiryText',
+                          style: textTheme.bodyMedium?.copyWith(color: colorScheme.secondary),
+                        ),
+                      ],
                     ],
                   ),
                 ),
+                // Palet içindeki ürünler için miktar + birim adı çöp kutusu ikonunun solunda
+                // Palet içinde olmayanlar için normal konumda (spacer kullanılmış)
+                if (item.palletBarcode != null) ...[
+                  Text(
+                    '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold, 
+                      color: colorScheme.primary
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ] else ...[
+                  const Spacer(),
+                  Text(
+                    '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold, 
+                      color: colorScheme.primary
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 IconButton(
                   onPressed: () => onRemoveItem(item),
                   icon: Icon(

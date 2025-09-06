@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert'; // Added for jsonDecode
+import 'dart:math' as Math; // Added for Math.min
 import 'package:shared_preferences/shared_preferences.dart'; // Added for SharedPreferences
 
 class DatabaseHelper {
@@ -451,28 +452,24 @@ class DatabaseHelper {
           }
         }
 
-        // Goods receipts incremental sync
+        // Goods receipts incremental sync - Multi-device safe
         if (data.containsKey('goods_receipts')) {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
           for (final receipt in goodsReceiptsData) {
-            final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
+            // Çoklu cihaz kontrolü: Bu bizim kendi operasyonumuz mu?
+            final isOwn = await isOwnOperation(txn, 'goodsReceipt', receipt);
             
-            // Serbest mal kabul duplicate kontrolü
-            if (sanitizedRecord['siparis_id'] == null && sanitizedRecord['delivery_note_number'] != null) {
-              final existingReceipts = await txn.query(
-                'goods_receipts',
-                where: 'delivery_note_number = ? AND siparis_id IS NULL',
-                whereArgs: [sanitizedRecord['delivery_note_number']]
-              );
+            if (isOwn) {
+              // Kendi operasyonumuz - sadece ID güncelle, veri ekleme
+              debugPrint('🔄 Kendi operasyonumuz tespit edildi, sadece ID güncellenecek: ${receipt['goods_receipt_id']}');
               
-              if (existingReceipts.isNotEmpty) {
-                debugPrint('SYNC INFO: Skipping duplicate free receipt with delivery_note_number: ${sanitizedRecord["delivery_note_number"]}');
-                processedItems++;
-                updateProgress('goods_receipts');
-                continue; // Skip duplicate
-              }
+              // updateLocalGoodsReceiptWithServerId zaten bu işi yapıyor
+              // Burada sadece skip ediyoruz
+              continue;
             }
             
+            // Başka cihazın operasyonu - normal sync
+            final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
             batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
@@ -488,18 +485,34 @@ class DatabaseHelper {
           debugPrint('🔧 FIXED: Updated NULL warehouse_id receipts to warehouse_id = 7');
         }
 
-        // Goods receipt items incremental sync
+        // Goods receipt items incremental sync - Multi-device safe
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
-            // DEBUG: Sunucudan gelen değerleri kontrol et
-            debugPrint("SYNC DEBUG: Raw item from server - ID: ${item['id']}, urun_key/urun_id: ${item['urun_key'] ?? item['urun_id']}, birim_key: ${item['birim_key']}, free: ${item['free']}");
+            // Receipt ID'ye göre parent receipt'i kontrol et
+            final receiptId = item['receipt_id'];
+            final parentReceipts = await txn.query(
+              'goods_receipts',
+              where: 'goods_receipt_id = ?',
+              whereArgs: [receiptId],
+              limit: 1
+            );
             
+            bool isOwnItem = false;
+            if (parentReceipts.isNotEmpty) {
+              final parentReceipt = parentReceipts.first;
+              // Parent receipt bizim mi kontrol et
+              isOwnItem = await isOwnOperation(txn, 'goodsReceipt', parentReceipt);
+            }
+            
+            if (isOwnItem) {
+              // Kendi operasyonumuzun item'ı - skip
+              debugPrint('🔄 Kendi goods_receipt_item tespit edildi, skip: ${item['goods_receipt_item_id']}');
+              continue;
+            }
+            
+            // Başka cihazın item'ı - normal sync
             final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
-            
-            // DEBUG: Sanitize sonrası değerleri kontrol et
-            debugPrint("SYNC DEBUG: After sanitize - birim_key: ${sanitizedItem['birim_key']}, free: ${sanitizedItem['free']}");
-            
             batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
@@ -519,17 +532,34 @@ class DatabaseHelper {
           }
         }
 
-        // Inventory stock incremental sync
+        // Inventory stock incremental sync - Multi-device safe
         if (data.containsKey('inventory_stock')) {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
-            // DEBUG: Raw data from server
-            debugPrint('SYNC DEBUG: Raw inventory_stock from server: $stock');
+            // Goods receipt ID'ye göre kontrol et (eğer varsa)
+            bool isOwnStock = false;
+            if (stock['goods_receipt_id'] != null) {
+              final receiptId = stock['goods_receipt_id'];
+              final receipts = await txn.query(
+                'goods_receipts',
+                where: 'goods_receipt_id = ?',
+                whereArgs: [receiptId],
+                limit: 1
+              );
+              
+              if (receipts.isNotEmpty) {
+                isOwnStock = await isOwnOperation(txn, 'goodsReceipt', receipts.first);
+              }
+            }
             
+            if (isOwnStock) {
+              // Kendi operasyonumuzun stock'u - skip
+              debugPrint('🔄 Kendi inventory_stock tespit edildi, skip: ${stock['inventory_stock_id']}');
+              continue;
+            }
+            
+            // Başka cihazın stock'u veya receipt'e bağlı olmayan stock - normal sync
             final sanitizedStock = _sanitizeRecord('inventory_stock', stock);
-            
-            // DEBUG: After sanitization
-            debugPrint('SYNC DEBUG: Sanitized inventory_stock: $sanitizedStock');
             
             // Inventory stock unique constraint kontrol (composite key)
             // Updated to include birim_key in unique constraint
@@ -706,20 +736,6 @@ class DatabaseHelper {
 
         await batch.commit(noResult: true);
         
-        // DEBUG: Batch commit sonrası goods_receipt_items birim_key değerlerini kontrol et
-        if (data.containsKey('goods_receipt_items')) {
-          final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
-          for (final item in goodsReceiptItemsData) {
-            final itemId = item['id'];
-            final dbResult = await txn.rawQuery(
-              'SELECT id, birim_key FROM goods_receipt_items WHERE id = ?',
-              [itemId]
-            );
-            if (dbResult.isNotEmpty) {
-              debugPrint("SYNC VERIFY: goods_receipt_items ID: $itemId, DB birim_key: ${dbResult.first['birim_key']}");
-            }
-          }
-        }
 
         // --- SECOND PASS for siparis_ayrintili ---
         // This runs after all other data is committed in the same transaction,
@@ -873,7 +889,6 @@ class DatabaseHelper {
         // KRITIK FIX: birim_key field handling - ensure it's properly saved
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
           newRecord['birim_key'] = newRecord['birim_key'].toString();
-          debugPrint("SYNC DEBUG: birim_key processed: ${newRecord['birim_key']}");
         }
         
         // free değerini integer olarak kaydet
@@ -886,7 +901,6 @@ class DatabaseHelper {
           } else if (freeValue is num) {
             newRecord['free'] = freeValue.toInt();
           }
-          debugPrint("SYNC DEBUG: Converted free value from $freeValue to ${newRecord['free']}");
         }
         break;
 
@@ -899,7 +913,6 @@ class DatabaseHelper {
         // KRITIK FIX: birim_key'i de koru
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
           newRecord['birim_key'] = newRecord['birim_key'].toString();
-          debugPrint("SYNC DEBUG: inventory_transfers birim_key processed: ${newRecord['birim_key']}");
         }
         break;
 
@@ -1698,10 +1711,6 @@ class DatabaseHelper {
       for (final item in items) {
         final mutableItem = Map<String, dynamic>.from(item);
         
-        // Debug: item içeriğini görelim
-        debugPrint('PDF ENRICH DEBUG: Raw item keys: ${item.keys.toList()}');
-        debugPrint('PDF ENRICH DEBUG: Looking for urun_key: ${item['urun_key']}, urun_id: ${item['urun_id']}');
-        
         // urun_key yoksa urun_id'yi kullan
         final productId = item['urun_key'] ?? item['urun_id'];
         
@@ -1870,23 +1879,16 @@ class DatabaseHelper {
           header['order_info'] = orderSummary['order'];
           final orderLines = orderSummary['lines'] as List<dynamic>;
           
-          debugPrint('PDF ORDER DEBUG: Found ${orderLines.length} order lines for siparis $siparisId');
-          for (var line in orderLines) {
-            debugPrint('PDF ORDER DEBUG: Order line urun_key: ${line['urun_key']}, product_name: ${line['product_name']}, ordered_quantity: ${line['ordered_quantity']}');
-          }
 
           final orderLinesMap = {for (var line in orderLines) line['urun_key']: line};
 
           for (final item in enrichedItems) {
             final orderLine = orderLinesMap[item['urun_key']];
-            debugPrint('PDF DEBUG: Matching item with urun_key: ${item['urun_key']}, Found orderLine: ${orderLine != null}');
             if (orderLine != null) {
               item['ordered_quantity'] = orderLine['ordered_quantity'] ?? 0.0;
               item['unit'] = orderLine['unit'] ?? item['unit'];
-              debugPrint('PDF DEBUG: Set ordered_quantity: ${item['ordered_quantity']} for product: ${item['product_name']}');
             } else {
               item['ordered_quantity'] = 0.0;
-              debugPrint('PDF DEBUG: No order line found for urun_key: ${item['urun_key']}');
             }
           }
         }
@@ -1936,18 +1938,6 @@ class DatabaseHelper {
         WHERE ${conditions.join(' AND ')}
         ORDER BY gr.receipt_date
       ''';
-      final debugResult = await db.rawQuery(debugSql, params);
-      debugPrint('DEBUG - Receipts being counted: $debugResult');
-
-      const allReceiptsSql = '''
-        SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id, 'ALL' as note
-        FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-        WHERE gr.siparis_id = ? AND gri.urun_key = ?
-        ORDER BY gr.receipt_date
-      ''';
-      final allReceipts = await db.rawQuery(allReceiptsSql, [siparisId, productId]);
-      debugPrint('DEBUG - ALL receipts for order $siparisId, product $productId: $allReceipts');
     } else {
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
@@ -1961,7 +1951,6 @@ class DatabaseHelper {
     final result = await db.rawQuery(sql, params);
     final totalReceived = (result.first['total_received'] as num?)?.toDouble() ?? 0.0;
 
-    debugPrint('_getPreviousReceivedQuantity: siparisId=$siparisId, productId=$productId, beforeDate=${beforeDate?.toString() ?? 'null'}, excludeReceiptId=${excludeReceiptId?.toString() ?? 'null'}, result=$totalReceived');
 
     return totalReceived;
   }
@@ -1970,7 +1959,6 @@ class DatabaseHelper {
     final db = await database;
 
     if (afterDate == null) {
-      debugPrint('hasForceCloseOperationForOrder: afterDate null, false döndürülüyor');
       return false;
     }
 
@@ -2606,4 +2594,214 @@ class DatabaseHelper {
   
   /// KRITIK FIX: Mevcut inventory_stock kayıtlarındaki NULL birim_key değerlerini 
   /// goods_receipt_items tablosundan alarak günceller
+  
+  /// Çoklu cihaz senaryosu için bir server kaydının bu cihazın kendi operasyonu olup olmadığını kontrol eder
+  Future<bool> isOwnOperation(DatabaseExecutor db, String type, Map<String, dynamic> serverRecord) async {
+    try {
+      debugPrint('🔍 isOwnOperation başlatıldı: type=$type, server_record=$serverRecord');
+      
+      // Önce synced durumundaki pending_operation'ları kontrol et
+      final query = StringBuffer();
+      final args = <dynamic>[];
+      
+      query.write('type = ? AND status = ?');
+      args.addAll([type, 'synced']);
+      
+      final pendingOps = await db.query(
+        'pending_operation',
+        where: query.toString(),
+        whereArgs: args
+      );
+      
+      debugPrint('📊 Bulunan synced pending operations: ${pendingOps.length}');
+      
+      // Her pending operation için kontrol et
+      for (final pendingOp in pendingOps) {
+        debugPrint('🔎 Pending operation kontrolü: ${pendingOp['unique_id']}');
+        
+        final dataStr = pendingOp['data'] as String;
+        debugPrint('📄 Raw data: $dataStr');
+        
+        final data = jsonDecode(dataStr);
+        
+        if (type == 'goodsReceipt') {
+          final header = data['header'] as Map<String, dynamic>?;
+          debugPrint('📝 Header data: $header');
+          
+          if (header != null) {
+            // siparis_id ve receipt_date eşleşmesini kontrol et
+            final siparisId = header['siparis_id'];
+            final receiptDate = header['receipt_date'];
+            
+            // Debug log ekle
+            debugPrint('🔍 COMPARISON DEBUG:');
+            debugPrint('  - Server: siparis_id=${serverRecord['siparis_id']}, receipt_date=${serverRecord['receipt_date']}');
+            debugPrint('  - Pending: siparis_id=$siparisId, receipt_date=$receiptDate');
+            
+            // Önce siparis_id kontrolü
+            if (serverRecord['siparis_id'].toString() != siparisId.toString()) {
+              debugPrint('  ❌ siparis_id eşleşmiyor');
+              continue;
+            }
+            
+            debugPrint('  ✅ siparis_id eşleşiyor');
+            
+            // Tarih kontrolü - daha esnek yaklaşım
+            final serverDateStr = serverRecord['receipt_date'].toString();
+            final pendingDateStr = receiptDate.toString();
+            
+            // Basit string karşılaştırması
+            bool datesMatch = false;
+            
+            // 1. Önce tam string eşleşmesi dene
+            if (serverDateStr == pendingDateStr) {
+              datesMatch = true;
+              debugPrint('  ✅ Tam tarih string eşleşmesi');
+            } else {
+              // 2. İlk 19 karakter eşleşmesi (saniye seviyesinde)
+              try {
+                final serverPart = serverDateStr.substring(0, Math.min(19, serverDateStr.length));
+                final pendingPart = pendingDateStr.substring(0, Math.min(19, pendingDateStr.length));
+                
+                if (serverPart == pendingPart) {
+                  datesMatch = true;
+                  debugPrint('  ✅ Tarih substring eşleşmesi: $serverPart');
+                } else {
+                  debugPrint('  ❌ Tarih substring eşleşmiyor: "$serverPart" != "$pendingPart"');
+                  
+                  // 3. DateTime parsing ile toleranslı karşılaştırma
+                  try {
+                    final serverDate = DateTime.parse(serverDateStr.replaceAll(' ', 'T'));
+                    final pendingDate = DateTime.parse(pendingDateStr.replaceAll(' ', 'T'));
+                    
+                    final serverSeconds = serverDate.millisecondsSinceEpoch ~/ 1000;
+                    final pendingSeconds = pendingDate.millisecondsSinceEpoch ~/ 1000;
+                    final timeDiff = (serverSeconds - pendingSeconds).abs();
+                    
+                    if (timeDiff <= 5) { // 5 saniye tolerans
+                      datesMatch = true;
+                      debugPrint('  ✅ Toleranslı tarih eşleşmesi: ${timeDiff}s fark');
+                    } else {
+                      debugPrint('  ❌ Tarih farkı çok büyük: ${timeDiff}s');
+                    }
+                  } catch (e) {
+                    debugPrint('  ❌ DateTime parsing hatası: $e');
+                  }
+                }
+              } catch (e) {
+                debugPrint('  ❌ String substring hatası: $e');
+              }
+            }
+            
+            if (datesMatch) {
+              debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
+              return true;
+            }
+          } else {
+            debugPrint('❌ Header bulunamadı');
+          }
+        }
+      }
+      
+      debugPrint('❌ isOwnOperation: Eşleşen pending operation bulunamadı');
+      return false;
+    } catch (e, stackTrace) {
+      debugPrint('❌ isOwnOperation kritik hatası: $e');
+      debugPrint('Stack trace: $stackTrace');
+      return false;
+    }
+  }
+  
+  /// Sync sonrası local goods receipt'i server ID'si ile günceller
+  Future<void> updateLocalGoodsReceiptWithServerId(String pendingOpUniqueId, int serverId) async {
+    final db = await database;
+    
+    try {
+      // 1. Pending operation'ı bul
+      final pendingOp = await db.query(
+        'pending_operation',
+        where: 'unique_id = ? AND type = ? AND status = ?',
+        whereArgs: [pendingOpUniqueId, 'goodsReceipt', 'synced'],
+        limit: 1
+      );
+      
+      if (pendingOp.isEmpty) {
+        debugPrint('⚠️  Pending operation bulunamadı: $pendingOpUniqueId');
+        return;
+      }
+      
+      // 2. Data'dan sipariş bilgilerini çıkar
+      final data = jsonDecode(pendingOp.first['data'] as String);
+      final header = data['header'] as Map<String, dynamic>?;
+      final siparisId = header?['siparis_id'] as int?;
+      
+      if (siparisId == null) {
+        debugPrint('⚠️  Sipariş ID bulunamadı pending operation data\'sında');
+        return;
+      }
+      
+      // 3. Pending operation'dan receipt_date'i al
+      final receiptDate = header?['receipt_date'] as String?;
+      
+      if (receiptDate == null) {
+        debugPrint('⚠️  Receipt date bulunamadı pending operation data\'sında');
+        return;
+      }
+      
+      // 4. Aynı sipariş ve tarihle eşleşen local kaydı bul (server ID'si olmayan)
+      final localReceipts = await db.query(
+        'goods_receipts',
+        where: 'siparis_id = ? AND goods_receipt_id != ? AND receipt_date = ?',
+        whereArgs: [siparisId, serverId, receiptDate]
+      );
+      
+      debugPrint('🔄 SYNC UPDATE: Sipariş $siparisId, tarih $receiptDate için ${localReceipts.length} lokal kayıt bulundu');
+      
+      // Exact match bulunmalı
+      if (localReceipts.isNotEmpty) {
+        final localReceipt = localReceipts.first; // Should be only one with exact date match
+        final localId = localReceipt['goods_receipt_id'] as int;
+        
+        debugPrint('🔄 SYNC UPDATE: Local ID $localId → Server ID $serverId değişimi yapılıyor');
+        
+        // 5. Foreign key constraint'i geçici olarak devre dışı bırak (transaction dışında)
+        await db.execute('PRAGMA foreign_keys = OFF');
+        
+        try {
+          await db.transaction((txn) async {
+            // 6. Child kayıtları önce güncelle
+            await txn.update(
+              'goods_receipt_items',
+              {'receipt_id': serverId},
+              where: 'receipt_id = ?',
+              whereArgs: [localId]
+            );
+            
+            await txn.update(
+              'inventory_stock',
+              {'goods_receipt_id': serverId},
+              where: 'goods_receipt_id = ?',
+              whereArgs: [localId]
+            );
+            
+            // 7. Ana kaydı en son güncelle
+            await txn.update(
+              'goods_receipts',
+              {'goods_receipt_id': serverId},
+              where: 'goods_receipt_id = ?',
+              whereArgs: [localId]
+            );
+          });
+        } finally {
+          // 8. Foreign key constraint'i yeniden aktif et
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+        
+        debugPrint('✅ SYNC UPDATE: Goods receipt başarıyla güncellendi (Local: $localId → Server: $serverId)');
+      }
+    } catch (e, s) {
+      debugPrint('❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e');
+      debugPrint('Stack trace: $s');
+    }
+  }
 }

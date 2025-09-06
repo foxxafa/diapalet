@@ -764,18 +764,13 @@ class PdfService {
     final Map<dynamic, double> uniqueOrderedQuantities = {};
     for (final item in items) {
       final productId = item['urun_key']; // Benzersiz ürün kimliğini kullanıyoruz
-      debugPrint('PDF TOTAL DEBUG: Item urun_key: $productId, ordered_quantity: ${item['ordered_quantity']}');
       if (productId != null) {
         uniqueOrderedQuantities[productId] = (item['ordered_quantity'] as num?)?.toDouble() ?? 0.0;
       }
     }
     final totalOrdered = uniqueOrderedQuantities.values.fold(0.0, (sum, qty) => sum + qty);
-    debugPrint('PDF TOTAL DEBUG: Total ordered: $totalOrdered from ${uniqueOrderedQuantities.length} unique products');
 
     final isMixedMode = warehouseReceivingMode == 2;
-
-    // Debug log
-    debugPrint('PDF DEBUG: warehouseReceivingMode = $warehouseReceivingMode, isMixedMode = $isMixedMode');
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,

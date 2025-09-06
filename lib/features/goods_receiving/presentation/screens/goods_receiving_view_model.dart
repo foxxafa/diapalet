@@ -248,7 +248,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Debug: Sipariş ürünlerinin barkodlarını kontrol et
       debugPrint("DEBUG: Order items loaded for order $orderId:");
       for (var item in _orderItems) {
-        final barcode = item.product?.productBarcode ?? 'null';
+        final barcode = item.product?.displayBarcode ?? 'N/A';
         debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Unit: ${item.product?.displayUnitName ?? item.unit ?? 'N/A'}, Barcode: '$barcode'");
       }
 
@@ -428,7 +428,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         ProductInfo? foundProduct;
 
         // YENİ BARKOD SİSTEMİ - Doğrudan database'den tam arama yap
-        foundProduct = await _repository.findProductByBarcodeExactMatch(productCodeToSearch, orderId: _selectedOrder?.id);
+        // Serbest mal kabulde orderId geçme, sipariş bazlıysa geç
+        foundProduct = await _repository.findProductByBarcodeExactMatch(
+          productCodeToSearch, 
+          orderId: isOrderBased ? _selectedOrder?.id : null
+        );
 
         // Database'den bulunan ürün order'da var mı kontrol et - out-of-order flag zaten database'den geliyor
 
@@ -476,8 +480,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<bool> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
-    // Sipariş dışı ürün kontrolü
-    if (product.isOutOfOrder && context != null) {
+    // Sipariş dışı ürün kontrolü - sadece sipariş bazlı mal kabulde modal aç
+    if (product.isOutOfOrder && context != null && isOrderBased) {
       final selectedProductWithUnit = await showOutOfOrderProductModal(context, product);
       if (selectedProductWithUnit == null) {
         return false; // Modal'da iptal'e basıldı, ürün seçilmedi
@@ -542,7 +546,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       }
 
       try {
-        _productSearchResults = await _repository.searchProducts(query, orderId: _selectedOrder?.id);
+        _productSearchResults = await _repository.searchProducts(query, orderId: isOrderBased ? _selectedOrder?.id : null);
       } catch (e) {
         _error = 'Failed to search products: $e';
         _productSearchResults = [];
@@ -763,7 +767,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           palletBarcode: draft.palletBarcode,
           barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
           expiryDate: draft.expiryDate, // Now always has a value
-          isFree: draft.product.isOutOfOrder, // Sipariş dışı ürün bilgisi
+          isFree: !isOrderBased || draft.product.isOutOfOrder, // Serbest mal kabulde her zaman true, sipariş bazlıysa product.isOutOfOrder
         );
       }).toList(),
     );

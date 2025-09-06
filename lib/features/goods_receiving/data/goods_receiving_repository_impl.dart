@@ -47,7 +47,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           'delivery_note_number': payload.header.deliveryNoteNumber,
           'employee_id': payload.header.employeeId,
           'receipt_date': payload.header.receiptDate.toIso8601String(),
-          DbColumns.createdAt: DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         };
         final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
 
@@ -64,9 +65,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'urun_key': item.productId, // _key değeri direkt kullanılıyor
             'birim_key': item.birimKey, // Birim _key değeri
             'quantity_received': item.quantity,
-            DbColumns.stockPalletBarcode: item.palletBarcode,
-            DbColumns.stockExpiryDate: item.expiryDate?.toIso8601String(),
+            'pallet_barcode': item.palletBarcode,
+            'barcode': item.barcode, // DÜZELTME: barcode alanı eklendi
+            'expiry_date': item.expiryDate?.toIso8601String(),
             'free': item.isFree ? 1 : 0, // Sipariş dışı ürün işaretleme
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           });
           debugPrint("Item inserted with ID: $itemId");
 
@@ -210,7 +214,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final currentStock = existingStock.first;
       final newQty = (currentStock['quantity'] as num) + quantityChange;
       if (newQty > 0.001) {
-        await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+        await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toUtc().toIso8601String()},
             where: 'id = ?', whereArgs: [currentStock['id']]);
       } else {
         await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
@@ -222,11 +226,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         'location_id': locationId,
         'quantity': quantityChange,
         'pallet_barcode': palletBarcode,
-        'updated_at': DateTime.now().toIso8601String(),
         'stock_status': stockStatus,
         'siparis_id': siparisId,
         'expiry_date': expiryDate,
-        // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
+        'goods_receipt_id': goodsReceiptId, // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     }
   }
@@ -266,10 +271,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         u.StokKodu,
         u._key as urun_key,
         b.birimadi,
-        b._key as birim_key
+        b._key as birim_key,
+        bark.barkod
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
       ORDER BY sa.id
     ''', [orderId]);
@@ -521,7 +528,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     await txn.update(
       DbTables.orders,
-      {DbColumns.status: newStatus, DbColumns.updatedAt: DateTime.now().toIso8601String()},
+      {DbColumns.status: newStatus, DbColumns.updatedAt: DateTime.now().toUtc().toIso8601String()},
       where: '${DbColumns.id} = ?',
       whereArgs: [siparisId],
     );

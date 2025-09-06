@@ -203,7 +203,7 @@ class TerminalController extends Controller
                         'response_body' => json_encode($result)
                     ])->execute();
 
-                    $results[] = ['local_id' => (int)$localId, 'result' => $result];
+                    $results[] = ['local_id' => (int)$localId, 'idempotency_key' => $idempotencyKey, 'result' => $result];
                 } else {
                     // İşlem başarısız olsa bile idempotency anahtarı ile hatayı kaydet.
                     // Bu, aynı hatalı isteğin tekrar tekrar işlenmesini önler.
@@ -437,7 +437,7 @@ class TerminalController extends Controller
                 $stockStatus, // stock_status
                 $siparisId, // siparis_id
                 $item['expiry_date'] ?? null, // expiry_date
-                null // KRITIK FIX: goods_receipt_id NULL - consolidation için
+                $receiptId // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
             );
         }
 
@@ -844,7 +844,7 @@ class TerminalController extends Controller
                     'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus, 
                     'expiry_date' => $expiryDate,
-                    // KRITIK FIX: goods_receipt_id KALDIRILDI - consolidation için
+                    'goods_receipt_id' => $goodsReceiptId, // DÜZELTME: goods_receipt_id eklendi
                     'StokKodu' => $stokKodu,
                     'shelf_code' => $shelfCode,
                     'sip_fisno' => $sipFisno,

@@ -504,15 +504,31 @@ class SyncService with ChangeNotifier {
     bool dataChanged = false;
     for (var res in results) {
       final id = res['local_id'];
+      final idempotencyKey = res['idempotency_key'];
       final resultData = res['result'];
       final status = resultData['status'];
       final message = resultData['message'];
 
-      debugPrint("İşleniyor - opId: $id, status: $status, message: $message");
+      debugPrint("İşleniyor - opId: $id, idempotencyKey: $idempotencyKey, status: $status, message: $message");
 
       if (id != null && status == 'success') {
         debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
         await dbHelper.markOperationAsSynced(id);
+        
+        // Goods receipt'ler için receipt_id ile lokal kayıtları güncelle
+        if (resultData['receipt_id'] != null && idempotencyKey != null) {
+          final receiptId = int.parse(resultData['receipt_id'].toString());
+          debugPrint("🔄 SYNC UPDATE: receipt_id ($receiptId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
+          
+          try {
+            await dbHelper.updateLocalGoodsReceiptWithServerId(idempotencyKey, receiptId);
+            debugPrint("✅ SYNC UPDATE: Lokal kayıt başarıyla güncellendi");
+          } catch (e, s) {
+            debugPrint("❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e");
+            debugPrint("Stack trace: $s");
+          }
+        }
+        
         dataChanged = true;
       } else if (id != null) {
         await dbHelper.updateOperationWithError(id, message ?? 'Bilinmeyen sunucu hatası');
