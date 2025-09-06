@@ -994,90 +994,124 @@ class DatabaseHelper {
     return results.isNotEmpty ? results.first : null;
   }
 
-  /// Barkod ile ürün arama (LIKE) - Yeni barkodlar tablosunu kullanır
+  /// Barkod ile ürün arama (LIKE) - Yeni barkodlar tablosunu kullanır - Optimized version
   /// Opsiyonel olarak sipariş ID'sine göre filtreleme yapar.
   Future<List<Map<String, dynamic>>> searchProductsByBarcode(String query, {int? orderId}) async {
     final db = await database;
     
     debugPrint("🔍 Searching for barcode: '$query'${orderId != null ? ' in order $orderId' : ''}");
     
-    // Birleşik sorgu: hem barkod hem stok kodu araması
+    // Optimize: First try exact matches for better performance
+    if (query.length >= 3) {
+      final exactResults = await _searchExactProductsByBarcode(db, query, orderId);
+      if (exactResults.isNotEmpty) {
+        debugPrint("🔍 Found ${exactResults.length} exact matches");
+        return exactResults;
+      }
+    }
+    
+    // Fall back to LIKE search for shorter queries or when no exact match found
+    return await _searchProductsByBarcodeLike(db, query, orderId);
+  }
+
+  /// Exact match search for better performance
+  Future<List<Map<String, dynamic>>> _searchExactProductsByBarcode(
+    Database db, String query, int? orderId) async {
+    
     String sql = '''
-      SELECT * FROM (
-        -- Barkod araması
-        SELECT 
-          u.*,
-          b.birimadi,
-          b.birimkod,
-          b._key as birim_key,
-          bark.barkod,
-          bark._key as barkod_key,
-          COALESCE(sa.miktar, 0.0) as miktar,
-          COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
-          sa.sipbirimkey,
-          sb.birimadi as sipbirimi_adi,
-          sb.birimkod as sipbirimi_kod,
-          sa.id as order_line_id,
-          CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
-          CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
-        FROM barkodlar bark
-        JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN urunler u ON b.StokKodu = u.StokKodu
-        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
-          ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
-          AND sa.turu = '1'
-        LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
-        WHERE bark.barkod LIKE ?
-          AND u.aktif = 1
-        
-        UNION ALL
-        
-        -- Stok kodu araması (barkodu olmayan birimler dahil)
-        SELECT 
-          u.*,
-          b.birimadi,
-          b.birimkod,
-          b._key as birim_key,
-          bark.barkod,
-          bark._key as barkod_key,
-          COALESCE(sa.miktar, 0.0) as miktar,
-          COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
-          sa.sipbirimkey,
-          sb.birimadi as sipbirimi_adi,
-          sb.birimkod as sipbirimi_kod,
-          sa.id as order_line_id,
-          CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
-          CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
-        FROM urunler u
-        JOIN birimler b ON b.StokKodu = u.StokKodu
-        LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
-          ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
-          AND sa.turu = '1'
-        LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
-        WHERE u.StokKodu LIKE ?
-          AND u.aktif = 1
-      )
+      SELECT DISTINCT
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key,
+        COALESCE(sa.miktar, 0.0) as miktar,
+        COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+        sa.sipbirimkey,
+        sb.birimadi as sipbirimi_adi,
+        sb.birimkod as sipbirimi_kod,
+        sa.id as order_line_id,
+        CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+        CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
+      FROM urunler u
+      JOIN birimler b ON b.StokKodu = u.StokKodu
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+        ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
+        AND sa.turu = '1'
+      LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
+      WHERE u.aktif = 1
+        AND (bark.barkod = ? OR u.StokKodu = ?)
       ORDER BY 
-        CASE 
-          WHEN StokKodu = ? THEN 0
-          WHEN StokKodu LIKE ? THEN 1
-          WHEN barkod = ? THEN 2
-          WHEN barkod LIKE ? THEN 3
-          ELSE 4
-        END,
         is_order_unit DESC,
-        LENGTH(StokKodu) ASC,
-        UrunAdi ASC
+        CASE 
+          WHEN u.StokKodu = ? THEN 0
+          WHEN bark.barkod = ? THEN 1
+          ELSE 2
+        END,
+        LENGTH(u.StokKodu) ASC,
+        u.UrunAdi ASC
+      LIMIT 50
     ''';
     
     final params = orderId != null 
-      ? [orderId, '%$query%', orderId, '%$query%', query, '%$query%', query, '%$query%'] 
-      : ['%$query%', '%$query%', query, '%$query%', query, '%$query%'];
+      ? [orderId, query, query, query, query]
+      : [query, query, query, query];
+      
+    return await db.rawQuery(sql, params);
+  }
+
+  /// LIKE search for partial matches (fallback)
+  Future<List<Map<String, dynamic>>> _searchProductsByBarcodeLike(
+    Database db, String query, int? orderId) async {
+    
+    // Optimize: Use a single query with better indexing strategy
+    String sql = '''
+      SELECT DISTINCT
+        u.*,
+        b.birimadi,
+        b.birimkod,
+        b._key as birim_key,
+        bark.barkod,
+        bark._key as barkod_key,
+        COALESCE(sa.miktar, 0.0) as miktar,
+        COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
+        sa.sipbirimkey,
+        sb.birimadi as sipbirimi_adi,
+        sb.birimkod as sipbirimi_kod,
+        sa.id as order_line_id,
+        CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+        CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
+      FROM urunler u
+      JOIN birimler b ON b.StokKodu = u.StokKodu
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+        ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
+        AND sa.turu = '1'
+      LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
+      WHERE u.aktif = 1
+        AND (bark.barkod LIKE ? OR u.StokKodu LIKE ?)
+      ORDER BY 
+        is_order_unit DESC,
+        CASE 
+          WHEN u.StokKodu LIKE ? THEN 0
+          WHEN bark.barkod LIKE ? THEN 1
+          ELSE 2
+        END,
+        LENGTH(u.StokKodu) ASC,
+        u.UrunAdi ASC
+      LIMIT 100
+    ''';
+    
+    final searchPattern = '%$query%';
+    final params = orderId != null 
+      ? [orderId, searchPattern, searchPattern, searchPattern, searchPattern]
+      : [searchPattern, searchPattern, searchPattern, searchPattern];
       
     final result = await db.rawQuery(sql, params);
     
-    debugPrint("🔍 Found ${result.length} products matching barcode");
+    debugPrint("🔍 Found ${result.length} products matching barcode (LIKE search)");
     for (int i = 0; i < result.length && i < 3; i++) {
       final item = result[i];
       debugPrint("Result $i: ${item['UrunAdi']} - ${item['barkod']} - Unit: ${item['birimadi']}");

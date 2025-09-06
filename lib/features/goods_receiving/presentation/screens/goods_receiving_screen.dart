@@ -339,42 +339,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             }
           },
         ),
-        if (viewModel.productSearchResults.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: _borderRadius,
-            ),
-            child: Column(
-              children: viewModel.productSearchResults.take(5).map((product) {
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    product.name,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  subtitle: Text(
-                    "${context.tr('goods_receiving_screen.out_of_order_product_barcode')} ${product.displayBarcode} | ${context.tr('goods_receiving_screen.out_of_order_product_stock_code')} ${product.stockCode} | ${context.tr('goods_receiving_screen.unit_label')} ${product.displayUnitName ?? 'N/A'}",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  onTap: () async {
-                    debugPrint("🎯 User selected product from list:");
-                    debugPrint("  - Unit: ${product.displayUnitName}");
-                    debugPrint("  - birim_key: ${product.birimKey}");
-                    debugPrint("  - Barcode: ${product.displayBarcode}");
-                    await viewModel.selectProduct(product, context: context);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && viewModel.isExpiryDateEnabled) {
-                        viewModel.expiryDateFocusNode.requestFocus();
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-        ],
+        if (viewModel.productSearchResults.isNotEmpty && viewModel.selectedProduct == null) 
+          _buildProductSuggestions(viewModel),
       ],
     );
   }
@@ -799,6 +765,60 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         viewModel.processScannedData('product', code, context: context);
       }
     }
+  }
+
+  Widget _buildProductSuggestions(GoodsReceivingViewModel viewModel) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: viewModel.productSearchResults.take(5).map((product) {
+          return ListTile(
+            dense: true,
+            title: Text(
+              product.name,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${'goods_receiving.stock_code'.tr()}: ${product.stockCode}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  '${'goods_receiving.barcode'.tr()}: ${product.displayBarcode}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
+                Text(
+                  '${'goods_receiving.unit'.tr()}: ${product.displayUnitName ?? 'N/A'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            onTap: () async {
+              debugPrint("🎯 User selected product from list:");
+              debugPrint("  - Unit: ${product.displayUnitName}");
+              debugPrint("  - birim_key: ${product.birimKey}");
+              debugPrint("  - Barcode: ${product.displayBarcode}");
+              await viewModel.selectProduct(product, context: context);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && viewModel.isExpiryDateEnabled) {
+                  viewModel.expiryDateFocusNode.requestFocus();
+                }
+              });
+            },
+          );
+        }).toList(),
+      ),
+    );
   }
 
 }

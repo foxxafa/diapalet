@@ -80,7 +80,10 @@
       "saved": "Items saved successfully!"
     },
     "search_hint": "Search...",
-    "search_no_result": "No results found"
+    "search_no_result": "No results found",
+    "stock_code": "Stock Code",
+    "barcode": "Barcode", 
+    "unit": "Unit"
   },
   "goods_receiving_screen": {
     "mode_pallet": "Pallet",
