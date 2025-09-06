@@ -670,9 +670,6 @@ class DatabaseHelper {
 
         // inventory_stock sync zaten yukarıda (500-591 satırları) yapıldı
         // Bu duplicate sync kodunu kaldırdık - sonsuz döngü riskini önler
-        
-        // KRITIK FIX: Mevcut NULL birim_key kayıtlarını goods_receipt_items'dan güncelle
-        await _fixNullBirimKeyInInventoryStock(txn);
 
         // Diğer tablolar için eski mantık (full replacement)
         const deletionOrder = [
@@ -2575,49 +2572,4 @@ class DatabaseHelper {
   
   /// KRITIK FIX: Mevcut inventory_stock kayıtlarındaki NULL birim_key değerlerini 
   /// goods_receipt_items tablosundan alarak günceller
-  Future<void> _fixNullBirimKeyInInventoryStock(Transaction txn) async {
-    try {
-      // NULL birim_key'li inventory_stock kayıtlarını bul
-      final nullBirimKeyStocks = await txn.query(
-        'inventory_stock',
-        where: 'birim_key IS NULL'
-      );
-      
-      if (nullBirimKeyStocks.isEmpty) {
-        debugPrint("✅ Tüm inventory_stock kayıtlarında birim_key mevcut");
-        return;
-      }
-      
-      debugPrint("🔧 ${nullBirimKeyStocks.length} adet NULL birim_key kaydı bulundu, düzeltiliyor...");
-      
-      int fixedCount = 0;
-      for (final stock in nullBirimKeyStocks) {
-        // Bu stock için goods_receipt_items'dan birim_key al
-        final goodsReceiptItems = await txn.query(
-          'goods_receipt_items',
-          where: 'urun_key = ? AND quantity_received = ?',
-          whereArgs: [stock['urun_key'], stock['quantity']],
-          limit: 1
-        );
-        
-        if (goodsReceiptItems.isNotEmpty) {
-          final birimKey = goodsReceiptItems.first['birim_key'];
-          if (birimKey != null) {
-            await txn.update(
-              'inventory_stock',
-              {'birim_key': birimKey},
-              where: 'id = ?',
-              whereArgs: [stock['id']]
-            );
-            fixedCount++;
-          }
-        }
-      }
-      
-      debugPrint("✅ $fixedCount adet inventory_stock kaydının birim_key değeri güncellendi");
-      
-    } catch (e) {
-      debugPrint("❌ birim_key fix işleminde hata: $e");
-    }
-  }
 }

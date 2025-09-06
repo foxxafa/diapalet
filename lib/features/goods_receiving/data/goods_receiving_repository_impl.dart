@@ -257,21 +257,19 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     debugPrint("DEBUG: Getting items for order ID: $orderId");
 
-    // YENI YAKLAŞIM: Sipariş satırlarını birimi ile birlikte al
-    // Her sipariş satırında sipbirimkey ile eşleşen birimin bilgilerini direkt alalım
+    // FIX: DISTINCT kullanarak duplike kayıtları engelle
+    // Barkod JOIN'ini kaldıralım, sadece temel bilgileri alalım
     final orderLines = await db.rawQuery('''
-      SELECT 
+      SELECT DISTINCT
         sa.*,
         u.UrunAdi,
         u.StokKodu,
         u._key as urun_key,
         b.birimadi,
-        b._key as birim_key,
-        bark.barkod
+        b._key as birim_key
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
-      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
       ORDER BY sa.id
     ''', [orderId]);
