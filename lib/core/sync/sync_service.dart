@@ -515,8 +515,12 @@ class SyncService with ChangeNotifier {
         debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
         await dbHelper.markOperationAsSynced(id);
         
+        // Operation tipini bul
+        final pendingOp = await dbHelper.getPendingOperationById(id);
+        final operationType = pendingOp?.type.apiName;
+        
         // Goods receipt'ler için receipt_id ile lokal kayıtları güncelle
-        if (resultData['receipt_id'] != null && idempotencyKey != null) {
+        if (operationType == 'goodsReceipt' && resultData['receipt_id'] != null && idempotencyKey != null) {
           final receiptId = int.parse(resultData['receipt_id'].toString());
           debugPrint("🔄 SYNC UPDATE: receipt_id ($receiptId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
           
@@ -527,6 +531,18 @@ class SyncService with ChangeNotifier {
             debugPrint("❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e");
             debugPrint("Stack trace: $s");
           }
+        } else if (operationType == 'inventoryTransfer' && resultData['transfer_id'] != null) {
+          // BU BLOĞU TAMAMEN EKLE
+          final serverTransferId = resultData['transfer_id'];
+          
+          final db = await dbHelper.database;
+          final updatedRows = await db.update(
+            'inventory_transfers',
+            {'id': serverTransferId, 'operation_unique_id': null}, // ID'yi güncelle ve etiketi temizle
+            where: 'operation_unique_id = ?',
+            whereArgs: [idempotencyKey],
+          );
+          debugPrint('Uzlaştırma: $updatedRows adet inventory_transfers kaydı $idempotencyKey etiketi ile bulundu ve IDsi $serverTransferId olarak güncellendi.');
         }
         
         dataChanged = true;

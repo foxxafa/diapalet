@@ -1184,22 +1184,9 @@ class _FullscreenConfirmationPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          product.name,
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        '${'goods_receiving_screen.dialog_total_quantity'.tr()}: ${totalQuantity.toStringAsFixed(0)}',
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
-                      ),
-                    ],
+                  Text(
+                    product.name,
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const Divider(height: 20),
                   ...itemsForProduct.map((item) {
@@ -1236,10 +1223,10 @@ class _FullscreenConfirmationPage extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 Text(
-                                  item.quantity.toStringAsFixed(0),
+                                  '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
                                   style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 8),
                                 IconButton(
                                   icon: Icon(Icons.delete_outline, color: theme.colorScheme.error, size: 22),
                                   onPressed: () => onItemRemoved(item),

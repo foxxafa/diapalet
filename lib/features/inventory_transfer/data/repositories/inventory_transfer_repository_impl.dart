@@ -253,7 +253,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       }
       
       await db.transaction((txn) async {
-        final String opId = const Uuid().v4();
+        // 1. ADIM: UNIQUE ID'Yİ ÖNCEDEN AL
+        final pendingOp = PendingOperation.create(
+          type: PendingOperationType.inventoryTransfer,
+          data: "{}", // Geçici
+          createdAt: DateTime.now().toUtc(),
+        );
+        final String operationUniqueId = pendingOp.uniqueId;
+        
         final List<Map<String, dynamic>> itemsForJson = [];
 
         for (final item in items) {
@@ -347,7 +354,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             isTransferOperation: false, // DÜZELTME: Konsolidasyon yapması için false olmalı
           );
 
+          // 2. ADIM: TRANSFER KAYDINI ETİKETLE
           await txn.insert(DbTables.inventoryTransfers, {
+            'operation_unique_id': operationUniqueId, // BU SATIRI EKLE
             'urun_key': item.productKey,
             'birim_key': item.birimKey, // KRITIK FIX: birim_key'i de kaydet
             'from_location_id': sourceLocationId, // Artık null ise null kalıyor
@@ -401,17 +410,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           headerJson['fisno'] = poId;
         }
 
-        final pendingOp = PendingOperation(
-          uniqueId: opId,
+        // 3. ADIM: NİHAİ PENDING OPERATION'I AYNI ID İLE KAYDET
+        final finalPendingOp = PendingOperation.create(
+          uniqueId: operationUniqueId, // AYNI ID'Yİ KULLAN
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode({
             'header': headerJson,
             'items': itemsForJson,
           }),
-          createdAt: DateTime.now(),
+          createdAt: pendingOp.createdAt,
         );
 
-        await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
+        await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
 
         if (header.siparisId != null) {
           await checkAndCompletePutaway(header.siparisId!, txn: txn);

@@ -709,7 +709,11 @@ class TerminalController extends Controller
             $this->checkAndFinalizePoStatus($db, $siparisId);
         }
 
-        return ['status' => 'success'];
+        // Son eklenen transfer kaydının ID'sini al
+        $lastTransferId = $db->getLastInsertID();
+        
+        // RETURN İFADESİNİ GÜNCELLE
+        return ['status' => 'success', 'transfer_id' => $lastTransferId];
     }
 
     private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {

@@ -13,7 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 62; // birim_key added to inventory_transfers
+  static const _databaseVersion = 63; // operation_unique_id added for Tag and Replace reconciliation
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -195,6 +195,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipts (
           goods_receipt_id INTEGER PRIMARY KEY,
+          operation_unique_id TEXT,
           warehouse_id INTEGER,
           siparis_id INTEGER,
           invoice_number TEXT,
@@ -266,6 +267,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           id INTEGER PRIMARY KEY,
+          operation_unique_id TEXT,
           urun_key TEXT,
           birim_key TEXT,
           from_location_id INTEGER,
@@ -295,7 +297,9 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_date ON goods_receipts(receipt_date)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_pending_operation_status ON pending_operation(status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_date ON inventory_transfers(transfer_date)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_op_uid ON inventory_transfers(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_siparis ON goods_receipts(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_op_uid ON goods_receipts(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_key ON birimler(_key)');
@@ -650,10 +654,20 @@ class DatabaseHelper {
           }
         }
 
-        // Inventory transfers incremental sync
+        // Inventory transfers incremental sync - Multi-device safe
         if (data.containsKey('inventory_transfers')) {
           final inventoryTransfersData = List<Map<String, dynamic>>.from(data['inventory_transfers']);
           for (final transfer in inventoryTransfersData) {
+            // Çoklu cihaz kontrolü: Bu bizim kendi operasyonumuz mu?
+            final isOwn = await isOwnOperation(txn, 'inventoryTransfer', transfer);
+            
+            if (isOwn) {
+              // Kendi operasyonumuz - skip
+              debugPrint('🔄 Kendi inventory_transfer tespit edildi, skip: ${transfer['id']}');
+              continue;
+            }
+            
+            // Başka cihazın operasyonu - normal sync
             final sanitizedTransfer = _sanitizeRecord('inventory_transfers', transfer);
             batch.insert('inventory_transfers', sanitizedTransfer, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -2329,6 +2343,18 @@ class DatabaseHelper {
     return operations.where((op) => op.shouldShowInPending).toList();
   }
 
+  Future<PendingOperation?> getPendingOperationById(int id) async {
+    final db = await database;
+    final maps = await db.query('pending_operation',
+        where: "id = ?",
+        whereArgs: [id],
+        limit: 1);
+    
+    if (maps.isEmpty) return null;
+    
+    return PendingOperation.fromMap(maps.first);
+  }
+
   Future<List<PendingOperation>> getSyncedOperations() async {
     final db = await database;
     final maps = await db.query('pending_operation',
@@ -2596,47 +2622,41 @@ class DatabaseHelper {
   /// goods_receipt_items tablosundan alarak günceller
   
   /// Çoklu cihaz senaryosu için bir server kaydının bu cihazın kendi operasyonu olup olmadığını kontrol eder
+  /// GÜNCEL YAKLAŞIM: Employee ID karşılaştırması yaparak kendi operasyonumuzu tespit eder
   Future<bool> isOwnOperation(DatabaseExecutor db, String type, Map<String, dynamic> serverRecord) async {
     try {
-      debugPrint('🔍 isOwnOperation başlatıldı: type=$type, server_record=$serverRecord');
+      debugPrint('🔍 isOwnOperation başlatıldı: type=$type');
       
-      // Önce synced durumundaki pending_operation'ları kontrol et
-      final query = StringBuffer();
-      final args = <dynamic>[];
+      // Mevcut kullanıcının employee_id'sini al
+      final prefs = await SharedPreferences.getInstance();
+      final currentEmployeeId = prefs.getInt('employee_id');
       
-      query.write('type = ? AND status = ?');
-      args.addAll([type, 'synced']);
+      if (currentEmployeeId == null) {
+        debugPrint('❌ isOwnOperation: Current employee_id bulunamadı SharedPreferences\'ta');
+        return false;
+      }
       
-      final pendingOps = await db.query(
-        'pending_operation',
-        where: query.toString(),
-        whereArgs: args
-      );
+      // Server record'daki employee_id'yi kontrol et
+      final serverEmployeeId = serverRecord['employee_id'] as int?;
       
-      debugPrint('📊 Bulunan synced pending operations: ${pendingOps.length}');
+      if (serverEmployeeId == null) {
+        debugPrint('❌ isOwnOperation: Server record\'da employee_id yok');
+        return false;
+      }
       
-      // Her pending operation için kontrol et
-      for (final pendingOp in pendingOps) {
-        debugPrint('🔎 Pending operation kontrolü: ${pendingOp['unique_id']}');
-        
-        final dataStr = pendingOp['data'] as String;
-        debugPrint('📄 Raw data: $dataStr');
-        
-        final data = jsonDecode(dataStr);
-        
-        if (type == 'goodsReceipt') {
-          final header = data['header'] as Map<String, dynamic>?;
-          debugPrint('📝 Header data: $header');
-          
-          if (header != null) {
-            // siparis_id ve receipt_date eşleşmesini kontrol et
-            final siparisId = header['siparis_id'];
-            final receiptDate = header['receipt_date'];
-            
-            // Debug log ekle
-            debugPrint('🔍 COMPARISON DEBUG:');
-            debugPrint('  - Server: siparis_id=${serverRecord['siparis_id']}, receipt_date=${serverRecord['receipt_date']}');
-            debugPrint('  - Pending: siparis_id=$siparisId, receipt_date=$receiptDate');
+      // Employee ID eşleşmesi kontrolü
+      final isOwn = currentEmployeeId == serverEmployeeId;
+      
+      debugPrint('🔍 isOwnOperation Kontrolü:');
+      debugPrint('   - Operasyon Tipi: $type');
+      debugPrint('   - Current Employee ID: $currentEmployeeId');
+      debugPrint('   - Server Employee ID: $serverEmployeeId');
+      debugPrint('   - Sonuç: ${isOwn ? "✅ KENDİ OPERASYONUM - Skip edilecek" : "❌ BAŞKA CİHAZIN OPERASYONU - İşlenecek"}');
+      
+      // Ek debug bilgisi
+      if (type == 'goodsReceipt' && serverRecord.containsKey('siparis_id')) {
+        debugPrint('   - Sipariş ID: ${serverRecord['siparis_id']}');
+        debugPrint('   - Receipt Date: ${serverRecord['receipt_date']}');
             
             // Önce siparis_id kontrolü
             if (serverRecord['siparis_id'].toString() != siparisId.toString()) {
@@ -2681,6 +2701,63 @@ class DatabaseHelper {
             }
           } else {
             debugPrint('❌ Header bulunamadı');
+          }
+        } else if (type == 'inventoryTransfer') {
+          final header = data['header'] as Map<String, dynamic>?;
+          debugPrint('📝 Transfer Header data: $header');
+          
+          if (header != null) {
+            // employee_id ve transfer_date eşleşmesini kontrol et
+            final employeeId = header['employee_id'];
+            final transferDate = header['transfer_date'];
+            
+            debugPrint('🔍 TRANSFER COMPARISON DEBUG:');
+            debugPrint('  - Server: employee_id=${serverRecord['employee_id']}, transfer_date=${serverRecord['transfer_date']}');
+            debugPrint('  - Pending: employee_id=$employeeId, transfer_date=$transferDate');
+            
+            // Önce employee_id kontrolü
+            if (serverRecord['employee_id'].toString() != employeeId.toString()) {
+              debugPrint('  ❌ employee_id eşleşmiyor');
+              continue;
+            }
+            
+            debugPrint('  ✅ employee_id eşleşiyor');
+            
+            // Tarih kontrolü - UTC ISO 8601 standardı ile toleranslı karşılaştırma
+            final serverDateStr = _normalizeToUtcIso(serverRecord['transfer_date'].toString());
+            final pendingDateStr = _normalizeToUtcIso(transferDate.toString());
+            
+            debugPrint('  - Server tarih (normalized): $serverDateStr');
+            debugPrint('  - Pending tarih (normalized): $pendingDateStr');
+            
+            // DateTime parse ederek toleranslı karşılaştırma yap
+            try {
+              final serverDateTime = DateTime.parse(serverDateStr);
+              final pendingDateTime = DateTime.parse(pendingDateStr);
+              final timeDiff = (serverDateTime.millisecondsSinceEpoch - pendingDateTime.millisecondsSinceEpoch).abs();
+              final toleranceMs = 5000; // 5 saniye tolerans
+              
+              final datesMatch = timeDiff <= toleranceMs;
+              
+              debugPrint('  - Zaman farkı: ${timeDiff}ms (Tolerans: ${toleranceMs}ms)');
+              debugPrint('  - Tarih eşleşmesi: ${datesMatch ? "✅" : "❌"}');
+              
+              if (datesMatch) {
+                debugPrint('✅ isOwnOperation: TRANSFER EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
+                return true;
+              }
+            } catch (e) {
+              debugPrint('⚠️ Transfer tarih parse hatası: $e');
+              // Parse hatası durumunda string karşılaştırması yap
+              final datesMatch = serverDateStr == pendingDateStr;
+              debugPrint('  - String eşleşmesi: ${datesMatch ? "✅" : "❌"}');
+              if (datesMatch) {
+                debugPrint('✅ isOwnOperation: TRANSFER EŞLEŞME BULUNDU! (String match)');
+                return true;
+              }
+            }
+          } else {
+            debugPrint('❌ Transfer Header bulunamadı');
           }
         }
       }
@@ -2794,6 +2871,67 @@ class DatabaseHelper {
       }
     } catch (e, s) {
       debugPrint('❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e');
+      debugPrint('Stack trace: $s');
+    }
+  }
+  
+  /// Sync sonrası local inventory transfer'i server ID'si ile günceller
+  Future<void> updateLocalInventoryTransferWithServerId(String pendingOpUniqueId, int serverId) async {
+    final db = await database;
+    
+    try {
+      // 1. Pending operation'ı bul
+      final pendingOp = await db.query(
+        'pending_operation',
+        where: 'unique_id = ? AND type = ? AND status = ?',
+        whereArgs: [pendingOpUniqueId, 'inventoryTransfer', 'synced'],
+        limit: 1
+      );
+      
+      if (pendingOp.isEmpty) {
+        debugPrint('⚠️  Transfer pending operation bulunamadı: $pendingOpUniqueId');
+        return;
+      }
+      
+      // 2. Data'dan transfer bilgilerini çıkar
+      final data = jsonDecode(pendingOp.first['data'] as String);
+      final header = data['header'] as Map<String, dynamic>?;
+      final employeeId = header?['employee_id'] as int?;
+      final transferDate = header?['transfer_date'] as String?;
+      
+      if (employeeId == null || transferDate == null) {
+        debugPrint('⚠️  Transfer bilgileri bulunamadı pending operation data\'sında');
+        return;
+      }
+      
+      // 3. Aynı employee ve tarihle eşleşen local transfer kaydı bul
+      final localTransfers = await db.query(
+        'inventory_transfers',
+        where: 'employee_id = ? AND id != ? AND transfer_date = ?',
+        whereArgs: [employeeId, serverId, transferDate]
+      );
+      
+      debugPrint('🔄 TRANSFER SYNC UPDATE: Employee $employeeId, tarih $transferDate için ${localTransfers.length} lokal transfer bulundu');
+      
+      // Exact match bulunmalı
+      if (localTransfers.isNotEmpty) {
+        final localTransfer = localTransfers.first;
+        final localId = localTransfer['id'] as int;
+        
+        debugPrint('🔄 TRANSFER SYNC UPDATE: Local Transfer ID $localId → Server ID $serverId değişimi yapılıyor');
+        
+        // 4. Transfer ID'sini güncelle
+        await db.update(
+          'inventory_transfers',
+          {'id': serverId},
+          where: 'id = ?',
+          whereArgs: [localId]
+        );
+        
+        debugPrint('✅ TRANSFER SYNC UPDATE: Transfer başarıyla güncellendi (Local: $localId → Server: $serverId)');
+      }
+    } catch (e, s) {
+      debugPrint('❌ TRANSFER SYNC UPDATE: updateLocalInventoryTransferWithServerId hatası: $e');
       debugPrint('Stack trace: $s');
     }
   }
