@@ -322,6 +322,7 @@ class TerminalController extends Controller
         }
 
         $db->createCommand()->insert('goods_receipts', [
+            'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
             'warehouse_id' => $warehouseId,
             'employee_id' => $header['employee_id'],
@@ -477,7 +478,7 @@ class TerminalController extends Controller
             $this->checkAndFinalizeReceiptStatus($db, $siparisId);
         }
 
-        return ['status' => 'success', 'receipt_id' => $receiptId];
+        return ['status' => 'success', 'receipt_id' => $receiptId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
     }
 
     private function _createInventoryTransfer($data, $db) {
@@ -655,6 +656,7 @@ class TerminalController extends Controller
                     ->scalar($db) : null;
                 
                 $transferData = [
+                    'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
                     'urun_key'            => $urunKey, // _key yazılıyor
                     'birim_key'           => $birimKey, // DÜZELTME: $birimKey değişkenini kullan
                     'from_location_id'    => $sourceLocationId,
@@ -713,7 +715,7 @@ class TerminalController extends Controller
         $lastTransferId = $db->getLastInsertID();
         
         // RETURN İFADESİNİ GÜNCELLE
-        return ['status' => 'success', 'transfer_id' => $lastTransferId];
+        return ['status' => 'success', 'transfer_id' => $lastTransferId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
     }
 
     private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {

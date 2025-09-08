@@ -710,7 +710,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         // KRITIK DEBUG: ProductItem birimKey kontrolü
-        print("DEBUG ProductItem - key: ${product.key}, birimKey: ${product.birimKey}, name: ${product.name}");
+        debugPrint("DEBUG ProductItem - key: ${product.key}, birimKey: ${product.birimKey}, name: ${product.name}");
         
         itemsToTransfer.add(TransferItemDetail(
           productKey: product.key, // _key değeri kullanılıyor

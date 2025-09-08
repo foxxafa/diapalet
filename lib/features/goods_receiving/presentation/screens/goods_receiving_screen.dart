@@ -1173,7 +1173,7 @@ class _FullscreenConfirmationPage extends StatelessWidget {
         final productId = productIds[index];
         final itemsForProduct = groupedItems[productId]!;
         final product = itemsForProduct.first.product;
-        final totalQuantity = itemsForProduct.fold<double>(0.0, (sum, item) => sum + item.quantity);
+        // final totalQuantity = itemsForProduct.fold<double>(0.0, (sum, item) => sum + item.quantity);
 
         return Card(
             margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),

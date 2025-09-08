@@ -15,7 +15,6 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transferabl
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {

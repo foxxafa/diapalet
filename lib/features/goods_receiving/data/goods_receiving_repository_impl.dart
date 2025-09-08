@@ -41,7 +41,17 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     try {
       await db.transaction((txn) async {
+        // 1. ADIM: UNIQUE ID'Yİ ÖNCEDEN AL
+        final pendingOp = PendingOperation.create(
+          type: PendingOperationType.goodsReceipt,
+          data: "{}",
+          createdAt: DateTime.now().toUtc(),
+        );
+        final String operationUniqueId = pendingOp.uniqueId;
+
+        // 2. ADIM: GOODS RECEIPT KAYDINI ETİKETLE
         final receiptHeaderData = {
+          'operation_unique_id': operationUniqueId, // Tag and Replace reconciliation için
           'siparis_id': payload.header.siparisId,
           'invoice_number': payload.header.invoiceNumber,
           'delivery_note_number': payload.header.deliveryNoteNumber,
@@ -94,13 +104,25 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         }
 
         final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload);
+        // Tag and Replace reconciliation için operation_unique_id ekle
+        enrichedData['operation_unique_id'] = operationUniqueId;
 
-        final pendingOp = PendingOperation.create(
+        final pendingOpForSync = PendingOperation.create(
           type: PendingOperationType.goodsReceipt,
           data: jsonEncode(enrichedData),
-          createdAt: DateTime.now(),
+          createdAt: DateTime.now().toUtc(),
         );
-        await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
+        // Unique ID'yi override et - aynı olmalı
+        final finalPendingOp = PendingOperation(
+          id: pendingOpForSync.id,
+          uniqueId: operationUniqueId, // Aynı unique ID kullan
+          type: pendingOpForSync.type,
+          data: pendingOpForSync.data,
+          status: pendingOpForSync.status,
+          createdAt: pendingOpForSync.createdAt,
+          errorMessage: pendingOpForSync.errorMessage,
+        );
+        await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
 
         // inventory_stock'lar normal table sync ile backend'den mobile'a gelecek
         // Pending operation sync gereksiz ve duplicate veri trafiği yaratır

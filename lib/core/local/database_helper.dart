@@ -8,7 +8,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert'; // Added for jsonDecode
-import 'dart:math' as Math; // Added for Math.min
 import 'package:shared_preferences/shared_preferences.dart'; // Added for SharedPreferences
 
 class DatabaseHelper {
@@ -1945,13 +1944,13 @@ class DatabaseHelper {
         WHERE ${conditions.join(' AND ')}
       ''';
 
-      final debugSql = '''
-        SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id
-        FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY gr.receipt_date
-      ''';
+      // final debugSql = '''
+      //   SELECT gr.receipt_date, gri.quantity_received, gr.goods_receipt_id as receipt_id
+      //   FROM goods_receipt_items gri
+      //   JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      //   WHERE ${conditions.join(' AND ')}
+      //   ORDER BY gr.receipt_date
+      // ''';
     } else {
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
@@ -2657,113 +2656,9 @@ class DatabaseHelper {
       if (type == 'goodsReceipt' && serverRecord.containsKey('siparis_id')) {
         debugPrint('   - Sipariş ID: ${serverRecord['siparis_id']}');
         debugPrint('   - Receipt Date: ${serverRecord['receipt_date']}');
-            
-            // Önce siparis_id kontrolü
-            if (serverRecord['siparis_id'].toString() != siparisId.toString()) {
-              debugPrint('  ❌ siparis_id eşleşmiyor');
-              continue;
-            }
-            
-            debugPrint('  ✅ siparis_id eşleşiyor');
-            
-            // Tarih kontrolü - UTC ISO 8601 standardı ile toleranslı karşılaştırma
-            final serverDateStr = _normalizeToUtcIso(serverRecord['receipt_date'].toString());
-            final pendingDateStr = _normalizeToUtcIso(receiptDate.toString());
-            
-            debugPrint('  - Server tarih (normalized): $serverDateStr');
-            debugPrint('  - Pending tarih (normalized): $pendingDateStr');
-            
-            // DateTime parse ederek toleranslı karşılaştırma yap
-            try {
-              final serverDateTime = DateTime.parse(serverDateStr);
-              final pendingDateTime = DateTime.parse(pendingDateStr);
-              final timeDiff = (serverDateTime.millisecondsSinceEpoch - pendingDateTime.millisecondsSinceEpoch).abs();
-              final toleranceMs = 5000; // 5 saniye tolerans
-              
-              final datesMatch = timeDiff <= toleranceMs;
-              
-              debugPrint('  - Zaman farkı: ${timeDiff}ms (Tolerans: ${toleranceMs}ms)');
-              debugPrint('  - Tarih eşleşmesi: ${datesMatch ? "✅" : "❌"}');
-              
-              if (datesMatch) {
-                debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
-                return true;
-              }
-            } catch (e) {
-              debugPrint('⚠️ Tarih parse hatası: $e');
-              // Parse hatası durumunda string karşılaştırması yap
-              final datesMatch = serverDateStr == pendingDateStr;
-              debugPrint('  - String eşleşmesi: ${datesMatch ? "✅" : "❌"}');
-              if (datesMatch) {
-                debugPrint('✅ isOwnOperation: EŞLEŞME BULUNDU! (String match)');
-                return true;
-              }
-            }
-          } else {
-            debugPrint('❌ Header bulunamadı');
-          }
-        } else if (type == 'inventoryTransfer') {
-          final header = data['header'] as Map<String, dynamic>?;
-          debugPrint('📝 Transfer Header data: $header');
-          
-          if (header != null) {
-            // employee_id ve transfer_date eşleşmesini kontrol et
-            final employeeId = header['employee_id'];
-            final transferDate = header['transfer_date'];
-            
-            debugPrint('🔍 TRANSFER COMPARISON DEBUG:');
-            debugPrint('  - Server: employee_id=${serverRecord['employee_id']}, transfer_date=${serverRecord['transfer_date']}');
-            debugPrint('  - Pending: employee_id=$employeeId, transfer_date=$transferDate');
-            
-            // Önce employee_id kontrolü
-            if (serverRecord['employee_id'].toString() != employeeId.toString()) {
-              debugPrint('  ❌ employee_id eşleşmiyor');
-              continue;
-            }
-            
-            debugPrint('  ✅ employee_id eşleşiyor');
-            
-            // Tarih kontrolü - UTC ISO 8601 standardı ile toleranslı karşılaştırma
-            final serverDateStr = _normalizeToUtcIso(serverRecord['transfer_date'].toString());
-            final pendingDateStr = _normalizeToUtcIso(transferDate.toString());
-            
-            debugPrint('  - Server tarih (normalized): $serverDateStr');
-            debugPrint('  - Pending tarih (normalized): $pendingDateStr');
-            
-            // DateTime parse ederek toleranslı karşılaştırma yap
-            try {
-              final serverDateTime = DateTime.parse(serverDateStr);
-              final pendingDateTime = DateTime.parse(pendingDateStr);
-              final timeDiff = (serverDateTime.millisecondsSinceEpoch - pendingDateTime.millisecondsSinceEpoch).abs();
-              final toleranceMs = 5000; // 5 saniye tolerans
-              
-              final datesMatch = timeDiff <= toleranceMs;
-              
-              debugPrint('  - Zaman farkı: ${timeDiff}ms (Tolerans: ${toleranceMs}ms)');
-              debugPrint('  - Tarih eşleşmesi: ${datesMatch ? "✅" : "❌"}');
-              
-              if (datesMatch) {
-                debugPrint('✅ isOwnOperation: TRANSFER EŞLEŞME BULUNDU! Bu bizim kendi operasyonumuz!');
-                return true;
-              }
-            } catch (e) {
-              debugPrint('⚠️ Transfer tarih parse hatası: $e');
-              // Parse hatası durumunda string karşılaştırması yap
-              final datesMatch = serverDateStr == pendingDateStr;
-              debugPrint('  - String eşleşmesi: ${datesMatch ? "✅" : "❌"}');
-              if (datesMatch) {
-                debugPrint('✅ isOwnOperation: TRANSFER EŞLEŞME BULUNDU! (String match)');
-                return true;
-              }
-            }
-          } else {
-            debugPrint('❌ Transfer Header bulunamadı');
-          }
-        }
       }
       
-      debugPrint('❌ isOwnOperation: Eşleşen pending operation bulunamadı');
-      return false;
+      return isOwn;
     } catch (e, stackTrace) {
       debugPrint('❌ isOwnOperation kritik hatası: $e');
       debugPrint('Stack trace: $stackTrace');
@@ -2772,15 +2667,15 @@ class DatabaseHelper {
   }
   
   /// UTC ISO 8601 formatına normalize eder
-  String _normalizeToUtcIso(String dateStr) {
-    try {
-      final dt = DateTime.parse(dateStr.replaceAll(' ', 'T'));
-      return dt.toUtc().toIso8601String();
-    } catch (e) {
-      debugPrint('⚠️ Tarih normalize hatası: $e, original: $dateStr');
-      return dateStr; // Hata varsa orijinal string döndür
-    }
-  }
+  // String _normalizeToUtcIso(String dateStr) {
+  //   try {
+  //     final dt = DateTime.parse(dateStr.replaceAll(' ', 'T'));
+  //     return dt.toUtc().toIso8601String();
+  //   } catch (e) {
+  //     debugPrint('⚠️ Tarih normalize hatası: $e, original: $dateStr');
+  //     return dateStr; // Hata varsa orijinal string döndür
+  //   }
+  // }
   
   /// Sync sonrası local goods receipt'i server ID'si ile günceller
   Future<void> updateLocalGoodsReceiptWithServerId(String pendingOpUniqueId, int serverId) async {

@@ -531,18 +531,17 @@ class SyncService with ChangeNotifier {
             debugPrint("❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e");
             debugPrint("Stack trace: $s");
           }
-        } else if (operationType == 'inventoryTransfer' && resultData['transfer_id'] != null) {
-          // BU BLOĞU TAMAMEN EKLE
-          final serverTransferId = resultData['transfer_id'];
+        } else if (operationType == 'inventoryTransfer' && resultData['transfer_id'] != null && idempotencyKey != null) {
+          final transferId = int.parse(resultData['transfer_id'].toString());
+          debugPrint("🔄 TRANSFER SYNC UPDATE: transfer_id ($transferId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
           
-          final db = await dbHelper.database;
-          final updatedRows = await db.update(
-            'inventory_transfers',
-            {'id': serverTransferId, 'operation_unique_id': null}, // ID'yi güncelle ve etiketi temizle
-            where: 'operation_unique_id = ?',
-            whereArgs: [idempotencyKey],
-          );
-          debugPrint('Uzlaştırma: $updatedRows adet inventory_transfers kaydı $idempotencyKey etiketi ile bulundu ve IDsi $serverTransferId olarak güncellendi.');
+          try {
+            await dbHelper.updateLocalInventoryTransferWithServerId(idempotencyKey, transferId);
+            debugPrint("✅ TRANSFER SYNC UPDATE: Lokal transfer kaydı başarıyla güncellendi");
+          } catch (e, s) {
+            debugPrint("❌ TRANSFER SYNC UPDATE: updateLocalInventoryTransferWithServerId hatası: $e");
+            debugPrint("Stack trace: $s");
+          }
         }
         
         dataChanged = true;
