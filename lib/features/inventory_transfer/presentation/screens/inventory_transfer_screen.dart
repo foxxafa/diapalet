@@ -232,9 +232,26 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Future<void> _checkAvailableModesForFreeReceipt() async {
     if (!widget.isFreePutAway || widget.selectedDeliveryNote == null) return;
+    
+    // Check for pallets and products in the specific delivery note
     await _updateModeAvailability(
-      palletCheck: () async => (await _repo.getPalletIdsAtLocation(null, stockStatuses: ['receiving'], deliveryNoteNumber: widget.selectedDeliveryNote)).isNotEmpty,
-      boxCheck: () async => (await _repo.getProductsAtLocation(null, stockStatuses: ['receiving'], deliveryNoteNumber: widget.selectedDeliveryNote)).isNotEmpty,
+      palletCheck: () async {
+        final pallets = await _repo.getPalletIdsAtLocation(
+          null, 
+          stockStatuses: ['receiving'], 
+          deliveryNoteNumber: widget.selectedDeliveryNote
+        );
+        return pallets.isNotEmpty;
+      },
+      boxCheck: () async {
+        // Get transferable containers (non-pallet items) for this delivery note
+        final containers = await _repo.getTransferableContainers(
+          null,
+          deliveryNoteNumber: widget.selectedDeliveryNote,
+        );
+        // Check if there are any non-pallet containers
+        return containers.any((container) => !container.isPallet);
+      },
     );
   }
 
@@ -1071,29 +1088,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             setState(() {
               _selectedMode = newMode;
               _isPalletOpening = false;
-
-              // Clear all input fields and validity flags when switching between pallet/product modes
-              // But preserve "000" for free putaway and order-based operations
-              if (widget.selectedOrder == null && !widget.isFreePutAway) {
-                _sourceLocationController.clear();
-                _isSourceLocationValid = false;
-              }
-              _scannedContainerIdController.clear();
-              _productSearchController.clear();
-              _productSearchResults = [];
-              _isSearchingProducts = false;
-              _clearProductControllers();
-              _productsInContainer.clear();
-              _targetLocationController.clear();
-              _isTargetLocationValid = false;
-
-              // Reset form state and load containers
-              _resetForm(resetAll: false);
-              if (_selectedSourceLocationName != null) {
+              _resetContainerAndProducts();
+              
+              // Reload containers with new mode
+              if (_selectedSourceLocationName != null || widget.isFreePutAway || widget.selectedOrder != null) {
                 _loadContainersForLocation();
-              } else {
-                // Otomatik focus yapma - kullanıcı manuel seçsin
-                // _sourceLocationFocusNode.requestFocus();
               }
             });
           }

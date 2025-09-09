@@ -208,34 +208,43 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       whereArgs.add(palletBarcode);
     }
     
-    if (siparisId == null) {
-      whereClauses.add('siparis_id IS NULL');
-    } else {
-      whereClauses.add('siparis_id = ?');
-      whereArgs.add(siparisId);
+    // KRITIK FIX: Backend mantığı ile aynı
+    // 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
+    // 'available' durumunda siparis_id'yi dahil etme - konsolidasyon için
+    if (stockStatus == 'receiving') {
+      if (siparisId == null) {
+        whereClauses.add('siparis_id IS NULL');
+      } else {
+        whereClauses.add('siparis_id = ?');
+        whereArgs.add(siparisId);
+      }
     }
+    // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
     
     if (expiryDate == null) {
       whereClauses.add('expiry_date IS NULL');
     } else {
-      whereClauses.add('expiry_date = ?');
+      // KRITIK FIX: Expiry date format normalization
+      // Backend'de "2025-12-12", telefonda "2025-12-12T00:00:00.000"
+      // DATE() function ile normalize et
+      whereClauses.add('DATE(expiry_date) = DATE(?)');
       whereArgs.add(expiryDate);
     }
     
-    if (goodsReceiptId == null) {
-      whereClauses.add('goods_receipt_id IS NULL');
-    } else {
-      whereClauses.add('goods_receipt_id = ?');
-      whereArgs.add(goodsReceiptId);
-    }
+    // KRITIK FIX: Backend'de goods_receipt_id kontrol edilmiyor
+    // Farklı goods receipt'ler aynı koşullarda birleştirilmeli
+    // goods_receipt_id kontrolü kaldırıldı
 
+    final whereClause = whereClauses.join(' AND ');
     final existingStock = await txn.query('inventory_stock',
-        where: whereClauses.join(' AND '),
+        where: whereClause,
         whereArgs: whereArgs);
 
     if (existingStock.isNotEmpty) {
       final currentStock = existingStock.first;
-      final newQty = (currentStock['quantity'] as num) + quantityChange;
+      final oldQty = (currentStock['quantity'] as num).toDouble();
+      final newQty = oldQty + quantityChange;
+      
       if (newQty > 0.001) {
         await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toUtc().toIso8601String()},
             where: 'id = ?', whereArgs: [currentStock['id']]);
