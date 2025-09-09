@@ -414,6 +414,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           uniqueId: operationUniqueId, // AYNI ID'Yİ KULLAN
           type: PendingOperationType.inventoryTransfer,
           data: jsonEncode({
+            'operation_unique_id': operationUniqueId, // BU SATIR EKSİKTİ!
             'header': headerJson,
             'items': itemsForJson,
           }),

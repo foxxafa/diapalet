@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added for Shared
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 63; // operation_unique_id added for Tag and Replace reconciliation
+  static const _databaseVersion = 65; // removed warehouse_id from goods_receipts (redundant, derived from employee_id)
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -195,13 +195,11 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS goods_receipts (
           goods_receipt_id INTEGER PRIMARY KEY,
           operation_unique_id TEXT,
-          warehouse_id INTEGER,
           siparis_id INTEGER,
           invoice_number TEXT,
           delivery_note_number TEXT,
           employee_id INTEGER,
           receipt_date TEXT,
-          warehouse_code TEXT,
           sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT
@@ -455,66 +453,26 @@ class DatabaseHelper {
           }
         }
 
-        // Goods receipts incremental sync - Multi-device safe
+        // Goods receipts incremental sync - All server data should sync
         if (data.containsKey('goods_receipts')) {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
           for (final receipt in goodsReceiptsData) {
-            // Çoklu cihaz kontrolü: Bu bizim kendi operasyonumuz mu?
-            final isOwn = await isOwnOperation(txn, 'goodsReceipt', receipt);
-            
-            if (isOwn) {
-              // Kendi operasyonumuz - sadece ID güncelle, veri ekleme
-              debugPrint('🔄 Kendi operasyonumuz tespit edildi, sadece ID güncellenecek: ${receipt['goods_receipt_id']}');
-              
-              // updateLocalGoodsReceiptWithServerId zaten bu işi yapıyor
-              // Burada sadece skip ediyoruz
-              continue;
-            }
-            
-            // Başka cihazın operasyonu - normal sync
+            // Server'dan gelen tüm goods_receipts verileri senkronize edilmeli
+            // Multi-device safe kontrolü burada uygulanmamalı çünkü bunlar zaten sunucuda kaydedilmiş veriler
             final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
             batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
 
             processedItems++;
             updateProgress('goods_receipts');
           }
-          
-          // GEÇICI FIX: NULL warehouse_id'li receipt'leri güncelle
-          await txn.rawUpdate('''
-            UPDATE goods_receipts 
-            SET warehouse_id = 7 
-            WHERE warehouse_id IS NULL AND employee_id = 5
-          ''');
-          debugPrint('🔧 FIXED: Updated NULL warehouse_id receipts to warehouse_id = 7');
         }
 
-        // Goods receipt items incremental sync - Multi-device safe
+        // Goods receipt items incremental sync - All server data should sync
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
-            // Receipt ID'ye göre parent receipt'i kontrol et
-            final receiptId = item['receipt_id'];
-            final parentReceipts = await txn.query(
-              'goods_receipts',
-              where: 'goods_receipt_id = ?',
-              whereArgs: [receiptId],
-              limit: 1
-            );
-            
-            bool isOwnItem = false;
-            if (parentReceipts.isNotEmpty) {
-              final parentReceipt = parentReceipts.first;
-              // Parent receipt bizim mi kontrol et
-              isOwnItem = await isOwnOperation(txn, 'goodsReceipt', parentReceipt);
-            }
-            
-            if (isOwnItem) {
-              // Kendi operasyonumuzun item'ı - skip
-              debugPrint('🔄 Kendi goods_receipt_item tespit edildi, skip: ${item['goods_receipt_item_id']}');
-              continue;
-            }
-            
-            // Başka cihazın item'ı - normal sync
+            // Server'dan gelen tüm goods_receipt_items verileri senkronize edilmeli
+            // Multi-device safe kontrolü burada uygulanmamalı çünkü parent receipt'ler de senkronize ediliyor
             final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
             batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -1488,7 +1446,7 @@ class DatabaseHelper {
         po.tarih as order_date,
         po.notlar as order_notes,
         po.status as order_status,
-        po.warehouse_code as order_warehouse_code
+        emp.warehouse_code as order_warehouse_code
       FROM goods_receipts gr
       LEFT JOIN employees emp ON emp.id = gr.employee_id
       LEFT JOIN siparisler po ON po.id = gr.siparis_id

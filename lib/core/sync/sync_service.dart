@@ -160,12 +160,12 @@ class SyncService with ChangeNotifier {
       await uploadPendingOperations();
 
       final prefs = await SharedPreferences.getInstance();
-      final warehouseId = prefs.getInt('warehouse_id');
-      if (warehouseId == null) {
-        throw Exception("Warehouse ID bulunamadı. Lütfen tekrar giriş yapın.");
+      final warehouseCode = prefs.getString('warehouse_code');
+      if (warehouseCode == null) {
+        throw Exception("Warehouse code bulunamadı. Lütfen tekrar giriş yapın.");
       }
 
-      await _downloadDataFromServer(warehouseId: warehouseId);
+      await _downloadDataFromServer(warehouseCode: warehouseCode);
       await dbHelper.cleanupOldSyncedOperations();
 
       // Ana veritabanı temizliği - eski verileri sil
@@ -211,7 +211,7 @@ class SyncService with ChangeNotifier {
     }
   }
 
-  Future<void> _downloadDataFromServer({required int warehouseId}) async {
+  Future<void> _downloadDataFromServer({required String warehouseCode}) async {
     debugPrint("🚀 Paginated sync sistemi başlatılıyor...");
 
     // Start downloading stage (5% - 80%)
@@ -229,7 +229,7 @@ class SyncService with ChangeNotifier {
     debugPrint("🔄 İnkremental Sync Bilgisi:");
     debugPrint("   User ID: $userId");
     debugPrint("   Son sync timestamp: $lastSync");
-    debugPrint("   Warehouse ID: $warehouseId");
+    debugPrint("   Warehouse Code: $warehouseCode");
     debugPrint("   📱 Cihaz zamanı (UTC): ${DateTime.now().toUtc().toIso8601String()}");
     debugPrint("   📱 Cihaz zamanı (Local): ${DateTime.now().toIso8601String()}");
 
@@ -241,7 +241,7 @@ class SyncService with ChangeNotifier {
 
     // STEP 1: Get table counts first
     debugPrint("📊 STEP 1: Tablo sayıları alınıyor...");
-    final counts = await _getTableCounts(warehouseId, lastSync);
+    final counts = await _getTableCounts(warehouseCode, lastSync);
     
     debugPrint("📊 Toplam kayıt sayıları:");
     int totalRecords = 0;
@@ -285,7 +285,7 @@ class SyncService with ChangeNotifier {
       while (true) {
         final pageData = await _downloadTablePage(
           tableName: tableName, 
-          warehouseId: warehouseId, 
+          warehouseCode: warehouseCode, 
           lastSync: lastSync, 
           page: page, 
           limit: pageSize
@@ -346,7 +346,7 @@ class SyncService with ChangeNotifier {
     debugPrint("   💾 Yeni timestamp: $newTimestamp");
   }
 
-  Future<Map<String, dynamic>> _getTableCounts(int warehouseId, String? lastSync) async {
+  Future<Map<String, dynamic>> _getTableCounts(String warehouseCode, String? lastSync) async {
     const maxRetries = 3;
     const baseDelayMs = 1000;
     
@@ -354,7 +354,7 @@ class SyncService with ChangeNotifier {
       try {
         final response = await dio.post(
           ApiConfig.syncCounts,
-          data: {'warehouse_id': warehouseId, 'last_sync_timestamp': lastSync},
+          data: {'warehouse_code': warehouseCode, 'last_sync_timestamp': lastSync},
         );
 
         if (response.statusCode == 200 && response.data['success'] == true) {
@@ -393,7 +393,7 @@ class SyncService with ChangeNotifier {
 
   Future<List<dynamic>> _downloadTablePage({
     required String tableName,
-    required int warehouseId,
+    required String warehouseCode,
     String? lastSync,
     required int page,
     required int limit,
@@ -406,7 +406,7 @@ class SyncService with ChangeNotifier {
         final response = await dio.post(
           ApiConfig.syncDownload,
           data: {
-            'warehouse_id': warehouseId,
+            'warehouse_code': warehouseCode,
             'last_sync_timestamp': lastSync,
             'table_name': tableName,
             'page': page,
@@ -553,12 +553,12 @@ class SyncService with ChangeNotifier {
     if (dataChanged) {
       debugPrint("Veri başarıyla yüklendi, sunucudan güncel durum indiriliyor...");
       final prefs = await SharedPreferences.getInstance();
-      final warehouseId = prefs.getInt('warehouse_id');
-      if (warehouseId != null) {
-        await _downloadDataFromServer(warehouseId: warehouseId);
+      final warehouseCode = prefs.getString('warehouse_code');
+      if (warehouseCode != null) {
+        await _downloadDataFromServer(warehouseCode: warehouseCode);
       } else {
-        debugPrint("Warehouse ID SharedPreferences'ta bulunamadı, _downloadDataFromServer atlanıyor.");
-        await dbHelper.addSyncLog('download', 'error', 'Warehouse ID bulunamadığı için veri indirilemedi.');
+        debugPrint("Warehouse Code SharedPreferences'ta bulunamadı, _downloadDataFromServer atlanıyor.");
+        await dbHelper.addSyncLog('download', 'error', 'Warehouse Code bulunamadığı için veri indirilemedi.');
       }
     }
   }

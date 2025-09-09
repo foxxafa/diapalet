@@ -40,6 +40,7 @@ class AuthRepositoryImpl implements AuthRepository {
     // SharedPreferences'ten SADECE kullanıcı kimlik verilerini temizle
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_id');
+    await prefs.remove('employee_id');
     await prefs.remove('first_name');
     await prefs.remove('last_name');
 
@@ -51,7 +52,6 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove('last_sync_timestamp');
 
     // ⚠️ OFFLINE KULLANIM İÇİN KORUNANLAR:
-    // - warehouse_id (depo seçimi için)
     // - warehouse_name (PDF'ler için)  
     // - warehouse_code (offline login için)
     // - branch_name (PDF'ler için)
@@ -125,29 +125,29 @@ class AuthRepositoryImpl implements AuthRepository {
 
           // ===== ÖNEMLİ: Warehouse değişimi kontrolü =====
           final prefs = await SharedPreferences.getInstance();
-          final previousWarehouseId = prefs.getInt('warehouse_id');
-          final newWarehouseId = user['warehouse_id'] as int;
+          final previousWarehouseCode = prefs.getString('warehouse_code');
+          final newWarehouseCode = user['warehouse_code'] as String;
           final newUserId = user['id'] as int;
           final previousUserId = prefs.getInt('user_id');
 
           // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
-          if (previousWarehouseId != null && previousWarehouseId != newWarehouseId) {
-            debugPrint("🔄 Warehouse değişimi tespit edildi! Önceki: $previousWarehouseId → Yeni: $newWarehouseId");
+          if (previousWarehouseCode != null && previousWarehouseCode != newWarehouseCode) {
+            debugPrint("🔄 Warehouse değişimi tespit edildi! Önceki: $previousWarehouseCode → Yeni: $newWarehouseCode");
             await dbHelper.clearWarehouseSpecificData();
             debugPrint("✅ Eski warehouse verileri temizlendi, yeni warehouse sync'i başlayacak.");
           } else if (previousUserId != null && previousUserId != newUserId) {
             debugPrint("🔄 Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
             await dbHelper.clearWarehouseSpecificData();
             debugPrint("✅ Eski kullanıcı verileri temizlendi, yeni kullanıcı sync'i başlayacak.");
-          } else if (previousWarehouseId == null) {
-            debugPrint("🆕 İlk giriş - warehouse ID: $newWarehouseId");
+          } else if (previousWarehouseCode == null) {
+            debugPrint("🆕 İlk giriş - warehouse code: $newWarehouseCode");
           } else {
-            debugPrint("✅ Aynı warehouse'da login - warehouse ID: $newWarehouseId (veri temizliği gerek yok)");
+            debugPrint("✅ Aynı warehouse'da login - warehouse code: $newWarehouseCode (veri temizliği gerek yok)");
           }
 
           // Kullanıcı bilgilerini kaydet
           await prefs.setInt('user_id', newUserId);
-          await prefs.setInt('warehouse_id', newWarehouseId);
+          await prefs.setInt('employee_id', newUserId); // employee_id da user_id ile aynı
           await prefs.setString('warehouse_name', user['warehouse_name'] as String? ?? 'N/A');
           await prefs.setString('warehouse_code', user['warehouse_code'] as String? ?? 'N/A');
           await prefs.setInt('receiving_mode', user['receiving_mode'] as int? ?? 2);
@@ -160,7 +160,7 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.remove('last_sync_timestamp');
           debugPrint("Kullanıcı ve şube bilgileri SharedPreferences'a kaydedildi.");
 
-          return {'warehouse_id': user['warehouse_id'] as int};
+          return {'success': true};
         } else {
           final errorMessage = responseData['message'] ?? 'Kullanıcı adı veya şifre hatalı.';
           throw Exception(errorMessage);
@@ -226,6 +226,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
         // Kullanıcı bilgilerini kaydet - mevcut warehouse/branch bilgilerini koru
         await prefs.setInt('user_id', newUserId);
+        await prefs.setInt('employee_id', newUserId); // employee_id da user_id ile aynı
         await prefs.setString('warehouse_code', newWarehouseCode);
         await prefs.setString('first_name', user['first_name'] as String? ?? 'N/A');
         await prefs.setString('last_name', user['last_name'] as String? ?? 'N/A');

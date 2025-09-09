@@ -88,7 +88,6 @@ class TerminalController extends Controller
                     'e.id', 'e.first_name', 'e.last_name', 'e.username',
                     'e.warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
-                    'COALESCE(w.id, 1) as warehouse_id',
                     'COALESCE(w.receiving_mode, 2) as receiving_mode',
                     'e.branch_code',
                     'COALESCE(b.name, "Default Branch") as branch_name',
@@ -108,7 +107,6 @@ class TerminalController extends Controller
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
                     'username' => $user['username'],
-                    'warehouse_id' => (int)($user['warehouse_id'] ?? 1),
                     'warehouse_name' => $user['warehouse_name'],
                     'warehouse_code' => $user['warehouse_code'],
                     'receiving_mode' => (int)($user['receiving_mode'] ?? 2),
@@ -296,7 +294,7 @@ class TerminalController extends Controller
         
         // DEBUG: Employee warehouse mapping'i kontrol et
         $employeeInfo = (new Query())
-            ->select(['e.id', 'e.warehouse_code', 'w.id as warehouse_id', 'w.warehouse_code as w_warehouse_code'])
+            ->select(['e.id', 'e.warehouse_code', 'w.id', 'w.warehouse_code as w_warehouse_code'])
             ->from(['e' => 'employees'])
             ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
             ->where(['e.id' => $employeeId])
@@ -305,7 +303,7 @@ class TerminalController extends Controller
         Yii::info("DEBUG createGoodsReceipt - employee_id: $employeeId", __METHOD__);
         Yii::info("DEBUG employee info: " . json_encode($employeeInfo), __METHOD__);
         
-        $warehouseId = $employeeInfo['warehouse_id'] ?? null;
+        $warehouseId = $employeeInfo['id'] ?? null;
 
         if (!$warehouseId) {
             return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı. Employee warehouse_code: ' . ($employeeInfo['warehouse_code'] ?? 'null')];
@@ -324,7 +322,6 @@ class TerminalController extends Controller
         $db->createCommand()->insert('goods_receipts', [
             'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
-            'warehouse_id' => $warehouseId,
             'employee_id' => $header['employee_id'],
             'siparis_id' => $siparisId,
             'delivery_note_number' => $deliveryNoteNumber,
@@ -438,7 +435,8 @@ class TerminalController extends Controller
                 $stockStatus, // stock_status
                 $siparisId, // siparis_id
                 $item['expiry_date'] ?? null, // expiry_date
-                $receiptId // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
+                $receiptId, // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
+                $employeeInfo['warehouse_code'] ?? null // warehouse_code eklendi
             );
         }
 
@@ -487,6 +485,13 @@ class TerminalController extends Controller
         if (empty($header) || empty($items) || !isset($header['employee_id'], $header['target_location_id']) || !array_key_exists('source_location_id', $header)) {
             return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
         }
+
+        // Employee warehouse_code bilgisini al
+        $employeeInfo = (new Query())
+            ->select(['warehouse_code'])
+            ->from('employees')
+            ->where(['id' => $header['employee_id']])
+            ->one($db);
 
         $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
         $targetLocationId = $header['target_location_id'];
@@ -622,7 +627,8 @@ class TerminalController extends Controller
                     // KRITIK FIX: 'available' durumunda siparis_id = null - konsolidasyon için
                     null,
                     $portion['expiry'],
-                    null // KRITIK FIX: goods_receipt_id NULL - consolidation için
+                    null, // KRITIK FIX: goods_receipt_id NULL - consolidation için
+                    $employeeInfo['warehouse_code'] ?? null // warehouse_code eklendi
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
@@ -718,7 +724,7 @@ class TerminalController extends Controller
         return ['status' => 'success', 'transfer_id' => $lastTransferId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
     }
 
-    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null) {
+    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null, $warehouseCode = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -854,6 +860,7 @@ class TerminalController extends Controller
                     'StokKodu' => $stokKodu,
                     'shelf_code' => $shelfCode,
                     'sip_fisno' => $sipFisno,
+                    'warehouse_code' => $warehouseCode, // warehouse_code eklendi
                 ])->execute();
             }
         }
@@ -970,14 +977,31 @@ class TerminalController extends Controller
     public function actionSyncCounts()
     {
         $payload = $this->getJsonBody();
-        $warehouseId = $payload['warehouse_id'] ?? null;
+        $warehouseCode = $payload['warehouse_code'] ?? null;
         $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
 
+        if (!$warehouseCode) {
+            Yii::$app->response->statusCode = 400;
+            return ['success' => false, 'error' => 'Depo kodu (warehouse_code) zorunludur.'];
+        }
+        
+        // Get warehouse information from warehouse_code
+        $warehouseInfo = (new Query())
+            ->select(['id', 'warehouse_code'])
+            ->from('warehouses')
+            ->where(['warehouse_code' => $warehouseCode])
+            ->one();
+            
+        if (!$warehouseInfo) {
+            Yii::$app->response->statusCode = 400;
+            return ['success' => false, 'error' => 'Depo bulunamadı.'];
+        }
+        
+        $warehouseId = $warehouseInfo['id'];
         if (!$warehouseId) {
             Yii::$app->response->statusCode = 400;
-            return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
+            return ['success' => false, 'error' => 'Depo ID bilgisi bulunamadı.'];
         }
-        $warehouseId = (int)$warehouseId;
 
         // Buffer timestamp hazırlığı - ana sync ile tutarlı
         $serverSyncTimestamp = $lastSyncTimestamp;
@@ -1089,7 +1113,15 @@ class TerminalController extends Controller
 
     private function getGoodsReceiptsCount($warehouseId, $timestamp = null) 
     {
-        $query = (new Query())->from('goods_receipts')->where(['warehouse_id' => $warehouseId]);
+        // Use employee-based filtering instead of direct warehouse_id
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $employeeIds = (new Query())
+            ->select('id')
+            ->from('employees')
+            ->where(['warehouse_code' => $warehouseCode])
+            ->column();
+        
+        $query = (new Query())->from('goods_receipts')->where(['employee_id' => $employeeIds]);
         if ($timestamp) {
             $query->andWhere(['>', 'updated_at', $timestamp]);
         }
@@ -1098,10 +1130,18 @@ class TerminalController extends Controller
 
     private function getGoodsReceiptItemsCount($warehouseId, $timestamp = null) 
     {
+        // Use employee-based filtering instead of direct warehouse_id
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $employeeIds = (new Query())
+            ->select('id')
+            ->from('employees')
+            ->where(['warehouse_code' => $warehouseCode])
+            ->column();
+            
         $query = (new Query())
             ->from('goods_receipt_items')
             ->innerJoin('goods_receipts', 'goods_receipts.goods_receipt_id = goods_receipt_items.receipt_id')
-            ->where(['goods_receipts.warehouse_id' => $warehouseId]);
+            ->where(['goods_receipts.employee_id' => $employeeIds]);
             
         if ($timestamp) {
             $query->andWhere(['>', 'goods_receipt_items.updated_at', $timestamp]);
@@ -1109,66 +1149,21 @@ class TerminalController extends Controller
         return (int)$query->count();
     }
 
-    private function getInventoryStockCount($warehouseId, $timestamp = null) 
-    {
-        // KRITIK REFACTOR: Sadece warehouse ile ilgili inventory_stock kayıtlarını say
-        // Location'ı olan kayıtlar (available status) + receiving status'lu kayıtlar
-        
-        $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
-        
-        Yii::info("DEBUG getInventoryStockCount - warehouse_id: $warehouseId", __METHOD__);
-        Yii::info("DEBUG locationIds count: " . count($locationIds), __METHOD__);
-        
-        $query = (new Query())->from('inventory_stock');
-        $conditions = ['or'];
-        
-        // 1. Available stock'lar (shelfs'te olan)
-        if (!empty($locationIds)) {
-            $conditions[] = ['in', 'location_id', $locationIds];
-            Yii::info("DEBUG: location_id condition added", __METHOD__);
+    private function getInventoryStockCount($warehouseId, $timestamp = null) {
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        if (!$warehouseCode) {
+            return 0;
         }
-        
-        // 2. Receiving stock'lar (mal kabul alanında, location_id NULL)
-        // Sipariş ID'si bu warehouse'dan olan siparişler
-        $warehouseOrderIds = (new Query())
-            ->select('id')
-            ->from('siparisler') 
-            ->where(['_key_sis_depo_source' => (new Query())
-                ->select('_key')
-                ->from('warehouses')
-                ->where(['id' => $warehouseId])
-            ])
-            ->column();
-            
-        if (!empty($warehouseOrderIds)) {
-            $conditions[] = [
-                'and',
-                ['is', 'location_id', new \yii\db\Expression('NULL')],
-                ['=', 'stock_status', 'receiving'],
-                ['in', 'siparis_id', $warehouseOrderIds]
-            ];
-            Yii::info("DEBUG: receiving stock condition added with " . count($warehouseOrderIds) . " orders", __METHOD__);
-        }
-        
-        Yii::info("DEBUG conditions count: " . count($conditions), __METHOD__);
-        
-        if (count($conditions) > 1) {
-            $query->where($conditions);
-            if ($timestamp) {
-                $query->andWhere(['>', 'updated_at', $timestamp]);
-            }
-            $result = (int)$query->count();
-            Yii::info("DEBUG final inventory_stock count: $result", __METHOD__);
-            return $result;
-        }
-        Yii::info("DEBUG: Returning 0 because no conditions", __METHOD__);
-        return 0;
+        return $this->getTableCount('inventory_stock', $timestamp, ['warehouse_code' => $warehouseCode]);
     }
 
     private function getInventoryTransfersCount($warehouseId, $timestamp = null) 
     {
         $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
-        $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['warehouse_id' => $warehouseId])->column();
+        // Use employee-based filtering instead of direct warehouse_id
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['employee_id' => $employeeIds])->column();
         
         $query = (new Query())->from('inventory_transfers');
         $conditions = ['or'];
@@ -1208,7 +1203,7 @@ class TerminalController extends Controller
     public function actionSyncDownload()
 {
     $payload = $this->getJsonBody();
-    $warehouseId = $payload['warehouse_id'] ?? null;
+    $warehouseCode = $payload['warehouse_code'] ?? null;
     $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
     
     // ########## YENİ PAGINATION PARAMETRELERİ ##########
@@ -1216,11 +1211,28 @@ class TerminalController extends Controller
     $page = (int)($payload['page'] ?? 1);
     $limit = (int)($payload['limit'] ?? 5000);
     
+    if (!$warehouseCode) {
+        Yii::$app->response->statusCode = 400;
+        return ['success' => false, 'error' => 'Depo kodu (warehouse_code) zorunludur.'];
+    }
+    
+    // Get warehouse information from warehouse_code
+    $warehouseInfo = (new Query())
+        ->select(['id', 'warehouse_code'])
+        ->from('warehouses')
+        ->where(['warehouse_code' => $warehouseCode])
+        ->one();
+        
+    if (!$warehouseInfo) {
+        Yii::$app->response->statusCode = 400;
+        return ['success' => false, 'error' => 'Depo bulunamadı.'];
+    }
+    
+    $warehouseId = $warehouseInfo['id'];
     if (!$warehouseId) {
         Yii::$app->response->statusCode = 400;
-        return ['success' => false, 'error' => 'Depo ID (warehouse_id) zorunludur.'];
+        return ['success' => false, 'error' => 'Depo ID bilgisi bulunamadı.'];
     }
-    $warehouseId = (int)$warehouseId;
     
 
     // Eğer table_name belirtilmişse, paginated mode
@@ -1479,7 +1491,7 @@ class TerminalController extends Controller
             }
 
             // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
-            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
+            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
             if ($serverSyncTimestamp) {
                 $poReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
             }
@@ -1488,14 +1500,21 @@ class TerminalController extends Controller
         }
 
         // ########## FREE RECEIPTS İÇİN İNKREMENTAL SYNC ##########
-        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null, 'warehouse_id' => $warehouseId]);
+        // Use employee-based filtering instead of direct warehouse_id
+        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
+        if (!empty($employeeIds)) {
+            $freeReceiptsQuery->andWhere(['in', 'employee_id', $employeeIds]);
+        } else {
+            $freeReceiptsQuery->where('1=0'); // No employees found, return empty
+        }
         if ($serverSyncTimestamp) {
             $freeReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
         $freeReceipts = $freeReceiptsQuery->all();
         $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
 
-        $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+        $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
 
         // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
         $receiptIds = array_column($data['goods_receipts'], 'id');
@@ -1522,10 +1541,12 @@ class TerminalController extends Controller
             $stockConditions[] = ['in', 'location_id', $locationIds];
         }
 
+        // Use employee-based filtering instead of direct warehouse_id
+        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
         $allReceiptIdsForWarehouse = (new Query())
             ->select('goods_receipt_id')
             ->from('goods_receipts')
-            ->where(['warehouse_id' => $warehouseId])
+            ->where(['employee_id' => $employeeIds])
             ->column();
 
         if (!empty($allReceiptIdsForWarehouse)) {
@@ -1913,11 +1934,20 @@ class TerminalController extends Controller
             }
         }
 
-        // Free receipts
-        $conditions[] = ['and', ['siparis_id' => null], ['warehouse_id' => $warehouseId]];
+        // Free receipts: Filter by employee warehouse instead of direct warehouse_id
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $employeeIds = (new Query())
+            ->select('id')
+            ->from('employees')
+            ->where(['warehouse_code' => $warehouseCode])
+            ->column();
+            
+        if (!empty($employeeIds)) {
+            $conditions[] = ['and', ['siparis_id' => null], ['in', 'employee_id', $employeeIds]];
+        }
 
         $query = (new Query())
-            ->select(['goods_receipt_id as id', 'warehouse_id', 'siparis_id', 'invoice_number', 
+            ->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 
                      'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])
             ->from('goods_receipts');
 
@@ -1934,7 +1964,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id', 'warehouse_id']);
+        $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id']);
         return $data;
     }
 
@@ -1963,57 +1993,19 @@ class TerminalController extends Controller
         return $data;
     }
 
-    private function getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit)
-    {
-        // Count metodu ile aynı logic kullan
-        $locationIds = (new Query())
-            ->select('id')
-            ->from('shelfs')
-            ->where(['warehouse_id' => $warehouseId])
-            ->column();
-
-        $stockConditions = ['or'];
-
-        // 1. Available stock'lar (shelfs'te olan)
-        if (!empty($locationIds)) {
-            $stockConditions[] = ['in', 'location_id', $locationIds];
-        }
-        
-        // 2. Receiving stock'lar - sipariş ID'si warehouse'dan olan
-        $warehouseOrderIds = (new Query())
-            ->select('id')
-            ->from('siparisler') 
-            ->where(['_key_sis_depo_source' => (new Query())
-                ->select('_key')
-                ->from('warehouses')
-                ->where(['id' => $warehouseId])
-            ])
-            ->column();
-            
-        if (!empty($warehouseOrderIds)) {
-            $stockConditions[] = [
-                'and',
-                ['is', 'location_id', new \yii\db\Expression('NULL')],
-                ['=', 'stock_status', 'receiving'],
-                ['in', 'siparis_id', $warehouseOrderIds]
-            ];
-        }
-
-        if (count($stockConditions) <= 1) {
+    private function getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit) {
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        if (!$warehouseCode) {
             return [];
         }
-
         $query = (new Query())
             ->select(['id', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
-            ->where($stockConditions);
-
+            ->where(['warehouse_code' => $warehouseCode]);
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
         }
-
         $query->offset($offset)->limit($limit);
-
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
         return $data;
@@ -2112,10 +2104,13 @@ class TerminalController extends Controller
     // Helper method to get receipt IDs for a warehouse
     private function getReceiptIdsForWarehouse($warehouseId)
     {
+        // Use employee-based filtering instead of direct warehouse_id
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
         return (new Query())
             ->select('goods_receipt_id')
             ->from('goods_receipts')
-            ->where(['warehouse_id' => $warehouseId])
+            ->where(['employee_id' => $employeeIds])
             ->column();
     }
 
@@ -2129,10 +2124,27 @@ class TerminalController extends Controller
     public function actionGetFreeReceiptsForPutaway()
     {
         $params = $this->getJsonBody();
-        $warehouseId = $params['warehouse_id'] ?? null;
+        $employeeId = $params['employee_id'] ?? null;
 
-        if ($warehouseId === null) {
-            return ['success' => false, 'message' => 'Warehouse ID is required.'];
+        if ($employeeId === null) {
+            return ['success' => false, 'message' => 'Çalışan ID (employee_id) zorunludur.'];
+        }
+        
+        // Get warehouse information from employee
+        $employeeInfo = (new Query())
+            ->select(['e.warehouse_code', 'w.id'])
+            ->from(['e' => 'employees'])
+            ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
+            ->where(['e.id' => $employeeId])
+            ->one();
+            
+        if (!$employeeInfo) {
+            return ['success' => false, 'message' => 'Çalışan bulunamadı.'];
+        }
+        
+        $warehouseId = $employeeInfo['id'];
+        if (!$warehouseId) {
+            return ['success' => false, 'message' => 'Çalışanın depo bilgisi bulunamadı.'];
         }
 
         $query = new Query();
@@ -2149,7 +2161,7 @@ class TerminalController extends Controller
             ->innerJoin('employees e', 'e.id = gr.employee_id')
             ->where(['gr.siparis_id' => null])
             ->andWhere(['ist.stock_status' => 'receiving'])
-            ->andWhere(['gr.warehouse_id' => $warehouseId])
+            ->andWhere(['gr.employee_id' => (new Query())->select('id')->from('employees')->where(['warehouse_code' => (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar()])->column()])
             ->groupBy(['gr.goods_receipt_id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
             ->orderBy(['gr.receipt_date' => SORT_DESC])
             ->all();
