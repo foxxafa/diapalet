@@ -13,6 +13,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
@@ -242,7 +243,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
       }
     } else if (quantityChange > 0) {
+      // UUID üret
+      const uuid = Uuid();
+      final stockUuid = uuid.v4();
+      
       await txn.insert('inventory_stock', {
+        'stock_uuid': stockUuid,
         'urun_key': urunKey,
         'birim_key': birimKey,
         'location_id': locationId,

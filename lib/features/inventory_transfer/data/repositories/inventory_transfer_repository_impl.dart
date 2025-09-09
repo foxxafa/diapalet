@@ -16,6 +16,7 @@ import 'package:diapalet/features/inventory_transfer/domain/repositories/invento
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
@@ -954,7 +955,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       } else {
         debugPrint('➕ YENİ STOK: Konsolidasyon için eşleşme bulunamadı, yeni kayıt oluşturuluyor');
         debugPrint('   Parametreler: status=$status, location=$locationId, siparis=$siparisIdForAddition, quantity=$quantityChange');
+        
+        // UUID üret
+        const uuid = Uuid();
+        final stockUuid = uuid.v4();
+        
         await txn.insert(DbTables.inventoryStock, {
+          'stock_uuid': stockUuid, // UUID eklendi
           'urun_key': productId,
           'birim_key': birimKey,
           'location_id': locationId, // Artık null ise null kalıyor

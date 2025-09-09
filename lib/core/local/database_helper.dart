@@ -9,10 +9,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert'; // Added for jsonDecode
 import 'package:shared_preferences/shared_preferences.dart'; // Added for SharedPreferences
+import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 65; // removed warehouse_id from goods_receipts (redundant, derived from employee_id)
+  static const _databaseVersion = 66; // added stock_uuid to inventory_stock table
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -230,6 +231,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          stock_uuid TEXT NOT NULL UNIQUE,
           urun_key TEXT NOT NULL,
           birim_key TEXT,
           location_id INTEGER,
@@ -255,6 +257,7 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_location ON inventory_stock(location_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_status ON inventory_stock(stock_status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_siparis ON inventory_stock(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_uuid ON inventory_stock(stock_uuid)');
 
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_code ON shelfs(code)');
@@ -633,6 +636,40 @@ class DatabaseHelper {
           }
         }
 
+        // Deleted records (tombstone) processing - UUID based
+        if (data.containsKey('inventory_stock_tombstones')) {
+          final tombstones = List<String>.from(data['inventory_stock_tombstones']);
+          debugPrint('🗑️ Tombstone işleniyor: ${tombstones.length} UUID alındı');
+          
+          for (final stockUuid in tombstones) {
+            debugPrint('🗑️ UUID işleniyor: $stockUuid');
+            
+            // Önce kaydın var olup olmadığını kontrol et
+            final existingRecord = await txn.query(
+              'inventory_stock',
+              where: 'stock_uuid = ?',
+              whereArgs: [stockUuid],
+            );
+            debugPrint('🗑️ UUID $stockUuid için bulunan kayıt sayısı: ${existingRecord.length}');
+            
+            // UUID ile direkt silme işlemi yap
+            final deletedCount = await txn.delete(
+              'inventory_stock',
+              where: 'stock_uuid = ?',
+              whereArgs: [stockUuid]
+            );
+            
+            if (deletedCount > 0) {
+              debugPrint('🗑️ Tombstone başarılı: stock_uuid=$stockUuid silindi ($deletedCount kayıt)');
+            } else {
+              debugPrint('🗑️ Tombstone başarısız: stock_uuid=$stockUuid için silinecek kayıt bulunamadı');
+            }
+            
+            processedItems++;
+            updateProgress('inventory_stock_tombstones');
+          }
+        }
+
         // Orders incremental sync
         if (data.containsKey('siparisler')) {
           final siparislerData = List<Map<String, dynamic>>.from(data['siparisler']);
@@ -691,6 +728,7 @@ class DatabaseHelper {
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (skippedTables.contains(table)) continue; // Kaldırılan tablolar
+          if (table == 'inventory_stock_tombstones') continue; // Tombstones zaten yukarıda işlendi
           if (data[table] is! List) continue;
           final records = List<Map<String, dynamic>>.from(data[table]);
           if (records.isEmpty) continue;
@@ -2155,7 +2193,12 @@ class DatabaseHelper {
           debugPrint("  🔍 Receipt $receiptId items found: ${items.length}");
           for (final item in items) {
             debugPrint("    - Item: ${item['urun_key']}, qty: ${item['quantity_received']}");
+            // UUID üret
+            const uuid = Uuid();
+            final stockUuid = uuid.v4();
+            
             await db.insert('inventory_stock', {
+              'stock_uuid': stockUuid,
               'urun_key': item['urun_key'],
               'location_id': null,
               'siparis_id': null,

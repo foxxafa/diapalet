@@ -271,7 +271,7 @@ class SyncService with ChangeNotifier {
     final syncOrder = [
       'urunler', 'tedarikci', 'birimler', 'barkodlar', 'employees', 'shelfs',
       'siparisler', 'siparis_ayrintili', 'goods_receipts', 'goods_receipt_items',
-      'inventory_stock', 'inventory_transfers', 'wms_putaway_status'
+      'inventory_stock', 'inventory_transfers', 'wms_putaway_status', 'inventory_stock_tombstones'
     ];
     
     for (final tableName in syncOrder) {

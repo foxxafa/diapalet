@@ -70,6 +70,48 @@ class TerminalController extends Controller
         }
     }
 
+    /**
+     * UUID v4 üretir
+     */
+    private function generateUuid()
+    {
+        // PHP 7.0+ için UUID v4 üretimi
+        return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    /**
+     * Tek bir inventory_stock kaydının UUID'sini tombstone tablosuna kaydeder
+     */
+    private function logSingleDeletion($db, $stockId, $warehouseCode = null)
+    {
+        try {
+            // Stock UUID'sini ve warehouse_code'u al
+            $stockInfo = (new Query())
+                ->select(['stock_uuid', 'warehouse_code'])
+                ->from('inventory_stock')
+                ->where(['id' => $stockId])
+                ->one($db);
+            
+            if ($stockInfo && $stockInfo['stock_uuid']) {
+                $db->createCommand()->insert('inventory_stock_tombstones', [
+                    'stock_uuid' => $stockInfo['stock_uuid'],
+                    'warehouse_code' => $warehouseCode ?: $stockInfo['warehouse_code'],
+                    'deleted_at' => new \yii\db\Expression('NOW()')
+                ])->execute();
+                
+                Yii::info("TOMBSTONE: Single deletion logged for UUID: {$stockInfo['stock_uuid']}", __METHOD__);
+            }
+        } catch (\Exception $e) {
+            Yii::error("Tombstone logging failed for stock ID $stockId: " . $e->getMessage(), __METHOD__);
+        }
+    }
+
     public function actionLogin()
     {
         $params = $this->getJsonBody();
@@ -326,6 +368,7 @@ class TerminalController extends Controller
             'siparis_id' => $siparisId,
             'delivery_note_number' => $deliveryNoteNumber,
             'warehouse_code' => $employeeInfo['warehouse_code'] ?? null,
+            'warehouse_id' => $warehouseId, // DÜZELTME: warehouse_id eklendi (required field)
             'sip_fisno' => $sipFisno,
         ])->execute();
         $receiptId = $db->getLastInsertID();
@@ -608,6 +651,34 @@ class TerminalController extends Controller
 
             // 3. Veritabanı işlemlerini çalıştır (Kaynağı azalt)
             if (!empty($vtIslemleri['delete'])) {
+                // TOMBSTONE: Silinecek stokların UUID'lerini log tablosuna kaydet (YENİ UUID TABANLI YAKLAŞIM)
+                $stockUuids = (new Query())
+                    ->select(['stock_uuid'])
+                    ->from('inventory_stock')
+                    ->where(['in', 'id', $vtIslemleri['delete']])
+                    ->column($db);
+
+                // UUID'leri tombstone tablosuna toplu olarak ekle
+                if (!empty($stockUuids)) {
+                    $recordsToLog = [];
+                    foreach ($stockUuids as $uuid) {
+                        $recordsToLog[] = [
+                            'stock_uuid' => $uuid,
+                            'warehouse_code' => $employeeInfo['warehouse_code'] ?? null,
+                            'deleted_at' => new \yii\db\Expression('NOW()')
+                        ];
+                    }
+                    
+                    $db->createCommand()->batchInsert(
+                        'inventory_stock_tombstones',
+                        ['stock_uuid', 'warehouse_code', 'deleted_at'],
+                        $recordsToLog
+                    )->execute();
+                    
+                    Yii::info("TOMBSTONE: Logged " . count($stockUuids) . " deleted inventory_stock UUIDs", __METHOD__);
+                }
+                
+                // Ana tablodan fiziksel olarak sil
                 $db->createCommand()->delete('inventory_stock', ['in', 'id', $vtIslemleri['delete']])->execute();
             }
             foreach ($vtIslemleri['update'] as $id => $newQty) {
@@ -774,6 +845,9 @@ class TerminalController extends Controller
                     $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stockId])->execute();
                     $toDecrement = 0;
                 } else {
+                    // TOMBSTONE: UUID'yi log tablosuna kaydet
+                    $this->logSingleDeletion($db, $stockId);
+                    
                     $db->createCommand()->delete('inventory_stock', ['id' => $stockId])->execute();
                     $toDecrement -= $currentQty;
                 }
@@ -808,6 +882,9 @@ class TerminalController extends Controller
                     $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stock['id']])->execute();
                     Yii::info("DEBUG stock merge - Updated quantity to: $newQty", __METHOD__);
                 } else {
+                    // TOMBSTONE: UUID'yi log tablosuna kaydet
+                    $this->logSingleDeletion($db, $stock['id']);
+                    
                     $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
                     Yii::info("DEBUG stock merge - Deleted zero quantity stock", __METHOD__);
                 }
@@ -847,7 +924,11 @@ class TerminalController extends Controller
                 // DEBUG: Yeni stok kaydı oluşturma
                 Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);
                 
+                // UUID üret
+                $stockUuid = $this->generateUuid();
+                
                 $db->createCommand()->insert('inventory_stock', [
+                    'stock_uuid' => $stockUuid, // UUID eklendi
                     'urun_key' => $urunKey, 
                     'birim_key' => $birimKey, // Birim _key değeri
                     'location_id' => $locationId, 
@@ -1048,6 +1129,9 @@ class TerminalController extends Controller
             $counts['inventory_stock'] = $this->getInventoryStockCount($warehouseId, $serverSyncTimestamp);
             $counts['inventory_transfers'] = $this->getInventoryTransfersCount($warehouseId, $serverSyncTimestamp);
             $counts['wms_putaway_status'] = $this->getPutawayStatusCount($warehouseKey, $serverSyncTimestamp);
+            
+            // Tombstone kayıtları sayısı
+            $counts['inventory_stock_tombstones'] = $this->getTombstoneCount($warehouseCode, $serverSyncTimestamp);
 
             return [
                 'success' => true,
@@ -1198,6 +1282,50 @@ class TerminalController extends Controller
             $query->andWhere(['>', 'wms_putaway_status.updated_at', $timestamp]);
         }
         return (int)$query->count();
+    }
+    
+    private function getTombstoneCount($warehouseCode, $timestamp = null)
+    {
+        $query = (new Query())
+            ->from('inventory_stock_tombstones')
+            ->where(['warehouse_code' => $warehouseCode]);
+            
+        if ($timestamp) {
+            $query->andWhere(['>', 'deleted_at', $timestamp]);
+        }
+        
+        return (int)$query->count();
+    }
+    
+    /**
+     * Eski tombstone kayıtlarını temizler
+     * 7 günden eski tombstone kayıtlarını siler
+     */
+    private function cleanupOldTombstones($warehouseCode = null, $daysOld = 7)
+    {
+        $db = Yii::$app->db;
+        $cutoffDate = new \DateTime();
+        $cutoffDate->sub(new \DateInterval('P' . $daysOld . 'D'));
+        $cutoffDateStr = $cutoffDate->format('Y-m-d H:i:s');
+        
+        try {
+            // UUID tabanlı tombstone tablosundan eski kayıtları temizle
+            $deleteConditions = ['<', 'deleted_at', $cutoffDateStr];
+            
+            $deletedCount = $db->createCommand()
+                ->delete('inventory_stock_tombstones', $deleteConditions)
+                ->execute();
+            
+            if ($deletedCount > 0) {
+                Yii::info("Tombstone cleanup: $deletedCount old UUID records deleted (older than $daysOld days)", __METHOD__);
+            }
+            
+            return $deletedCount;
+            
+        } catch (\Exception $e) {
+            Yii::error("Tombstone cleanup error: " . $e->getMessage(), __METHOD__);
+            return 0;
+        }
     }
 
     public function actionSyncDownload()
@@ -1533,7 +1661,7 @@ class TerminalController extends Controller
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
         $stockQuery = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock');
         $stockConditions = ['or'];
 
@@ -1600,7 +1728,26 @@ class TerminalController extends Controller
         $data['inventory_transfers'] = $transferQuery->all();
         $this->castNumericValues($data['inventory_transfers'], ['id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
 
-        return [
+        // ########## TOMBSTONE RECORDS - Silinmiş inventory_stock kayıtları (UUID TABANLI) ##########
+        $tombstoneUuids = [];
+        if ($serverSyncTimestamp) {
+            // Sadece son sync'ten sonra silinmiş kayıtların UUID'lerini al
+            $tombstoneQuery = (new Query())
+                ->select(['stock_uuid'])
+                ->from('inventory_stock_tombstones')
+                ->where(['>', 'deleted_at', $serverSyncTimestamp]);
+                
+            $tombstoneUuids = $tombstoneQuery->column();
+            
+            if (!empty($tombstoneUuids)) {
+                Yii::info("TOMBSTONE: Sending " . count($tombstoneUuids) . " deleted inventory_stock UUIDs to mobile", __METHOD__);
+            }
+        }
+        
+        // TOMBSTONE CLEANUP: Eski tombstone kayıtlarını temizle (7 günden eski)
+        $this->cleanupOldTombstones($warehouseCode, 7);
+
+        $result = [
             'success' => true,
             'data' => $data,
             'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z'),
@@ -1611,10 +1758,18 @@ class TerminalController extends Controller
                 'barkodlar_count' => count($data['barkodlar'] ?? []),
                 'inventory_stock_count' => count($data['inventory_stock'] ?? []),
                 'inventory_transfers_count' => count($data['inventory_transfers'] ?? []),
+                'inventory_stock_tombstones_count' => count($tombstoneUuids),
                 'is_incremental' => !empty($lastSyncTimestamp),
                 'last_sync_timestamp' => $lastSyncTimestamp
             ]
         ];
+        
+        // UUID tabanlı tombstone listesini ekle
+        if (!empty($tombstoneUuids)) {
+            $result['inventory_stock_tombstones'] = $tombstoneUuids;
+        }
+        
+        return $result;
 
     } catch (\Exception $e) {
         Yii::$app->response->statusCode = 500;
@@ -1681,6 +1836,9 @@ class TerminalController extends Controller
                     break;
                 case 'wms_putaway_status':
                     $data = $this->getPaginatedWmsPutawayStatus($warehouseId, $serverSyncTimestamp, $offset, $limit);
+                    break;
+                case 'inventory_stock_tombstones':
+                    $data = $this->getPaginatedTombstones($warehouseId, $serverSyncTimestamp, $offset, $limit);
                     break;
                 default:
                     throw new \Exception("Desteklenmeyen tablo: $tableName");
@@ -1999,7 +2157,7 @@ class TerminalController extends Controller
             return [];
         }
         $query = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
             ->where(['warehouse_code' => $warehouseCode]);
         if ($serverSyncTimestamp) {
@@ -2099,6 +2257,29 @@ class TerminalController extends Controller
         $data = $query->all();
         $this->castNumericValues($data, ['id', 'purchase_order_line_id'], ['putaway_quantity']);
         return $data;
+    }
+
+    private function getPaginatedTombstones($warehouseId, $serverSyncTimestamp, $offset, $limit)
+    {
+        // Get warehouse code
+        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        if (!$warehouseCode) {
+            return [];
+        }
+        
+        $query = (new Query())
+            ->select(['stock_uuid'])
+            ->from('inventory_stock_tombstones')
+            ->where(['warehouse_code' => $warehouseCode]);
+            
+        if ($serverSyncTimestamp) {
+            $query->andWhere(['>', 'deleted_at', $serverSyncTimestamp]);
+        }
+        
+        $query->offset($offset)->limit($limit);
+        
+        // Return UUIDs as array, not as objects
+        return $query->column();
     }
 
     // Helper method to get receipt IDs for a warehouse
