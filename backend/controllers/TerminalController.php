@@ -866,7 +866,8 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
             
             // KRITIK FIX: 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
-            if ($stockStatus === 'receiving' && $siparisId !== null) {
+            // Serbest mal kabul (siparis_id=NULL) ve sipariş bazlı mal kabul ayrı kayıtlarda tutulmalı
+            if ($stockStatus === 'receiving') {
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
             }
             // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
@@ -1167,7 +1168,7 @@ class TerminalController extends Controller
         $query = (new Query())
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]]);
+            ->andWhere(['in', 'status', [0, 1, 2]]);
             
         if ($timestamp) {
             $query->andWhere(['>', 'updated_at', $timestamp]);
@@ -1546,7 +1547,7 @@ class TerminalController extends Controller
             ])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]]); // Aktif durumlar
+            ->andWhere(['in', 'status', [0, 1, 2]]); // Aktif durumlar
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
@@ -2006,7 +2007,7 @@ class TerminalController extends Controller
                      '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]]);
+            ->andWhere(['in', 'status', [0, 1, 2]]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
@@ -2042,7 +2043,7 @@ class TerminalController extends Controller
             ->select('id')
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
-            ->andWhere(['in', 'status', [0, 1, 2, 3]])
+            ->andWhere(['in', 'status', [0, 1, 2]])
             ->column();
 
         if (empty($poIds)) {

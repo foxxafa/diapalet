@@ -466,7 +466,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       LEFT JOIN goods_receipt_items gri ON gri.receipt_id = gr.goods_receipt_id AND gri.quantity_received > 0
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
-      WHERE o.status IN (0, 1, 2, 3)
+      WHERE o.status = 2
         AND (i.id IS NOT NULL OR gri.id IS NOT NULL)
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.created_at DESC

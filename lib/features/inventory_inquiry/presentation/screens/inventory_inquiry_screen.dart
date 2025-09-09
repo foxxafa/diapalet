@@ -316,7 +316,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                 _buildInfoRow(
                     Icons.inventory,
                     'inventory_inquiry.quantity'.tr(),
-                    '${location.quantity.toString()} ${location.unitName ?? 'N/A'}'),
+                    '${location.quantity.toInt()} ${location.unitName ?? 'N/A'}'),
                 const SizedBox(height: 8),
                 _buildInfoRow(
                     Icons.location_on,

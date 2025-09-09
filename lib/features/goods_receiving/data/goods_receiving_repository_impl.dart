@@ -529,30 +529,19 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     if (orderLines.isEmpty) return;
 
-    bool allLinesCompleted = true;
     bool anyLineReceived = false;
 
     for (final line in orderLines) {
-      final orderedQty = (line['ordered_quantity'] as num).toDouble();
       final receivedQty = (line['total_received'] as num).toDouble();
 
       if (receivedQty > 0) {
         anyLineReceived = true;
-      }
-
-      if (receivedQty < orderedQty) {
-        allLinesCompleted = false;
+        break; // Herhangi bir satırda kabul varsa yeterli
       }
     }
 
-    int newStatus;
-    if (allLinesCompleted && anyLineReceived) {
-      newStatus = 3; // Tamamen kabul edildi
-    } else if (anyLineReceived) {
-      newStatus = 1; // Kısmi kabul
-    } else {
-      newStatus = 0; // Hiç kabul yapılmamış
-    }
+    // Sadece kısmi kabul (status 1) veya hiç kabul yok (status 0) durumları
+    int newStatus = anyLineReceived ? 1 : 0;
 
     await txn.update(
       DbTables.orders,

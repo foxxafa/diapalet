@@ -45,6 +45,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
             s.urun_key,
             u.${DbColumns.productsName} as UrunAdi,
             u.${DbColumns.productsCode} as StokKodu,
+            unit.BirimAdi as unit_name,
             s.${DbColumns.stockQuantity} as quantity,
             s.${DbColumns.stockPalletBarcode} as pallet_barcode,
             s.${DbColumns.stockExpiryDate} as expiry_date,
@@ -53,6 +54,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
             sh.${DbColumns.locationsCode} as location_code
           FROM ${DbTables.inventoryStock} s
           JOIN ${DbTables.products} u ON u._key = s.urun_key
+          LEFT JOIN birimler unit ON unit._key = s.birim_key
           LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
           WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
           ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC

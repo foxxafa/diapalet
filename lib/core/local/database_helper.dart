@@ -2026,7 +2026,7 @@ class DatabaseHelper {
             debugPrint('DEBUG hasForceClose: Synced receipts in range: $syncedCount');
 
             final debugSyncedReceipts = await db.rawQuery('''
-              SELECT receipt_date, id
+              SELECT receipt_date, goods_receipt_id
               FROM goods_receipts
               WHERE siparis_id = ? AND receipt_date > ? AND receipt_date < ?
             ''', [siparisId, afterDateStr, forceCloseDateStr]);
