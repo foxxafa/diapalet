@@ -582,15 +582,18 @@ class DatabaseHelper {
             );
             
             if (existingStock.isNotEmpty) {
-              // Backend'den gelen quantity değeri mutlak değerdir, toplama değil
+              // TOMBSTONE FIX: Mevcut kayıt bulundu, server'dan gelen UUID ile güncelle
               final existingId = existingStock.first['id'];
+              final existingUuid = existingStock.first['stock_uuid'] as String?;
+              final serverUuid = sanitizedStock['stock_uuid'] as String?;
               final newQuantity = (sanitizedStock['quantity'] as num).toDouble();
               
               if (newQuantity > 0.001) {
-                // KRITIK FIX: Update sırasında birim_key'i de güncelle
+                // KRITIK FIX: UUID'yi de güncelle - tombstone sistemi için
                 await txn.update(
                   'inventory_stock',
                   {
+                    'stock_uuid': serverUuid, // Server UUID'si ile güncelle
                     'quantity': newQuantity,
                     'birim_key': sanitizedStock['birim_key'], // birim_key'i de güncelle
                     'updated_at': DateTime.now().toIso8601String()
@@ -598,7 +601,7 @@ class DatabaseHelper {
                   where: 'id = ?',
                   whereArgs: [existingId]
                 );
-                debugPrint('SYNC INFO: Updated inventory stock quantity to: $newQuantity, birim_key: ${sanitizedStock['birim_key']}');
+                debugPrint('🔄 TOMBSTONE FIX: UUID güncellendi $existingUuid → $serverUuid, quantity: $newQuantity');
               } else {
                 // Miktar 0 veya negatifse kaydı sil
                 await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existingId]);
