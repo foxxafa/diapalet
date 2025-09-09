@@ -30,6 +30,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   /// GÜNCELLEME: Kullanıcı oturumunu sonlandıran fonksiyon.
   /// OFFLINE KULLANIM İÇİN: warehouse ve branch bilgileri korunur
+  /// SYNC TIMESTAMP: Warehouse bazlı olarak korunur
   @override
   Future<void> logout() async {
     debugPrint("Çıkış yapılıyor - offline kullanım için warehouse bilgileri korunacak...");
@@ -39,27 +40,41 @@ class AuthRepositoryImpl implements AuthRepository {
 
     // SharedPreferences'ten SADECE kullanıcı kimlik verilerini temizle
     final prefs = await SharedPreferences.getInstance();
+    
+    // Logout öncesi warehouse code'u al (timestamp key için)
+    final warehouseCode = prefs.getString('warehouse_code');
+    
     await prefs.remove('user_id');
     await prefs.remove('employee_id');
     await prefs.remove('first_name');
     await prefs.remove('last_name');
 
-    // User-specific sync timestamp'ini temizle (güvenlik için)
+    // User-specific sync timestamp'lerini temizle (artık kullanılmıyor)
+    // Ama warehouse bazlı timestamp'i KORU
     final userId = prefs.getInt('user_id') ?? 0;
     await prefs.remove('last_sync_timestamp_user_$userId');
-
-    // Eski generic timestamp key'ini de temizle (backward compatibility)
     await prefs.remove('last_sync_timestamp');
+    
+    // ÖNEMLİ: Warehouse bazlı sync timestamp'ini KORU
+    // Bu sayede aynı warehouse'da farklı kullanıcılar sync'i devam ettirebilir
+    if (warehouseCode != null) {
+      final warehouseSyncKey = 'last_sync_timestamp_warehouse_$warehouseCode';
+      final existingTimestamp = prefs.getString(warehouseSyncKey);
+      if (existingTimestamp != null) {
+        debugPrint("📌 Warehouse sync timestamp korunuyor: $warehouseSyncKey = $existingTimestamp");
+      }
+    }
 
-    // ⚠️ OFFLINE KULLANIM İÇİN KORUNANLAR:
+    // ⚠️ OFFLINE KULLANIM VE SYNC İÇİN KORUNANLAR:
     // - warehouse_name (PDF'ler için)  
     // - warehouse_code (offline login için)
     // - branch_name (PDF'ler için)
     // - apikey (sync için - tekrar online olduğunda)
     // - receiving_mode (depo ayarları için)
+    // - last_sync_timestamp_warehouse_XXX (warehouse bazlı sync için)
 
-    debugPrint("✅ Oturum sonlandırıldı. Warehouse bilgileri offline kullanım için korundu.");
-    debugPrint("🔒 Korunan veriler: warehouse_name, warehouse_code, branch_name, apikey, receiving_mode");
+    debugPrint("✅ Oturum sonlandırıldı. Warehouse bilgileri ve sync timestamp'i korundu.");
+    debugPrint("🔒 Korunan veriler: warehouse_name, warehouse_code, branch_name, apikey, receiving_mode, warehouse sync timestamp");
   }
 
   Future<Map<String, dynamic>?> _loginOnline(String username, String password) async {
@@ -130,19 +145,19 @@ class AuthRepositoryImpl implements AuthRepository {
           final newUserId = user['id'] as int;
           final previousUserId = prefs.getInt('user_id');
 
-          // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
+          // SADECE farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
+          // Aynı warehouse'da farklı kullanıcı girişinde veri temizlenmez
           if (previousWarehouseCode != null && previousWarehouseCode != newWarehouseCode) {
             debugPrint("🔄 Warehouse değişimi tespit edildi! Önceki: $previousWarehouseCode → Yeni: $newWarehouseCode");
             await dbHelper.clearWarehouseSpecificData();
             debugPrint("✅ Eski warehouse verileri temizlendi, yeni warehouse sync'i başlayacak.");
           } else if (previousUserId != null && previousUserId != newUserId) {
-            debugPrint("🔄 Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
-            await dbHelper.clearWarehouseSpecificData();
-            debugPrint("✅ Eski kullanıcı verileri temizlendi, yeni kullanıcı sync'i başlayacak.");
+            debugPrint("👤 Aynı warehouse'da farklı kullanıcı girişi: Önceki: $previousUserId → Yeni: $newUserId");
+            debugPrint("✅ Aynı warehouse olduğu için veriler korunuyor, sync devam edecek.");
           } else if (previousWarehouseCode == null) {
             debugPrint("🆕 İlk giriş - warehouse code: $newWarehouseCode");
           } else {
-            debugPrint("✅ Aynı warehouse'da login - warehouse code: $newWarehouseCode (veri temizliği gerek yok)");
+            debugPrint("✅ Aynı warehouse ve kullanıcı - warehouse code: $newWarehouseCode");
           }
 
           // Kullanıcı bilgilerini kaydet

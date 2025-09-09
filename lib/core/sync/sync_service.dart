@@ -58,7 +58,12 @@ class SyncService with ChangeNotifier {
   Timer? _periodicTimer;
   SyncStatus _currentStatus = SyncStatus.offline;
 
-  // User-specific timestamp key oluştur
+  // Warehouse-specific timestamp key oluştur
+  String _getWarehouseSyncTimestampKey(String warehouseCode) {
+    return 'last_sync_timestamp_warehouse_$warehouseCode';
+  }
+  
+  // User-specific timestamp key oluştur (backward compatibility için koru)
   String _getUserSyncTimestampKey(int userId) {
     return 'last_sync_timestamp_user_$userId';
   }
@@ -223,8 +228,33 @@ class SyncService with ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getInt('user_id') ?? 0;
-    final userTimestampKey = _getUserSyncTimestampKey(userId);
-    final lastSync = prefs.getString(userTimestampKey);
+    final warehouseCode = prefs.getString('warehouse_code') ?? '';
+    
+    // Önce warehouse bazlı timestamp'e bak
+    String? lastSync;
+    if (warehouseCode.isNotEmpty) {
+      final warehouseTimestampKey = _getWarehouseSyncTimestampKey(warehouseCode);
+      lastSync = prefs.getString(warehouseTimestampKey);
+      if (lastSync != null) {
+        debugPrint('🏭 Warehouse bazlı timestamp kullanılıyor: $warehouseTimestampKey = $lastSync');
+      }
+    }
+    
+    // Warehouse timestamp yoksa user-specific timestamp'e bak (migration için)
+    if (lastSync == null) {
+      final userTimestampKey = _getUserSyncTimestampKey(userId);
+      lastSync = prefs.getString(userTimestampKey);
+      if (lastSync != null) {
+        debugPrint('👤 User bazlı timestamp kullanılıyor (migration): $userTimestampKey = $lastSync');
+        // Migration: User timestamp'i warehouse timestamp'e taşı
+        if (warehouseCode.isNotEmpty) {
+          final warehouseTimestampKey = _getWarehouseSyncTimestampKey(warehouseCode);
+          await prefs.setString(warehouseTimestampKey, lastSync);
+          await prefs.remove(userTimestampKey);
+          debugPrint('✅ Timestamp warehouse bazlı key\'e taşındı: $warehouseTimestampKey');
+        }
+      }
+    }
 
     debugPrint("🔄 İnkremental Sync Bilgisi:");
     debugPrint("   User ID: $userId");
@@ -256,7 +286,14 @@ class SyncService with ChangeNotifier {
       // Still process empty data to trigger completion
       await dbHelper.applyDownloadedData({});
       final newTimestamp = DateTime.now().toUtc().toIso8601String();
-      await prefs.setString(userTimestampKey, newTimestamp);
+      
+      // Warehouse bazlı timestamp kullan
+      if (warehouseCode.isNotEmpty) {
+        final warehouseTimestampKey = _getWarehouseSyncTimestampKey(warehouseCode);
+        await prefs.setString(warehouseTimestampKey, newTimestamp);
+        debugPrint('📌 Warehouse timestamp güncellendi: $warehouseTimestampKey = $newTimestamp');
+      }
+      
       return;
     }
 
@@ -339,7 +376,13 @@ class SyncService with ChangeNotifier {
 
     // STEP 4: Save timestamp
     final newTimestamp = DateTime.now().toUtc().toIso8601String();
-    await prefs.setString(userTimestampKey, newTimestamp);
+    
+    // Warehouse bazlı timestamp kullan
+    if (warehouseCode.isNotEmpty) {
+      final warehouseTimestampKey = _getWarehouseSyncTimestampKey(warehouseCode);
+      await prefs.setString(warehouseTimestampKey, newTimestamp);
+      debugPrint('📌 Warehouse timestamp güncellendi: $warehouseTimestampKey = $newTimestamp');
+    }
     
     debugPrint("🎉 Paginated sync tamamlandı!");
     debugPrint("   📊 İşlenen toplam kayıt: $processedRecords");
