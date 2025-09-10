@@ -48,6 +48,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await prefs.remove('employee_id');
     await prefs.remove('first_name');
     await prefs.remove('last_name');
+    await prefs.remove('role');
 
     // User-specific sync timestamp'lerini temizle (artık kullanılmıyor)
     // Ama warehouse bazlı timestamp'i KORU
@@ -80,6 +81,8 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Map<String, dynamic>?> _loginOnline(String username, String password) async {
     try {
       debugPrint("Online login denemesi yapılıyor: $username");
+      debugPrint("Username uzunluğu: ${username.length}, karakter kodları: ${username.codeUnits}");
+      debugPrint("Password uzunluğu: ${password.length}");
 
       // 1. CSRF token'ı al (sadece production ortamında)
       String? csrfToken;
@@ -160,6 +163,12 @@ class AuthRepositoryImpl implements AuthRepository {
             debugPrint("✅ Aynı warehouse ve kullanıcı - warehouse code: $newWarehouseCode");
           }
 
+          // WMS rol kontrolü (backend'de de kontrol var ama ek güvenlik için)
+          final userRole = user['role'] as String?;
+          if (userRole != 'WMS') {
+            throw Exception('Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir.');
+          }
+
           // Kullanıcı bilgilerini kaydet
           await prefs.setInt('user_id', newUserId);
           await prefs.setInt('employee_id', newUserId); // employee_id da user_id ile aynı
@@ -170,6 +179,7 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.setString('apikey', apiKey);
           await prefs.setString('first_name', user['first_name'] as String);
           await prefs.setString('last_name', user['last_name'] as String);
+          await prefs.setString('role', userRole);
 
           // Eski generic timestamp key'ini temizle (artık user-specific kullanıyoruz)
           await prefs.remove('last_sync_timestamp');
@@ -193,6 +203,10 @@ class AuthRepositoryImpl implements AuthRepository {
 
   Future<Map<String, dynamic>?> _loginOffline(String username, String password) async {
     try {
+      debugPrint("Offline login denemesi yapılıyor: $username");
+      debugPrint("Username uzunluğu: ${username.length}, karakter kodları: ${username.codeUnits}");
+      debugPrint("Password uzunluğu: ${password.length}");
+      
       final db = await dbHelper.database;
 
       // Employee bilgilerini al (warehouse bilgileri employees tablosunda mevcut)
@@ -204,6 +218,21 @@ class AuthRepositoryImpl implements AuthRepository {
       ''';
 
       final List<Map<String, dynamic>> result = await db.rawQuery(sql, [username, password]);
+      
+      debugPrint("SQL sorgusu: $sql");
+      debugPrint("Parametreler: username='$username', password='$password'");
+      debugPrint("Bulunan sonuç sayısı: ${result.length}");
+      
+      // Database'de hangi kullanıcılar var görelim
+      try {
+        final allUsers = await db.rawQuery('SELECT username, first_name, last_name, role, is_active FROM ${DbTables.employees} WHERE is_active = 1');
+        debugPrint("Database'deki aktif kullanıcılar:");
+        for (final user in allUsers) {
+          debugPrint("  - ${user['username']} (${user['first_name']} ${user['last_name']}) - rol: ${user['role']}");
+        }
+      } catch (e) {
+        debugPrint("Kullanıcı listesi sorgulanırken hata: $e");
+      }
 
       if (result.isNotEmpty) {
         debugPrint("Offline login başarılı: $username");
@@ -219,6 +248,12 @@ class AuthRepositoryImpl implements AuthRepository {
         // User ID'nin geçerli olup olmadığını kontrol et
         if (newUserId <= 0) {
           throw Exception("Geçersiz kullanıcı ID'si alındı. Lütfen veritabanı senkronizasyonunu kontrol edin.");
+        }
+
+        // WMS rol kontrolü (offline'da da kontrol edelim)
+        final userRole = user['role'] as String?;
+        if (userRole != 'WMS') {
+          throw Exception('Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir.');
         }
 
         // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
@@ -245,6 +280,7 @@ class AuthRepositoryImpl implements AuthRepository {
         await prefs.setString('warehouse_code', newWarehouseCode);
         await prefs.setString('first_name', user['first_name'] as String? ?? 'N/A');
         await prefs.setString('last_name', user['last_name'] as String? ?? 'N/A');
+        await prefs.setString('role', userRole);
 
         // Mevcut warehouse_name, branch_name ve API key'i KORU - offline'da bunlar değişmez
         final existingWarehouseName = prefs.getString('warehouse_name');

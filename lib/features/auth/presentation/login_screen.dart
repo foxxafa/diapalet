@@ -142,6 +142,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 40),
                 TextFormField(
                   controller: _usernameController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textCapitalization: TextCapitalization.none,
                   decoration: InputDecoration(
                     labelText: 'login.username'.tr(),
                     prefixIcon: const Icon(Icons.person_outline),
@@ -157,6 +160,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textCapitalization: TextCapitalization.none,
                   decoration: InputDecoration(
                     labelText: 'login.password'.tr(),
                     prefixIcon: const Icon(Icons.lock_outline),

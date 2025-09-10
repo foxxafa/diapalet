@@ -127,7 +127,7 @@ class TerminalController extends Controller
             // Rowhub formatında giriş sorgusu
             $userQuery = (new Query())
                 ->select([
-                    'e.id', 'e.first_name', 'e.last_name', 'e.username',
+                    'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.role',
                     'e.warehouse_code',
                     'COALESCE(w.name, "Default Warehouse") as warehouse_name',
                     'COALESCE(w.receiving_mode, 2) as receiving_mode',
@@ -143,12 +143,19 @@ class TerminalController extends Controller
             $user = $userQuery->one();
 
             if ($user) {
+                // WMS rolü kontrolü - sadece WMS rolü olanlar giriş yapabilir
+                if ($user['role'] !== 'WMS') {
+                    Yii::$app->response->statusCode = 403;
+                    return $this->asJson(['status' => 403, 'message' => 'Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir.']);
+                }
+                
                 $apiKey = Yii::$app->security->generateRandomString();
                 $userData = [
                     'id' => (int)$user['id'],
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
                     'username' => $user['username'],
+                    'role' => $user['role'],
                     'warehouse_name' => $user['warehouse_name'],
                     'warehouse_code' => $user['warehouse_code'],
                     'receiving_mode' => (int)($user['receiving_mode'] ?? 2),
@@ -1168,7 +1175,7 @@ class TerminalController extends Controller
         $query = (new Query())->from($tableName);
         
         if ($timestamp) {
-            $query->where(['>', 'updated_at', $timestamp]);
+            $query->where(['>=', 'updated_at', $timestamp]);
         }
 
         foreach ($extraConditions as $column => $value) {
@@ -1200,7 +1207,7 @@ class TerminalController extends Controller
             ->where(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
 
         if ($timestamp) {
-            $query->andWhere(['>', 'siparis_ayrintili.updated_at', $timestamp]); // DÜZELTME: Tablo öneki eklendi
+            $query->andWhere(['>=', 'siparis_ayrintili.updated_at', $timestamp]); // DÜZELTME: Tablo öneki eklendi
             // Sadece ilgili warehouse'un siparişlerini say
             $query->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
                   ->andWhere(['siparisler._key_sis_depo_source' => $warehouseKey]);
@@ -1245,7 +1252,7 @@ class TerminalController extends Controller
             ->where(['goods_receipts.employee_id' => $employeeIds]);
 
         if ($timestamp) {
-            $query->andWhere(['>', 'goods_receipt_items.updated_at', $timestamp]);
+            $query->andWhere(['>=', 'goods_receipt_items.updated_at', $timestamp]);
         }
         return (int)$query->count();
     }
@@ -1296,7 +1303,7 @@ class TerminalController extends Controller
             ->where(['siparisler._key_sis_depo_source' => $warehouseKey]);
 
         if ($timestamp) {
-            $query->andWhere(['>', 'wms_putaway_status.updated_at', $timestamp]);
+            $query->andWhere(['>=', 'wms_putaway_status.updated_at', $timestamp]);
         }
         return (int)$query->count();
     }
@@ -1308,7 +1315,7 @@ class TerminalController extends Controller
             ->where(['warehouse_code' => $warehouseCode]);
 
         if ($timestamp) {
-            $query->andWhere(['>', 'deleted_at', $timestamp]);
+            $query->andWhere(['>=', 'deleted_at', $timestamp]);
         }
 
         return (int)$query->count();
@@ -1419,7 +1426,7 @@ class TerminalController extends Controller
 
             // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen ürünleri al
             if ($serverSyncTimestamp) {
-                $urunlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                $urunlerQuery->where(['>=', 'updated_at', $serverSyncTimestamp]);
             } else {
                 // İlk sync ise tüm ürünleri al (aktif/pasif ayrımı olmadan)
                 // Mobil uygulama kendi filtrelemesini yapar
@@ -1447,7 +1454,7 @@ class TerminalController extends Controller
 
             // Eğer last_sync_timestamp varsa, sadece o tarihten sonra güncellenen tedarikçileri al
             if ($serverSyncTimestamp) {
-                $tedarikciQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                $tedarikciQuery->where(['>=', 'updated_at', $serverSyncTimestamp]);
             } else {
                 // İlk sync ise tüm tedarikçileri al
             }
@@ -1470,7 +1477,7 @@ class TerminalController extends Controller
                 ->from('birimler');
 
             if ($serverSyncTimestamp) {
-                $birimlerQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                $birimlerQuery->where(['>=', 'updated_at', $serverSyncTimestamp]);
             } else {
             }
 
@@ -1491,7 +1498,7 @@ class TerminalController extends Controller
                 ->from('barkodlar');
 
             if ($serverSyncTimestamp) {
-                $barkodlarQuery->where(['>', 'updated_at', $serverSyncTimestamp]);
+                $barkodlarQuery->where(['>=', 'updated_at', $serverSyncTimestamp]);
             } else {
             }
 
@@ -1511,7 +1518,7 @@ class TerminalController extends Controller
             ->from('shelfs')
             ->where(['warehouse_id' => $warehouseId]);
         if ($serverSyncTimestamp) {
-            $shelfsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $shelfsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         } else {
         }
         $data['shelfs'] = $shelfsQuery->all();
@@ -1540,7 +1547,7 @@ class TerminalController extends Controller
         // Rowhub formatında employee sorgusu - warehouse_code kullanılıyor
         $employeeColumns = [
             'e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
-            'e.warehouse_code', 'e.is_active', 'e.created_at', 'e.updated_at'
+            'e.warehouse_code', 'e.role', 'e.is_active', 'e.created_at', 'e.updated_at'
         ];
         $employeesQuery = (new Query())
             ->select($employeeColumns)
@@ -1548,7 +1555,7 @@ class TerminalController extends Controller
             ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode]);
 
         if ($serverSyncTimestamp) {
-            $employeesQuery->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
+            $employeesQuery->andWhere(['>=', 'e.updated_at', $serverSyncTimestamp]);
         } else {
         }
         $data['employees'] = $employeesQuery->all();
@@ -1568,7 +1575,7 @@ class TerminalController extends Controller
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
-            $poQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $poQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         } else {
         }
 
@@ -1619,7 +1626,7 @@ class TerminalController extends Controller
                 ->where(['in', 'sa.siparisler_id', $poIds])
                 ->andWhere(['sa.turu' => '1']); // DÜZELTME: Tablo öneki eklendi
             if ($serverSyncTimestamp) {
-                $poLineQuery->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]); // DÜZELTME: Tablo öneki eklendi
+                $poLineQuery->andWhere(['>=', 'sa.updated_at', $serverSyncTimestamp]); // DÜZELTME: Tablo öneki eklendi
             } else {
             }
             $data['siparis_ayrintili'] = $poLineQuery->all();
@@ -1630,7 +1637,7 @@ class TerminalController extends Controller
                 // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
                 $putawayQuery = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds]);
                 if ($serverSyncTimestamp) {
-                    $putawayQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                    $putawayQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
                 }
                 $data['wms_putaway_status'] = $putawayQuery->all();
                 $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
@@ -1639,7 +1646,7 @@ class TerminalController extends Controller
             // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
             $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
             if ($serverSyncTimestamp) {
-                $poReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                $poReceiptsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
             $poReceipts = $poReceiptsQuery->all();
             $data['goods_receipts'] = $poReceipts;
@@ -1655,7 +1662,7 @@ class TerminalController extends Controller
             $freeReceiptsQuery->where('1=0'); // No employees found, return empty
         }
         if ($serverSyncTimestamp) {
-            $freeReceiptsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $freeReceiptsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
         $freeReceipts = $freeReceiptsQuery->all();
         $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
@@ -1670,7 +1677,7 @@ class TerminalController extends Controller
                 ->from('goods_receipt_items')
                 ->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {
-                $receiptItemsQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                $receiptItemsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
             $data['goods_receipt_items'] = $receiptItemsQuery->all();
             $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id'], ['quantity_received']);
@@ -1707,7 +1714,7 @@ class TerminalController extends Controller
             $stockQuery->where($stockConditions);
             // İnkremental sync için updated_at filtresi
             if ($serverSyncTimestamp) {
-                $stockQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                $stockQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
         } else {
             $stockQuery->where('1=0');
@@ -1737,7 +1744,7 @@ class TerminalController extends Controller
             $transferQuery->where($transferConditions);
             // İnkremental sync için updated_at filtresi
             if ($serverSyncTimestamp) {
-                $transferQuery->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+                $transferQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
         } else {
             $transferQuery->where('1=0');
@@ -1753,7 +1760,7 @@ class TerminalController extends Controller
             $tombstoneQuery = (new Query())
                 ->select(['stock_uuid'])
                 ->from('inventory_stock_tombstones')
-                ->where(['>', 'deleted_at', $serverSyncTimestamp]);
+                ->where(['>=', 'deleted_at', $serverSyncTimestamp]);
 
             $tombstoneUuids = $tombstoneQuery->column();
 
@@ -1894,7 +1901,7 @@ class TerminalController extends Controller
             ->from('urunler');
 
         if ($serverSyncTimestamp) {
-            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->where(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -1910,7 +1917,7 @@ class TerminalController extends Controller
             ->from('tedarikci');
 
         if ($serverSyncTimestamp) {
-            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->where(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -1927,7 +1934,7 @@ class TerminalController extends Controller
             ->from('birimler');
 
         if ($serverSyncTimestamp) {
-            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->where(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -1944,7 +1951,7 @@ class TerminalController extends Controller
             ->from('barkodlar');
 
         if ($serverSyncTimestamp) {
-            $query->where(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->where(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -1971,12 +1978,12 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->select(['e.id', 'e.first_name', 'e.last_name', 'e.username', 'e.password',
-                     'e.warehouse_code', 'e.is_active', 'e.created_at', 'e.updated_at'])
+                     'e.warehouse_code', 'e.role', 'e.is_active', 'e.created_at', 'e.updated_at'])
             ->from(['e' => 'employees'])
             ->where(['e.is_active' => 1, 'e.warehouse_code' => $warehouseCode]);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'e.updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'e.updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -1994,7 +2001,7 @@ class TerminalController extends Controller
             ->where(['warehouse_id' => $warehouseId]);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2028,7 +2035,7 @@ class TerminalController extends Controller
             ->andWhere(['turu' => '1']); // Sadece turu=1 olan siparişler
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2077,7 +2084,7 @@ class TerminalController extends Controller
             ->andWhere(['sa.turu' => '1']); // FIX: Table prefix added
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'sa.updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'sa.updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2135,7 +2142,7 @@ class TerminalController extends Controller
         }
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2160,7 +2167,7 @@ class TerminalController extends Controller
             ->where(['in', 'receipt_id', $receiptIds]);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2180,7 +2187,7 @@ class TerminalController extends Controller
             ->from('inventory_stock')
             ->where(['warehouse_code' => $warehouseCode]);
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
         $query->offset($offset)->limit($limit);
         $data = $query->all();
@@ -2219,7 +2226,7 @@ class TerminalController extends Controller
             ->where($transferConditions);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2268,7 +2275,7 @@ class TerminalController extends Controller
             ->where(['in', 'purchase_order_line_id', $poLineIds]);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
 
         $query->offset($offset)->limit($limit);
@@ -2292,7 +2299,7 @@ class TerminalController extends Controller
             ->where(['warehouse_code' => $warehouseCode]);
 
         if ($serverSyncTimestamp) {
-            $query->andWhere(['>', 'deleted_at', $serverSyncTimestamp]);
+            $query->andWhere(['>=', 'deleted_at', $serverSyncTimestamp]);
         }
         
         $query->offset($offset)->limit($limit);

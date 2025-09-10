@@ -90,6 +90,7 @@ class DatabaseHelper {
           username TEXT UNIQUE,
           password TEXT,
           warehouse_code TEXT,
+          role TEXT,
           is_active INTEGER DEFAULT 1,
           created_at TEXT,
           updated_at TEXT
