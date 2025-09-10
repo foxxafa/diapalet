@@ -1170,34 +1170,35 @@ class TerminalController extends Controller
         if ($timestamp) {
             $query->where(['>', 'updated_at', $timestamp]);
         }
-        
+
         foreach ($extraConditions as $column => $value) {
             $query->andWhere([$column => $value]);
         }
-        
+
         return (int)$query->count();
     }
 
-    private function getOrdersCount($warehouseKey, $timestamp = null) 
+    private function getOrdersCount($warehouseKey, $timestamp = null)
     {
         $query = (new Query())
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2]]);
-            
+            ->andWhere(['in', 'status', [0, 1, 2]])
+            ->andWhere(['turu' => '1']); // Sadece turu=1 olan siparişler
+
         if ($timestamp) {
-            $query->andWhere(['>', 'updated_at', $timestamp]);
+            $query->andWhere(['>=', 'updated_at', $timestamp]);
         }
-        
+
         return (int)$query->count();
     }
 
-    private function getOrderLinesCount($warehouseKey, $timestamp = null) 
+    private function getOrderLinesCount($warehouseKey, $timestamp = null)
     {
         $query = (new Query())
             ->from('siparis_ayrintili')
             ->where(['siparis_ayrintili.turu' => '1']); // FIX: Table prefix added
-            
+
         if ($timestamp) {
             $query->andWhere(['>', 'siparis_ayrintili.updated_at', $timestamp]); // DÜZELTME: Tablo öneki eklendi
             // Sadece ilgili warehouse'un siparişlerini say
@@ -1207,11 +1208,11 @@ class TerminalController extends Controller
             $query->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
                   ->andWhere(['siparisler._key_sis_depo_source' => $warehouseKey]);
         }
-        
+
         return (int)$query->count();
     }
 
-    private function getGoodsReceiptsCount($warehouseId, $timestamp = null) 
+    private function getGoodsReceiptsCount($warehouseId, $timestamp = null)
     {
         // Use employee-based filtering instead of direct warehouse_id
         $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
@@ -1220,15 +1221,15 @@ class TerminalController extends Controller
             ->from('employees')
             ->where(['warehouse_code' => $warehouseCode])
             ->column();
-        
+
         $query = (new Query())->from('goods_receipts')->where(['employee_id' => $employeeIds]);
         if ($timestamp) {
-            $query->andWhere(['>', 'updated_at', $timestamp]);
+            $query->andWhere(['>=', 'updated_at', $timestamp]);
         }
         return (int)$query->count();
     }
 
-    private function getGoodsReceiptItemsCount($warehouseId, $timestamp = null) 
+    private function getGoodsReceiptItemsCount($warehouseId, $timestamp = null)
     {
         // Use employee-based filtering instead of direct warehouse_id
         $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
@@ -1237,12 +1238,12 @@ class TerminalController extends Controller
             ->from('employees')
             ->where(['warehouse_code' => $warehouseCode])
             ->column();
-            
+
         $query = (new Query())
             ->from('goods_receipt_items')
             ->innerJoin('goods_receipts', 'goods_receipts.goods_receipt_id = goods_receipt_items.receipt_id')
             ->where(['goods_receipts.employee_id' => $employeeIds]);
-            
+
         if ($timestamp) {
             $query->andWhere(['>', 'goods_receipt_items.updated_at', $timestamp]);
         }
@@ -1257,17 +1258,17 @@ class TerminalController extends Controller
         return $this->getTableCount('inventory_stock', $timestamp, ['warehouse_code' => $warehouseCode]);
     }
 
-    private function getInventoryTransfersCount($warehouseId, $timestamp = null) 
+    private function getInventoryTransfersCount($warehouseId, $timestamp = null)
     {
         $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
         // Use employee-based filtering instead of direct warehouse_id
         $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
         $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
         $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['employee_id' => $employeeIds])->column();
-        
+
         $query = (new Query())->from('inventory_transfers');
         $conditions = ['or'];
-        
+
         if (!empty($locationIds)) {
             $conditions[] = ['in', 'from_location_id', $locationIds];
             $conditions[] = ['in', 'to_location_id', $locationIds];
@@ -1275,44 +1276,44 @@ class TerminalController extends Controller
         if (!empty($receiptIds)) {
             $conditions[] = ['in', 'goods_receipt_id', $receiptIds];
         }
-        
+
         if (count($conditions) > 1) {
             $query->where($conditions);
             if ($timestamp) {
-                $query->andWhere(['>', 'updated_at', $timestamp]);
+                $query->andWhere(['>=', 'updated_at', $timestamp]);
             }
             return (int)$query->count();
         }
         return 0;
     }
 
-    private function getPutawayStatusCount($warehouseKey, $timestamp = null) 
+    private function getPutawayStatusCount($warehouseKey, $timestamp = null)
     {
         $query = (new Query())
             ->from('wms_putaway_status')
             ->innerJoin('siparis_ayrintili', 'siparis_ayrintili.id = wms_putaway_status.purchase_order_line_id')
             ->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
             ->where(['siparisler._key_sis_depo_source' => $warehouseKey]);
-            
+
         if ($timestamp) {
             $query->andWhere(['>', 'wms_putaway_status.updated_at', $timestamp]);
         }
         return (int)$query->count();
     }
-    
+
     private function getTombstoneCount($warehouseCode, $timestamp = null)
     {
         $query = (new Query())
             ->from('inventory_stock_tombstones')
             ->where(['warehouse_code' => $warehouseCode]);
-            
+
         if ($timestamp) {
             $query->andWhere(['>', 'deleted_at', $timestamp]);
         }
-        
+
         return (int)$query->count();
     }
-    
+
     /**
      * Eski tombstone kayıtlarını temizler
      * 7 günden eski tombstone kayıtlarını siler
@@ -1323,21 +1324,21 @@ class TerminalController extends Controller
         $cutoffDate = new \DateTime();
         $cutoffDate->sub(new \DateInterval('P' . $daysOld . 'D'));
         $cutoffDateStr = $cutoffDate->format('Y-m-d H:i:s');
-        
+
         try {
             // UUID tabanlı tombstone tablosundan eski kayıtları temizle
             $deleteConditions = ['<', 'deleted_at', $cutoffDateStr];
-            
+
             $deletedCount = $db->createCommand()
                 ->delete('inventory_stock_tombstones', $deleteConditions)
                 ->execute();
-            
+
             if ($deletedCount > 0) {
                 Yii::info("Tombstone cleanup: $deletedCount old UUID records deleted (older than $daysOld days)", __METHOD__);
             }
-            
+
             return $deletedCount;
-            
+
         } catch (\Exception $e) {
             Yii::error("Tombstone cleanup error: " . $e->getMessage(), __METHOD__);
             return 0;
@@ -1349,47 +1350,47 @@ class TerminalController extends Controller
     $payload = $this->getJsonBody();
     $warehouseCode = $payload['warehouse_code'] ?? null;
     $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
-    
+
     // ########## YENİ PAGINATION PARAMETRELERİ ##########
     $tableName = $payload['table_name'] ?? null;
     $page = (int)($payload['page'] ?? 1);
     $limit = (int)($payload['limit'] ?? 5000);
-    
+
     if (!$warehouseCode) {
         Yii::$app->response->statusCode = 400;
         return ['success' => false, 'error' => 'Depo kodu (warehouse_code) zorunludur.'];
     }
-    
+
     // Get warehouse information from warehouse_code
     $warehouseInfo = (new Query())
         ->select(['id', 'warehouse_code'])
         ->from('warehouses')
         ->where(['warehouse_code' => $warehouseCode])
         ->one();
-        
+
     if (!$warehouseInfo) {
         Yii::$app->response->statusCode = 400;
         return ['success' => false, 'error' => 'Depo bulunamadı.'];
     }
-    
+
     $warehouseId = $warehouseInfo['id'];
     if (!$warehouseId) {
         Yii::$app->response->statusCode = 400;
         return ['success' => false, 'error' => 'Depo ID bilgisi bulunamadı.'];
     }
-    
+
 
     // Eğer table_name belirtilmişse, paginated mode
     if ($tableName) {
         return $this->handlePaginatedTableDownload($warehouseId, $lastSyncTimestamp, $tableName, $page, $limit);
     }
-    
+
     // Eski mod - tüm tabloları birden indir (backward compatibility için)
 
     // ########## UTC TIMESTAMP KULLANIMI ##########
     // Global kullanım için UTC timestamp'leri direkt karşılaştır
     $serverSyncTimestamp = $lastSyncTimestamp;
-    
+
     // GÜVENLIK: Race condition ve timing sorunları için 60 saniye buffer ekle
     if ($lastSyncTimestamp) {
         // ISO8601 formatını parse et (2025-08-22T21:20:28.545772Z)
@@ -1397,7 +1398,7 @@ class TerminalController extends Controller
         // Race condition riskini minimize etmek için buffer artırıldı
         $syncDateTime->sub(new \DateInterval('PT60S')); // 30'dan 60 saniyeye çıkarıldı
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
-        
+
         // Debug için log
         \Yii::info("Sync buffer applied: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", __METHOD__);
     } else {
@@ -1423,9 +1424,9 @@ class TerminalController extends Controller
                 // İlk sync ise tüm ürünleri al (aktif/pasif ayrımı olmadan)
                 // Mobil uygulama kendi filtrelemesini yapar
             }
-            
+
             // DÜZELTME: Tüm ürünleri gönder (aktif=0 olanlar da dahil)
-            // Mobil uygulama WHERE u.aktif = 1 filtresi kullanıyor, bu nedenle 
+            // Mobil uygulama WHERE u.aktif = 1 filtresi kullanıyor, bu nedenle
             // server'dan aktif=0 olanlar da gelmeli ki mobil tarafta doğru çalışsın
 
             $urunlerData = $urunlerQuery->all();
@@ -1464,7 +1465,7 @@ class TerminalController extends Controller
         // ########## BİRİMLER İÇİN İNKREMENTAL SYNC ##########
         try {
             $birimlerQuery = (new Query())
-                ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu', 
+                ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu',
                          'created_at', 'updated_at'])
                 ->from('birimler');
 
@@ -1557,12 +1558,13 @@ class TerminalController extends Controller
         // Optimize edilmiş alanları seç - gereksiz alanlar kaldırıldı
         $poQuery = (new Query())
             ->select([
-                'id', 'fisno', 'tarih', 'status', 
+                'id', 'fisno', 'tarih', 'status',
                 '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'
             ])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2]]); // Aktif durumlar
+            ->andWhere(['in', 'status', [0, 1, 2]]) // Aktif durumlar
+            ->andWhere(['turu' => '1']); // Sadece turu=1 olan siparişler
 
         // ########## SATIN ALMA SİPARİS FİŞ İÇİN İNKREMENTAL SYNC ##########
         if ($serverSyncTimestamp) {
@@ -1571,22 +1573,22 @@ class TerminalController extends Controller
         }
 
         $data['siparisler'] = $poQuery->all();
-        
+
         // notlar alanını null olarak ekle çünkü server DB'de yok ama client'da kullanılıyor
         foreach ($data['siparisler'] as &$siparis) {
             $siparis['notlar'] = null;
         }
         // ########## UYARLAMA BİTTİ ##########
 
-        
+
         // DEBUG: Sipariş olmadığında debug bilgisi
         if (empty($data['siparisler'])) {
             $allOrdersQuery = (new Query())->select(['count(*) as total'])->from('siparisler');
             $allOrdersCount = $allOrdersQuery->scalar();
-            
+
             $ordersWithKeyQuery = (new Query())->select(['count(*) as total'])->from('siparisler')->where(['_key_sis_depo_source' => $warehouseKey]);
             $ordersWithKeyCount = $ordersWithKeyQuery->scalar();
-            
+
             // Eğer _key_sis_depo_source sütunu yoksa hata atacak
             try {
                 $sampleOrderQuery = (new Query())->select(['id', '_key_sis_depo_source'])->from('siparisler')->limit(5);
@@ -1752,14 +1754,14 @@ class TerminalController extends Controller
                 ->select(['stock_uuid'])
                 ->from('inventory_stock_tombstones')
                 ->where(['>', 'deleted_at', $serverSyncTimestamp]);
-                
+
             $tombstoneUuids = $tombstoneQuery->column();
-            
+
             if (!empty($tombstoneUuids)) {
                 Yii::info("TOMBSTONE: Sending " . count($tombstoneUuids) . " deleted inventory_stock UUIDs to mobile", __METHOD__);
             }
         }
-        
+
         // TOMBSTONE CLEANUP: Eski tombstone kayıtlarını temizle (7 günden eski)
         $this->cleanupOldTombstones($warehouseCode, 7);
 
@@ -1779,12 +1781,12 @@ class TerminalController extends Controller
                 'last_sync_timestamp' => $lastSyncTimestamp
             ]
         ];
-        
+
         // UUID tabanlı tombstone listesini ekle
         if (!empty($tombstoneUuids)) {
             $result['inventory_stock_tombstones'] = $tombstoneUuids;
         }
-        
+
         return $result;
 
     } catch (\Exception $e) {
@@ -1807,12 +1809,12 @@ class TerminalController extends Controller
             $syncDateTime->sub(new \DateInterval('PT60S')); // 60 saniye buffer
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
         }
-        
+
         $offset = ($page - 1) * $limit;
-        
+
         try {
             $data = [];
-            
+
             switch ($tableName) {
                 case 'urunler':
                     $data = $this->getPaginatedUrunler($serverSyncTimestamp, $offset, $limit);
@@ -1859,7 +1861,7 @@ class TerminalController extends Controller
                 default:
                     throw new \Exception("Desteklenmeyen tablo: $tableName");
             }
-            
+
             return [
                 'success' => true,
                 'data' => [$tableName => $data],
@@ -1883,7 +1885,7 @@ class TerminalController extends Controller
     }
 
     // ########## PAGINATED QUERY METHODS ##########
-    
+
     private function getPaginatedUrunler($serverSyncTimestamp, $offset, $limit)
     {
         // TODO: UrunId yerine _key kullanılacak - _key eşsiz ürün tanımlayıcısı
@@ -1920,7 +1922,7 @@ class TerminalController extends Controller
     private function getPaginatedBirimler($serverSyncTimestamp, $offset, $limit)
     {
         $query = (new Query())
-            ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu', 
+            ->select(['id', 'birimadi', 'birimkod', '_key', '_key_scf_stokkart', 'StokKodu',
                      'created_at', 'updated_at'])
             ->from('birimler');
 
@@ -2018,11 +2020,12 @@ class TerminalController extends Controller
         $warehouseKey = $warehouseInfo['_key'];
 
         $query = (new Query())
-            ->select(['id', 'fisno', 'tarih', 'status', 
+            ->select(['id', 'fisno', 'tarih', 'status',
                      '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
-            ->andWhere(['in', 'status', [0, 1, 2]]);
+            ->andWhere(['in', 'status', [0, 1, 2]])
+            ->andWhere(['turu' => '1']); // Sadece turu=1 olan siparişler
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'updated_at', $serverSyncTimestamp]);
@@ -2031,7 +2034,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        
+
         // Add notlar field as null
         foreach ($data as &$siparis) {
             $siparis['notlar'] = null;
@@ -2094,7 +2097,7 @@ class TerminalController extends Controller
             ->one();
 
         $conditions = ['or'];
-        
+
         // Order-based receipts
         if ($warehouseInfo) {
             $poIds = (new Query())
@@ -2102,7 +2105,7 @@ class TerminalController extends Controller
                 ->from('siparisler')
                 ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
                 ->column();
-            
+
             if (!empty($poIds)) {
                 $conditions[] = ['in', 'siparis_id', $poIds];
             }
@@ -2115,13 +2118,13 @@ class TerminalController extends Controller
             ->from('employees')
             ->where(['warehouse_code' => $warehouseCode])
             ->column();
-            
+
         if (!empty($employeeIds)) {
             $conditions[] = ['and', ['siparis_id' => null], ['in', 'employee_id', $employeeIds]];
         }
 
         $query = (new Query())
-            ->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 
+            ->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number',
                      'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])
             ->from('goods_receipts');
 
@@ -2146,7 +2149,7 @@ class TerminalController extends Controller
     {
         // Get receipt IDs for this warehouse first
         $receiptIds = $this->getReceiptIdsForWarehouse($warehouseId);
-        
+
         if (empty($receiptIds)) {
             return [];
         }
@@ -2282,12 +2285,12 @@ class TerminalController extends Controller
         if (!$warehouseCode) {
             return [];
         }
-        
+
         $query = (new Query())
             ->select(['stock_uuid'])
             ->from('inventory_stock_tombstones')
             ->where(['warehouse_code' => $warehouseCode]);
-            
+
         if ($serverSyncTimestamp) {
             $query->andWhere(['>', 'deleted_at', $serverSyncTimestamp]);
         }
