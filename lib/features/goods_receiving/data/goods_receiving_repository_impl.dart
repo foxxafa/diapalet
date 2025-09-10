@@ -66,10 +66,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         const stockStatus = 'receiving';
 
         debugPrint("Processing ${payload.items.length} items...");
-        for (final item in payload.items) {
+        
+        // KRITIK FIX: Her item için UUID'leri önceden üret ve sakla
+        final Map<int, String> itemStockUuids = {};
+        
+        for (var i = 0; i < payload.items.length; i++) {
+          final item = payload.items[i];
           debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity}");
           // KRITIK DEBUG: birimKey değerini kontrol et
           debugPrint("GOODS_RECEIPT_REPO DEBUG: birimKey = ${item.birimKey}");
+          
+          // Her item için UUID üret
+          const uuid = Uuid();
+          final stockUuid = uuid.v4();
+          itemStockUuids[i] = stockUuid;
           
           final itemId = await txn.insert(DbTables.goodsReceiptItems, {
             'receipt_id': receiptId,
@@ -85,7 +95,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           });
           debugPrint("Item inserted with ID: $itemId");
 
-          debugPrint("Updating stock for: ${item.productId}");
+          debugPrint("Updating stock for: ${item.productId} with UUID: ${stockUuid}");
           await _updateStockWithKey(
               txn,
               item.productId, // _key değeri string olarak
@@ -96,7 +106,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               stockStatus,
               payload.header.siparisId,
               item.expiryDate?.toIso8601String(),
-              receiptId);
+              receiptId,
+              stockUuid); // KRITIK: Stock UUID'yi geçir
           debugPrint("Stock updated for: ${item.productId}");
         }
 
@@ -104,7 +115,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _checkAndUpdateOrderStatus(txn, payload.header.siparisId!);
         }
 
-        final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload);
+        final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload, itemStockUuids);
         // Tag and Replace reconciliation için operation_unique_id ekle
         enrichedData['operation_unique_id'] = operationUniqueId;
 
@@ -136,7 +147,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
   }
 
-  Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload) async {
+  Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload, Map<int, String> itemStockUuids) async {
     final apiData = payload.toApiJson();
 
     if (payload.header.siparisId != null) {
@@ -154,8 +165,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
     final enrichedItems = <Map<String, dynamic>>[];
     if (payload.items.isNotEmpty) {
-      for (final item in payload.items) {
+      for (var i = 0; i < payload.items.length; i++) {
+        final item = payload.items[i];
         final itemData = item.toJson();
+        
+        // KRITIK FIX: Önceden üretilen Stock UUID'yi payload'a ekle
+        final stockUuid = itemStockUuids[i];
+        if (stockUuid != null) {
+          itemData['stock_uuid'] = stockUuid;
+        }
+        
         final productResult = await txn.query(
           DbTables.products,
           columns: [DbColumns.productsName, DbColumns.productsCode],
@@ -176,7 +195,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   // DEPRECATED: Stock management moved to backend only to prevent duplicate entries
   // This method is kept for reference but should not be used
-  Future<void> _updateStockWithKey(Transaction txn, String urunKey, String? birimKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId]) async {
+  Future<void> _updateStockWithKey(Transaction txn, String urunKey, String? birimKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId, String? stockUuid]) async {
     // NULL-safe WHERE clause construction
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
@@ -252,12 +271,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
       }
     } else if (quantityChange > 0) {
-      // UUID üret
-      const uuid = Uuid();
-      final stockUuid = uuid.v4();
+      // UUID kullan (parametre olarak gelmişse) veya yeni üret
+      final finalStockUuid = stockUuid ?? () {
+        const uuid = Uuid();
+        return uuid.v4();
+      }();
       
       await txn.insert('inventory_stock', {
-        'stock_uuid': stockUuid,
+        'stock_uuid': finalStockUuid,
         'urun_key': urunKey,
         'birim_key': birimKey,
         'location_id': locationId,

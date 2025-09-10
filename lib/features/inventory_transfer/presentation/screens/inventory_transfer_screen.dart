@@ -88,6 +88,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _productSearchController = TextEditingController();
   final _productSearchFocusNode = FocusNode();
 
+  // Pallet search state
+  List<String> _palletSearchResults = [];
+  bool _isSearchingPallets = false;
+
   // Barcode service
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -415,6 +419,50 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _showErrorSnackBar('inventory_transfer.error_searching_products'.tr(namedArgs: {'error': e.toString()}));
       }
     }
+  }
+
+  // Pallet search functionality
+  Future<void> _searchPalletsForTransfer(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _palletSearchResults = [];
+        _isSearchingPallets = false;
+      });
+      return;
+    }
+
+    setState(() => _isSearchingPallets = true);
+
+    try {
+      // Search through available containers for matching pallets
+      final filteredPallets = _availableContainers
+          .cast<String>()
+          .where((palletId) => palletId.toLowerCase().contains(query.toLowerCase()))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _palletSearchResults = filteredPallets;
+          _isSearchingPallets = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _palletSearchResults = [];
+          _isSearchingPallets = false;
+        });
+        _showErrorSnackBar('inventory_transfer.error_searching_pallets'.tr(namedArgs: {'error': e.toString()}));
+      }
+    }
+  }
+
+  void _selectPalletFromSearch(String palletId) {
+    _scannedContainerIdController.text = palletId;
+    setState(() {
+      _palletSearchResults = [];
+    });
+    _handleContainerSelection(palletId);
   }
 
   // Birim key'den birim adını getir
@@ -812,6 +860,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _productSearchController.clear();
     _productSearchResults = [];
     _isSearchingProducts = false;
+    _palletSearchResults = [];
+    _isSearchingPallets = false;
     _productsInContainer = [];
     _selectedContainer = null;
     _dynamicProductLabel = null; // Label'ı da temizle
@@ -1184,6 +1234,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Ürün adı
+                          Text(
+                            product.name,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
                           Text(
                             'inventory_transfer.label_current_quantity'.tr(namedArgs: {
                               'productCode': product.productCode,
@@ -1191,7 +1252,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                                 product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
                               )
                             }),
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500)
                           ),
                         ],
                       ),
@@ -1357,7 +1418,17 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           _searchProductsForTransfer(value);
                         }
                       }
-                    : null,
+                    : _selectedMode == AssignmentMode.pallet
+                        ? (value) {
+                            if (value.isEmpty) {
+                              setState(() {
+                                _palletSearchResults = [];
+                              });
+                            } else {
+                              _searchPalletsForTransfer(value);
+                            }
+                          }
+                        : null,
                 onFieldSubmitted: (value) async {
                   if (value.trim().isNotEmpty) {
                     if (_selectedMode == AssignmentMode.product && _productSearchResults.isNotEmpty) {
@@ -1422,6 +1493,32 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   onTap: () {
                     _selectProductFromSearch(product);
                     _productSearchFocusNode.unfocus();
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+        // Pallet search results dropdown
+        if (_selectedMode == AssignmentMode.pallet && _palletSearchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: _borderRadius,
+            ),
+            child: Column(
+              children: _palletSearchResults.take(5).map((palletId) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.pallet),
+                  title: Text(
+                    palletId,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  onTap: () {
+                    _selectPalletFromSearch(palletId);
+                    _containerFocusNode.unfocus();
                   },
                 );
               }).toList(),

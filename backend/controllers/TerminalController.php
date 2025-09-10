@@ -468,6 +468,10 @@ class TerminalController extends Controller
             // DEBUG: Birim key kontrolü için log ekle
             Yii::info("DEBUG upsertStock call - urunKey: $urunKey, birimKey: " . ($item['birim_key'] ?? 'NULL') . ", quantity: " . $item['quantity'], __METHOD__);
             
+            // KRITIK FIX: Telefondan gelen stock_uuid'yi kullan
+            $stockUuid = isset($item['stock_uuid']) ? $item['stock_uuid'] : null;
+            Yii::info("DEBUG stock_uuid from phone: " . ($stockUuid ?? 'NULL'), __METHOD__);
+            
             $this->upsertStock(
                 $db,
                 $urunKey,
@@ -479,7 +483,8 @@ class TerminalController extends Controller
                 $siparisId, // siparis_id
                 $item['expiry_date'] ?? null, // expiry_date
                 $receiptId, // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
-                $employeeInfo['warehouse_code'] ?? null // warehouse_code eklendi
+                $employeeInfo['warehouse_code'] ?? null, // warehouse_code eklendi
+                $stockUuid // KRITIK: Telefondan gelen UUID'yi geçir
             );
         }
 
@@ -582,6 +587,7 @@ class TerminalController extends Controller
             
             $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
+            $stockUuid = $item['stock_uuid'] ?? null; // KRITIK FIX: Phone-generated UUID
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
             // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
@@ -699,7 +705,8 @@ class TerminalController extends Controller
                     null,
                     $portion['expiry'],
                     null, // KRITIK FIX: goods_receipt_id NULL - consolidation için
-                    $employeeInfo['warehouse_code'] ?? null // warehouse_code eklendi
+                    $employeeInfo['warehouse_code'] ?? null, // warehouse_code eklendi
+                    $stockUuid // KRITIK FIX: Phone-generated UUID
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
@@ -795,7 +802,7 @@ class TerminalController extends Controller
         return ['status' => 'success', 'transfer_id' => $lastTransferId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
     }
 
-    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null, $warehouseCode = null) {
+    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null, $warehouseCode = null, $stockUuid = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -925,11 +932,19 @@ class TerminalController extends Controller
                 // DEBUG: Yeni stok kaydı oluşturma
                 Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);
                 
-                // UUID üret
-                $stockUuid = $this->generateUuid();
+                // UUID: Telefondan gelen UUID'yi kullan, yoksa yeni üret
+                $finalStockUuid = $stockUuid ?? $this->generateUuid();
+                Yii::info("DEBUG stock UUID: $finalStockUuid (from phone: " . ($stockUuid ? 'yes' : 'no') . ")", __METHOD__);
+                
+                // Kapsamlı UUID takip logging'i
+                if ($stockUuid) {
+                    Yii::info("UUID FLOW: Phone-generated UUID $stockUuid being stored for urun_key=$urunKey, birim_key=$birimKey", __METHOD__);
+                } else {
+                    Yii::info("UUID FLOW: Server-generated UUID $finalStockUuid created for urun_key=$urunKey, birim_key=$birimKey", __METHOD__);
+                }
                 
                 $db->createCommand()->insert('inventory_stock', [
-                    'stock_uuid' => $stockUuid, // UUID eklendi
+                    'stock_uuid' => $finalStockUuid, // UUID eklendi
                     'urun_key' => $urunKey, 
                     'birim_key' => $birimKey, // Birim _key değeri
                     'location_id' => $locationId, 

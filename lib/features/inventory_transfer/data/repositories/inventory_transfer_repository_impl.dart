@@ -264,6 +264,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         final List<Map<String, dynamic>> itemsForJson = [];
 
         for (final item in items) {
+          // KRITIK FIX: Transfer sonrası yeni stok kaydı için UUID üret
+          const uuid = Uuid();
+          final transferStockUuid = uuid.v4();
+          debugPrint('🔄 Transfer UUID üretildi: $transferStockUuid - ${item.productKey}');
+
           // 1. Azaltma işleminden önce kaynak stok kaydını/kayıtlarını bul.
           // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
           // NULL-safe kaynak stok sorgusu
@@ -352,6 +357,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             goodsReceiptIdForAddition: null, // ÇÖZÜM: Available durumunda NULL - konsolidasyon için
             expiryDateForAddition: item.expiryDate,
             isTransferOperation: false, // DÜZELTME: Konsolidasyon yapması için false olmalı
+            stockUuid: transferStockUuid, // KRITIK FIX: Phone-generated UUID
           );
 
           // 2. ADIM: TRANSFER KAYDINI ETİKETLE
@@ -388,7 +394,20 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             }
           }
 
-          itemsForJson.add(item.toApiJson());
+          // KRITIK FIX: UUID içeren yeni TransferItemDetail oluştur ve sunucuya gönder
+          final itemWithUuid = TransferItemDetail(
+            productKey: item.productKey,
+            birimKey: item.birimKey,
+            productName: item.productName,
+            productCode: item.productCode,
+            quantity: item.quantity,
+            palletId: item.palletId,
+            expiryDate: item.expiryDate,
+            stockUuid: transferStockUuid, // KRITIK FIX: Phone-generated UUID
+            targetLocationId: item.targetLocationId,
+            targetLocationName: item.targetLocationName,
+          );
+          itemsForJson.add(itemWithUuid.toApiJson());
         }
 
         String? poId;
@@ -750,6 +769,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     int? goodsReceiptIdForAddition,
     DateTime? expiryDateForAddition,
     bool isTransferOperation = false, // YENI: Transfer işlemi olup olmadığını belirler
+    String? stockUuid, // KRITIK FIX: Phone-generated UUID
   }) async {
     if (quantityChange == 0) return;
 
@@ -833,15 +853,21 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         if (currentQty >= remainingToDecrement) {
           final newQty = currentQty - remainingToDecrement;
           if (newQty > 0.001) {
-            await txn.update(DbTables.inventoryStock, {'quantity': newQty}, where: 'id = ?', whereArgs: [stockId]);
+            await txn.update(DbTables.inventoryStock, {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [stockId]);
           } else {
+            // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
+            final stockUuid = stock['stock_uuid'] as String?;
             await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
+            debugPrint('🗑️ Transfer sırasında stock silindi: ID=$stockId, UUID=$stockUuid');
           }
           remainingToDecrement = 0;
           break;
         } else {
           remainingToDecrement -= currentQty;
+          // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için  
+          final stockUuid = stock['stock_uuid'] as String?;
           await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
+          debugPrint('🗑️ Transfer sırasında stock silindi: ID=$stockId, UUID=$stockUuid');
         }
       }
 
@@ -956,12 +982,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         debugPrint('➕ YENİ STOK: Konsolidasyon için eşleşme bulunamadı, yeni kayıt oluşturuluyor');
         debugPrint('   Parametreler: status=$status, location=$locationId, siparis=$siparisIdForAddition, quantity=$quantityChange');
         
-        // UUID üret
-        const uuid = Uuid();
-        final stockUuid = uuid.v4();
+        // KRITIK FIX: Transfer işlemlerinde phone-generated UUID kullan
+        final finalStockUuid = stockUuid ?? const Uuid().v4();
         
         await txn.insert(DbTables.inventoryStock, {
-          'stock_uuid': stockUuid, // UUID eklendi
+          'stock_uuid': finalStockUuid, // Phone-generated UUID (parametreli)
           'urun_key': productId,
           'birim_key': birimKey,
           'location_id': locationId, // Artık null ise null kalıyor

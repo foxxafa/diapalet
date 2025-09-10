@@ -500,8 +500,67 @@ class DatabaseHelper {
         if (data.containsKey('inventory_stock')) {
           final inventoryStockData = List<Map<String, dynamic>>.from(data['inventory_stock']);
           for (final stock in inventoryStockData) {
-            // Goods receipt ID'ye göre kontrol et (eğer varsa)
-            bool isOwnStock = false;
+            // KRITIK FIX: UUID bazlı kontrol - sadece kendi oluşturduğu kayıtları skip et
+            bool isOwnStockRecord = false;
+            final stockUuid = stock['stock_uuid'] as String?;
+            
+            if (stockUuid != null) {
+              // Telefonun kendi oluşturduğu UUID'leri kontrol et
+              // Eğer bu UUID telefonda varsa ve kendi ürettiği UUID pattern'ine uyuyorsa skip et
+              final existingLocal = await txn.query(
+                'inventory_stock',
+                where: 'stock_uuid = ?',
+                whereArgs: [stockUuid],
+                limit: 1
+              );
+              
+              if (existingLocal.isNotEmpty) {
+                // Bu UUID zaten telefonda var
+                final localRecord = existingLocal.first;
+                final localQuantity = localRecord['quantity'] as double;
+                final serverQuantity = (stock['quantity'] as num).toDouble();
+                final localUpdatedAt = localRecord['updated_at'] as String?;
+                final serverUpdatedAt = stock['updated_at'] as String?;
+                
+                // KRITIK FIX: updated_at bazlı karşılaştırma yap
+                bool shouldUpdate = false;
+                if (serverUpdatedAt != null && localUpdatedAt != null) {
+                  try {
+                    final serverDate = DateTime.parse(serverUpdatedAt);
+                    final localDate = DateTime.parse(localUpdatedAt);
+                    shouldUpdate = serverDate.isAfter(localDate);
+                  } catch (e) {
+                    // Tarih parse hatası varsa miktar karşılaştırması yap
+                    shouldUpdate = serverQuantity != localQuantity;
+                  }
+                } else {
+                  // updated_at bilgisi yoksa miktar karşılaştırması yap
+                  shouldUpdate = serverQuantity != localQuantity;
+                }
+                
+                if (shouldUpdate) {
+                  debugPrint('🔄 Inventory stock güncellendi: UUID=$stockUuid, $localQuantity → $serverQuantity (updated_at: $localUpdatedAt → $serverUpdatedAt)');
+                  await txn.update(
+                    'inventory_stock',
+                    {
+                      'quantity': serverQuantity, 
+                      'updated_at': serverUpdatedAt,
+                      'birim_key': stock['birim_key'], // birim_key'i de güncelle
+                      'location_id': stock['location_id'], // location_id'yi de güncelle
+                      'stock_status': stock['stock_status'], // stock_status'u da güncelle
+                      'expiry_date': stock['expiry_date'], // expiry_date'i de güncelle
+                    },
+                    where: 'stock_uuid = ?',
+                    whereArgs: [stockUuid]
+                  );
+                } else {
+                  debugPrint('🔄 Inventory stock güncel, skip: UUID=$stockUuid (quantity: $localQuantity, updated_at: $localUpdatedAt)');
+                }
+                continue;
+              }
+            }
+            
+            // Goods receipt ID'ye göre de kontrol et (eski mantık, UUID yoksa)
             if (stock['goods_receipt_id'] != null) {
               final receiptId = stock['goods_receipt_id'];
               final receipts = await txn.query(
@@ -512,13 +571,13 @@ class DatabaseHelper {
               );
               
               if (receipts.isNotEmpty) {
-                isOwnStock = await isOwnOperation(txn, 'goodsReceipt', receipts.first);
+                isOwnStockRecord = await isOwnOperation(txn, 'goodsReceipt', receipts.first);
               }
             }
             
-            if (isOwnStock) {
-              // Kendi operasyonumuzun stock'u - skip
-              debugPrint('🔄 Kendi inventory_stock tespit edildi, skip: ${stock['inventory_stock_id']}');
+            if (isOwnStockRecord && stockUuid == null) {
+              // Sadece UUID olmayan eski kayıtlar için goods_receipt kontrolü yap
+              debugPrint('🔄 Kendi inventory_stock tespit edildi (UUID yok), skip: ${stock['id']}');
               continue;
             }
             

@@ -15,6 +15,9 @@ class TransferItemDetail {
   final DateTime? expiryDate;
   // --- GÜNCELLEME SONU ---
 
+  // KRITIK FIX: Transfer sonrası oluşacak stock kaydının UUID'si
+  final String? stockUuid; // Phone-generated UUID
+
   // Arayüzde (sepet) kullanılacak ve işlem sırasında gruplama için gerekli bilgiler
   final int? targetLocationId;
   final String? targetLocationName;
@@ -27,6 +30,7 @@ class TransferItemDetail {
     required this.quantity,
     this.palletId,
     this.expiryDate,
+    this.stockUuid, // UUID field eklendi
     this.targetLocationId,
     this.targetLocationName,
   });
@@ -39,6 +43,7 @@ class TransferItemDetail {
       'quantity': quantity,
       'pallet_id': palletId,
       'expiry_date': expiryDate?.toIso8601String(),
+      'stock_uuid': stockUuid, // KRITIK FIX: Phone-generated UUID'yi sunucuya gönder
     };
   }
 }
