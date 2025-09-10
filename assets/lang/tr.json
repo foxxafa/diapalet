@@ -335,7 +335,8 @@
     "language_select": "Dil Seçimi",
     "subtitle": "Lütfen giriş yapmak için bilgilerinizi girin.",
     "error": {
-      "required_field": "Bu alan zorunludur."
+      "required_field": "Bu alan zorunludur.",
+      "access_denied": "Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir."
     }
   },
   "transfer_type": {

@@ -484,7 +484,8 @@
     "loading": "Logging in...",
     "language_select": "Select Language",
     "error": {
-      "required_field": "This field is required."
+      "required_field": "This field is required.",
+      "access_denied": "You do not have permission to access this application. Only users with WMS role can log in."
     }
   },
   "transfer_type": {

@@ -82,7 +82,13 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (e) {
         if (mounted) {
           setState(() {
-            _errorMessage = e.toString().replaceFirst("Exception: ", "");
+            final errorText = e.toString().replaceFirst("Exception: ", "");
+            // Eğer hata mesajı bir localization key ise çevir
+            if (errorText.startsWith('login.error.')) {
+              _errorMessage = errorText.tr();
+            } else {
+              _errorMessage = errorText;
+            }
           });
         }
       } finally {
