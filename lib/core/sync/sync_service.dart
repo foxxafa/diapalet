@@ -304,11 +304,12 @@ class SyncService with ChangeNotifier {
     int processedRecords = 0;
     final allData = <String, List<dynamic>>{};
     
-    // Define sync order (dependencies first)
+    // Define sync order (dependencies first, tombstones BEFORE inventory_stock)
     final syncOrder = [
       'urunler', 'tedarikci', 'birimler', 'barkodlar', 'employees', 'shelfs',
       'siparisler', 'siparis_ayrintili', 'goods_receipts', 'goods_receipt_items',
-      'inventory_stock', 'inventory_transfers', 'wms_putaway_status', 'inventory_stock_tombstones'
+      'inventory_stock_tombstones', // ✅ ÖNCE tombstone'lar işlenir
+      'inventory_stock', 'inventory_transfers', 'wms_putaway_status'
     ];
     
     for (final tableName in syncOrder) {

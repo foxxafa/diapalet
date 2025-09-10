@@ -1558,7 +1558,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
       child: InputDecorator(
         decoration: _inputDecoration(context, 'goods_receiving_screen.label_order_status'.tr(), enabled: false)
             .copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-      child: (!widget.viewModel.isOrderBased || widget.viewModel.selectedProduct == null)
+      child: (widget.viewModel.selectedProduct == null)
           ? Center(
               child: Text(
                 'common_labels.not_available'.tr(),
@@ -1703,6 +1703,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                     
                     // Bu birimin sipariş birimi olup olmadığını kontrol et
                     // Eğer sipariş tabanlı modda isek ve seçilen birim sipariş birimi ise 'order', değilse 'out_of_order'
+                    // Serbest mal kabulde her şey 'out_of_order' olarak kabul edilir ama modal açılmaz
                     String sourceType = 'out_of_order';
                     bool isOrderUnit = false;
                     
@@ -1732,7 +1733,8 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                         debugPrint("  ❌ No match found. Setting as 'out_of_order'");
                       }
                     } else {
-                      debugPrint("⚠️ Not in order-based mode or no selected order");
+                      debugPrint("⚠️ Not in order-based mode - free receive mode, all units are valid");
+                      // Serbest mal kabulde her şey geçerli, modal açılmayacak
                     }
                     
                     debugPrint("🔄 Dropdown selection - birim_key: $selectedBirimKey, sourceType: $sourceType");
@@ -1753,8 +1755,9 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                       'is_order_unit': isOrderUnit ? 1 : 0, // is_order_unit flag'i
                     });
                     
-                    // Eğer sipariş dışı bir ürün seçildiyse modal aç
-                    if (updatedProduct.isOutOfOrder) {
+                    // Eğer sipariş dışı bir ürün seçildiyse ve sipariş tabanlı modda isek modal aç
+                    // Serbest mal kabulde modal açılmamalı çünkü her şey zaten sipariş dışı
+                    if (updatedProduct.isOutOfOrder && widget.viewModel.isOrderBased) {
                       debugPrint("🚨 Out-of-order unit selected. Opening modal...");
                       final confirmedProduct = await widget.viewModel.showOutOfOrderProductModal(
                         context, 
@@ -1784,7 +1787,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                         });
                       }
                     } else {
-                      // Sipariş içi ürün, direkt güncelle
+                      // Sipariş içi ürün veya serbest mal kabul - direkt güncelle
                       widget.viewModel.updateSelectedProduct(updatedProduct);
                       
                       // Product text alanını güncelle
