@@ -671,6 +671,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       quantity: quantity,
       palletBarcode: _receivingMode == ReceivingMode.palet && palletIdController.text.isNotEmpty ? palletIdController.text : null,
       expiryDate: expiryDate,
+      deliveryNoteNumber: deliveryNoteController.text.isNotEmpty ? deliveryNoteController.text : null,
     ));
     _successMessage = 'goods_receiving_screen.success_item_added'.tr(namedArgs: {'productName': _selectedProduct!.name});
 

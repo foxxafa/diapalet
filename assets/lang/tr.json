@@ -147,6 +147,8 @@
     "out_of_order_product_accept": "Kabul Et",
     "out_of_order_product_cancel": "İptal",
     "out_of_order_products": "Sipariş Dışı Ürünler",
+    "received_items": "Kabul Edilen Ürünler", 
+    "other_items": "Ürünler",
     "confirmation": {
       "quantity": "Miktar",
       "ordered": "Sipariş Edilen",

@@ -87,11 +87,13 @@ class ReceiptItemDraft {
   final double quantity;
   final String? palletBarcode;
   final DateTime? expiryDate;
+  final String? deliveryNoteNumber;
 
   const ReceiptItemDraft({
     required this.product,
     required this.quantity,
     this.palletBarcode,
     this.expiryDate,
+    this.deliveryNoteNumber,
   });
 }

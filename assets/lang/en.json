@@ -153,6 +153,8 @@
     "out_of_order_product_accept": "Accept",
     "out_of_order_product_cancel": "Cancel",
     "out_of_order_products": "Out of Order Products",
+    "received_items": "Received Items",
+    "other_items": "Products",
     "out_of_order_received": "Received: {quantity} {unit}",
     "confirmation": {
       "quantity": "Quantity",
@@ -277,7 +279,10 @@
     "goods_receiving_area": "000",
     "goods_receiving_area_display": "Goods Receiving Area",
     "active_session_found": "Active session found. Redirecting to main page.",
-    "no_active_session": "No active session found. Showing login screen."
+    "no_active_session": "No active session found. Showing login screen.",
+    "not_added_yet": "Not Added Yet",
+    "added": "Added",
+    "accepted": "Accepted"
   },
   "orders": {
     "dialog": {

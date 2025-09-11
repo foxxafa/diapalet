@@ -13,6 +13,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
+import 'package:diapalet/features/goods_receiving/presentation/widgets/compact_review_table.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -1156,167 +1157,30 @@ class _FullscreenConfirmationPage extends StatelessWidget {
 
   Widget _buildFreeReceiveConfirmationList(BuildContext context, ThemeData theme) {
     final viewModel = context.watch<GoodsReceivingViewModel>();
-    final groupedItems = <int, List<ReceiptItemDraft>>{};
-    for (final item in viewModel.addedItems) {
-      groupedItems.putIfAbsent(item.product.id, () => []).add(item);
-    }
-    final productIds = groupedItems.keys.toList();
-
-    if (viewModel.addedItems.isEmpty) {
-      return Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: productIds.length,
-      itemBuilder: (context, index) {
-        final productId = productIds[index];
-        final itemsForProduct = groupedItems[productId]!;
-        final product = itemsForProduct.first.product;
-        // final totalQuantity = itemsForProduct.fold<double>(0.0, (sum, item) => sum + item.quantity);
-
-        return Card(
-            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const Divider(height: 20),
-                  ...itemsForProduct.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.palletBarcode != null
-                                      ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                                      : 'goods_receiving_screen.mode_box'.tr(),
-                                  style: theme.textTheme.bodyMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (item.expiryDate != null) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Exp: ${DateFormat('dd/MM/yyyy').format(item.expiryDate!)}',
-                                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 2,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
-                                  style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: Icon(Icons.delete_outline, color: theme.colorScheme.error, size: 22),
-                                  onPressed: () => onItemRemoved(item),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  tooltip: 'common_labels.delete'.tr(),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ));
-      },
+    
+    return CompactReviewTable(
+      viewModel: viewModel,
+      onItemRemoved: onItemRemoved,
+      isFreeReceiving: true,
+      deliveryNoteNumber: viewModel.deliveryNoteController.text.trim().isNotEmpty 
+          ? viewModel.deliveryNoteController.text.trim() 
+          : null,
     );
   }
 
   Widget _buildOrderBasedConfirmationList(BuildContext context, ThemeData theme) {
     final viewModel = context.watch<GoodsReceivingViewModel>();
-    if (viewModel.orderItems.isEmpty && viewModel.addedItems.isEmpty) {
-      return Center(child: Text('goods_receiving_screen.dialog_list_empty'.tr()));
-    }
     
     return FutureBuilder<List<ProductInfo>>(
       future: viewModel.getOutOfOrderReceiptItems(),
       builder: (context, snapshot) {
         final outOfOrderItems = snapshot.data ?? [];
-        debugPrint('DEBUG: Out of order items from DB: ${outOfOrderItems.length}');
-    
-        // Memory'deki sipariş dışı ürünleri al
-        final memoryOutOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder).toList();
-        final hasOutOfOrderItems = outOfOrderItems.isNotEmpty || memoryOutOfOrderItems.isNotEmpty;
         
-        return ListView(
-          padding: const EdgeInsets.all(8),
-          children: [
-            
-            // Sipariş ürünleri
-            ...viewModel.orderItems.map((orderItem) {
-              final product = orderItem.product;
-              if (product == null) return const SizedBox.shrink();
-
-              // HATA DÜZELTMESİ: orderItem.productId ile karşılaştır, product.id değil
-              // Sadece sipariş kapsamındaki (free=false) item'ları dahil et
-              final itemsBeingAdded = viewModel.addedItems.where((item) => 
-                item.product.key == orderItem.productId && !item.product.isOutOfOrder
-              ).toList();
-              final quantityBeingAdded = itemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
-
-              // Tüm sipariş ürünlerini göster (eklenen veya eklenmemiş)
-              return _OrderProductConfirmationCard(
-                orderItem: orderItem,
-                itemsBeingAdded: itemsBeingAdded,
-                quantityBeingAdded: quantityBeingAdded,
-                onRemoveItem: onItemRemoved,
-              );
-            }),
-            
-            // Sipariş dışı ürünler için başlık
-            if (hasOutOfOrderItems) ...[
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'goods_receiving_screen.out_of_order_products'.tr(),
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Memory'deki sipariş dışı ürünleri göster (silinebilir)
-            ...memoryOutOfOrderItems.map((item) {
-              return _MemoryOutOfOrderItemCard(
-                item: item,
-                onRemoveItem: onItemRemoved,
-              );
-            }),
-            
-            // Veritabanındaki sipariş dışı ürünleri göster (sadece bilgi amaçlı - silinemez)
-            ...outOfOrderItems.map((productInfo) {
-              return _OutOfOrderProductInfoCard(
-                productInfo: productInfo,
-              );
-            }),
-          ],
+        return CompactReviewTable(
+          viewModel: viewModel,
+          onItemRemoved: onItemRemoved,
+          orderItems: viewModel.orderItems,
+          outOfOrderItems: outOfOrderItems,
         );
       },
     );
