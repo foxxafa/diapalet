@@ -24,6 +24,7 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     return AppBar(
       title: Text(title),
+      automaticallyImplyLeading: showBackButton,
       leading: showBackButton && canGoBack
           ? IconButton(
               icon: const Icon(Icons.arrow_back),

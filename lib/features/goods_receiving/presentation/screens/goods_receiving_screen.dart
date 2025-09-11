@@ -179,7 +179,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                                   Padding(
                                     padding: const EdgeInsets.only(left: 4.0, top: 4.0),
                                     child: Text(
-                                      'goods_receiving_screen.date_input_helper'.tr(),
+                                      'Day/Month/Year (e.g., ${DateFormat('dd/MM/yyyy').format(DateTime.now())})',
                                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         color: Theme.of(context).hintColor,
                                         fontSize: 12,
