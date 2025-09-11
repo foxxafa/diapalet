@@ -153,6 +153,12 @@ class CompactReviewTable extends StatelessWidget {
         widgets.add(_buildPalletHeader(context, palletBarcode!));
         // Palet içindeki ürünler (indent)
         for (final item in palletItems) {
+          // Sipariş içi ürünler için orderItem bilgisini bul
+          PurchaseOrderItem? relatedOrderItem;
+          if (!item.product.isOutOfOrder) {
+            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
+          }
+          
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
             child: _buildProductCard(
@@ -160,6 +166,7 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
+              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -170,6 +177,12 @@ class CompactReviewTable extends StatelessWidget {
       if (looseItems.isNotEmpty) {
         widgets.add(_buildLooseItemsHeader(context));
         for (final item in looseItems) {
+          // Sipariş içi ürünler için orderItem bilgisini bul
+          PurchaseOrderItem? relatedOrderItem;
+          if (!item.product.isOutOfOrder) {
+            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
+          }
+          
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
             child: _buildProductCard(
@@ -177,6 +190,7 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
+              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -492,13 +506,13 @@ class CompactReviewTable extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       elevation: 1,
       color: (!isFreeReceiving && isOutOfOrder) 
-          ? const Color(0xFFFFF3E0) 
+          ? const Color(0xFFFFF0E1) 
           : theme.cardTheme.color,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
           color: (!isFreeReceiving && isOutOfOrder) 
-              ? const Color(0xFFFF9800) 
+              ? const Color(0xFFFFA000) 
               : theme.dividerColor.withAlpha(128),
           width: 0.5,
         ),

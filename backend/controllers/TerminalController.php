@@ -772,30 +772,7 @@ class TerminalController extends Controller
                 $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
             }
 
-            // 6. Sipariş bazlı işlemler için rafa yerleştirme durumunu güncelle
-            if ($isPutawayOperation && $siparisId) {
-                 // _key ile ürün bulup sipariş satırını bul
-                 Yii::info("WMS_PUTAWAY_STATUS update - urunKey: $urunKey, siparisId: $siparisId, qty: $totalQuantityToTransfer", __METHOD__);
-                 
-                 $productCode = (new Query())->select('StokKodu')->from('urunler')->where(['_key' => $urunKey])->scalar($db);
-                 Yii::info("WMS_PUTAWAY_STATUS - Found productCode: " . ($productCode ?: 'NULL'), __METHOD__);
-                 
-                 if ($productCode) {
-                     $orderLine = (new Query())->from('siparis_ayrintili')->where(['siparisler_id' => $siparisId, 'kartkodu' => $productCode, 'turu' => '1'])->one($db);
-                     Yii::info("WMS_PUTAWAY_STATUS - Found orderLine: " . json_encode($orderLine), __METHOD__);
-                     
-                     if ($orderLine) {
-                         $orderLineId = $orderLine['id'];
-                         $sql = "INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity, created_at, updated_at) VALUES (:line_id, :qty, NOW(), NOW()) ON DUPLICATE KEY UPDATE putaway_quantity = putaway_quantity + VALUES(putaway_quantity), updated_at = NOW()";
-                         $result = $db->createCommand($sql, [':line_id' => $orderLineId, ':qty' => $totalQuantityToTransfer])->execute();
-                         Yii::info("WMS_PUTAWAY_STATUS - INSERT/UPDATE result: $result rows affected", __METHOD__);
-                     } else {
-                         Yii::warning("WMS_PUTAWAY_STATUS - No order line found for productCode: $productCode in order: $siparisId", __METHOD__);
-                     }
-                 } else {
-                     Yii::warning("WMS_PUTAWAY_STATUS - No product code found for urunKey: $urunKey", __METHOD__);
-                 }
-            }
+            // 6. wms_putaway_status tablosu kaldırıldı - putaway durumu inventory_stock'tan takip ediliyor
         }
 
         if ($isPutawayOperation && $siparisId) {
@@ -883,6 +860,8 @@ class TerminalController extends Controller
             // Serbest mal kabul (siparis_id=NULL) ve sipariş bazlı mal kabul ayrı kayıtlarda tutulmalı
             if ($stockStatus === 'receiving') {
                 $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                // KRITIK FIX: Farklı delivery note'lar için ayrı stock tutmalıyız
+                $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
             }
             // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
 

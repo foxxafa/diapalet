@@ -52,6 +52,7 @@ class GoodsReceiptItemPayload {
   final String? barcode;
   final DateTime? expiryDate;
   final bool isFree; // Sipariş dışı ürün mü (free = 1)
+  final String? deliveryNoteNumber; // Item-level delivery note number
 
   const GoodsReceiptItemPayload({
     required this.productId,
@@ -61,6 +62,7 @@ class GoodsReceiptItemPayload {
     this.barcode,
     this.expiryDate,
     this.isFree = false,
+    this.deliveryNoteNumber,
   });
 
   Map<String, dynamic> toJson() => {
@@ -71,6 +73,7 @@ class GoodsReceiptItemPayload {
     'barcode': barcode,
     'expiry_date': expiryDate?.toIso8601String(),
     'free': isFree ? 1 : 0, // Sipariş dışı ise 1, değilse 0
+    'delivery_note_number': deliveryNoteNumber, // Item-level delivery note
   };
 }
 

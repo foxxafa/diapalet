@@ -40,107 +40,130 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<void> _saveGoodsReceiptLocally(GoodsReceiptPayload payload) async {
     final db = await dbHelper.database;
 
+    // Items'ları delivery note'lara göre gruplandır
+    final Map<String?, List<GoodsReceiptItemPayload>> deliveryNoteGroups = {};
+    
+    for (final item in payload.items) {
+      // Item'daki delivery note varsa onu kullan, yoksa header'daki
+      final deliveryNote = item.deliveryNoteNumber ?? payload.header.deliveryNoteNumber;
+      deliveryNoteGroups.putIfAbsent(deliveryNote, () => []).add(item);
+    }
+
+    debugPrint("Items grouped by delivery notes: ${deliveryNoteGroups.length} groups");
+
     try {
       await db.transaction((txn) async {
-        // 1. ADIM: UNIQUE ID'Yİ ÖNCEDEN AL
-        final pendingOp = PendingOperation.create(
-          type: PendingOperationType.goodsReceipt,
-          data: "{}",
-          createdAt: DateTime.now().toUtc(),
-        );
-        final String operationUniqueId = pendingOp.uniqueId;
-
-        // 2. ADIM: GOODS RECEIPT KAYDINI ETİKETLE
-        final receiptHeaderData = {
-          'operation_unique_id': operationUniqueId, // Tag and Replace reconciliation için
-          'siparis_id': payload.header.siparisId,
-          'invoice_number': payload.header.invoiceNumber,
-          'delivery_note_number': payload.header.deliveryNoteNumber,
-          'employee_id': payload.header.employeeId,
-          'receipt_date': payload.header.receiptDate.toIso8601String(),
-          'created_at': DateTime.now().toUtc().toIso8601String(),
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        };
-        final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
-
-        const stockStatus = 'receiving';
-
-        debugPrint("Processing ${payload.items.length} items...");
-        
-        // KRITIK FIX: Her item için UUID'leri önceden üret ve sakla
-        final Map<int, String> itemStockUuids = {};
-        
-        for (var i = 0; i < payload.items.length; i++) {
-          final item = payload.items[i];
-          debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity}");
-          // KRITIK DEBUG: birimKey değerini kontrol et
-          debugPrint("GOODS_RECEIPT_REPO DEBUG: birimKey = ${item.birimKey}");
+        // Her delivery note grubu için ayrı goods_receipt kaydı oluştur
+        for (final entry in deliveryNoteGroups.entries) {
+          final deliveryNote = entry.key;
+          final items = entry.value;
           
-          // Her item için UUID üret
-          const uuid = Uuid();
-          final stockUuid = uuid.v4();
-          itemStockUuids[i] = stockUuid;
+          debugPrint("Processing delivery note: $deliveryNote with ${items.length} items");
           
-          final itemId = await txn.insert(DbTables.goodsReceiptItems, {
-            'receipt_id': receiptId,
-            'urun_key': item.productId, // _key değeri direkt kullanılıyor
-            'birim_key': item.birimKey, // Birim _key değeri
-            'quantity_received': item.quantity,
-            'pallet_barcode': item.palletBarcode,
-            'barcode': item.barcode, // DÜZELTME: barcode alanı eklendi
-            'expiry_date': item.expiryDate?.toIso8601String(),
-            'free': item.isFree ? 1 : 0, // Sipariş dışı ürün işaretleme
+          // 1. ADIM: Bu grup için UNIQUE ID'Yİ AL
+          final pendingOp = PendingOperation.create(
+            type: PendingOperationType.goodsReceipt,
+            data: "{}",
+            createdAt: DateTime.now().toUtc(),
+          );
+          final String operationUniqueId = pendingOp.uniqueId;
+
+          // 2. ADIM: Bu delivery note için GOODS RECEIPT KAYDINI OLUŞTUR
+          final receiptHeaderData = {
+            'operation_unique_id': operationUniqueId,
+            'siparis_id': payload.header.siparisId,
+            'invoice_number': payload.header.invoiceNumber,
+            'delivery_note_number': deliveryNote, // Bu grubun delivery note'u
+            'employee_id': payload.header.employeeId,
+            'receipt_date': payload.header.receiptDate.toIso8601String(),
             'created_at': DateTime.now().toUtc().toIso8601String(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
-          });
-          debugPrint("Item inserted with ID: $itemId");
+          };
+          final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
 
-          debugPrint("Updating stock for: ${item.productId} with UUID: ${stockUuid}");
-          await _updateStockWithKey(
-              txn,
-              item.productId, // _key değeri string olarak
-              item.birimKey, // birim_key değeri
-              null, // locationId is null for receiving area
-              item.quantity,
-              item.palletBarcode,
-              stockStatus,
-              payload.header.siparisId,
-              item.expiryDate?.toIso8601String(),
-              receiptId,
-              stockUuid); // KRITIK: Stock UUID'yi geçir
-          debugPrint("Stock updated for: ${item.productId}");
+          const stockStatus = 'receiving';
+          
+          // 3. ADIM: Bu gruptaki items'ları kaydet
+          final Map<int, String> itemStockUuids = {};
+          
+          for (var i = 0; i < items.length; i++) {
+            final item = items[i];
+            debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity} for delivery note: $deliveryNote");
+            
+            // Her item için UUID üret
+            const uuid = Uuid();
+            final stockUuid = uuid.v4();
+            itemStockUuids[i] = stockUuid;
+            
+            final itemId = await txn.insert(DbTables.goodsReceiptItems, {
+              'receipt_id': receiptId,
+              'urun_key': item.productId,
+              'birim_key': item.birimKey,
+              'quantity_received': item.quantity,
+              'pallet_barcode': item.palletBarcode,
+              'barcode': item.barcode,
+              'expiry_date': item.expiryDate?.toIso8601String(),
+              'free': item.isFree ? 1 : 0,
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
+            });
+            debugPrint("Item inserted with ID: $itemId");
+
+            // Stock güncelle
+            await _updateStockWithKey(
+                txn,
+                item.productId,
+                item.birimKey,
+                null, // locationId is null for receiving area
+                item.quantity,
+                item.palletBarcode,
+                stockStatus,
+                payload.header.siparisId,
+                item.expiryDate?.toIso8601String(),
+                receiptId,
+                stockUuid);
+            debugPrint("Stock updated for: ${item.productId}");
+          }
+
+          // 4. ADIM: Bu grup için enriched data oluştur ve pending operation ekle
+          final groupPayload = GoodsReceiptPayload(
+            header: GoodsReceiptHeader(
+              siparisId: payload.header.siparisId,
+              invoiceNumber: payload.header.invoiceNumber,
+              deliveryNoteNumber: deliveryNote,
+              employeeId: payload.header.employeeId,
+              receiptDate: payload.header.receiptDate,
+            ),
+            items: items,
+          );
+          
+          final enrichedData = await _createEnrichedGoodsReceiptData(txn, groupPayload, itemStockUuids);
+          enrichedData['operation_unique_id'] = operationUniqueId;
+
+          final pendingOpForSync = PendingOperation.create(
+            type: PendingOperationType.goodsReceipt,
+            data: jsonEncode(enrichedData),
+            createdAt: DateTime.now().toUtc(),
+          );
+          
+          final finalPendingOp = PendingOperation(
+            id: pendingOpForSync.id,
+            uniqueId: operationUniqueId,
+            type: pendingOpForSync.type,
+            data: pendingOpForSync.data,
+            status: pendingOpForSync.status,
+            createdAt: pendingOpForSync.createdAt,
+            errorMessage: pendingOpForSync.errorMessage,
+          );
+          await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
         }
 
+        // 5. ADIM: Sipariş durumunu kontrol et (sadece bir kez)
         if (payload.header.siparisId != null) {
           await _checkAndUpdateOrderStatus(txn, payload.header.siparisId!);
         }
-
-        final enrichedData = await _createEnrichedGoodsReceiptData(txn, payload, itemStockUuids);
-        // Tag and Replace reconciliation için operation_unique_id ekle
-        enrichedData['operation_unique_id'] = operationUniqueId;
-
-        final pendingOpForSync = PendingOperation.create(
-          type: PendingOperationType.goodsReceipt,
-          data: jsonEncode(enrichedData),
-          createdAt: DateTime.now().toUtc(),
-        );
-        // Unique ID'yi override et - aynı olmalı
-        final finalPendingOp = PendingOperation(
-          id: pendingOpForSync.id,
-          uniqueId: operationUniqueId, // Aynı unique ID kullan
-          type: pendingOpForSync.type,
-          data: pendingOpForSync.data,
-          status: pendingOpForSync.status,
-          createdAt: pendingOpForSync.createdAt,
-          errorMessage: pendingOpForSync.errorMessage,
-        );
-        await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
-
-        // inventory_stock'lar normal table sync ile backend'den mobile'a gelecek
-        // Pending operation sync gereksiz ve duplicate veri trafiği yaratır
-        // await _createInventoryStockPendingOperation(txn, receiptId); // REMOVED
       });
-      debugPrint("Mal kabul işlemi ve sipariş durumu başarıyla lokale kaydedildi.");
+      debugPrint("Mal kabul işlemi (${deliveryNoteGroups.length} delivery note grubu) başarıyla lokale kaydedildi.");
     } catch (e) {
       debugPrint("Lokal mal kabul kaydı hatası: $e");
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
@@ -250,9 +273,14 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       whereArgs.add(expiryDate);
     }
     
-    // KRITIK FIX: Backend'de goods_receipt_id kontrol edilmiyor
-    // Farklı goods receipt'ler aynı koşullarda birleştirilmeli
-    // goods_receipt_id kontrolü kaldırıldı
+    // KRITIK FIX: Farklı delivery note'lar için ayrı stock tutmalıyız
+    // goods_receipt_id kontrolünü ekle
+    if (goodsReceiptId == null) {
+      whereClauses.add('goods_receipt_id IS NULL');
+    } else {
+      whereClauses.add('goods_receipt_id = ?');
+      whereArgs.add(goodsReceiptId);
+    }
 
     final whereClause = whereClauses.join(' AND ');
     final existingStock = await txn.query('inventory_stock',

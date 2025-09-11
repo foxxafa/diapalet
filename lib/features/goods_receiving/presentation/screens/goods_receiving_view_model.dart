@@ -769,6 +769,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           barcode: draft.product.productBarcode, // Okutulan barcode bilgisi
           expiryDate: draft.expiryDate, // Now always has a value
           isFree: !isOrderBased || draft.product.isOutOfOrder, // Serbest mal kabulde her zaman true, sipariş bazlıysa product.isOutOfOrder
+          deliveryNoteNumber: draft.deliveryNoteNumber, // Item-level delivery note from draft
         );
       }).toList(),
     );
