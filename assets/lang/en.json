@@ -480,12 +480,12 @@
     "password": "Password",
     "button": "Login",
     "forgot_password": "Forgot Password",
-    "error_invalid_credentials": "Invalid username or password.",
+    "error_invalid_credentials": "Login failed. Please check your username and password.",
     "loading": "Logging in...",
     "language_select": "Select Language",
     "error": {
       "required_field": "This field is required.",
-      "access_denied": "You do not have permission to access this application. Only users with WMS role can log in."
+      "invalid_credentials": "Login failed.\nPlease check your username and password."
     }
   },
   "transfer_type": {

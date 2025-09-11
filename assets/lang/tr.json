@@ -330,13 +330,13 @@
     "password": "Şifre",
     "button": "Giriş",
     "forgot_password": "Şifremi Unuttum",
-    "error_invalid_credentials": "Kullanıcı adı veya şifre hatalı.",
+    "error_invalid_credentials": "Giriş başarısız. Lütfen kullanıcı adı ve şifrenizi kontrol edin.",
     "loading": "Giriş yapılıyor...",
     "language_select": "Dil Seçimi",
     "subtitle": "Lütfen giriş yapmak için bilgilerinizi girin.",
     "error": {
       "required_field": "Bu alan zorunludur.",
-      "access_denied": "Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir."
+      "invalid_credentials": "Giriş başarısız.\nLütfen kullanıcı adı ve şifrenizi kontrol edin."
     }
   },
   "transfer_type": {

@@ -182,19 +182,15 @@ class AuthRepositoryImpl implements AuthRepository {
 
           return {'success': true};
         } else {
-          final errorMessage = responseData['message'] ?? 'Kullanıcı adı veya şifre hatalı.';
-          throw Exception(errorMessage);
+          // Güvenlik için tüm hatalar aynı mesajı göstersin
+          throw Exception('login.error.invalid_credentials');
         }
       } else {
-        throw Exception('Sunucudan geçersiz yanıt alındı (Kod: ${response.statusCode})');
+        throw Exception('login.error.invalid_credentials');
       }
     } on DioException catch (e) {
-      // 403 durumunda (rol kontrolü) localized mesaj göster
-      if (e.response?.statusCode == 403) {
-        throw Exception('login.error.access_denied');
-      }
-      final errorMessage = e.response?.data?['message'] ?? "Sunucuya bağlanırken bir hata oluştu.";
-      throw Exception(errorMessage);
+      // Güvenlik için tüm hatalar (403, 401, 400 vs.) aynı mesajı göstersin
+      throw Exception('login.error.invalid_credentials');
     } catch (e) {
       rethrow;
     }
@@ -235,7 +231,8 @@ class AuthRepositoryImpl implements AuthRepository {
         // WMS rol kontrolü (offline'da da kontrol edelim - database'den gelenler için)
         final userRole = user['role'] as String?;
         if (userRole != 'WMS') {
-          throw Exception('login.error.access_denied');
+          // Güvenlik için rol hatası da aynı mesajı göstersin
+          throw Exception('login.error.invalid_credentials');
         }
 
         // Farklı warehouse'a geçiş tespit edilirse warehouse-specific verileri temizle
@@ -316,7 +313,8 @@ class AuthRepositoryImpl implements AuthRepository {
 
         return {'success': true};
       } else {
-        throw Exception("Çevrimdışı giriş başarısız. Bilgileriniz cihazda bulunamadı veya internete bağlıyken giriş yapmalısınız.");
+        // Güvenlik için kullanıcı bulunamadığında da aynı mesajı göster
+        throw Exception('login.error.invalid_credentials');
       }
     } catch (e) {
       rethrow;
