@@ -112,6 +112,7 @@
     "label_expiry_date": "Expiry Date",
     "label_quantity": "Quantity",
     "label_order_status": "Order Status",
+    "label_unit_selection": "Unit Selection",
     "no_items": "No items added yet.",
     "order_info_title": "Order Information",
     "dialog_confirmation_title": "Review Items",

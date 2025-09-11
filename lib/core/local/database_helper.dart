@@ -1296,26 +1296,56 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getAllUnitsForProduct(String stokKodu) async {
     final db = await database;
     
+    // Önce basit sorgu ile birimler olup olmadığını kontrol et
+    const checkSql = '''SELECT COUNT(*) as count FROM birimler WHERE StokKodu = ?''';
+    final checkResult = await db.rawQuery(checkSql, [stokKodu]);
+    final birimCount = checkResult.first['count'] as int;
+    debugPrint("🔍 Found $birimCount units in birimler table for product $stokKodu");
+    
     const sql = '''
       SELECT DISTINCT 
         u.*,
-        b.birimadi,
-        b.birimkod,
-        b._key as birim_key,
-        bark.barkod,
-        bark._key as barkod_key
+        selected_units.birimadi,
+        selected_units.birimkod,
+        selected_units.birim_key,
+        selected_units.barkod,
+        selected_units.barkod_key
       FROM urunler u
-      JOIN birimler b ON b.StokKodu = u.StokKodu
-      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      JOIN (
+        SELECT 
+          b.StokKodu,
+          b.birimadi,
+          b.birimkod,
+          b._key as birim_key,
+          COALESCE(bark.barkod, '') as barkod,
+          bark._key as barkod_key,
+          ROW_NUMBER() OVER (
+            PARTITION BY b.StokKodu, b.birimadi 
+            ORDER BY 
+              CASE 
+                WHEN bark.barkod IS NOT NULL AND TRIM(bark.barkod) != '' THEN 0 
+                ELSE 1 
+              END,
+              b._key ASC
+          ) as rn
+        FROM birimler b
+        LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+        WHERE b.StokKodu = ?
+      ) selected_units ON selected_units.StokKodu = u.StokKodu AND selected_units.rn = 1
       WHERE u.StokKodu = ?
         AND u.aktif = 1
-      ORDER BY b.birimadi ASC
+      ORDER BY 
+        CASE 
+          WHEN selected_units.barkod != '' THEN 0 
+          ELSE 1 
+        END,
+        selected_units.birimadi ASC
     ''';
     
-    final result = await db.rawQuery(sql, [stokKodu]);
-    debugPrint("📦 Found ${result.length} units for product $stokKodu");
+    final result = await db.rawQuery(sql, [stokKodu, stokKodu]);
+    debugPrint("📦 Found ${result.length} unique units for product $stokKodu (grouped by unit name)");
     for (var unit in result) {
-      debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod']}");
+      debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod'] ?? 'NULL'}, has_barcode: ${unit['barkod'] != null && unit['barkod'].toString().isNotEmpty}");
     }
     return result;
   }

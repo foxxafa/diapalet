@@ -1199,29 +1199,73 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                              style: widget.theme.textTheme.bodyMedium?.copyWith(
                                color: widget.theme.colorScheme.onSurfaceVariant,
                              )),
-                        Expanded(
+                        Container(
+                          width: 120,
                           child: Padding(
                             padding: const EdgeInsets.only(left: 8),
-                            child: DropdownButtonFormField<int>(
-                              value: selectedUnitIndex,
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                            child: PopupMenuButton<int>(
+                              initialValue: selectedUnitIndex,
+                              offset: const Offset(0, 5),
+                              constraints: const BoxConstraints(minWidth: 120, maxWidth: 140),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              child: Container(
+                                height: 32,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: widget.theme.colorScheme.surface,
+                                  border: Border.all(color: widget.theme.colorScheme.outline),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        selectedUnitIndex != null && selectedUnitIndex! < widget.availableUnits.length
+                                            ? widget.availableUnits[selectedUnitIndex!]['birimadi'] ?? ''
+                                            : '',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: widget.theme.colorScheme.primary,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.arrow_drop_down,
+                                      color: widget.theme.colorScheme.primary,
+                                      size: 18,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              items: widget.availableUnits.asMap().entries.map((entry) {
-                                final index = entry.key;
-                                final unit = entry.value;
-                                return DropdownMenuItem<int>(
-                                  value: index,
-                                  child: Text(
-                                    unit['birimadi'] ?? '',
-                                    style: widget.theme.textTheme.bodySmall,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (int? newIndex) {
+                              itemBuilder: (BuildContext popupContext) {
+                                return widget.availableUnits.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final unit = entry.value;
+                                  final unitName = unit['birimadi'] ?? '';
+                                  
+                                  return PopupMenuItem<int>(
+                                    value: index,
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                                      child: Text(
+                                        unitName,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  );
+                                }).toList();
+                              },
+                              onSelected: (newIndex) {
                                 setState(() {
                                   selectedUnitIndex = newIndex;
                                 });

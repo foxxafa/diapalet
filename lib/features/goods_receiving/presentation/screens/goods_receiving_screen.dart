@@ -1556,7 +1556,11 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     return SizedBox(
       height: 52, // Quantity ile tam olarak aynı yükseklik
       child: InputDecorator(
-        decoration: _inputDecoration(context, 'goods_receiving_screen.label_order_status'.tr(), enabled: false)
+        decoration: _inputDecoration(context, 
+          widget.viewModel.isOrderBased 
+            ? 'goods_receiving_screen.label_order_status'.tr()
+            : 'goods_receiving_screen.label_unit_selection'.tr(), 
+          enabled: false)
             .copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
       child: (widget.viewModel.selectedProduct == null)
           ? Center(
@@ -1615,7 +1619,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                   PopupMenuButton<int>(
               initialValue: _selectedUnitIndex,
               offset: const Offset(0, 5),
-              constraints: const BoxConstraints(minWidth: 300, maxWidth: 350),
+              constraints: const BoxConstraints(minWidth: 120, maxWidth: 180),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               child: Container(
                 height: 32, // Dropdown'un yüksekliğini arttır
@@ -1659,27 +1663,14 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                     value: index,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            unitName,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            barcode.isNotEmpty ? barcode : 'N/A',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                      child: Text(
+                        unitName,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   );
