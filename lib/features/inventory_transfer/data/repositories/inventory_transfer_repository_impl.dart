@@ -382,16 +382,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
               whereArgs: [header.siparisId, item.productKey, '1'],
               limit: 1,
             );
-            if (orderLine.isNotEmpty) {
-              final lineId = orderLine.first['id'] as int;
-              await txn.rawInsert('''
-                INSERT INTO wms_putaway_status (purchase_order_line_id, putaway_quantity, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(purchase_order_line_id) DO UPDATE SET
-                putaway_quantity = putaway_quantity + excluded.putaway_quantity,
-                updated_at = excluded.updated_at
-              ''', [lineId, item.quantity, DateTime.now().toIso8601String(), DateTime.now().toIso8601String()]);
-            }
+            // wms_putaway_status tablosu kaldırıldı - yerleştirme durumunu inventory_stock'tan takip edebiliriz
           }
 
           // KRITIK FIX: UUID içeren yeni TransferItemDetail oluştur ve sunucuya gönder

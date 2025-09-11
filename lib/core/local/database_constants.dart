@@ -14,7 +14,6 @@ class DbTables {
   static const String goodsReceiptItems = 'goods_receipt_items';
   static const String inventoryStock = 'inventory_stock';
   static const String inventoryTransfers = 'inventory_transfers';
-  static const String putawayStatus = 'wms_putaway_status';
   static const String pendingOperations = 'pending_operation';
   static const String syncLog = 'sync_log';
 }
@@ -182,10 +181,9 @@ class DbQueries {
                    FROM ${DbTables.goodsReceiptItems} gri
                    JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
                    WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = s.${DbColumns.orderLinesProductId}), 0) as receivedQuantity,
-        COALESCE(wps.putaway_quantity, 0) as transferredQuantity
+        0 as transferredQuantity
       FROM ${DbTables.orderLines} s
       JOIN ${DbTables.products} u ON u._key = s.${DbColumns.orderLinesProductId}
-      LEFT JOIN ${DbTables.putawayStatus} wps ON wps.purchase_order_line_id = s.${DbColumns.id}
       WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
     ''';
   }

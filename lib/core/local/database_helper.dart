@@ -182,16 +182,6 @@ class DatabaseHelper {
         )
       ''');
 
-      // wms_putaway_status tablosu dump.sql'e göre
-      batch.execute('''
-        CREATE TABLE IF NOT EXISTS wms_putaway_status (
-          id INTEGER PRIMARY KEY,
-          purchase_order_line_id INTEGER UNIQUE,
-          putaway_quantity REAL DEFAULT 0.00,
-          created_at TEXT,
-          updated_at TEXT
-        )
-      ''');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipts (
@@ -319,7 +309,7 @@ class DatabaseHelper {
       'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
       'siparisler', 'siparis_ayrintili', 'goods_receipts',
       'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
-      'wms_putaway_status', 'tedarikci', 'birimler', 'barkodlar'
+      'tedarikci', 'birimler', 'barkodlar'
     ];
     await db.transaction((txn) async {
       for (final table in tables) {
@@ -485,17 +475,6 @@ class DatabaseHelper {
           }
         }
 
-        // WMS putaway status incremental sync
-        if (data.containsKey('wms_putaway_status')) {
-          final putawayStatusData = List<Map<String, dynamic>>.from(data['wms_putaway_status']);
-          for (final putaway in putawayStatusData) {
-            final sanitizedPutaway = _sanitizeRecord('wms_putaway_status', putaway);
-            batch.insert('wms_putaway_status', sanitizedPutaway, conflictAlgorithm: ConflictAlgorithm.replace);
-
-            processedItems++;
-            updateProgress('wms_putaway_status');
-          }
-        }
 
         // Inventory stock incremental sync - Multi-device safe
         if (data.containsKey('inventory_stock')) {
@@ -785,7 +764,7 @@ class DatabaseHelper {
         }
 
         // Sonra verileri ekle (incremental tablolar hariç, onlar zaten yukarıda işlendi)
-        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'wms_putaway_status', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci', 'birimler', 'barkodlar'];
+        final incrementalTables = ['urunler', 'shelfs', 'employees', 'goods_receipts', 'goods_receipt_items', 'inventory_stock', 'inventory_transfers', 'siparisler', 'siparis_ayrintili', 'tedarikci', 'birimler', 'barkodlar'];
         final skippedTables = ['warehouses']; // Kaldırılan tablolar
 
         for (var table in data.keys) {
@@ -1434,7 +1413,7 @@ class DatabaseHelper {
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
         COALESCE(received.total_received, 0) as received_quantity,
-        COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
+        0 as putaway_quantity
       FROM siparis_ayrintili sa
       LEFT JOIN urunler u ON u._key = COALESCE(sa.urun_key, sa._key_kalemturu)
       LEFT JOIN (
@@ -1446,7 +1425,6 @@ class DatabaseHelper {
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_key
       ) received ON received.urun_key = COALESCE(sa.urun_key, sa._key_kalemturu)
-      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
     ''';
 
@@ -1601,12 +1579,11 @@ class DatabaseHelper {
         sa.miktar as ordered_quantity,
         sa.sipbirimi as order_unit,
         sa.notes as order_line_notes,
-        COALESCE(putaway.putaway_quantity, 0) as putaway_quantity
+        0 as putaway_quantity
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
       LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
-      LEFT JOIN wms_putaway_status putaway ON putaway.purchase_order_line_id = sa.id
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
     ''';
@@ -2599,13 +2576,7 @@ class DatabaseHelper {
         );
         receiptCount += receipts;
 
-        // 3. wms_putaway_status (sipariş satırına bağlı)
-        final putaways = await txn.delete(
-          'wms_putaway_status',
-          where: 'purchase_order_line_id IN (SELECT id FROM siparis_ayrintili WHERE siparisler_id = ?)',
-          whereArgs: [orderId]
-        );
-        putawayCount += putaways;
+        // wms_putaway_status tablosu kaldırıldı
 
         // 4. siparis_ayrintili (sipariş satırları)
         await txn.delete(
@@ -2675,7 +2646,7 @@ class DatabaseHelper {
       final batch = txn.batch();
       
       // Warehouse'a özel tabloları temizle (dependency order'da)
-      batch.delete('wms_putaway_status');           // En child tablo
+      // wms_putaway_status tablosu kaldırıldı
       batch.delete('goods_receipt_items');          // goods_receipts'e bağlı
       batch.delete('inventory_transfers');          // location'lara bağlı
       batch.delete('inventory_stock');              // location'lara bağlı  

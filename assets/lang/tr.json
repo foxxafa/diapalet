@@ -538,7 +538,6 @@
       "goods_receipts": "Mal Kabul Kayıtları",
       "goods_receipt_items": "Kabul Kalemleri",
       "inventory_stock": "Stok Bilgileri",
-      "wms_putaway_status": "Yerleştirme Durumu",
       "satin_alma_siparis_fis": "Satınalma Siparişleri",
       "satin_alma_siparis_fis_satir": "Sipariş Kalemleri"
     },
@@ -572,7 +571,6 @@
       "goods_receipt_items": "Kabul Kalemleri",
       "inventory_stock": "Stok Durumu",
       "inventory_transfers": "Stok Transferleri",
-      "wms_putaway_status": "Yerleştirme Durumu",
       "satin_alma_siparis_fis": "Satın Alma Siparişleri",
       "satin_alma_siparis_fis_satir": "Sipariş Kalemleri"
     },

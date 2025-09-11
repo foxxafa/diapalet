@@ -41,6 +41,126 @@ class TerminalController extends Controller
         file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
     }
 
+    private function handleError(\Exception $e, $context = '', $statusCode = 500)
+    {
+        $message = $context ? "$context: {$e->getMessage()}" : $e->getMessage();
+        $this->logToFile($message . "\nTrace: " . $e->getTraceAsString(), 'ERROR');
+        Yii::$app->response->statusCode = $statusCode;
+        return $this->asJson(['status' => $statusCode, 'message' => $message]);
+    }
+
+    private function handleDbError(\Exception $e, $context = '', $statusCode = 500)
+    {
+        $message = $context ? "$context: {$e->getMessage()}" : "Veritabanı hatası: {$e->getMessage()}";
+        $this->logToFile($message, 'ERROR');
+        Yii::$app->response->statusCode = $statusCode;
+        return $this->asJson(['status' => $statusCode, 'message' => 'Sunucu tarafında bir hata oluştu: ' . $e->getMessage()]);
+    }
+
+    private function errorResponse($message, $statusCode = 500)
+    {
+        Yii::$app->response->statusCode = $statusCode;
+        return ['success' => false, 'error' => $message];
+    }
+
+    private function successResponse($data = [])
+    {
+        return $this->mergeArraysSafely(['success' => true], $data);
+    }
+
+    private function validateGoodsReceiptData($data)
+    {
+        $header = $data['header'] ?? [];
+        $items = $data['items'] ?? [];
+        
+        if (!$this->areAllNotEmpty($header, $items, $header['employee_id'] ?? null)) {
+            return 'Geçersiz mal kabul verisi.';
+        }
+        return null; // Valid
+    }
+
+    private function validateInventoryTransferData($data)
+    {
+        $header = $data['header'] ?? [];
+        $items = $data['items'] ?? [];
+        
+        if (empty($header) || empty($items) || !isset($header['employee_id'], $header['target_location_id']) || !array_key_exists('source_location_id', $header)) {
+            return 'Geçersiz transfer verisi.';
+        }
+        return null; // Valid
+    }
+
+    private function getCurrentUtcTimestamp()
+    {
+        return (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z');
+    }
+
+    private function hasValidConditions($conditions)
+    {
+        return count($conditions) > 1;
+    }
+
+    private function mergeArraysSafely($primary, $secondary)
+    {
+        return array_merge($primary ?? [], $secondary ?? []);
+    }
+
+    private function isNotEmpty($value)
+    {
+        return !empty($value);
+    }
+
+    private function areAllNotEmpty(...$values)
+    {
+        foreach ($values as $value) {
+            if (empty($value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function hasAnyData($array)
+    {
+        return !empty($array) && is_array($array);
+    }
+
+    private function getStokKoduByUrunKey($urunKey, $db)
+    {
+        return (new Query())
+            ->select('StokKodu')
+            ->from('urunler')
+            ->where(['_key' => $urunKey])
+            ->scalar($db);
+    }
+
+    private function getEmployeeIdsByWarehouseCode($warehouseCode)
+    {
+        return (new Query())
+            ->select('id')
+            ->from('employees')
+            ->where(['warehouse_code' => $warehouseCode])
+            ->column();
+    }
+
+    private function getWarehouseInfoById($warehouseId)
+    {
+        return (new Query())
+            ->select(['id', 'warehouse_code', 'name', '_key'])
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->one();
+    }
+
+    private function getWarehouseCodeById($warehouseId)
+    {
+        return (new Query())
+            ->select('warehouse_code')
+            ->from('warehouses')
+            ->where(['id' => $warehouseId])
+            ->scalar();
+    }
+
     private function getJsonBody()
     {
         $rawBody = Yii::$app->request->getRawBody();
@@ -60,6 +180,8 @@ class TerminalController extends Controller
 
     private function castNumericValues(array &$data, array $intKeys, array $floatKeys = [])
     {
+        if (empty($data)) return;
+        
         foreach ($data as &$row) {
             foreach ($intKeys as $key) {
                 if (isset($row[$key])) $row[$key] = (int)$row[$key];
@@ -67,6 +189,35 @@ class TerminalController extends Controller
             foreach ($floatKeys as $key) {
                 if (isset($row[$key])) $row[$key] = (float)$row[$key];
             }
+        }
+    }
+
+    private function applyStandardCasts(array &$data, $type = 'default')
+    {
+        if (empty($data)) return;
+        
+        switch ($type) {
+            case 'urunler':
+                $this->castNumericValues($data, ['id', 'aktif']);
+                break;
+            case 'tedarikci':
+                $this->castNumericValues($data, ['id', 'Aktif']);
+                break;
+            case 'employees':
+                $this->castNumericValues($data, ['id', 'is_active']);
+                break;
+            case 'shelfs':
+                $this->castNumericValues($data, ['id', 'warehouse_id', 'is_active']);
+                break;
+            case 'inventory_stock':
+                $this->castNumericValues($data, ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+                break;
+            case 'goods_receipts':
+                $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id']);
+                break;
+            default:
+                // Varsayılan cast işlemi yok
+                break;
         }
     }
 
@@ -108,7 +259,7 @@ class TerminalController extends Controller
                 Yii::info("TOMBSTONE: Single deletion logged for UUID: {$stockInfo['stock_uuid']}", __METHOD__);
             }
         } catch (\Exception $e) {
-            Yii::error("Tombstone logging failed for stock ID $stockId: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Tombstone logging failed for stock ID $stockId: " . $e->getMessage(), 'ERROR');
         }
     }
 
@@ -119,7 +270,6 @@ class TerminalController extends Controller
         $password = $params['password'] ?? null;
 
         if (!$username || !$password) {
-            Yii::$app->response->statusCode = 400;
             return $this->asJson(['status' => 400, 'message' => 'Kullanıcı adı ve şifre gereklidir.']);
         }
 
@@ -145,7 +295,6 @@ class TerminalController extends Controller
             if ($user) {
                 // WMS rolü kontrolü - sadece WMS rolü olanlar giriş yapabilir
                 if ($user['role'] !== 'WMS') {
-                    Yii::$app->response->statusCode = 403;
                     return $this->asJson(['status' => 403, 'message' => 'Bu uygulamaya erişim yetkiniz bulunmamaktadır. Sadece WMS rolüne sahip kullanıcılar giriş yapabilir.']);
                 }
                 
@@ -167,17 +316,12 @@ class TerminalController extends Controller
                     'user' => $userData, 'apikey' => $apiKey
                 ]);
             } else {
-                Yii::$app->response->statusCode = 401;
                 return $this->asJson(['status' => 401, 'message' => 'Kullanıcı adı veya şifre hatalı.']);
             }
         } catch (\yii\db\Exception $e) {
-            $this->logToFile("Login DB Hatası: " . $e->getMessage(), 'ERROR');
-            Yii::$app->response->statusCode = 500;
-            return $this->asJson(['status' => 500, 'message' => 'Sunucu tarafında bir hata oluştu: ' . $e->getMessage()]);
+            return $this->handleDbError($e, 'Login DB Hatası');
         } catch (\Exception $e) {
-            $this->logToFile("Login Genel Hatası: " . $e->getMessage(), 'ERROR');
-            Yii::$app->response->statusCode = 500;
-            return $this->asJson(['status' => 500, 'message' => 'Beklenmeyen hata: ' . $e->getMessage()]);
+            return $this->handleError($e, 'Login Genel Hatası');
         }
     }
 
@@ -324,11 +468,13 @@ class TerminalController extends Controller
     }
 
     private function _createGoodsReceipt($data, $db) {
-        $header = $data['header'] ?? [];
-        $items = $data['items'] ?? [];
-        if (empty($header) || empty($items) || empty($header['employee_id'])) {
-            return ['status' => 'error', 'message' => 'Geçersiz mal kabul verisi.'];
+        $validationError = $this->validateGoodsReceiptData($data);
+        if ($validationError) {
+            return ['status' => 'error', 'message' => $validationError];
         }
+        
+        $header = $data['header'];
+        $items = $data['items'];
 
         $siparisId = $header['siparis_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
@@ -400,11 +546,7 @@ class TerminalController extends Controller
             $isFree = 1; // Varsayılan olarak free (sipariş dışı)
             
             // Ürünün StokKodu'nu al
-            $stokKodu = (new Query())
-                ->select('StokKodu')
-                ->from('urunler')
-                ->where(['_key' => $urunKey])
-                ->scalar($db);
+            $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
             
             if ($siparisId && $stokKodu) {
                 // Gelen ürünün birim bilgisini al (item'dan geliyor olmalı)
@@ -524,7 +666,7 @@ class TerminalController extends Controller
             }
         } catch (\Exception $e) {
             // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder
-            Yii::error("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), __METHOD__);
+            $this->logToFile("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), 'ERROR');
         }
 
         if ($siparisId) {
@@ -535,11 +677,13 @@ class TerminalController extends Controller
     }
 
     private function _createInventoryTransfer($data, $db) {
-        $header = $data['header'] ?? [];
-        $items = $data['items'] ?? [];
-        if (empty($header) || empty($items) || !isset($header['employee_id'], $header['target_location_id']) || !array_key_exists('source_location_id', $header)) {
-            return ['status' => 'error', 'message' => 'Geçersiz transfer verisi.'];
+        $validationError = $this->validateInventoryTransferData($data);
+        if ($validationError) {
+            return ['status' => 'error', 'message' => $validationError];
         }
+        
+        $header = $data['header'];
+        $items = $data['items'];
 
         // Employee warehouse_code bilgisini al
         $employeeInfo = (new Query())
@@ -720,11 +864,7 @@ class TerminalController extends Controller
                 // _key urun_key olarak kullanılıyor
                 
                 // StokKodu'nu urun_key'den al
-                $stokKodu = (new Query())
-                    ->select('StokKodu')
-                    ->from('urunler')
-                    ->where(['_key' => $urunKey])
-                    ->scalar($db);
+                $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
                     
                 // Shelf code'ları al
                 $fromShelfCode = $sourceLocationId ? (new Query())
@@ -775,9 +915,7 @@ class TerminalController extends Controller
             // 6. wms_putaway_status tablosu kaldırıldı - putaway durumu inventory_stock'tan takip ediliyor
         }
 
-        if ($isPutawayOperation && $siparisId) {
-            $this->checkAndFinalizePoStatus($db, $siparisId);
-        }
+        // checkAndFinalizePoStatus fonksiyonu kaldırıldı - wms_putaway_status tablosu artık yok
 
         // Son eklenen transfer kaydının ID'sini al
         $lastTransferId = $db->getLastInsertID();
@@ -890,18 +1028,14 @@ class TerminalController extends Controller
                     ->exists($db);
                     
                 if (!$productExists) {
-                    Yii::error("CRITICAL ERROR: urun_key '{$urunKey}' does not exist in urunler table", __METHOD__);
+                    $this->logToFile("CRITICAL ERROR: urun_key '{$urunKey}' does not exist in urunler table", 'ERROR');
                     throw new \Exception("Cannot insert inventory_stock: urun_key '{$urunKey}' does not exist in urunler table");
                 }
                 
                 // _key urun_key olarak kullanılıyor
                 
                 // Yeni sütunlar için veri al
-                $stokKodu = (new Query())
-                    ->select('StokKodu')
-                    ->from('urunler')
-                    ->where(['_key' => $urunKey])
-                    ->scalar($db);
+                $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
                     
                 $shelfCode = $locationId ? (new Query())
                     ->select('code')
@@ -1011,33 +1145,6 @@ class TerminalController extends Controller
         }
     }
 
-    private function checkAndFinalizePoStatus($db, $siparisId) {
-        if (!$siparisId) return;
-
-        // Sipariş satırlarını ve yerleştirilmiş miktarları wms_putaway_status'tan al
-        $orderLines = (new Query())
-            ->select(['s.id', 's.miktar', 'w.putaway_quantity'])
-            ->from(['s' => 'siparis_ayrintili'])
-            ->leftJoin(['w' => 'wms_putaway_status'], 's.id = w.purchase_order_line_id')
-            ->where(['s.siparisler_id' => $siparisId, 's.turu' => '1'])
-            ->all($db);
-
-        if (empty($orderLines)) return;
-
-        $allLinesCompleted = true;
-        foreach ($orderLines as $line) {
-            $ordered = (float)$line['miktar'];
-            $putaway = (float)($line['putaway_quantity'] ?? 0);
-            if ($putaway < $ordered - 0.001) { // Kayan nokta hataları için tolerans
-                $allLinesCompleted = false;
-                break;
-            }
-        }
-
-        // Rafa yerleştirme artık sipariş statusunu değiştirmiyor
-        // Status sadece mal kabul aşamasında belirleniyor (0,1,2,3)
-        // Bu metod sadece putaway takibi için kullanılıyor
-    }
 
     private function _forceCloseOrder($data, $db) {
         $siparisId = $data['siparis_id'] ?? null;
@@ -1064,8 +1171,7 @@ class TerminalController extends Controller
         $lastSyncTimestamp = $payload['last_sync_timestamp'] ?? null;
 
         if (!$warehouseCode) {
-            Yii::$app->response->statusCode = 400;
-            return ['success' => false, 'error' => 'Depo kodu (warehouse_code) zorunludur.'];
+            return $this->errorResponse('Depo kodu (warehouse_code) zorunludur.', 400);
         }
         
         // Get warehouse information from warehouse_code
@@ -1076,14 +1182,12 @@ class TerminalController extends Controller
             ->one();
             
         if (!$warehouseInfo) {
-            Yii::$app->response->statusCode = 400;
-            return ['success' => false, 'error' => 'Depo bulunamadı.'];
+            return $this->errorResponse('Depo bulunamadı.', 400);
         }
         
         $warehouseId = $warehouseInfo['id'];
         if (!$warehouseId) {
-            Yii::$app->response->statusCode = 400;
-            return ['success' => false, 'error' => 'Depo ID bilgisi bulunamadı.'];
+            return $this->errorResponse('Depo ID bilgisi bulunamadı.', 400);
         }
 
         // Buffer timestamp hazırlığı - ana sync ile tutarlı
@@ -1130,7 +1234,7 @@ class TerminalController extends Controller
             $counts['goods_receipt_items'] = $this->getGoodsReceiptItemsCount($warehouseId, $serverSyncTimestamp);
             $counts['inventory_stock'] = $this->getInventoryStockCount($warehouseId, $serverSyncTimestamp);
             $counts['inventory_transfers'] = $this->getInventoryTransfersCount($warehouseId, $serverSyncTimestamp);
-            $counts['wms_putaway_status'] = $this->getPutawayStatusCount($warehouseKey, $serverSyncTimestamp);
+            // wms_putaway_status tablosu kaldırıldı
             
             // Tombstone kayıtları sayısı
             $counts['inventory_stock_tombstones'] = $this->getTombstoneCount($warehouseCode, $serverSyncTimestamp);
@@ -1139,13 +1243,12 @@ class TerminalController extends Controller
                 'success' => true,
                 'counts' => $counts,
                 'total_records' => array_sum($counts),
-                'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z')
+                'timestamp' => $this->getCurrentUtcTimestamp()
             ];
 
         } catch (\Exception $e) {
-            Yii::$app->response->statusCode = 500;
-            Yii::error("SyncCounts Hatası: " . $e->getMessage(), __METHOD__);
-            return ['success' => false, 'error' => 'Count sorgusu başarısız: ' . $e->getMessage()];
+            $this->logToFile("SyncCounts Hatası: " . $e->getMessage(), 'ERROR');
+            return $this->errorResponse('Count sorgusu başarısız: ' . $e->getMessage());
         }
     }
 
@@ -1201,12 +1304,8 @@ class TerminalController extends Controller
     private function getGoodsReceiptsCount($warehouseId, $timestamp = null)
     {
         // Use employee-based filtering instead of direct warehouse_id
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-        $employeeIds = (new Query())
-            ->select('id')
-            ->from('employees')
-            ->where(['warehouse_code' => $warehouseCode])
-            ->column();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
 
         $query = (new Query())->from('goods_receipts')->where(['employee_id' => $employeeIds]);
         if ($timestamp) {
@@ -1218,12 +1317,8 @@ class TerminalController extends Controller
     private function getGoodsReceiptItemsCount($warehouseId, $timestamp = null)
     {
         // Use employee-based filtering instead of direct warehouse_id
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-        $employeeIds = (new Query())
-            ->select('id')
-            ->from('employees')
-            ->where(['warehouse_code' => $warehouseCode])
-            ->column();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
 
         $query = (new Query())
             ->from('goods_receipt_items')
@@ -1237,7 +1332,7 @@ class TerminalController extends Controller
     }
 
     private function getInventoryStockCount($warehouseId, $timestamp = null) {
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
         if (!$warehouseCode) {
             return 0;
         }
@@ -1248,8 +1343,8 @@ class TerminalController extends Controller
     {
         $locationIds = (new Query())->select('id')->from('shelfs')->where(['warehouse_id' => $warehouseId])->column();
         // Use employee-based filtering instead of direct warehouse_id
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
         $receiptIds = (new Query())->select('goods_receipt_id')->from('goods_receipts')->where(['employee_id' => $employeeIds])->column();
 
         $query = (new Query())->from('inventory_transfers');
@@ -1273,19 +1368,7 @@ class TerminalController extends Controller
         return 0;
     }
 
-    private function getPutawayStatusCount($warehouseKey, $timestamp = null)
-    {
-        $query = (new Query())
-            ->from('wms_putaway_status')
-            ->innerJoin('siparis_ayrintili', 'siparis_ayrintili.id = wms_putaway_status.purchase_order_line_id')
-            ->innerJoin('siparisler', 'siparisler.id = siparis_ayrintili.siparisler_id')
-            ->where(['siparisler._key_sis_depo_source' => $warehouseKey]);
-
-        if ($timestamp) {
-            $query->andWhere(['>=', 'wms_putaway_status.updated_at', $timestamp]);
-        }
-        return (int)$query->count();
-    }
+    // wms_putaway_status tablosu kaldırıldı - bu metod artık kullanılmıyor
 
     private function getTombstoneCount($warehouseCode, $timestamp = null)
     {
@@ -1326,7 +1409,7 @@ class TerminalController extends Controller
             return $deletedCount;
 
         } catch (\Exception $e) {
-            Yii::error("Tombstone cleanup error: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Tombstone cleanup error: " . $e->getMessage(), 'ERROR');
             return 0;
         }
     }
@@ -1343,8 +1426,7 @@ class TerminalController extends Controller
     $limit = (int)($payload['limit'] ?? 5000);
 
     if (!$warehouseCode) {
-        Yii::$app->response->statusCode = 400;
-        return ['success' => false, 'error' => 'Depo kodu (warehouse_code) zorunludur.'];
+        return $this->errorResponse('Depo kodu (warehouse_code) zorunludur.', 400);
     }
 
     // Get warehouse information from warehouse_code
@@ -1355,14 +1437,12 @@ class TerminalController extends Controller
         ->one();
 
     if (!$warehouseInfo) {
-        Yii::$app->response->statusCode = 400;
-        return ['success' => false, 'error' => 'Depo bulunamadı.'];
+        return $this->errorResponse('Depo bulunamadı.', 400);
     }
 
     $warehouseId = $warehouseInfo['id'];
     if (!$warehouseId) {
-        Yii::$app->response->statusCode = 400;
-        return ['success' => false, 'error' => 'Depo ID bilgisi bulunamadı.'];
+        return $this->errorResponse('Depo ID bilgisi bulunamadı.', 400);
     }
 
 
@@ -1416,11 +1496,11 @@ class TerminalController extends Controller
             // server'dan aktif=0 olanlar da gelmeli ki mobil tarafta doğru çalışsın
 
             $urunlerData = $urunlerQuery->all();
-            $this->castNumericValues($urunlerData, ['id', 'aktif']);
+            $this->applyStandardCasts($urunlerData, 'urunler');
             $data['urunler'] = $urunlerData;
 
         } catch (\Exception $e) {
-            Yii::error("Ürünler tablosu hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Ürünler tablosu hatası: " . $e->getMessage(), 'ERROR');
             throw new \Exception("Ürünler tablosu sorgusu başarısız: " . $e->getMessage());
         }
         // ########## İNKREMENTAL SYNC BİTTİ ##########
@@ -1439,11 +1519,11 @@ class TerminalController extends Controller
             }
 
             $tedarikciData = $tedarikciQuery->all();
-            $this->castNumericValues($tedarikciData, ['id', 'Aktif']);
+            $this->applyStandardCasts($tedarikciData, 'tedarikci');
             $data['tedarikci'] = $tedarikciData;
 
         } catch (\Exception $e) {
-            Yii::error("Tedarikçi tablosu hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Tedarikçi tablosu hatası: " . $e->getMessage(), 'ERROR');
             throw new \Exception("Tedarikçi tablosu sorgusu başarısız: " . $e->getMessage());
         }
         // ########## TEDARİKÇİ İNKREMENTAL SYNC BİTTİ ##########
@@ -1465,7 +1545,7 @@ class TerminalController extends Controller
             $data['birimler'] = $birimlerData;
 
         } catch (\Exception $e) {
-            Yii::error("Birimler tablosu hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Birimler tablosu hatası: " . $e->getMessage(), 'ERROR');
             throw new \Exception("Birimler tablosu sorgusu başarısız: " . $e->getMessage());
         }
         // ########## BİRİMLER İNKREMENTAL SYNC BİTTİ ##########
@@ -1486,7 +1566,7 @@ class TerminalController extends Controller
             $data['barkodlar'] = $barkodlarData;
 
         } catch (\Exception $e) {
-            Yii::error("Barkodlar tablosu hatası: " . $e->getMessage(), __METHOD__);
+            $this->logToFile("Barkodlar tablosu hatası: " . $e->getMessage(), 'ERROR');
             throw new \Exception("Barkodlar tablosu sorgusu başarısız: " . $e->getMessage());
         }
         // ########## BARKODLAR İNKREMENTAL SYNC BİTTİ ##########
@@ -1501,7 +1581,7 @@ class TerminalController extends Controller
         } else {
         }
         $data['shelfs'] = $shelfsQuery->all();
-        $this->castNumericValues($data['shelfs'], ['id', 'warehouse_id', 'is_active']);
+        $this->applyStandardCasts($data['shelfs'], 'shelfs');
 
         // warehouse tablosu kaldırıldı - mobil uygulama SharedPreferences kullanıyor
 
@@ -1538,7 +1618,7 @@ class TerminalController extends Controller
         } else {
         }
         $data['employees'] = $employeesQuery->all();
-        $this->castNumericValues($data['employees'], ['id', 'is_active']);
+        $this->applyStandardCasts($data['employees'], 'employees');
 
         // 2. Siparişleri warehouse _key ile eşleştiriyoruz.
         // Optimize edilmiş alanları seç - gereksiz alanlar kaldırıldı
@@ -1589,7 +1669,7 @@ class TerminalController extends Controller
         $poIds = array_column($data['siparisler'], 'id');
 
         $data['siparis_ayrintili'] = [];
-        $data['wms_putaway_status'] = [];
+        // wms_putaway_status tablosu kaldırıldı
         $data['goods_receipts'] = [];
         $data['goods_receipt_items'] = [];
 
@@ -1613,13 +1693,7 @@ class TerminalController extends Controller
 
             $poLineIds = array_column($data['siparis_ayrintili'], 'id');
             if (!empty($poLineIds)) {
-                // ########## WMS PUTAWAY STATUS İÇİN İNKREMENTAL SYNC ##########
-                $putawayQuery = (new Query())->from('wms_putaway_status')->where(['in', 'purchase_order_line_id', $poLineIds]);
-                if ($serverSyncTimestamp) {
-                    $putawayQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
-                }
-                $data['wms_putaway_status'] = $putawayQuery->all();
-                $this->castNumericValues($data['wms_putaway_status'], ['id', 'purchase_order_line_id'], ['putaway_quantity']);
+                // wms_putaway_status tablosu kaldırıldı - putaway durumu inventory_stock'tan takip ediliyor
             }
 
             // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
@@ -1633,7 +1707,7 @@ class TerminalController extends Controller
 
         // ########## FREE RECEIPTS İÇİN İNKREMENTAL SYNC ##########
         // Use employee-based filtering instead of direct warehouse_id
-        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
         $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
         if (!empty($employeeIds)) {
             $freeReceiptsQuery->andWhere(['in', 'employee_id', $employeeIds]);
@@ -1644,9 +1718,9 @@ class TerminalController extends Controller
             $freeReceiptsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
         }
         $freeReceipts = $freeReceiptsQuery->all();
-        $data['goods_receipts'] = array_merge($data['goods_receipts'] ?? [], $freeReceipts);
+        $data['goods_receipts'] = $this->mergeArraysSafely($data['goods_receipts'], $freeReceipts);
 
-        $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
+        $this->applyStandardCasts($data['goods_receipts'], 'goods_receipts');
 
         // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
         $receiptIds = array_column($data['goods_receipts'], 'id');
@@ -1674,7 +1748,7 @@ class TerminalController extends Controller
         }
 
         // Use employee-based filtering instead of direct warehouse_id
-        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
         $allReceiptIdsForWarehouse = (new Query())
             ->select('goods_receipt_id')
             ->from('goods_receipts')
@@ -1700,7 +1774,7 @@ class TerminalController extends Controller
         }
 
         $data['inventory_stock'] = $stockQuery->all();
-         $this->castNumericValues($data['inventory_stock'], ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+         $this->applyStandardCasts($data['inventory_stock'], 'inventory_stock');
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())
@@ -1754,7 +1828,7 @@ class TerminalController extends Controller
         $result = [
             'success' => true,
             'data' => $data,
-            'timestamp' => (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z'),
+            'timestamp' => $this->getCurrentUtcTimestamp(),
             'stats' => [
                 'urunler_count' => count($data['urunler'] ?? []),
                 'tedarikci_count' => count($data['tedarikci'] ?? []),
@@ -1776,9 +1850,8 @@ class TerminalController extends Controller
         return $result;
 
     } catch (\Exception $e) {
-        Yii::$app->response->statusCode = 500;
-        Yii::error("SyncDownload Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), __METHOD__);
-        return ['success' => false, 'error' => 'Veritabanı indirme sırasında bir hata oluştu: ' . $e->getMessage()];
+        $this->logToFile("SyncDownload Hatası: " . $e->getMessage() . "\nTrace: " . $e->getTraceAsString(), 'ERROR');
+        return $this->errorResponse('Veritabanı indirme sırasında bir hata oluştu: ' . $e->getMessage());
     }
 }
 
@@ -1838,9 +1911,7 @@ class TerminalController extends Controller
                 case 'inventory_transfers':
                     $data = $this->getPaginatedInventoryTransfers($warehouseId, $serverSyncTimestamp, $offset, $limit);
                     break;
-                case 'wms_putaway_status':
-                    $data = $this->getPaginatedWmsPutawayStatus($warehouseId, $serverSyncTimestamp, $offset, $limit);
-                    break;
+                // wms_putaway_status tablosu kaldırıldı
                 case 'inventory_stock_tombstones':
                     $data = $this->getPaginatedTombstones($warehouseId, $serverSyncTimestamp, $offset, $limit);
                     break;
@@ -1859,9 +1930,8 @@ class TerminalController extends Controller
                 ]
             ];
         } catch (\Exception $e) {
-            Yii::$app->response->statusCode = 500;
-            Yii::error("Paginated download hatası ($tableName): " . $e->getMessage(), __METHOD__);
-            return ['success' => false, 'error' => "$tableName tablosu sayfa $page indirilemedi: " . $e->getMessage()];
+            $this->logToFile("Paginated download hatası ($tableName): " . $e->getMessage(), 'ERROR');
+            return $this->errorResponse("$tableName tablosu sayfa $page indirilemedi: " . $e->getMessage());
         }
     }
 
@@ -2098,12 +2168,8 @@ class TerminalController extends Controller
         }
 
         // Free receipts: Filter by employee warehouse instead of direct warehouse_id
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-        $employeeIds = (new Query())
-            ->select('id')
-            ->from('employees')
-            ->where(['warehouse_code' => $warehouseCode])
-            ->column();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
 
         if (!empty($employeeIds)) {
             $conditions[] = ['and', ['siparis_id' => null], ['in', 'employee_id', $employeeIds]];
@@ -2157,7 +2223,7 @@ class TerminalController extends Controller
     }
 
     private function getPaginatedInventoryStock($warehouseId, $serverSyncTimestamp, $offset, $limit) {
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
         if (!$warehouseCode) {
             return [];
         }
@@ -2215,59 +2281,12 @@ class TerminalController extends Controller
         return $data;
     }
 
-    private function getPaginatedWmsPutawayStatus($warehouseId, $serverSyncTimestamp, $offset, $limit)
-    {
-        // Get order line IDs for this warehouse
-        $warehouseInfo = (new Query())
-            ->select(['_key'])
-            ->from('warehouses')
-            ->where(['id' => $warehouseId])
-            ->one();
-
-        if (!$warehouseInfo) {
-            return [];
-        }
-
-        $poIds = (new Query())
-            ->select('id')
-            ->from('siparisler')
-            ->where(['_key_sis_depo_source' => $warehouseInfo['_key']])
-            ->column();
-
-        if (empty($poIds)) {
-            return [];
-        }
-
-        $poLineIds = (new Query())
-            ->select('id')
-            ->from('siparis_ayrintili')
-            ->where(['in', 'siparisler_id', $poIds])
-            ->andWhere(['siparis_ayrintili.turu' => '1']) // DÜZELTME: Tablo öneki eklendi
-            ->column();
-
-        if (empty($poLineIds)) {
-            return [];
-        }
-
-        $query = (new Query())
-            ->from('wms_putaway_status')
-            ->where(['in', 'purchase_order_line_id', $poLineIds]);
-
-        if ($serverSyncTimestamp) {
-            $query->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
-        }
-
-        $query->offset($offset)->limit($limit);
-
-        $data = $query->all();
-        $this->castNumericValues($data, ['id', 'purchase_order_line_id'], ['putaway_quantity']);
-        return $data;
-    }
+    // wms_putaway_status tablosu kaldırıldı - bu metod artık kullanılmıyor
 
     private function getPaginatedTombstones($warehouseId, $serverSyncTimestamp, $offset, $limit)
     {
         // Get warehouse code
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
         if (!$warehouseCode) {
             return [];
         }
@@ -2291,8 +2310,8 @@ class TerminalController extends Controller
     private function getReceiptIdsForWarehouse($warehouseId)
     {
         // Use employee-based filtering instead of direct warehouse_id
-        $warehouseCode = (new Query())->select('warehouse_code')->from('warehouses')->where(['id' => $warehouseId])->scalar();
-        $employeeIds = (new Query())->select('id')->from('employees')->where(['warehouse_code' => $warehouseCode])->column();
+        $warehouseCode = $this->getWarehouseCodeById($warehouseId);
+        $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
         return (new Query())
             ->select('goods_receipt_id')
             ->from('goods_receipts')

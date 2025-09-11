@@ -128,8 +128,6 @@ class _SyncLoadingScreenState extends State<SyncLoadingScreen>
         return 'sync.tables.inventory_stock'.tr();
       case 'inventory_transfers':
         return 'sync.tables.inventory_transfers'.tr();
-      case 'wms_putaway_status':
-        return 'sync.tables.wms_putaway_status'.tr();
       case 'siparisler':
         return 'sync.tables.siparisler'.tr();
       case 'siparis_ayrintili':

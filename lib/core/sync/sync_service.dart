@@ -309,7 +309,7 @@ class SyncService with ChangeNotifier {
       'urunler', 'tedarikci', 'birimler', 'barkodlar', 'employees', 'shelfs',
       'siparisler', 'siparis_ayrintili', 'goods_receipts', 'goods_receipt_items',
       'inventory_stock_tombstones', // ✅ ÖNCE tombstone'lar işlenir
-      'inventory_stock', 'inventory_transfers', 'wms_putaway_status'
+      'inventory_stock', 'inventory_transfers'
     ];
     
     for (final tableName in syncOrder) {

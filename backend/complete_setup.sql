@@ -17,7 +17,6 @@ DROP TABLE IF EXISTS `satin_alma_siparis_fis_satir`;
 DROP TABLE IF EXISTS `shelfs`;
 DROP TABLE IF EXISTS `urunler`;
 DROP TABLE IF EXISTS `warehouses`;
-DROP TABLE IF EXISTS `wms_putaway_status`;
 
 SET FOREIGN_KEY_CHECKS=1;
 
@@ -263,15 +262,6 @@ CREATE TABLE `processed_requests` (
   PRIMARY KEY (`idempotency_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
-CREATE TABLE `wms_putaway_status` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `purchase_order_line_id` int DEFAULT NULL, -- Sütun adı daha anlaşılır hale getirildi
-  `putaway_quantity` decimal(10,2) DEFAULT '0.00',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_wms_putaway_status_line_id` (`purchase_order_line_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
 -- TEST DATA
@@ -352,9 +342,6 @@ ADD CONSTRAINT `fk_transfer_from_location` FOREIGN KEY (`from_location_id`) REFE
 ADD CONSTRAINT `fk_transfer_to_location` FOREIGN KEY (`to_location_id`) REFERENCES `shelfs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
 ADD CONSTRAINT `fk_transfer_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- wms_putaway_status relation
-ALTER TABLE `wms_putaway_status`
-ADD CONSTRAINT `fk_putaway_order_line` FOREIGN KEY (`purchase_order_line_id`) REFERENCES `satin_alma_siparis_fis_satir` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- PERFORMANCE INDEXES
 -- These indexes optimize the N+1 query problem fixed in getOpenPurchaseOrders function

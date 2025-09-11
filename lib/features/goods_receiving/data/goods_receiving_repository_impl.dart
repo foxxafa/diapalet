@@ -394,18 +394,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           ? (receivedQuantityResult.first['total_received'] as num).toDouble() 
           : 0.0;
 
-      // Yerleştirme miktarını al
-      final putawayResult = await db.query(
-        'wms_putaway_status',
-        columns: ['putaway_quantity'],
-        where: 'purchase_order_line_id = ?',
-        whereArgs: [line['id']],
-        limit: 1,
-      );
-
-      final transferredQuantity = putawayResult.isNotEmpty 
-          ? (putawayResult.first['putaway_quantity'] as num).toDouble() 
-          : 0.0;
+      // Yerleştirme miktarını inventory_stock'tan hesaplayabiliriz
+      final transferredQuantity = 0.0;
 
       // Enriched map oluştur - line zaten tüm JOIN bilgilerini içeriyor
       final enrichedMap = Map<String, dynamic>.from(line);
