@@ -44,8 +44,8 @@ class CompactReviewTable extends StatelessWidget {
         if (orderItems.isNotEmpty)
           ..._buildOrderItemRows(context),
         
-        // Sipariş dışı ürünler - delivery note bazında gruplanmış
-        if (outOfOrderItems.isNotEmpty || viewModel.addedItems.any((item) => item.product.isOutOfOrder)) ...[
+        // Sipariş dışı ürünler - sadece serbest mal kabulde delivery note bazında gruplanmış
+        if (isFreeReceiving && (outOfOrderItems.isNotEmpty || viewModel.addedItems.any((item) => item.product.isOutOfOrder))) ...[
           ..._buildDeliveryNoteGroupedItems(context),
         ],
       ],
@@ -100,7 +100,9 @@ class CompactReviewTable extends StatelessWidget {
   }
 
   List<Widget> _buildOrderItemRows(BuildContext context) {
-    // Sort order items by total quantity (items being added + already received) - highest first
+    final widgets = <Widget>[];
+    
+    // Sort order items by total quantity (items being added + already received) - highest first  
     final sortedOrderItems = [...orderItems];
     sortedOrderItems.sort((a, b) {
       final aItemsBeingAdded = viewModel.addedItems.where((item) => 
@@ -113,26 +115,97 @@ class CompactReviewTable extends StatelessWidget {
       final aTotalQuantity = aItemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
       final bTotalQuantity = bItemsBeingAdded.fold<double>(0.0, (sum, item) => sum + item.quantity);
       
-      // Sort by quantity descending (highest first)
       return bTotalQuantity.compareTo(aTotalQuantity);
     });
 
-    return sortedOrderItems.map((orderItem) {
+    // Tüm ürünleri topla: sipariş içi + sipariş dışı (sipariş bazlı mal kabulde)
+    final allItems = <ReceiptItemDraft>[];
+    
+    // Sipariş içi ürünler
+    for (final orderItem in sortedOrderItems) {
+      final itemsBeingAdded = viewModel.addedItems.where((item) => 
+        item.product.key == orderItem.productId && !item.product.isOutOfOrder
+      ).toList();
+      allItems.addAll(itemsBeingAdded);
+    }
+    
+    // Sipariş dışı ürünler (sipariş bazlı mal kabulde)
+    if (!isFreeReceiving) {
+      final outOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder).toList();
+      allItems.addAll(outOfOrderItems);
+    }
+    
+    if (allItems.isNotEmpty) {
+      // Palet bazında gruplama
+      final Map<String?, List<ReceiptItemDraft>> palletGroups = {};
+      final List<ReceiptItemDraft> looseItems = [];
+      
+      for (final item in allItems) {
+        if (item.palletBarcode != null && item.palletBarcode!.isNotEmpty) {
+          palletGroups.putIfAbsent(item.palletBarcode, () => []).add(item);
+        } else {
+          looseItems.add(item);
+        }
+      }
+      
+      // 🚚 Her pallet için section
+      palletGroups.forEach((palletBarcode, palletItems) {
+        widgets.add(_buildPalletHeader(context, palletBarcode!));
+        // Palet içindeki ürünler (indent)
+        for (final item in palletItems) {
+          widgets.add(Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: _buildProductCard(
+              context: context,
+              productName: item.product.name,
+              stockCode: item.product.stockCode,
+              items: [item],
+              isOutOfOrder: item.product.isOutOfOrder,
+            ),
+          ));
+        }
+      });
+      
+      // 📦 Loose Items (palet olmayan ürünler)
+      if (looseItems.isNotEmpty) {
+        widgets.add(_buildLooseItemsHeader(context));
+        for (final item in looseItems) {
+          widgets.add(Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: _buildProductCard(
+              context: context,
+              productName: item.product.name,
+              stockCode: item.product.stockCode,
+              items: [item],
+              isOutOfOrder: item.product.isOutOfOrder,
+            ),
+          ));
+        }
+      }
+    }
+    
+    // Miktar eklenmemiş sipariş ürünleri (0 quantity olanlar)
+    for (final orderItem in sortedOrderItems) {
       final product = orderItem.product;
-      if (product == null) return const SizedBox.shrink();
+      if (product == null) continue;
 
       final itemsBeingAdded = viewModel.addedItems.where((item) => 
         item.product.key == orderItem.productId && !item.product.isOutOfOrder
       ).toList();
       
-      return _buildProductCard(
-        context: context,
-        productName: product.name,
-        stockCode: product.stockCode,
-        items: itemsBeingAdded,
-        orderItem: orderItem,
-      );
-    }).toList();
+      // Sadece miktar eklenmemiş ürünleri göster
+      if (itemsBeingAdded.isEmpty) {
+        widgets.add(_buildProductCard(
+          context: context,
+          productName: product.name,
+          stockCode: product.stockCode,
+          items: [],
+          orderItem: orderItem,
+        ));
+      }
+    }
+    
+    return widgets;
   }
 
   List<Widget> _buildDeliveryNoteGroupedItems(BuildContext context) {
@@ -219,6 +292,39 @@ class CompactReviewTable extends StatelessWidget {
           ),
         ));
       }
+    }
+    
+    return widgets;
+  }
+
+  List<Widget> _buildOrderBasedOutOfOrderItems(BuildContext context) {
+    final widgets = <Widget>[];
+    
+    // Memory'deki sipariş dışı ürünler
+    final memoryOutOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder).toList();
+    
+    // Sipariş dışı ürünleri direkt liste halinde göster (delivery note header olmadan)
+    for (final item in memoryOutOfOrderItems) {
+      widgets.add(_buildProductCard(
+        context: context,
+        productName: item.product.name,
+        stockCode: item.product.stockCode,
+        items: [item],
+        isOutOfOrder: true,
+      ));
+    }
+    
+    // DB'deki önceki kabul edilmiş ürünler
+    for (final productInfo in outOfOrderItems) {
+      widgets.add(_buildProductCard(
+        context: context,
+        productName: productInfo.name,
+        stockCode: productInfo.stockCode,
+        items: [],
+        productInfo: productInfo,
+        isOutOfOrder: true,
+        isFromDB: true,
+      ));
     }
     
     return widgets;
@@ -385,15 +491,20 @@ class CompactReviewTable extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       elevation: 1,
+      color: (!isFreeReceiving && isOutOfOrder) 
+          ? const Color(0xFFFFF3E0) 
+          : theme.cardTheme.color,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: theme.dividerColor.withAlpha(128),
+          color: (!isFreeReceiving && isOutOfOrder) 
+              ? const Color(0xFFFF9800) 
+              : theme.dividerColor.withAlpha(128),
           width: 0.5,
         ),
       ),
       child: InkWell(
-        onTap: (!isOutOfOrder && !isFromDB) ? () => _showDetailDialog(context, productName, stockCode, items, orderItem, productInfo) : null,
+        onTap: (!isOutOfOrder && !isFromDB && (items.isNotEmpty || orderItem != null)) ? () => _showDetailDialog(context, productName, stockCode, items, orderItem, productInfo) : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -429,11 +540,12 @@ class CompactReviewTable extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        // SKT ve palet bilgilerini burada göster
+                        // SKT ve sipariş dışı badge'lerini göster - palet bilgisi header olarak gösterilecek
                         if (items.isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          ..._buildProductExtraInfo(context, items),
+                          ..._buildProductExtraInfo(context, items, showPalletInfo: false, isOutOfOrder: isOutOfOrder),
                         ],
+                        
                       ],
                     ),
                   ],
@@ -514,7 +626,7 @@ class CompactReviewTable extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildProductExtraInfo(BuildContext context, List<ReceiptItemDraft> items) {
+  List<Widget> _buildProductExtraInfo(BuildContext context, List<ReceiptItemDraft> items, {PurchaseOrderItem? orderItem, bool showPalletInfo = true, bool isOutOfOrder = false}) {
     final theme = Theme.of(context);
     final widgets = <Widget>[];
     
@@ -550,8 +662,45 @@ class CompactReviewTable extends StatelessWidget {
       );
     }
     
-    // Palet sayısını gösterme - kaldırıldı
-
+    // Palet bilgisini göster - sadece showPalletInfo true ise
+    if (showPalletInfo) {
+      Set<String> allPalletBarcodes = {};
+      
+      // Items'dan palet bilgisi
+      final itemsPalletBarcodes = items.where((item) => item.palletBarcode != null && item.palletBarcode!.isNotEmpty).map((item) => item.palletBarcode!);
+      allPalletBarcodes.addAll(itemsPalletBarcodes);
+      
+      if (allPalletBarcodes.isNotEmpty) {
+      if (widgets.isNotEmpty) widgets.add(const SizedBox(width: 8));
+      widgets.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer.withAlpha(153),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: theme.colorScheme.secondary.withAlpha(77),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.pallet, size: 12, color: theme.colorScheme.secondary),
+              const SizedBox(width: 3),
+              Text(
+                allPalletBarcodes.length == 1 ? allPalletBarcodes.first : '${allPalletBarcodes.length}x',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      }
+    }
     
     return widgets;
   }
