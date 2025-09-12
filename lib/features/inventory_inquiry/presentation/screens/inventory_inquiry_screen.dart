@@ -6,6 +6,7 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/features/inventory_inquiry/constants/inventory_inquiry_constants.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -62,9 +63,9 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
     String displayCode = code;
 
     // GTIN (01) varsa, onu kullan. Eğer 14 haneliyse ve '0' ile başlıyorsa, kısalt.
-    if (parsedData.containsKey('01')) {
-      String gtin = parsedData['01']!;
-      if (gtin.length == 14 && gtin.startsWith('0')) {
+    if (parsedData.containsKey(InventoryInquiryConstants.gs1GtinKey)) {
+      String gtin = parsedData[InventoryInquiryConstants.gs1GtinKey]!;
+      if (gtin.length == InventoryInquiryConstants.gtin14Length && gtin.startsWith(InventoryInquiryConstants.gtinLeadingZero)) {
         displayCode = gtin.substring(1); // Baştaki '0'ı at
       } else {
         displayCode = gtin;
@@ -187,7 +188,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(InventoryInquiryConstants.searchBarPadding),
       child: Column(
         children: [
           QrTextField(
@@ -223,13 +224,13 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
   Widget _buildProductSuggestions() {
     return Container(
-      margin: const EdgeInsets.only(top: 8),
+      margin: const EdgeInsets.only(top: InventoryInquiryConstants.suggestionMarginTop),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(InventoryInquiryConstants.borderRadius),
       ),
       child: Column(
-        children: _productSuggestions.take(5).map((product) {
+        children: _productSuggestions.take(InventoryInquiryConstants.maxDisplayedSuggestions).map((product) {
           return ListTile(
             dense: true,
             title: Text(
@@ -295,9 +296,9 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       itemBuilder: (context, index) {
         final location = _locations![index];
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          margin: const EdgeInsets.symmetric(horizontal: InventoryInquiryConstants.cardMarginHorizontal, vertical: InventoryInquiryConstants.cardMarginVertical),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(InventoryInquiryConstants.cardPadding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -312,25 +313,25 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                   '${'inventory_inquiry.stock_code'.tr()}: ${location.productCode}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const Divider(height: 24),
+                const Divider(height: InventoryInquiryConstants.dividerHeight),
                 _buildInfoRow(
                     Icons.inventory,
                     'inventory_inquiry.quantity'.tr(),
                     '${location.quantity.toInt()} ${location.unitName ?? 'N/A'}'),
-                const SizedBox(height: 8),
+                const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
                 _buildInfoRow(
                     Icons.location_on,
                     'inventory_inquiry.location'.tr(),
                     location.locationName ?? 'N/A'),
                 if (location.palletBarcode != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
                   _buildInfoRow(
                       Icons.pallet,
                       'inventory_inquiry.pallet_barcode'.tr(),
                       location.palletBarcode!),
                 ],
                 if (location.expiryDate != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
                   _buildInfoRow(
                       Icons.date_range,
                       'inventory_inquiry.expiry_date'.tr(),
@@ -347,8 +348,8 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.secondary),
-        const SizedBox(width: 12),
+        Icon(icon, size: InventoryInquiryConstants.iconSize, color: Theme.of(context).colorScheme.secondary),
+        const SizedBox(width: InventoryInquiryConstants.iconTextSpacing),
         Text('$label: ', style: Theme.of(context).textTheme.bodyLarge),
         Expanded(
           child: Text(

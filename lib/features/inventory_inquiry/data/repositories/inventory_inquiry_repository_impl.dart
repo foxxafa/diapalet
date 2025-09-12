@@ -2,6 +2,7 @@
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
+import 'package:diapalet/features/inventory_inquiry/constants/inventory_inquiry_constants.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/entities/product_location.dart';
 import 'package:diapalet/features/inventory_inquiry/domain/repositories/inventory_inquiry_repository.dart';
 
@@ -19,11 +20,11 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
     final searchTerms = <String>{}; // Benzersizliği korumak için Set kullan
 
     // 1. Sadece GS1 GTIN (01) kodunu ara
-    if (parsedData.containsKey('01')) {
-      final gtin = parsedData['01']!;
+    if (parsedData.containsKey(InventoryInquiryConstants.gs1GtinKey)) {
+      final gtin = parsedData[InventoryInquiryConstants.gs1GtinKey]!;
       searchTerms.add(gtin);
       // Eğer GTIN-14 ise ve '0' ile başlıyorsa, baştaki '0'ı atıp GTIN-13 olarak da ekle
-      if (gtin.length == 14 && gtin.startsWith('0')) {
+      if (gtin.length == InventoryInquiryConstants.gtin14Length && gtin.startsWith(InventoryInquiryConstants.gtinLeadingZero)) {
         searchTerms.add(gtin.substring(1));
       }
     } else {
@@ -56,7 +57,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
           JOIN ${DbTables.products} u ON u._key = s.urun_key
           LEFT JOIN birimler unit ON unit._key = s.birim_key
           LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
-          WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
+          WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
           ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
         ''';
         
@@ -97,13 +98,13 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
         LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
         WHERE (u2.${DbColumns.productsCode} LIKE ? OR bark.barkod LIKE ?)
       )
-        AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
-        AND s.${DbColumns.stockQuantity} > 0
+        AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+        AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
         AND s.${DbColumns.stockLocationId} IS NOT NULL
       ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.createdAt} ASC, u.${DbColumns.productsCode} ASC
     ''';
     
-    final results = await db.rawQuery(sql, ['%$query%', '%$query%']);
+    final results = await db.rawQuery(sql, ['${InventoryInquiryConstants.wildcardPrefix}$query${InventoryInquiryConstants.wildcardSuffix}', '${InventoryInquiryConstants.wildcardPrefix}$query${InventoryInquiryConstants.wildcardSuffix}']);
     return results.map((map) => ProductLocation.fromMap(map)).toList();
   }
 
@@ -124,13 +125,13 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
       LEFT JOIN birimler b ON b.StokKodu = u.${DbColumns.productsCode}
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE (u.${DbColumns.productsCode} LIKE ? OR bark.barkod LIKE ?)
-        AND s.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}'
-        AND s.${DbColumns.stockQuantity} > 0
+        AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+        AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
         AND s.${DbColumns.stockLocationId} IS NOT NULL
       ORDER BY u.${DbColumns.productsCode} ASC
-      LIMIT 10
+      LIMIT ${InventoryInquiryConstants.maxProductSuggestions}
     ''';
     
-    return await db.rawQuery(sql, ['%$query%', '%$query%']);
+    return await db.rawQuery(sql, ['${InventoryInquiryConstants.wildcardPrefix}$query${InventoryInquiryConstants.wildcardSuffix}', '${InventoryInquiryConstants.wildcardPrefix}$query${InventoryInquiryConstants.wildcardSuffix}']);
   }
 }
