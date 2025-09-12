@@ -9,6 +9,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:diapalet/core/services/pdf_service.dart';
+import 'package:diapalet/features/pending_operations/constants/pending_operations_constants.dart';
 
 
 class PendingOperationsScreen extends StatefulWidget {
@@ -62,7 +63,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         });
       }
     } catch (e) {
-      debugPrint("common_labels.data_load_error".tr(namedArgs: {'error': e.toString()}));
+      // Veri yükleme hatası - hata yönetimi için log tutulabilir
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -260,7 +261,7 @@ class _OperationList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
+        padding: const EdgeInsets.fromLTRB(PendingOperationsConstants.listPaddingLeft, PendingOperationsConstants.listPaddingTop, PendingOperationsConstants.listPaddingRight, PendingOperationsConstants.listPaddingBottom),
         itemCount: operations.length,
         itemBuilder: (context, index) {
           return _OperationCard(
@@ -284,7 +285,7 @@ class _OperationCard extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         // Make the dialog wider for better content display
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        insetPadding: const EdgeInsets.symmetric(horizontal: PendingOperationsConstants.dialogHorizontalInset, vertical: PendingOperationsConstants.dialogVerticalInset),
         title: Text(operation.displayTitle),
         content: SizedBox(
           width: MediaQuery.of(context).size.width,
@@ -296,8 +297,8 @@ class _OperationCard extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.picture_as_pdf, size: 18),
-                const SizedBox(width: 4),
+                const Icon(Icons.picture_as_pdf, size: PendingOperationsConstants.mediumIconSize),
+                const SizedBox(width: PendingOperationsConstants.detailSectionSpacing / 2),
                 Text('pdf_report.actions.generate'.tr()),
               ],
             ),
@@ -388,11 +389,11 @@ class _OperationCard extends StatelessWidget {
     }
 
     return Card(
-      elevation: hasError ? 2 : 1,
+      elevation: hasError ? PendingOperationsConstants.cardElevationError : PendingOperationsConstants.cardElevationNormal,
       shape: RoundedRectangleBorder(
         side: BorderSide(
-          color: hasError ? theme.colorScheme.error.withAlpha(128) : Colors.transparent,
-          width: 1.5,
+          color: hasError ? theme.colorScheme.error.withAlpha(PendingOperationsConstants.cardBorderAlpha) : Colors.transparent,
+          width: PendingOperationsConstants.cardBorderWidth,
         ),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -525,7 +526,7 @@ class _OperationDetailsView extends StatelessWidget {
           operationDate
         );
       } catch (e) {
-        debugPrint('Error checking force close: $e');
+        // Force close kontrol hatası - hata yönetimi için log tutulabilir
       }
     }
 
