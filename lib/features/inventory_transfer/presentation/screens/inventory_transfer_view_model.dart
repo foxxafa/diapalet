@@ -13,6 +13,7 @@ import 'package:diapalet/features/inventory_transfer/domain/repositories/invento
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
 
 
 class InventoryTransferViewModel extends ChangeNotifier {
@@ -144,7 +145,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _availableTargetLocationsMap = await _repo.getTargetLocations(excludeReceivingArea: isPutawayMode);
 
       if (isPutawayMode) {
-        _selectedSourceLocationName = '000';
+        _selectedSourceLocationName = InventoryTransferConstants.receivingAreaCode;
         sourceLocationController.text = _selectedSourceLocationName!;
         await _loadContainers();
       } else {
@@ -187,7 +188,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
         employeeId: employeeId,
         transferDate: DateTime.now(),
         operationType: finalOperationMode,
-        sourceLocationName: isPutawayMode ? '000' : _selectedSourceLocationName!,
+        sourceLocationName: isPutawayMode ? InventoryTransferConstants.receivingAreaCode : _selectedSourceLocationName!,
         targetLocationName: _selectedTargetLocationName!,
       );
 
@@ -457,7 +458,6 @@ class InventoryTransferViewModel extends ChangeNotifier {
   // Error Handling & State Update
   void _setError(String? messageKey, [Object? e]) {
     if (e != null) {
-      debugPrint("Error in InventoryTransferViewModel: $e");
       if (messageKey?.contains('error_invalid_location_code') == true) {
         _lastError = messageKey?.tr(namedArgs: {'code': e.toString()});
       } else if (messageKey?.contains('error_invalid_location_for_operation') == true) {
@@ -607,20 +607,20 @@ class InventoryTransferViewModel extends ChangeNotifier {
       int? orderId;
       String? deliveryNoteNumber;
       int? locationId;
-      List<String> stockStatuses = ['available', 'receiving'];
+      List<String> stockStatuses = [InventoryTransferConstants.stockStatusAvailable, InventoryTransferConstants.stockStatusReceiving];
 
       if (_selectedOrder != null) {
         // Order-based transfer (putaway from order)
         orderId = _selectedOrder!.id;
-        stockStatuses = ['receiving']; // Only search receiving items for putaway
+        stockStatuses = [InventoryTransferConstants.stockStatusReceiving]; // Only search receiving items for putaway
       } else if (_deliveryNoteNumber != null && _deliveryNoteNumber!.isNotEmpty) {
         // Free receipt transfer (putaway from delivery note)
         deliveryNoteNumber = _deliveryNoteNumber;
-        stockStatuses = ['receiving']; // Only search receiving items for putaway
-      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+        stockStatuses = [InventoryTransferConstants.stockStatusReceiving]; // Only search receiving items for putaway
+      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != InventoryTransferConstants.receivingAreaCode) {
         // Shelf-to-shelf transfer
         locationId = _availableSourceLocationsMap[_selectedSourceLocationName];
-        stockStatuses = ['available']; // Only search available items for shelf transfer
+        stockStatuses = [InventoryTransferConstants.stockStatusAvailable]; // Only search available items for shelf transfer
       }
       // Otherwise search all available products
 
@@ -631,8 +631,6 @@ class InventoryTransferViewModel extends ChangeNotifier {
         locationId: locationId,
         stockStatuses: stockStatuses,
       );
-
-      debugPrint('Product search completed: ${_searchResults.length} results found');
     } catch (e) {
       _setError('inventory_transfer.error_searching_products', e);
       _searchResults = [];

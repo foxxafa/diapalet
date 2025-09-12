@@ -24,6 +24,8 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/utils/keyboard_utils.dart';
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
+import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
@@ -43,9 +45,9 @@ class InventoryTransferScreen extends StatefulWidget {
 
 class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   // --- Sabitler ve Stil Değişkenleri ---
-  static const double _gap = 12.0;
-  static const double _smallGap = 8.0;
-  final _borderRadius = BorderRadius.circular(12.0);
+  static const double _gap = InventoryTransferConstants.standardGap;
+  static const double _smallGap = InventoryTransferConstants.smallGap;
+  final _borderRadius = BorderRadius.circular(InventoryTransferConstants.borderRadius);
 
   // --- State ve Controller'lar ---
   final _formKey = GlobalKey<FormState>();
@@ -187,8 +189,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       _availableTargetLocations = results[1];
 
       if (widget.selectedOrder != null || widget.isFreePutAway) {
-        _selectedSourceLocationName = '000';
-        _sourceLocationController.text = '000';
+        _selectedSourceLocationName = InventoryTransferConstants.receivingAreaCode;
+        _sourceLocationController.text = InventoryTransferConstants.receivingAreaCode;
         _isSourceLocationValid = true; // Mark as valid for order/free putaway
         if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
           // FIX: Fetch the goods_receipt_id for the free receipt to use in the transfer payload.
@@ -241,7 +243,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       palletCheck: () async {
         final pallets = await _repo.getPalletIdsAtLocation(
           null, 
-          stockStatuses: ['receiving'], 
+          stockStatuses: [InventoryTransferConstants.stockStatusReceiving], 
           deliveryNoteNumber: widget.selectedDeliveryNote
         );
         return pallets.isNotEmpty;
@@ -378,20 +380,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       int? orderId;
       String? deliveryNoteNumber;
       int? locationId;
-      List<String> stockStatuses = ['available', 'receiving'];
+      List<String> stockStatuses = [InventoryTransferConstants.stockStatusAvailable, InventoryTransferConstants.stockStatusReceiving];
 
       if (widget.selectedOrder != null) {
         // Order-based transfer (putaway from order)
         orderId = widget.selectedOrder!.id;
-        stockStatuses = ['receiving']; // Only search receiving items for putaway
+        stockStatuses = [InventoryTransferConstants.stockStatusReceiving]; // Only search receiving items for putaway
       } else if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
         // Free receipt transfer (putaway from delivery note)
         deliveryNoteNumber = widget.selectedDeliveryNote;
-        stockStatuses = ['receiving']; // Only search receiving items for putaway
-      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+        stockStatuses = [InventoryTransferConstants.stockStatusReceiving]; // Only search receiving items for putaway
+      } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != InventoryTransferConstants.receivingAreaCode) {
         // Shelf-to-shelf transfer
         locationId = _availableSourceLocations[_selectedSourceLocationName];
-        stockStatuses = ['available']; // Only search available items for shelf transfer
+        stockStatuses = [InventoryTransferConstants.stockStatusAvailable]; // Only search available items for shelf transfer
       }
 
       final results = await _repo.searchProductsForTransfer(
@@ -480,7 +482,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         return result.first['birimadi'] as String?;
       }
     } catch (e) {
-      debugPrint('Error getting unit name for $birimKey: $e');
+      // Error getting unit name for birimKey
     }
     
     return null;
@@ -521,20 +523,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         if (widget.selectedOrder != null) {
           // Order-based putaway
           whereClause = 'urun_key = ? AND siparis_id = ? AND stock_status = ?';
-          whereArgs = [product.key, widget.selectedOrder!.id, 'receiving'];
+          whereArgs = [product.key, widget.selectedOrder!.id, InventoryTransferConstants.stockStatusReceiving];
         } else if (widget.isFreePutAway) {
           // Free putaway - get all receiving items for this product
           whereClause = 'urun_key = ? AND stock_status = ?';
-          whereArgs = [product.key, 'receiving'];
-        } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != '000') {
+          whereArgs = [product.key, InventoryTransferConstants.stockStatusReceiving];
+        } else if (_selectedSourceLocationName != null && _selectedSourceLocationName != InventoryTransferConstants.receivingAreaCode) {
           // Shelf-to-shelf transfer
           final locationId = _availableSourceLocations[_selectedSourceLocationName];
           whereClause = 'urun_key = ? AND location_id = ? AND stock_status = ?';
-          whereArgs = [product.key, locationId, 'available'];
+          whereArgs = [product.key, locationId, InventoryTransferConstants.stockStatusAvailable];
         } else {
           // Receiving area transfer
           whereClause = 'urun_key = ? AND location_id IS NULL AND stock_status = ?';
-          whereArgs = [product.key, 'available'];
+          whereArgs = [product.key, InventoryTransferConstants.stockStatusAvailable];
         }
         
         final stockMaps = await db.query('inventory_stock', 
@@ -645,13 +647,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       String? deliveryNoteNumber;
 
       if (widget.selectedOrder != null) {
-        statusesToQuery = ['receiving'];
+        statusesToQuery = [InventoryTransferConstants.stockStatusReceiving];
       } else if (widget.isFreePutAway) {
-        statusesToQuery = ['receiving'];
+        statusesToQuery = [InventoryTransferConstants.stockStatusReceiving];
         deliveryNoteNumber = widget.selectedDeliveryNote;
       }
       else {
-        statusesToQuery = ['available'];
+        statusesToQuery = [InventoryTransferConstants.stockStatusAvailable];
       }
 
       List<dynamic> containers;
@@ -714,8 +716,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       List<ProductItem> contents = [];
       final stockStatus = (widget.selectedOrder != null || widget.isFreePutAway)
-          ? 'receiving'
-          : 'available';
+          ? InventoryTransferConstants.stockStatusReceiving
+          : InventoryTransferConstants.stockStatusAvailable;
 
       if (_selectedMode == AssignmentMode.pallet && container is String) {
         contents = await _repo.getPalletContents(
@@ -748,8 +750,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _productQuantityFocusNodes[product.key] = FocusNode();
         }
       });
-    } catch (e, s) {
-      debugPrint('Error fetching container contents: $e\n$s');
+    } catch (e) {
       if (mounted) _showErrorSnackBar('inventory_transfer.error_loading_content'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isLoadingContainerContents = false);
@@ -769,9 +770,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qtyText = _productQuantityControllers[product.key]?.text ?? '0';
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
-        // KRITIK DEBUG: ProductItem birimKey kontrolü
-        debugPrint("DEBUG ProductItem - key: ${product.key}, birimKey: ${product.birimKey}, name: ${product.name}");
-        
         itemsToTransfer.add(TransferItemDetail(
           productKey: product.key, // _key değeri kullanılıyor
           birimKey: product.birimKey, // KRITIK FIX: birimKey eklendi
@@ -842,8 +840,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           _resetForm(resetAll: true);
         }
       }
-    } catch (e, s) {
-      debugPrint('Lokal transfer veya senkronizasyon hatası: $e\n$s');
+    } catch (e) {
       if (mounted) _showErrorSnackBar('inventory_transfer.error_saving'.tr(namedArgs: {'error': e.toString()}));
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -900,7 +897,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             key: _formKey,
             autovalidateMode: AutovalidateMode.disabled,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.smallGap),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -926,9 +923,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           controller: _sourceLocationController,
                           focusNode: _sourceLocationFocusNode,
                           enabled: !(widget.selectedOrder != null || widget.isFreePutAway),
-                          decoration: _inputDecoration(
+                          decoration: SharedInputDecoration.create(
+                            context,
                             'inventory_transfer.label_source_location'.tr(),
                             isValid: _isSourceLocationValid,
+                            borderRadius: InventoryTransferConstants.borderRadius,
+                            horizontalPadding: InventoryTransferConstants.largePadding,
+                            verticalPadding: InventoryTransferConstants.largePadding,
                           ),
                           validator: (val) {
                             // Skip validation if field is disabled (free putaway or order-based)
@@ -1017,11 +1018,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       color: theme.colorScheme.primaryContainer,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(InventoryTransferConstants.borderRadius),
         side: BorderSide(color: theme.colorScheme.primaryContainer),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(InventoryTransferConstants.standardGap),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1053,7 +1054,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final first = await _barcodeService.getInitialBarcode();
       if (first != null && first.isNotEmpty) _handleBarcode(first);
     } catch(e) {
-      debugPrint("Initial barcode error: $e");
+      // Initial barcode error handled
     }
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
@@ -1218,7 +1219,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                 return const SizedBox.shrink();
               }
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: InventoryTransferConstants.microGap),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1261,7 +1262,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         textAlign: TextAlign.center,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                        decoration: _inputDecoration('inventory_transfer.label_quantity'.tr()),
+                        decoration: SharedInputDecoration.create(context, 'inventory_transfer.label_quantity'.tr(), borderRadius: InventoryTransferConstants.borderRadius),
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
                           final qty = double.tryParse(value);
@@ -1326,30 +1327,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false, String? hintText}) {
-    final theme = Theme.of(context);
-    final borderColor = isValid ? Colors.green : theme.dividerColor;
-    final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
-    final borderWidth = isValid ? 2.5 : 1.0; // Kalın yeşil border
-
-    return InputDecoration(
-      labelText: label,
-      hintText: hintText,
-      filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
-      border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: borderColor, width: borderWidth)),
-      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
-      errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
-      focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // QrTextField ile aynı yükseklik
-      isDense: true,
-      enabled: enabled,
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
-      suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(height: 0.8, fontSize: 11),
-    );
-  }  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
+  Future<bool?> _showConfirmationDialog(List<TransferItemDetail> items, AssignmentMode mode) async {
     return Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -1366,7 +1344,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
-    debugPrint("Snackbar Error: $message");
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
@@ -1388,7 +1365,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               child: TextFormField(
                 controller: _selectedMode == AssignmentMode.product ? _productSearchController : _scannedContainerIdController,
                 focusNode: _selectedMode == AssignmentMode.product ? _productSearchFocusNode : _containerFocusNode,
-                decoration: _inputDecoration(
+                decoration: SharedInputDecoration.create(
+                  context,
                   _selectedMode == AssignmentMode.pallet 
                       ? 'inventory_transfer.label_pallet'.tr() 
                       : _dynamicProductLabel ?? 'inventory_transfer.label_product'.tr(),
@@ -1399,6 +1377,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : null,
+                  borderRadius: InventoryTransferConstants.borderRadius,
                 ),
                 validator: (val) => (val == null || val.isEmpty) ? 'inventory_transfer.validator_required_field'.tr() : null,
                 onChanged: _selectedMode == AssignmentMode.product 
@@ -1537,7 +1516,7 @@ class _QrButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(InventoryTransferConstants.borderRadius)),
           padding: EdgeInsets.zero,
         ),
         child: const Icon(Icons.qr_code_scanner, size: 28), // 28 boyutunda icon
@@ -1571,7 +1550,7 @@ class _InventoryConfirmationPage extends StatelessWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(InventoryTransferConstants.largePadding),
         children: [
           Text(
             'inventory_transfer.dialog_confirm_transfer_body'.tr(
@@ -1596,8 +1575,8 @@ class _InventoryConfirmationPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 16.0),
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(vertical: InventoryTransferConstants.largePadding),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(InventoryTransferConstants.borderRadius)),
             ),
             onPressed: () => Navigator.of(context).pop(true),
             child: Text('inventory_transfer.dialog_button_confirm'.tr()),

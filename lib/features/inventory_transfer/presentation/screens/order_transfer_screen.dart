@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
 
 class OrderTransferScreen extends StatefulWidget {
   final PurchaseOrder order;
@@ -34,9 +35,9 @@ class OrderTransferScreen extends StatefulWidget {
 
 class _OrderTransferScreenState extends State<OrderTransferScreen> {
   // --- Sabitler ve Stil Değişkenleri ---
-  static const double _gap = 12.0;
-  static const double _smallGap = 8.0;
-  final _borderRadius = BorderRadius.circular(12.0);
+  static const double _gap = InventoryTransferConstants.standardGap;
+  static const double _smallGap = InventoryTransferConstants.smallGap;
+  final _borderRadius = BorderRadius.circular(InventoryTransferConstants.borderRadius);
 
   // --- State ve Controller'lar ---
   final _formKey = GlobalKey<FormState>();
@@ -49,7 +50,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   AssignmentMode _selectedMode = AssignmentMode.pallet;
 
   // Kaynak lokasyon sipariş bazlı transferde her zaman "Mal Kabul Alanı"
-  final String _sourceLocationName = '000';
+  final String _sourceLocationName = InventoryTransferConstants.receivingAreaCode;
   final _sourceLocationController = TextEditingController();
 
   Map<String, int?> _availableTargetLocations = {};
@@ -101,7 +102,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     });
 
     // Kaynak lokasyon her zaman "Mal Kabul Alanı"
-    _sourceLocationController.text = '000';
+    _sourceLocationController.text = InventoryTransferConstants.receivingAreaCode;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repo = Provider.of<InventoryTransferRepository>(context, listen: false);
@@ -400,7 +401,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': barcode}));
       }
     } catch (e) {
-      debugPrint('Barcode search error: $e');
       _scannedContainerIdController.clear();
       _showErrorSnackBar('order_transfer.error_container_not_found'.tr(namedArgs: {'data': barcode}));
     }
@@ -485,7 +485,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         return result.first['birimadi'] as String?;
       }
     } catch (e) {
-      debugPrint('Error getting unit name for $birimKey: $e');
+      // Error getting unit name for birimKey
     }
     
     return null;
@@ -523,7 +523,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                     key: _formKey,
                     autovalidateMode: AutovalidateMode.disabled,
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.smallGap),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -988,7 +988,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Database barcode search error: $e');
+      // Database barcode search error handled
     }
   }
 
@@ -1023,7 +1023,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                 return const SizedBox.shrink();
               }
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: InventoryTransferConstants.microGap),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1205,7 +1205,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       final first = await _barcodeService.getInitialBarcode();
       if (first != null && first.isNotEmpty) _handleBarcode(first);
     } catch(e) {
-      debugPrint("Initial barcode error: $e");
+      // Initial barcode error handled
     }
 
     _intentSub = _barcodeService.stream.listen(_handleBarcode,
@@ -1257,7 +1257,7 @@ class _QrButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(InventoryTransferConstants.borderRadius)),
           padding: EdgeInsets.zero,
         ),
         child: const Icon(Icons.qr_code_scanner, size: 28), // Tutarlı 28 boyutunda icon
@@ -1314,7 +1314,7 @@ class _SearchPageState<T> extends State<_SearchPage<T>> {
         ),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(InventoryTransferConstants.largePadding),
         child: Column(
           children: <Widget>[
             TextField(
@@ -1376,7 +1376,7 @@ class _ConfirmationPage extends StatelessWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(InventoryTransferConstants.largePadding),
         children: [
           Text(
             'order_transfer.dialog_confirm_transfer_body'.tr(
@@ -1397,7 +1397,7 @@ class _ConfirmationPage extends StatelessWidget {
         ],
       ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0).copyWith(bottom: 24.0),
+        padding: const EdgeInsets.all(InventoryTransferConstants.largePadding).copyWith(bottom: 24.0),
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),

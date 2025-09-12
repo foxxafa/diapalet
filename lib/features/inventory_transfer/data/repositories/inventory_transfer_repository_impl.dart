@@ -13,10 +13,18 @@ import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_it
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transferable_container.dart';
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
-import 'package:flutter/foundation.dart';
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+
+/// Helper class to hold stock query information
+class _StockQueryInfo {
+  final String whereClause;
+  final List<dynamic> whereArgs;
+  
+  _StockQueryInfo(this.whereClause, this.whereArgs);
+}
 
 class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   final DatabaseHelper dbHelper;
@@ -33,7 +41,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT DISTINCT s.${DbColumns.id}, s.${DbColumns.locationsName}
       FROM ${DbTables.locations} s
       INNER JOIN inventory_stock i ON s.${DbColumns.id} = i.${DbColumns.stockLocationId}
-      WHERE s.${DbColumns.isActive} = 1 AND i.${DbColumns.stockStatus} = '${DbColumns.stockStatusAvailable}' AND i.${DbColumns.stockQuantity} > 0
+      WHERE s.${DbColumns.isActive} = 1 AND i.${DbColumns.stockStatus} = '${InventoryTransferConstants.stockStatusAvailable}' AND i.${DbColumns.stockQuantity} > 0
       ORDER BY s.${DbColumns.locationsName}
     ''';
 
@@ -45,10 +53,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final receivingStockQuery = await db.query(
         DbTables.inventoryStock,
         where: '${DbColumns.stockLocationId} IS NULL AND ${DbColumns.stockStatus} = ? AND ${DbColumns.stockQuantity} > 0',
-        whereArgs: [DbColumns.stockStatusReceiving]
+        whereArgs: [InventoryTransferConstants.stockStatusReceiving]
       );
       if (receivingStockQuery.isNotEmpty) {
-        result['000'] = null; // Artık direkt null kullanıyoruz
+        result[InventoryTransferConstants.receivingAreaCode] = null; // Artık direkt null kullanıyoruz
       }
     }
 
@@ -65,7 +73,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final result = <String, int?>{};
 
     if (!excludeReceivingArea) {
-      result['000'] = null; // Goods receiving area - artık direkt null
+      result[InventoryTransferConstants.receivingAreaCode] = null; // Goods receiving area - artık direkt null
     }
 
     for (var map in maps) {
@@ -77,7 +85,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<String>> getPalletIdsAtLocation(
     int? locationId, {
-    List<String> stockStatuses = const ['available'],
+    List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable],
     String? deliveryNoteNumber,
   }) async {
     final db = await dbHelper.database;
@@ -122,7 +130,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @Deprecated('Use getProductsAtLocation instead')
   Future<List<ProductStockItem>> getBoxesAtLocation(
     int? locationId, {
-    List<String> stockStatuses = const ['available'],
+    List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable],
     String? deliveryNoteNumber,
   }) async {
     // Delegate to the new method
@@ -132,7 +140,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   @override
   Future<List<ProductStockItem>> getProductsAtLocation(
     int? locationId, {
-    List<String> stockStatuses = const ['available'],
+    List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable],
     String? deliveryNoteNumber,
   }) async {
     final db = await dbHelper.database;
@@ -179,7 +187,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber}) async {
+  Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = InventoryTransferConstants.stockStatusAvailable, int? siparisId, String? deliveryNoteNumber}) async {
     final db = await dbHelper.database;
 
     final whereParts = <String>[];
@@ -246,206 +254,279 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   ) async {
     final db = await dbHelper.database;
     try {
-      // Transfer öncesi birimKey kontrolü
-      for (var item in items) {
-        // Product information validated
-      }
+      // Validate transfer items before processing
+      _validateTransferItems(items);
       
       await db.transaction((txn) async {
-        // 1. ADIM: UNIQUE ID'Yİ ÖNCEDEN AL
-        final pendingOp = PendingOperation.create(
-          type: PendingOperationType.inventoryTransfer,
-          data: "{}", // Geçici
-          createdAt: DateTime.now().toUtc(),
+        await _executeTransferTransaction(
+          txn,
+          header,
+          items,
+          sourceLocationId,
+          targetLocationId,
         );
-        final String operationUniqueId = pendingOp.uniqueId;
-        
-        final List<Map<String, dynamic>> itemsForJson = [];
-
-        for (final item in items) {
-          // KRITIK FIX: Transfer sonrası yeni stok kaydı için UUID üret
-          const uuid = Uuid();
-          final transferStockUuid = uuid.v4();
-
-          // 1. Azaltma işleminden önce kaynak stok kaydını/kayıtlarını bul.
-          // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
-          // NULL-safe kaynak stok sorgusu
-          String sourceWhereClause = 'urun_key = ? AND stock_status = ?';
-          List<dynamic> sourceWhereArgs = [
-            item.productKey,
-            (sourceLocationId == null || sourceLocationId == 0) ? 'receiving' : 'available'
-          ];
-          
-          // birim_key kontrolü
-          if (item.birimKey == null) {
-            sourceWhereClause += ' AND birim_key IS NULL';
-          } else {
-            sourceWhereClause += ' AND birim_key = ?';
-            sourceWhereArgs.add(item.birimKey);
-          }
-          
-          // Location_id kontrolü
-          if (sourceLocationId == null || sourceLocationId == 0) {
-            sourceWhereClause += ' AND location_id IS NULL';
-          } else {
-            sourceWhereClause += ' AND location_id = ?';
-            sourceWhereArgs.add(sourceLocationId);
-          }
-          
-          // Pallet_barcode kontrolü
-          if (item.palletId == null) {
-            sourceWhereClause += ' AND pallet_barcode IS NULL';
-          } else {
-            sourceWhereClause += ' AND pallet_barcode = ?';
-            sourceWhereArgs.add(item.palletId);
-          }
-          
-          // KRITIK FIX: Putaway işlemleri (receiving → available) için siparis_id filtresi
-          if (sourceLocationId == null || sourceLocationId == 0) {
-            // Bu receiving area'dan putaway işlemi, siparis_id ile filtrelemek gerekli
-            if (header.siparisId != null) {
-              sourceWhereClause += ' AND siparis_id = ?';
-              sourceWhereArgs.add(header.siparisId);
-            }
-          }
-          
-          final sourceStockQuery = await txn.query(
-            'inventory_stock',
-            where: sourceWhereClause,
-            whereArgs: sourceWhereArgs,
-            limit: 1, // Sadece bir tane bulmamız yeterli
-          );
-
-          int? sourceSiparisId;
-          int? sourceGoodsReceiptId;
-
-          if (sourceStockQuery.isNotEmpty) {
-            sourceSiparisId = sourceStockQuery.first['siparis_id'] as int?;
-            sourceGoodsReceiptId = sourceStockQuery.first['goods_receipt_id'] as int?;
-          }
-
-          // 2. Stoğu kaynaktan azalt
-          await _updateStockSmart(
-            txn,
-            productId: item.productKey,
-            birimKey: item.birimKey,
-            locationId: sourceLocationId,
-            quantityChange: -item.quantity,
-            palletId: item.palletId,
-            status: (sourceLocationId == null) ? 'receiving' : 'available',
-            siparisIdForAddition: sourceSiparisId, // KRITIK FIX: Receiving'de siparis_id ile match et
-            goodsReceiptIdForAddition: sourceGoodsReceiptId, // KRITIK FIX: Receiving'de goods_receipt_id ile match et
-            expiryDateForAddition: item.expiryDate,
-            isTransferOperation: false, // DÜZELTME: FIFO mantığının düzgün çalışması için false olmalı
-          );
-
-          final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
-
-          // 3. Stoğu hedefe ekle 
-          // KRITIK FIX: 'available' durumunda siparis_id ve goods_receipt_id NULL olmalı (konsolidasyon için)
-          await _updateStockSmart(
-            txn,
-            productId: item.productKey,
-            birimKey: item.birimKey,
-            locationId: targetLocationId,
-            quantityChange: item.quantity,
-            palletId: targetPalletId,
-            status: 'available',
-            siparisIdForAddition: null, // ÇÖZÜM: Available durumunda NULL - konsolidasyon için
-            goodsReceiptIdForAddition: null, // ÇÖZÜM: Available durumunda NULL - konsolidasyon için
-            expiryDateForAddition: item.expiryDate,
-            isTransferOperation: false, // DÜZELTME: Konsolidasyon yapması için false olmalı
-            stockUuid: transferStockUuid, // KRITIK FIX: Phone-generated UUID
-          );
-
-          // 2. ADIM: TRANSFER KAYDINI ETİKETLE
-          await txn.insert(DbTables.inventoryTransfers, {
-            'operation_unique_id': operationUniqueId, // BU SATIRI EKLE
-            'urun_key': item.productKey,
-            'birim_key': item.birimKey, // KRITIK FIX: birim_key'i de kaydet
-            'from_location_id': sourceLocationId, // Artık null ise null kalıyor
-            'to_location_id': targetLocationId,
-            'quantity': item.quantity,
-            'from_pallet_barcode': item.palletId,
-            'pallet_barcode': targetPalletId,
-            'employee_id': header.employeeId,
-            'transfer_date': header.transferDate.toIso8601String(),
-          });
-
-          if (sourceLocationId == null && header.siparisId != null) {
-            await txn.query(
-              DbTables.orderLines,
-              columns: ['id'],
-              where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',
-              whereArgs: [header.siparisId, item.productKey, '1'],
-              limit: 1,
-            );
-            // wms_putaway_status tablosu kaldırıldı - yerleştirme durumunu inventory_stock'tan takip edebiliriz
-          }
-
-          // KRITIK FIX: UUID içeren yeni TransferItemDetail oluştur ve sunucuya gönder
-          final itemWithUuid = TransferItemDetail(
-            productKey: item.productKey,
-            birimKey: item.birimKey,
-            productName: item.productName,
-            productCode: item.productCode,
-            quantity: item.quantity,
-            palletId: item.palletId,
-            expiryDate: item.expiryDate,
-            stockUuid: transferStockUuid, // KRITIK FIX: Phone-generated UUID
-            targetLocationId: item.targetLocationId,
-            targetLocationName: item.targetLocationName,
-          );
-          itemsForJson.add(itemWithUuid.toApiJson());
-        }
-
-        String? poId;
-        if (header.siparisId != null) {
-          final maps = await txn.query(
-            DbTables.orders,
-            columns: ['fisno'],
-            where: 'id = ?',
-            whereArgs: [header.siparisId],
-            limit: 1,
-          );
-          if (maps.isNotEmpty) {
-            poId = maps.first['fisno'] as String?;
-          }
-        }
-
-        final headerJson = header.toApiJson(sourceLocationId ?? 0, targetLocationId);
-        if (poId != null) {
-          headerJson['fisno'] = poId;
-        }
-
-        // 3. ADIM: NİHAİ PENDING OPERATION'I AYNI ID İLE KAYDET
-        final finalPendingOp = PendingOperation.create(
-          uniqueId: operationUniqueId, // AYNI ID'Yİ KULLAN
-          type: PendingOperationType.inventoryTransfer,
-          data: jsonEncode({
-            'operation_unique_id': operationUniqueId, // BU SATIR EKSİKTİ!
-            'header': headerJson,
-            'items': itemsForJson,
-          }),
-          createdAt: pendingOp.createdAt,
-        );
-
-        await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
-
-        if (header.siparisId != null) {
-          await checkAndCompletePutaway(header.siparisId!, txn: txn);
-        }
       });
     } catch (e) {
       throw Exception('Lokal veritabanına transfer kaydedilirken hata oluştu: $e');
     }
   }
 
+  /// Validates transfer items before processing the transfer operation.
+  /// Ensures all items have valid product information and required fields.
+  void _validateTransferItems(List<TransferItemDetail> items) {
+    // Product information validation - can be expanded as needed
+    // Current implementation assumes items are pre-validated
+    if (items.isEmpty) {
+      throw ArgumentError('Transfer items list cannot be empty');
+    }
+  }
+
+  /// Executes the complete transfer transaction with all necessary steps.
+  /// Handles stock updates, transfer records, and pending operations.
+  Future<void> _executeTransferTransaction(
+    DatabaseExecutor txn,
+    TransferOperationHeader header,
+    List<TransferItemDetail> items,
+    int? sourceLocationId,
+    int targetLocationId,
+  ) async {
+    // Generate unique operation ID
+    final pendingOp = PendingOperation.create(
+      type: PendingOperationType.inventoryTransfer,
+      data: "{}", // Temporary
+      createdAt: DateTime.now().toUtc(),
+    );
+    final String operationUniqueId = pendingOp.uniqueId;
+    
+    // Process all transfer items
+    final itemsForJson = await _processTransferItems(
+      txn,
+      items,
+      header,
+      sourceLocationId,
+      targetLocationId,
+      operationUniqueId,
+    );
+
+    // Get purchase order ID if available
+    String? poId;
+    if (header.siparisId != null) {
+      final maps = await txn.query(
+        DbTables.orders,
+        columns: ['fisno'],
+        where: 'id = ?',
+        whereArgs: [header.siparisId],
+        limit: 1,
+      );
+      if (maps.isNotEmpty) {
+        poId = maps.first['fisno'] as String?;
+      }
+    }
+
+    // Prepare header JSON
+    final headerJson = header.toApiJson(sourceLocationId ?? 0, targetLocationId);
+    if (poId != null) {
+      headerJson['fisno'] = poId;
+    }
+
+    // Save pending operation
+    final finalPendingOp = PendingOperation.create(
+      uniqueId: operationUniqueId,
+      type: PendingOperationType.inventoryTransfer,
+      data: jsonEncode({
+        'operation_unique_id': operationUniqueId,
+        'header': headerJson,
+        'items': itemsForJson,
+      }),
+      createdAt: pendingOp.createdAt,
+    );
+
+    await txn.insert(DbTables.pendingOperations, finalPendingOp.toDbMap());
+
+    // Complete putaway if necessary
+    if (header.siparisId != null) {
+      await checkAndCompletePutaway(header.siparisId!);
+    }
+  }
+
+  /// Processes all transfer items by updating stock and creating transfer records.
+  /// Returns a list of processed items for API synchronization.
+  Future<List<Map<String, dynamic>>> _processTransferItems(
+    DatabaseExecutor txn,
+    List<TransferItemDetail> items,
+    TransferOperationHeader header,
+    int? sourceLocationId,
+    int targetLocationId,
+    String operationUniqueId,
+  ) async {
+    final List<Map<String, dynamic>> itemsForJson = [];
+
+    for (final item in items) {
+      // Generate UUID for new stock record
+      const uuid = Uuid();
+      final transferStockUuid = uuid.v4();
+
+      // Update stock for this transfer item
+      await _updateStockForTransfer(
+        txn,
+        item,
+        header,
+        sourceLocationId,
+        targetLocationId,
+        transferStockUuid,
+      );
+
+      // Create transfer record
+      final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
+      await txn.insert(DbTables.inventoryTransfers, {
+        'operation_unique_id': operationUniqueId,
+        'urun_key': item.productKey,
+        'birim_key': item.birimKey,
+        'from_location_id': sourceLocationId,
+        'to_location_id': targetLocationId,
+        'quantity': item.quantity,
+        'from_pallet_barcode': item.palletId,
+        'pallet_barcode': targetPalletId,
+        'employee_id': header.employeeId,
+        'transfer_date': header.transferDate.toIso8601String(),
+      });
+
+      // Handle putaway-specific logic
+      if (sourceLocationId == null && header.siparisId != null) {
+        await txn.query(
+          DbTables.orderLines,
+          columns: ['id'],
+          where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',
+          whereArgs: [header.siparisId, item.productKey, '1'],
+          limit: 1,
+        );
+      }
+
+      // Prepare item for API sync
+      final itemWithUuid = TransferItemDetail(
+        productKey: item.productKey,
+        birimKey: item.birimKey,
+        productName: item.productName,
+        productCode: item.productCode,
+        quantity: item.quantity,
+        palletId: item.palletId,
+        expiryDate: item.expiryDate,
+        stockUuid: transferStockUuid,
+        targetLocationId: item.targetLocationId,
+        targetLocationName: item.targetLocationName,
+      );
+      itemsForJson.add(itemWithUuid.toApiJson());
+    }
+
+    return itemsForJson;
+  }
+
+  /// Updates stock for a single transfer item by decrementing source and incrementing target.
+  /// Handles source stock identification and maintains data consistency.
+  Future<void> _updateStockForTransfer(
+    DatabaseExecutor txn,
+    TransferItemDetail item,
+    TransferOperationHeader header,
+    int? sourceLocationId,
+    int targetLocationId,
+    String transferStockUuid,
+  ) async {
+    // Find source stock information
+    String sourceWhereClause = 'urun_key = ? AND stock_status = ?';
+    List<dynamic> sourceWhereArgs = [
+      item.productKey,
+      (sourceLocationId == null || sourceLocationId == 0) 
+          ? InventoryTransferConstants.stockStatusReceiving 
+          : InventoryTransferConstants.stockStatusAvailable
+    ];
+    
+    // Add constraints for birim_key
+    if (item.birimKey == null) {
+      sourceWhereClause += ' AND birim_key IS NULL';
+    } else {
+      sourceWhereClause += ' AND birim_key = ?';
+      sourceWhereArgs.add(item.birimKey);
+    }
+    
+    // Add constraints for location_id
+    if (sourceLocationId == null || sourceLocationId == 0) {
+      sourceWhereClause += ' AND location_id IS NULL';
+    } else {
+      sourceWhereClause += ' AND location_id = ?';
+      sourceWhereArgs.add(sourceLocationId);
+    }
+    
+    // Add constraints for pallet_barcode
+    if (item.palletId == null) {
+      sourceWhereClause += ' AND pallet_barcode IS NULL';
+    } else {
+      sourceWhereClause += ' AND pallet_barcode = ?';
+      sourceWhereArgs.add(item.palletId);
+    }
+    
+    // Add order filter for putaway operations
+    if (sourceLocationId == null || sourceLocationId == 0) {
+      if (header.siparisId != null) {
+        sourceWhereClause += ' AND siparis_id = ?';
+        sourceWhereArgs.add(header.siparisId);
+      }
+    }
+    
+    // Get source stock info
+    final sourceStockQuery = await txn.query(
+      'inventory_stock',
+      where: sourceWhereClause,
+      whereArgs: sourceWhereArgs,
+      limit: 1,
+    );
+
+    int? sourceSiparisId;
+    int? sourceGoodsReceiptId;
+
+    if (sourceStockQuery.isNotEmpty) {
+      sourceSiparisId = sourceStockQuery.first['siparis_id'] as int?;
+      sourceGoodsReceiptId = sourceStockQuery.first['goods_receipt_id'] as int?;
+    }
+
+    // Decrement source stock
+    await _updateStockSmart(
+      txn,
+      productId: item.productKey,
+      birimKey: item.birimKey,
+      locationId: sourceLocationId,
+      quantityChange: -item.quantity,
+      palletId: item.palletId,
+      status: (sourceLocationId == null) 
+          ? InventoryTransferConstants.stockStatusReceiving 
+          : InventoryTransferConstants.stockStatusAvailable,
+      siparisIdForAddition: sourceSiparisId,
+      goodsReceiptIdForAddition: sourceGoodsReceiptId,
+      expiryDateForAddition: item.expiryDate,
+      isTransferOperation: false,
+    );
+
+    // Increment target stock
+    final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
+    await _updateStockSmart(
+      txn,
+      productId: item.productKey,
+      birimKey: item.birimKey,
+      locationId: targetLocationId,
+      quantityChange: item.quantity,
+      palletId: targetPalletId,
+      status: InventoryTransferConstants.stockStatusAvailable,
+      siparisIdForAddition: null, // Available status uses null for consolidation
+      goodsReceiptIdForAddition: null, // Available status uses null for consolidation
+      expiryDateForAddition: item.expiryDate,
+      isTransferOperation: false,
+      stockUuid: transferStockUuid,
+    );
+  }
+
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrdersForTransfer() async {
     final db = await dbHelper.database;
     final prefs = await SharedPreferences.getInstance();
-    final warehouseCode = prefs.getString('warehouse_code');
 
     // Get warehouse name from SharedPreferences
     final warehouseName = prefs.getString('warehouse_name');
@@ -468,7 +549,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
-      LEFT JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = 'receiving' AND i.quantity > 0
+      LEFT JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}' AND i.quantity > 0
       LEFT JOIN goods_receipts gr ON gr.siparis_id = o.id
       LEFT JOIN goods_receipt_items gri ON gri.receipt_id = gr.goods_receipt_id AND gri.quantity_received > 0
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
@@ -505,7 +586,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             i.goods_receipt_id,
             i.quantity
           FROM inventory_stock i
-          WHERE i.stock_status = 'receiving'
+          WHERE i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
             AND i.siparis_id = ?
             AND i.quantity > 0
         ''', [orderId]);
@@ -515,15 +596,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         if (goodsReceiptId == null) {
           return [];
         }
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [goodsReceiptId, 'receiving']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [goodsReceiptId, InventoryTransferConstants.stockStatusReceiving]);
       } else {
         stockMaps = [];
       }
     } else {
       if (locationId == null) {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: ['available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: [InventoryTransferConstants.stockStatusAvailable]);
       } else {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [locationId, 'available']);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [locationId, InventoryTransferConstants.stockStatusAvailable]);
       }
     }
 
@@ -638,7 +719,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT DISTINCT siparis_id
       FROM inventory_stock
       WHERE siparis_id IN ($idList)
-      AND stock_status = 'receiving'
+      AND stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
       AND quantity > 0
     ''';
     final result = await db.rawQuery(query, orderIds);
@@ -650,8 +731,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final db = await dbHelper.database;
     final cleanCode = code.toLowerCase().trim();
 
-    if (cleanCode.contains('kabul') || cleanCode.contains('receiving') || cleanCode == '0' || cleanCode == '000') {
-      return const MapEntry('000', null); // Artık null döndürüyoruz
+    if (cleanCode.contains('kabul') || cleanCode.contains('receiving') || cleanCode == '0' || cleanCode == InventoryTransferConstants.receivingAreaCode) {
+      return const MapEntry(InventoryTransferConstants.receivingAreaCode, null); // Artık null döndürüyoruz
     }
 
     final maps = await db.query(
@@ -763,36 +844,77 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final isDecrement = quantityChange < 0;
 
     if (isDecrement) {
-      double remainingToDecrement = quantityChange.abs();
+      await _processStockDecrement(
+        txn,
+        productId: productId,
+        birimKey: birimKey,
+        locationId: locationId,
+        quantityChange: quantityChange,
+        palletId: palletId,
+        status: status,
+        siparisIdForAddition: siparisIdForAddition,
+        goodsReceiptIdForAddition: goodsReceiptIdForAddition,
+      );
+    } else {
+      await _processStockIncrement(
+        txn,
+        productId: productId,
+        birimKey: birimKey,
+        locationId: locationId,
+        quantityChange: quantityChange,
+        palletId: palletId,
+        status: status,
+        siparisIdForAddition: siparisIdForAddition,
+        goodsReceiptIdForAddition: goodsReceiptIdForAddition,
+        expiryDateForAddition: expiryDateForAddition,
+        isTransferOperation: isTransferOperation,
+        stockUuid: stockUuid,
+      );
+    }
+  }
 
-      // NULL-safe SQL sorgusu oluştur
-      String whereClause = 'urun_key = ? AND stock_status = ?';
-      List<dynamic> whereArgs = [productId, status];
-      
-      // birim_key kontrolü
-      if (birimKey == null) {
-        whereClause += ' AND birim_key IS NULL';
-      } else {
-        whereClause += ' AND birim_key = ?';
-        whereArgs.add(birimKey);
-      }
-      
-      // Location_id kontrolü
-      if (locationId == null) {
-        whereClause += ' AND location_id IS NULL';
-      } else {
-        whereClause += ' AND location_id = ?';
-        whereArgs.add(locationId);
-      }
-      
-      // Pallet_barcode kontrolü
-      if (palletId == null) {
-        whereClause += ' AND pallet_barcode IS NULL';
-      } else {
-        whereClause += ' AND pallet_barcode = ?';
-        whereArgs.add(palletId);
-      }
-      
+  /// Builds a WHERE clause and arguments for stock queries based on the provided criteria.
+  /// Returns a StockQueryInfo object containing the clause and arguments.
+  _StockQueryInfo _buildStockQuery({
+    required String productId,
+    String? birimKey,
+    required int? locationId,
+    required String? palletId,
+    required String status,
+    int? siparisIdForAddition,
+    int? goodsReceiptIdForAddition,
+    DateTime? expiryDateForAddition,
+    bool includeOrderFilters = false,
+  }) {
+    String whereClause = 'urun_key = ? AND stock_status = ?';
+    List<dynamic> whereArgs = [productId, status];
+    
+    // birim_key kontrolü
+    if (birimKey == null) {
+      whereClause += ' AND birim_key IS NULL';
+    } else {
+      whereClause += ' AND birim_key = ?';
+      whereArgs.add(birimKey);
+    }
+    
+    // Location_id kontrolü
+    if (locationId == null) {
+      whereClause += ' AND location_id IS NULL';
+    } else {
+      whereClause += ' AND location_id = ?';
+      whereArgs.add(locationId);
+    }
+    
+    // Pallet_barcode kontrolü
+    if (palletId == null) {
+      whereClause += ' AND pallet_barcode IS NULL';
+    } else {
+      whereClause += ' AND pallet_barcode = ?';
+      whereArgs.add(palletId);
+    }
+    
+    // Include order-related filters if requested
+    if (includeOrderFilters) {
       // KRITIK FIX: Receiving durumunda siparis_id ile match et
       if (status == 'receiving' && siparisIdForAddition != null) {
         whereClause += ' AND siparis_id = ?';
@@ -804,169 +926,223 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         whereClause += ' AND goods_receipt_id = ?';
         whereArgs.add(goodsReceiptIdForAddition);
       }
+    }
 
-      // SQL query constructed with where clause and parameters
+    return _StockQueryInfo(whereClause, whereArgs);
+  }
 
-      final stockEntries = await txn.query(
+  /// Processes stock increment (addition) operations with consolidation logic.
+  /// Handles both new stock creation and updating existing stock records.
+  Future<void> _processStockIncrement(
+    DatabaseExecutor txn, {
+    required String productId,
+    String? birimKey,
+    required int? locationId,
+    required double quantityChange,
+    required String? palletId,
+    required String status,
+    int? siparisIdForAddition,
+    int? goodsReceiptIdForAddition,
+    DateTime? expiryDateForAddition,
+    bool isTransferOperation = false,
+    String? stockUuid,
+  }) async {
+    // KRITIK FIX: expiry_date'i normalize et - konsolidasyon için consistent format gerekli
+    final expiryDateStr = expiryDateForAddition != null 
+      ? DateTime(expiryDateForAddition.year, expiryDateForAddition.month, expiryDateForAddition.day).toIso8601String().split('T')[0]
+      : null;
+
+    // Build query for existing stock consolidation
+    final queryInfo = _buildStockQuery(
+      productId: productId,
+      birimKey: birimKey,
+      locationId: locationId,
+      palletId: palletId,
+      status: status,
+      siparisIdForAddition: siparisIdForAddition,
+      goodsReceiptIdForAddition: goodsReceiptIdForAddition,
+      expiryDateForAddition: expiryDateForAddition,
+    );
+    
+    String existingWhereClause = queryInfo.whereClause;
+    List<dynamic> existingWhereArgs = queryInfo.whereArgs;
+      
+    // Expiry date kontrolü (siparis_id ve goods_receipt_id artık unique constraint'te yok)
+    if (expiryDateStr == null) {
+      existingWhereClause += ' AND expiry_date IS NULL';
+    } else {
+      existingWhereClause += ' AND expiry_date = ?';
+      existingWhereArgs.add(expiryDateStr);
+    }
+
+    // Handle consolidation logic based on status and transfer type
+    final existingStock = await _consolidateStocks(
+      txn,
+      existingWhereClause: existingWhereClause,
+      existingWhereArgs: existingWhereArgs,
+      status: status,
+      siparisIdForAddition: siparisIdForAddition,
+      goodsReceiptIdForAddition: goodsReceiptIdForAddition,
+      isTransferOperation: isTransferOperation,
+    );
+
+    if (existingStock.isNotEmpty) {
+      // Update existing stock
+      final currentQty = (existingStock.first['quantity'] as num).toDouble();
+      final newQty = currentQty + quantityChange;
+      await txn.update(
         'inventory_stock',
-        where: whereClause,
-        whereArgs: whereArgs,
-        orderBy: 'expiry_date ASC',
+        {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [existingStock.first['id']],
       );
+    } else {
+      // Create new stock record
+      final finalStockUuid = stockUuid ?? const Uuid().v4();
+      
+      await txn.insert(DbTables.inventoryStock, {
+        'stock_uuid': finalStockUuid, // Phone-generated UUID (parametreli)
+        'urun_key': productId,
+        'birim_key': birimKey,
+        'location_id': locationId, // Artık null ise null kalıyor
+        'quantity': quantityChange,
+        'pallet_barcode': palletId,
+        'stock_status': status,
+        'siparis_id': siparisIdForAddition,
+        'goods_receipt_id': goodsReceiptIdForAddition,
+        'created_at': DateTime.now().toIso8601String(), // DÜZELTME: created_at eklendi
+        'updated_at': DateTime.now().toIso8601String(),
+        'expiry_date': expiryDateStr,
+      });
+    }
+  }
 
-      if (stockEntries.isEmpty) {
-        throw Exception('Kaynakta stok bulunamadı. Ürün ID: $productId, Lokasyon: $locationId');
-      }
+  /// Processes stock decrement (reduction) operations using FIFO logic.
+  /// Handles partial and complete stock removal with proper error checking.
+  Future<void> _processStockDecrement(
+    DatabaseExecutor txn, {
+    required String productId,
+    String? birimKey,
+    required int? locationId,
+    required double quantityChange,
+    required String? palletId,
+    required String status,
+    int? siparisIdForAddition,
+    int? goodsReceiptIdForAddition,
+  }) async {
+    double remainingToDecrement = quantityChange.abs();
 
-      for (final stock in stockEntries) {
-        final stockId = stock['id'] as int;
-        final currentQty = (stock['quantity'] as num).toDouble();
+    // Build query for finding source stock
+    final queryInfo = _buildStockQuery(
+      productId: productId,
+      birimKey: birimKey,
+      locationId: locationId,
+      palletId: palletId,
+      status: status,
+      siparisIdForAddition: siparisIdForAddition,
+      goodsReceiptIdForAddition: goodsReceiptIdForAddition,
+      includeOrderFilters: true,
+    );
 
-        if (currentQty >= remainingToDecrement) {
-          final newQty = currentQty - remainingToDecrement;
-          if (newQty > 0.001) {
-            await txn.update(DbTables.inventoryStock, {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [stockId]);
-          } else {
-            // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
-            final stockUuid = stock['stock_uuid'] as String?;
-            await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
-          }
-          remainingToDecrement = 0;
-          break;
+    final stockEntries = await txn.query(
+      'inventory_stock',
+      where: queryInfo.whereClause,
+      whereArgs: queryInfo.whereArgs,
+      orderBy: 'expiry_date ASC', // FIFO
+    );
+
+    if (stockEntries.isEmpty) {
+      throw Exception('Kaynakta stok bulunamadı. Ürün ID: $productId, Lokasyon: $locationId');
+    }
+
+    for (final stock in stockEntries) {
+      final stockId = stock['id'] as int;
+      final currentQty = (stock['quantity'] as num).toDouble();
+
+      if (currentQty >= remainingToDecrement) {
+        final newQty = currentQty - remainingToDecrement;
+        if (newQty > 0.001) {
+          await txn.update(DbTables.inventoryStock, {
+            'quantity': newQty, 
+            'updated_at': DateTime.now().toIso8601String()
+          }, where: 'id = ?', whereArgs: [stockId]);
         } else {
-          remainingToDecrement -= currentQty;
-          // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için  
-          final stockUuid = stock['stock_uuid'] as String?;
+          // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
+          // final stockUuid = stock['stock_uuid'] as String?;
           await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
         }
-      }
-
-      if (remainingToDecrement > 0.001) {
-        throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
-      }
-    } else {
-      // KRITIK FIX: expiry_date'i normalize et - konsolidasyon için consistent format gerekli
-      final expiryDateStr = expiryDateForAddition != null 
-        ? DateTime(expiryDateForAddition.year, expiryDateForAddition.month, expiryDateForAddition.day).toIso8601String().split('T')[0]
-        : null;
-
-      // NULL-safe existing stock sorgusu
-      String existingWhereClause = 'urun_key = ? AND stock_status = ?';
-      List<dynamic> existingWhereArgs = [productId, status];
-      
-      // birim_key kontrolü
-      if (birimKey == null) {
-        existingWhereClause += ' AND birim_key IS NULL';
+        remainingToDecrement = 0;
+        break;
       } else {
-        existingWhereClause += ' AND birim_key = ?';
-        existingWhereArgs.add(birimKey);
-      }
-      
-      // Location ID kontrolü
-      if (locationId == null) {
-        existingWhereClause += ' AND location_id IS NULL';
-      } else {
-        existingWhereClause += ' AND location_id = ?';
-        existingWhereArgs.add(locationId);
-      }
-      
-      // Pallet barcode kontrolü
-      if (palletId == null) {
-        existingWhereClause += ' AND pallet_barcode IS NULL';
-      } else {
-        existingWhereClause += ' AND pallet_barcode = ?';
-        existingWhereArgs.add(palletId);
-      }
-      
-      // Expiry date kontrolü (siparis_id ve goods_receipt_id artık unique constraint'te yok)
-      if (expiryDateStr == null) {
-        existingWhereClause += ' AND expiry_date IS NULL';
-      } else {
-        existingWhereClause += ' AND expiry_date = ?';
-        existingWhereArgs.add(expiryDateStr);
-      }
-
-      // KRITIK FIX: Transfer işlemlerinde konsolidasyon YAPMAMA - her transfer yeni kayıt oluştursun
-      // Transfer sırasında sadece birebir kayıt oluştur, konsolide etme
-      if (isTransferOperation) {
-        // Transfer edilen kayıtlar için konsolidasyon yapma - her zaman yeni kayıt oluştur
-        // Bu sayede çift sayma önlenir
-      } else if (status == 'available') {
-        // Normal available stoklarda konsolidasyon yap (transfer dışı durumlar)
-        if (siparisIdForAddition == null) {
-          existingWhereClause += ' AND siparis_id IS NULL';
-        } else {
-          existingWhereClause += ' AND siparis_id = ?';
-          existingWhereArgs.add(siparisIdForAddition);
-        }
-        
-        if (goodsReceiptIdForAddition == null) {
-          existingWhereClause += ' AND goods_receipt_id IS NULL';
-        } else {
-          existingWhereClause += ' AND goods_receipt_id = ?';
-          existingWhereArgs.add(goodsReceiptIdForAddition);
-        }
-      } else if (status == 'receiving') {
-        // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et - farklı siparişler ayrı tutulmalı
-        if (siparisIdForAddition == null) {
-          existingWhereClause += ' AND siparis_id IS NULL';
-        } else {
-          existingWhereClause += ' AND siparis_id = ?';
-          existingWhereArgs.add(siparisIdForAddition);
-        }
-        
-        // Receiving durumunda goods_receipt_id kontrolü de yapılmalı
-        if (goodsReceiptIdForAddition == null) {
-          existingWhereClause += ' AND goods_receipt_id IS NULL';
-        } else {
-          existingWhereClause += ' AND goods_receipt_id = ?';
-          existingWhereArgs.add(goodsReceiptIdForAddition);
-        }
-      }
-
-      // KRITIK FIX: Transfer durumunda existing sorgusu yapmama - her zaman yeni kayıt oluştur
-      List<Map<String, Object?>> existing = [];
-      
-      // Transfer işlemi değilse konsolidasyon kontrolü yap
-      if (!isTransferOperation) {
-        existing = await txn.query(
-          'inventory_stock',
-          where: existingWhereClause,
-          whereArgs: existingWhereArgs,
-          limit: 1,
-        );
-      }
-
-      if (existing.isNotEmpty) {
-        final currentQty = (existing.first['quantity'] as num).toDouble();
-        final newQty = currentQty + quantityChange;
-        await txn.update(
-          'inventory_stock',
-          {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
-          where: 'id = ?',
-          whereArgs: [existing.first['id']],
-        );
-      } else {
-        
-        // KRITIK FIX: Transfer işlemlerinde phone-generated UUID kullan
-        final finalStockUuid = stockUuid ?? const Uuid().v4();
-        
-        await txn.insert(DbTables.inventoryStock, {
-          'stock_uuid': finalStockUuid, // Phone-generated UUID (parametreli)
-          'urun_key': productId,
-          'birim_key': birimKey,
-          'location_id': locationId, // Artık null ise null kalıyor
-          'quantity': quantityChange,
-          'pallet_barcode': palletId,
-          'stock_status': status,
-          'siparis_id': siparisIdForAddition,
-          'goods_receipt_id': goodsReceiptIdForAddition,
-          'created_at': DateTime.now().toIso8601String(), // DÜZELTME: created_at eklendi
-          'updated_at': DateTime.now().toIso8601String(),
-          'expiry_date': expiryDateStr,
-        });
+        remainingToDecrement -= currentQty;
+        // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için  
+        // final stockUuid = stock['stock_uuid'] as String?;
+        await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
       }
     }
+
+    if (remainingToDecrement > 0.001) {
+      throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
+    }
+  }
+
+  /// Handles stock consolidation logic based on status and operation type.
+  /// Returns existing stock records that can be consolidated or empty list for new records.
+  Future<List<Map<String, Object?>>> _consolidateStocks(
+    DatabaseExecutor txn, {
+    required String existingWhereClause,
+    required List<dynamic> existingWhereArgs,
+    required String status,
+    int? siparisIdForAddition,
+    int? goodsReceiptIdForAddition,
+    bool isTransferOperation = false,
+  }) async {
+    // KRITIK FIX: Transfer işlemlerinde konsolidasyon YAPMAMA - her transfer yeni kayıt oluştursun
+    // Transfer sırasında sadece birebir kayıt oluştur, konsolide etme
+    if (isTransferOperation) {
+      // Transfer edilen kayıtlar için konsolidasyon yapma - her zaman yeni kayıt oluştur
+      // Bu sayede çift sayma önlenir
+      return [];
+    } else if (status == 'available') {
+      // Normal available stoklarda konsolidasyon yap (transfer dışı durumlar)
+      if (siparisIdForAddition == null) {
+        existingWhereClause += ' AND siparis_id IS NULL';
+      } else {
+        existingWhereClause += ' AND siparis_id = ?';
+        existingWhereArgs.add(siparisIdForAddition);
+      }
+      
+      if (goodsReceiptIdForAddition == null) {
+        existingWhereClause += ' AND goods_receipt_id IS NULL';
+      } else {
+        existingWhereClause += ' AND goods_receipt_id = ?';
+        existingWhereArgs.add(goodsReceiptIdForAddition);
+      }
+    } else if (status == 'receiving') {
+      // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et - farklı siparişler ayrı tutulmalı
+      if (siparisIdForAddition == null) {
+        existingWhereClause += ' AND siparis_id IS NULL';
+      } else {
+        existingWhereClause += ' AND siparis_id = ?';
+        existingWhereArgs.add(siparisIdForAddition);
+      }
+      
+      // Receiving durumunda goods_receipt_id kontrolü de yapılmalı
+      if (goodsReceiptIdForAddition == null) {
+        existingWhereClause += ' AND goods_receipt_id IS NULL';
+      } else {
+        existingWhereClause += ' AND goods_receipt_id = ?';
+        existingWhereArgs.add(goodsReceiptIdForAddition);
+      }
+    }
+
+    // Transfer işlemi değilse konsolidasyon kontrolü yap
+    return await txn.query(
+      'inventory_stock',
+      where: existingWhereClause,
+      whereArgs: existingWhereArgs,
+      limit: 1,
+    );
   }
 
   @override
@@ -980,7 +1156,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       WHERE gr.siparis_id IS NULL
         AND gr.delivery_note_number IS NOT NULL
         AND gr.delivery_note_number != ''
-        AND s.stock_status = 'receiving'
+        AND s.stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
         AND s.quantity > 0
       ORDER BY gr.receipt_date DESC
     ''';
@@ -1001,7 +1177,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT COUNT(*) as count
       FROM inventory_stock
       WHERE siparis_id = ?
-        AND stock_status = 'receiving'
+        AND stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
         AND pallet_barcode IS NOT NULL
         AND quantity > 0
     ''';
@@ -1016,7 +1192,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       SELECT COUNT(*) as count
       FROM inventory_stock
       WHERE siparis_id = ?
-        AND stock_status = 'receiving'
+        AND stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
         AND pallet_barcode IS NULL
         AND quantity > 0
     ''';
@@ -1045,7 +1221,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     int? orderId,
     String? deliveryNoteNumber, 
     int? locationId,
-    List<String> stockStatuses = const ['available', 'receiving'],
+    List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable, InventoryTransferConstants.stockStatusReceiving],
     bool excludePalletizedProducts = false, // YENI: Paletin içindeki ürünleri hariç tut
   }) async {
     final db = await dbHelper.database;

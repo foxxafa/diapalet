@@ -5,6 +5,7 @@ import 'package:diapalet/features/inventory_transfer/presentation/screens/order_
 import 'package:diapalet/features/inventory_transfer/presentation/screens/delivery_note_selection_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
 
 class TransferTypeSelectionScreen extends StatelessWidget {
   const TransferTypeSelectionScreen({super.key});
@@ -15,8 +16,8 @@ class TransferTypeSelectionScreen extends StatelessWidget {
     final isSmallScreen = screenHeight < 600;
 
     // Dinamik değerler küçük ekranlar için
-    final mainPadding = isSmallScreen ? 16.0 : 24.0;
-    final buttonSpacing = isSmallScreen ? 16.0 : 24.0;
+    final mainPadding = isSmallScreen ? InventoryTransferConstants.largePadding : 24.0;
+    final buttonSpacing = isSmallScreen ? InventoryTransferConstants.largePadding : 24.0;
     final buttonVerticalPadding = isSmallScreen ? 24.0 : 40.0;
 
     return Scaffold(
@@ -106,7 +107,7 @@ class TransferTypeSelectionScreen extends StatelessWidget {
         foregroundColor: theme.colorScheme.onPrimaryContainer,
         padding: EdgeInsets.symmetric(vertical: verticalPadding),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(InventoryTransferConstants.largePadding),
         ),
         elevation: 3,
       ),

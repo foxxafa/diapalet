@@ -1,4 +1,5 @@
 // lib/features/inventory_transfer/domain/entities/assignment_mode.dart
+import 'package:diapalet/features/inventory_transfer/constants/inventory_transfer_constants.dart';
 
 /// Depo içindeki transfer işleminin türünü belirtir.
 enum AssignmentMode {
@@ -17,11 +18,11 @@ extension AssignmentModeExtension on AssignmentMode {
   String get apiName {
     switch (this) {
       case AssignmentMode.pallet:
-        return 'pallet_transfer';
+        return InventoryTransferConstants.palletTransferType;
       case AssignmentMode.product:
-        return 'product_transfer';
+        return InventoryTransferConstants.productTransferType;
       case AssignmentMode.productFromPallet:
-        return 'productFromPallet';
+        return InventoryTransferConstants.productFromPalletType;
     }
   }
 }
