@@ -588,7 +588,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final db = await dbHelper.database;
     
     // DEBUG: Önce bu sipariş için tüm receipt items'ları kontrol et
-    final allItems = await db.rawQuery('''
+    await db.rawQuery('''
       SELECT gri.*, gr.siparis_id, gri.free
       FROM goods_receipt_items gri
       JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id

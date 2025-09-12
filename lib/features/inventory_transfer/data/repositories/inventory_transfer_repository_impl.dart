@@ -231,7 +231,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
-    debugPrint("Palet '$palletBarcode' içinde ${maps.length} ürün bulundu");
 
     final result = maps.map((map) => ProductItem.fromJson(map)).toList();
 
@@ -247,9 +246,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   ) async {
     final db = await dbHelper.database;
     try {
-      // KRITIK DEBUG: Transfer öncesi birimKey kontrolü
+      // Transfer öncesi birimKey kontrolü
       for (var item in items) {
-        debugPrint("DEBUG Transfer Item - productKey: ${item.productKey}, birimKey: ${item.birimKey}, quantity: ${item.quantity}");
+        // Product information validated
       }
       
       await db.transaction((txn) async {
@@ -267,7 +266,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // KRITIK FIX: Transfer sonrası yeni stok kaydı için UUID üret
           const uuid = Uuid();
           final transferStockUuid = uuid.v4();
-          debugPrint('🔄 Transfer UUID üretildi: $transferStockUuid - ${item.productKey}');
 
           // 1. Azaltma işleminden önce kaynak stok kaydını/kayıtlarını bul.
           // Bu kayıtlardaki siparis_id ve goods_receipt_id aynı olmalıdır.
@@ -439,7 +437,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         }
       });
     } catch (e) {
-      debugPrint('Lokal transfer kaydı hatası: $e');
       throw Exception('Lokal veritabanına transfer kaydedilirken hata oluştu: $e');
     }
   }
@@ -455,7 +452,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     
     // If warehouse not found, don't filter by warehouse (temporary solution)
     if (warehouseName == null) {
-      debugPrint("WARNING: Warehouse name not found for code $warehouseCode, getting all orders");
+      // Warehouse name not found for this code, getting all orders
     }
 
     // FIX: Show orders that have either inventory_stock OR goods_receipt_items for put-away
@@ -674,7 +671,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     // Rafa yerleştirme artık sipariş statusunu değiştirmiyor
     // Status sadece mal kabul aşamasında belirleniyor (0,1,2,3)
     // Bu metod artık sadece putaway takibi için kullanılıyor, status güncellemesi yapmıyor
-    debugPrint("Putaway check için orderId: $orderId - Status güncellemesi devre dışı");
   }
 
   @override
@@ -809,8 +805,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         whereArgs.add(goodsReceiptIdForAddition);
       }
 
-      debugPrint("DEBUG: SQL sorgusu: $whereClause");
-      debugPrint("DEBUG: SQL parametreleri: $whereArgs");
+      // SQL query constructed with where clause and parameters
 
       final stockEntries = await txn.query(
         'inventory_stock',
@@ -820,20 +815,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       );
 
       if (stockEntries.isEmpty) {
-        debugPrint("HATA: _updateStockSmart - Düşürme için kaynak stok bulunamadı.");
-        debugPrint("Aranan parametreler: Ürün ID: $productId, Lokasyon ID: $locationId, Palet: $palletId, Durum: $status");
-
-        // Hangi lokasyonlarda bu ürün var, kontrol edelim
-        final availableStocks = await txn.query(
-          'inventory_stock',
-          where: 'urun_key = ? AND stock_status = ? AND quantity > 0',
-          whereArgs: [productId, status],
-        );
-        debugPrint("Bu ürün için mevcut stoklar: ${availableStocks.length} kayıt");
-        for (var stock in availableStocks) {
-          debugPrint("Lokasyon: ${stock['location_id']}, Miktar: ${stock['quantity']}, Palet: ${stock['pallet_barcode']}");
-        }
-
         throw Exception('Kaynakta stok bulunamadı. Ürün ID: $productId, Lokasyon: $locationId');
       }
 
@@ -849,7 +830,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
             final stockUuid = stock['stock_uuid'] as String?;
             await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
-            debugPrint('🗑️ Transfer sırasında stock silindi: ID=$stockId, UUID=$stockUuid');
           }
           remainingToDecrement = 0;
           break;
@@ -858,12 +838,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için  
           final stockUuid = stock['stock_uuid'] as String?;
           await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
-          debugPrint('🗑️ Transfer sırasında stock silindi: ID=$stockId, UUID=$stockUuid');
         }
       }
 
       if (remainingToDecrement > 0.001) {
-        debugPrint("HATA: _updateStockSmart - Yetersiz stok. Kalan: $remainingToDecrement");
         throw Exception('Kaynakta yeterli stok bulunamadı. İstenen: ${quantityChange.abs()}, Eksik: $remainingToDecrement');
       }
     } else {
@@ -962,7 +940,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       if (existing.isNotEmpty) {
         final currentQty = (existing.first['quantity'] as num).toDouble();
         final newQty = currentQty + quantityChange;
-        debugPrint('🔄 KONSOLIDASYON: Mevcut stok bulundu ID=${existing.first['id']}, quantity=$currentQty → $newQty');
         await txn.update(
           'inventory_stock',
           {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
@@ -970,8 +947,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           whereArgs: [existing.first['id']],
         );
       } else {
-        debugPrint('➕ YENİ STOK: Konsolidasyon için eşleşme bulunamadı, yeni kayıt oluşturuluyor');
-        debugPrint('   Parametreler: status=$status, location=$locationId, siparis=$siparisIdForAddition, quantity=$quantityChange');
         
         // KRITIK FIX: Transfer işlemlerinde phone-generated UUID kullan
         final finalStockUuid = stockUuid ?? const Uuid().v4();

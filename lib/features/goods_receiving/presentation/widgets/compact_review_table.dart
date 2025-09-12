@@ -109,6 +109,10 @@ class CompactReviewTable extends StatelessWidget {
         // Palet içindeki ürünler (indent)
         for (final item in palletItems) {
           // Sipariş içi ürünler için orderItem bilgisini bul
+          PurchaseOrderItem? relatedOrderItem;
+          if (!item.product.isOutOfOrder) {
+            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
+          }
           
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
@@ -117,6 +121,7 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
+              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -128,6 +133,10 @@ class CompactReviewTable extends StatelessWidget {
         widgets.add(HeaderBuilderUtils.buildLooseItemsHeader(context));
         for (final item in looseItems) {
           // Sipariş içi ürünler için orderItem bilgisini bul
+          PurchaseOrderItem? relatedOrderItem;
+          if (!item.product.isOutOfOrder) {
+            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
+          }
           
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
@@ -136,6 +145,7 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
+              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -159,6 +169,7 @@ class CompactReviewTable extends StatelessWidget {
           productName: product.name,
           stockCode: product.stockCode,
           items: [],
+          orderItem: orderItem,
         ));
       }
     }
@@ -264,6 +275,7 @@ class CompactReviewTable extends StatelessWidget {
     required String productName,
     required String stockCode,
     required List<ReceiptItemDraft> items,
+    PurchaseOrderItem? orderItem,
     ProductInfo? productInfo,
     bool isOutOfOrder = false,
     bool isFromDB = false,
@@ -272,7 +284,7 @@ class CompactReviewTable extends StatelessWidget {
     final totalQuantity = items.fold<double>(0.0, (sum, item) => sum + item.quantity);
     final unit = items.isNotEmpty 
         ? items.first.product.displayUnitName ?? ''
-        : productInfo?.displayUnitName ?? '';
+        : orderItem?.unitName ?? orderItem?.unit ?? productInfo?.displayUnitName ?? '';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -290,7 +302,7 @@ class CompactReviewTable extends StatelessWidget {
         ),
       ),
       child: InkWell(
-        onTap: (!isOutOfOrder && !isFromDB && items.isNotEmpty) ? () => _showDetailDialog(context, productName, stockCode, items, productInfo) : null,
+        onTap: (!isOutOfOrder && !isFromDB && (items.isNotEmpty || orderItem != null)) ? () => _showDetailDialog(context, productName, stockCode, items, productInfo, orderItem) : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -358,6 +370,13 @@ class CompactReviewTable extends StatelessWidget {
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ] else if (orderItem != null) ...[
+                    Text(
+                      '0 $unit',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.outline,
                       ),
                     ),
                   ],
@@ -490,6 +509,7 @@ class CompactReviewTable extends StatelessWidget {
     String stockCode,
     List<ReceiptItemDraft> items,
     ProductInfo? productInfo,
+    PurchaseOrderItem? orderItem,
   ) {
     showDialog(
       context: context,
@@ -497,7 +517,7 @@ class CompactReviewTable extends StatelessWidget {
         productName: productName,
         stockCode: stockCode,
         items: items,
-        orderItem: null,
+        orderItem: orderItem,
         productInfo: productInfo,
         onItemRemoved: onItemRemoved,
       ),
