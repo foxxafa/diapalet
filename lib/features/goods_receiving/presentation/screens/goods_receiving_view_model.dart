@@ -9,6 +9,8 @@ import 'package:diapalet/features/goods_receiving/domain/entities/product_info.d
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
+import 'package:diapalet/features/goods_receiving/utils/date_validation_utils.dart';
+import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -152,7 +154,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     _initBarcode();
     _syncStatusSub = _syncService.syncStatusStream.listen((status) {
       if (status == SyncStatus.upToDate && isOrderBased) {
-        debugPrint("Sync completed, refreshing order details...");
         _loadOrderDetails(_selectedOrder!.id);
       }
     });
@@ -245,12 +246,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     try {
       _orderItems = await _repository.getPurchaseOrderItems(orderId);
       
-      // Debug: Sipariş ürünlerinin barkodlarını kontrol et
-      debugPrint("DEBUG: Order items loaded for order $orderId:");
-      for (var item in _orderItems) {
-        final barcode = item.product?.displayBarcode ?? 'N/A';
-        debugPrint("  - Product: ${item.product?.name}, StokKodu: ${item.product?.stockCode}, Unit: ${item.product?.displayUnitName ?? item.unit ?? 'N/A'}, Barcode: '$barcode'");
-      }
 
       if (_isDisposed) return;
     } catch (e) {
@@ -334,9 +329,9 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   Future<void> _processScannedDataAsync(String code) async {
     // Sadece izin verilen alanlarda barcode kabul et
     if (palletIdFocusNode.hasFocus) {
-      await processScannedData('pallet', code);
+      await processScannedData(GoodsReceivingConstants.fieldTypePallet, code);
     } else if (productFocusNode.hasFocus) {
-      await processScannedData('product', code);
+      await processScannedData(GoodsReceivingConstants.fieldTypeProduct, code);
     } else if (deliveryNoteFocusNode.hasFocus || quantityFocusNode.hasFocus || expiryDateFocusNode.hasFocus) {
       // Bu alanlar barcode kabul etmez, uygun alana yönlendir
       _redirectToAppropriateField(code);
@@ -351,15 +346,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Pallet modunda: pallet boşsa pallet'e, doluysa product'a
       if (palletIdController.text.isEmpty) {
         palletIdFocusNode.requestFocus();
-        await processScannedData('pallet', code);
+        await processScannedData(GoodsReceivingConstants.fieldTypePallet, code);
       } else {
         productFocusNode.requestFocus();
-        await processScannedData('product', code);
+        await processScannedData(GoodsReceivingConstants.fieldTypeProduct, code);
       }
     } else {
       // Product modunda: her zaman product alanına
       productFocusNode.requestFocus();
-      await processScannedData('product', code);
+      await processScannedData(GoodsReceivingConstants.fieldTypeProduct, code);
     }
   }
 
@@ -369,14 +364,14 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Eğer product field'da metin varsa, bunu barkod olarak işle
       final currentText = productController.text.trim();
       if (currentText.isNotEmpty) {
-        await processScannedData('product', currentText);
+        await processScannedData(GoodsReceivingConstants.fieldTypeProduct, currentText);
         return;
       }
     } else if (palletIdFocusNode.hasFocus) {
       // Eğer pallet field'da metin varsa, bunu barkod olarak işle
       final currentText = palletIdController.text.trim();
       if (currentText.isNotEmpty) {
-        await processScannedData('pallet', currentText);
+        await processScannedData(GoodsReceivingConstants.fieldTypePallet, currentText);
         return;
       }
     }
@@ -388,11 +383,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     if (data.isEmpty) return false;
 
     switch (field) {
-      case 'pallet':
+      case GoodsReceivingConstants.fieldTypePallet:
         palletIdController.text = data;
         productFocusNode.requestFocus();
         return true;
-      case 'product':
+      case GoodsReceivingConstants.fieldTypeProduct:
         // Parse GS1 data to extract GTIN and expiry date
         final parsedData = GS1Parser.parse(data);
         String productCodeToSearch = data;
@@ -498,7 +493,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       
       // Mevcut seçili birimi işaretle
       if (product.birimKey != null) {
-        debugPrint('Selected product birim_key: ${product.birimKey}');
         _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
           if (unit['birim_key'] == product.birimKey || unit['_key'] == product.birimKey) {
             return {...unit, 'selected': true};
@@ -507,12 +501,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         }).toList();
       }
       
-      debugPrint('Available units for ${product.stockCode}: ${_availableUnitsForSelectedProduct.length}');
-      for (var unit in _availableUnitsForSelectedProduct) {
-        debugPrint('  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key'] ?? unit['_key']}, selected: ${unit['selected'] ?? false}');
-      }
     } catch (e) {
-      debugPrint('Error getting units for product: $e');
       _availableUnitsForSelectedProduct = [];
     }
     
@@ -566,15 +555,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   /// Dropdown'dan birim seçildiğinde selected product'ı günceller
   void updateSelectedProduct(ProductInfo updatedProduct) {
-    debugPrint("🔄 Updating selected product:");
-    debugPrint("  - Old product: ${_selectedProduct?.name} - ${_selectedProduct?.displayUnitName}");
-    debugPrint("  - Old source type: ${_selectedProduct?.birimInfo?['source_type']}");
-    debugPrint("  - Old is out of order: ${_selectedProduct?.isOutOfOrder}");
-    debugPrint("  - New birim_key: ${updatedProduct.birimKey}");
-    debugPrint("  - New unit name: ${updatedProduct.displayUnitName}");
-    debugPrint("  - New is out of order: ${updatedProduct.isOutOfOrder}");
-    debugPrint("  - New source type: ${updatedProduct.birimInfo?['source_type']}");
-    debugPrint("  - New order quantity: ${updatedProduct.orderQuantity}");
     
     _selectedProduct = updatedProduct;
     
@@ -590,7 +570,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     // Hata durumunu temizle 
     _error = null;
     
-    debugPrint("🔄 Selected product updated successfully. Notifying listeners...");
     notifyListeners();
   }
 
@@ -723,7 +702,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Arka planda senkronizasyonu tetikle, ama sonucunu bekleme.
       // Hata olursa (örn. offline), SyncService bunu daha sonra tekrar deneyecek.
       _syncService.uploadPendingOperations().catchError((e) {
-        debugPrint("Offline sync attempt failed for goods receipt, will retry later: $e");
       });
 
       return true;
@@ -754,12 +732,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         employeeId: employeeId,
       ),
       items: _addedItems.map((draft) {
-        // KRITIK DEBUG: birimKey değerini logla
-        debugPrint('GOODS_RECEIPT DEBUG: Creating item payload for product ${draft.product.key}');
-        debugPrint('  - Product name: ${draft.product.name}');
-        debugPrint('  - birimKey: ${draft.product.birimKey}');
-        debugPrint('  - birimInfo: ${draft.product.birimInfo}');
-        debugPrint('  - isOutOfOrder: ${draft.product.isOutOfOrder}');
         
         return GoodsReceiptItemPayload(
           productId: draft.product.key, // _key değeri kullanılıyor
@@ -840,90 +812,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     }
 
     // Use the comprehensive validation helper
-    bool isValid = _isValidDateString(value);
-    debugPrint('ViewModel validation - Date: $value, IsValid: $isValid'); // Debug
+    bool isValid = DateValidationUtils.isValidExpiryDate(value);
     if (!isValid) {
       // Give specific error message based on the problem
-      return _getDateValidationError(value);
+      return DateValidationUtils.getDateValidationError(value);
     }
 
     return null;
   }
 
-  // Helper function to validate date strings
-  bool _isValidDateString(String dateString) {
-    if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
-      return false;
-    }
-    
-    try {
-      final parts = dateString.split('/');
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-      
-      // Basic year check - must be current year or later
-      final currentYear = DateTime.now().year;
-      if (year < currentYear) {
-        return false;
-      }
-      
-      // Create DateTime - it will adjust invalid dates automatically
-      final date = DateTime(year, month, day);
-      
-      // DateTime constructor adjusts invalid dates, so check if it's still the same
-      if (date.day != day || date.month != month || date.year != year) {
-        return false;
-      }
-      
-      // Check if date is not in the past
-      final today = DateTime.now();
-      final todayDate = DateTime(today.year, today.month, today.day);
-      
-      return !date.isBefore(todayDate);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Helper function to get specific validation error message
-  String _getDateValidationError(String dateString) {
-    if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
-      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-    }
-    
-    try {
-      final parts = dateString.split('/');
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-      
-      // Basic structure check
-      if (month < 1 || month > 12 || day < 1) {
-        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-      }
-      
-      // Create DateTime to check if date is valid
-      final date = DateTime(year, month, day);
-      
-      // Check if date was adjusted (invalid date like Feb 30)
-      if (date.day != day || date.month != month || date.year != year) {
-        return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-      }
-      
-      // Check if date is in the past
-      final today = DateTime.now();
-      final todayDate = DateTime(today.year, today.month, today.day);
-      
-      if (date.isBefore(todayDate)) {
-        return 'goods_receiving_screen.validator_expiry_date_future'.tr();
-      }
-      
-      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-    } catch (e) {
-      return 'goods_receiving_screen.validator_expiry_date_format'.tr();
-    }
-  }
 
   void clearError() {
     _error = null;
@@ -1056,7 +953,6 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     try {
       availableUnits = await DatabaseHelper.instance.getAllUnitsForProduct(product.stockCode);
     } catch (e) {
-      debugPrint('Error getting units for product: $e');
       availableUnits = [];
     }
     
@@ -1111,23 +1007,18 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
     if (widget.availableUnits.isNotEmpty) {
       // Birim anahtarına göre mevcut birimi ara
       final currentBirimKey = widget.product.birimKey;
-      debugPrint("🎯 Modal opening - looking for birim_key: $currentBirimKey");
-      debugPrint("  - Available units: ${widget.availableUnits.map((u) => '${u['birimadi']} (key: ${u['birim_key']})').join(', ')}");
       
       if (currentBirimKey != null) {
         selectedUnitIndex = widget.availableUnits.indexWhere(
           (unit) => unit['birim_key'] == currentBirimKey || unit['_key'] == currentBirimKey,
         );
-        debugPrint("  - Found at index: $selectedUnitIndex");
         
         if (selectedUnitIndex == -1) {
           // Bulamazsa ilkini seç
           selectedUnitIndex = 0;
-          debugPrint("  - Not found, defaulting to index 0");
         }
       } else {
         selectedUnitIndex = 0; // İlkini seç
-        debugPrint("  - No birim_key, defaulting to index 0");
       }
     }
   }
@@ -1201,7 +1092,7 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                              style: widget.theme.textTheme.bodyMedium?.copyWith(
                                color: widget.theme.colorScheme.onSurfaceVariant,
                              )),
-                        Container(
+                        SizedBox(
                           width: 120,
                           child: Padding(
                             padding: const EdgeInsets.only(left: 8),
@@ -1333,11 +1224,10 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
             if (selectedUnitIndex != null && selectedUnitIndex! < widget.availableUnits.length) {
               final selectedUnit = widget.availableUnits[selectedUnitIndex!];
               final selectedBirimKey = selectedUnit['birim_key'];
-              debugPrint("✅ Modal accepted with unit: ${selectedUnit['birimadi']} (key: $selectedBirimKey)");
               
               // Seçilen birimin sipariş içi mi dışı mı olduğunu kontrol et
               bool isOrderUnit = false;
-              String sourceType = 'out_of_order';
+              String sourceType = GoodsReceivingConstants.sourceTypeOutOfOrder;
               
               for (var orderItem in widget.orderItems) {
                 final orderBirimKey = orderItem.product?.birimKey;
@@ -1346,14 +1236,12 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                 if (orderStockCode == widget.product.stockCode && 
                     orderBirimKey == selectedBirimKey) {
                   isOrderUnit = true;
-                  sourceType = 'order';
-                  debugPrint("  ✅ Selected unit is IN ORDER");
+                  sourceType = GoodsReceivingConstants.sourceTypeOrder;
                   break;
                 }
               }
               
               if (!isOrderUnit) {
-                debugPrint("  ❌ Selected unit is OUT OF ORDER");
               }
               
               // Seçilen birimle güncellenmiş ProductInfo oluştur
@@ -1377,11 +1265,10 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
               if (widget.product.birimKey == null && widget.availableUnits.isNotEmpty) {
                 final firstUnit = widget.availableUnits.first;
                 final firstBirimKey = firstUnit['birim_key'];
-                debugPrint("⚠️ No selection, using first unit: ${firstUnit['birimadi']} (key: $firstBirimKey)");
                 
                 // İlk birimin sipariş içi mi dışı mı olduğunu kontrol et
                 bool isOrderUnit = false;
-                String sourceType = 'out_of_order';
+                String sourceType = GoodsReceivingConstants.sourceTypeOutOfOrder;
                 
                 for (var orderItem in widget.orderItems) {
                   final orderBirimKey = orderItem.product?.birimKey;
@@ -1390,7 +1277,7 @@ class _OutOfOrderProductDialogState extends State<_OutOfOrderProductDialog> {
                   if (orderStockCode == widget.product.stockCode && 
                       orderBirimKey == firstBirimKey) {
                     isOrderUnit = true;
-                    sourceType = 'order';
+                    sourceType = GoodsReceivingConstants.sourceTypeOrder;
                     break;
                   }
                 }

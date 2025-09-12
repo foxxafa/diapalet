@@ -1,5 +1,4 @@
 // lib/features/goods_receiving/domain/entities/purchase_order_item.dart
-import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 
 class PurchaseOrderItem {
@@ -38,8 +37,6 @@ class PurchaseOrderItem {
   /// Repository katmanı bu temel nesneyi oluşturduktan sonra yeni bir
   /// nesne yaratarak bu alanı doldurur.
   factory PurchaseOrderItem.fromDb(Map<String, dynamic> map) {
-    debugPrint("Creating PurchaseOrderItem from map. miktar value: ${map['miktar']}, type: ${map['miktar'].runtimeType}");
-    debugPrint("DEBUG: PurchaseOrderItem.fromDb map urun_key: ${map['urun_key']}, _key: ${map['_key']}");
     
     // miktar değerini güvenli şekilde parse et
     double expectedQty = 0.0;
@@ -52,10 +49,8 @@ class PurchaseOrderItem {
       }
     }
     
-    debugPrint("Parsed expectedQuantity: $expectedQty");
     
     final productId = map['urun_key'] as String;
-    debugPrint("DEBUG: Final productId being used: $productId");
     
     return PurchaseOrderItem(
       id: map['id'] as int,

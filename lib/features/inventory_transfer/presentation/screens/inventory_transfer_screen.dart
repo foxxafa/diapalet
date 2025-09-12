@@ -90,7 +90,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   // Pallet search state
   List<String> _palletSearchResults = [];
-  bool _isSearchingPallets = false;
 
   // Barcode service
   late final BarcodeIntentService _barcodeService;
@@ -426,12 +425,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (query.trim().isEmpty) {
       setState(() {
         _palletSearchResults = [];
-        _isSearchingPallets = false;
       });
       return;
     }
 
-    setState(() => _isSearchingPallets = true);
 
     try {
       // Search through available containers for matching pallets
@@ -443,15 +440,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (mounted) {
         setState(() {
           _palletSearchResults = filteredPallets;
-          _isSearchingPallets = false;
-        });
+          });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _palletSearchResults = [];
-          _isSearchingPallets = false;
-        });
+          });
         _showErrorSnackBar('inventory_transfer.error_searching_pallets'.tr(namedArgs: {'error': e.toString()}));
       }
     }
@@ -861,7 +856,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _productSearchResults = [];
     _isSearchingProducts = false;
     _palletSearchResults = [];
-    _isSearchingPallets = false;
     _productsInContainer = [];
     _selectedContainer = null;
     _dynamicProductLabel = null; // Label'ı da temizle

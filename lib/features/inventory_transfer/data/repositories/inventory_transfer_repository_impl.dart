@@ -375,7 +375,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
           });
 
           if (sourceLocationId == null && header.siparisId != null) {
-            final orderLine = await txn.query(
+            await txn.query(
               DbTables.orderLines,
               columns: ['id'],
               where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',

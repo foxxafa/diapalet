@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/domain/entities/product_info.dart
 import 'package:equatable/equatable.dart';
+import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 
 class ProductInfo extends Equatable {
   final int id; // Backward compatibility için int olarak kalacak
@@ -75,13 +76,11 @@ class ProductInfo extends Equatable {
       isActive: (map['aktif'] as int? ?? 1) == 1,
       birimInfo: birimInfoMap,
       barkodInfo: barkodInfoMap,
-      isOutOfOrder: map['is_out_of_order'] as bool? ?? (map['source_type'] == 'out_of_order'),
+      isOutOfOrder: map['is_out_of_order'] as bool? ?? (map['source_type'] == GoodsReceivingConstants.sourceTypeOutOfOrder),
       quantityReceived: (map['quantity_received'] as num?)?.toDouble(),
     );
   }
 
-  /// Genel Map'ten nesne oluşturur (backward compatibility)
-  factory ProductInfo.fromMap(Map<String, dynamic> map) => ProductInfo.fromDbMap(map);
   // GÜNCELLEME SONU
 
   /// API'den gelen JSON'dan nesne oluşturur.
@@ -126,7 +125,7 @@ class ProductInfo extends Equatable {
   String? get displayUnitName => unitName;
 
   /// Sipariş içi/dışı durumu
-  bool get isOrderedUnit => birimInfo?['source_type'] == 'order';
+  bool get isOrderedUnit => birimInfo?['source_type'] == GoodsReceivingConstants.sourceTypeOrder;
 
   /// Birim anahtarı (birim_key) - siparişteki birim anahtarı
   String? get birimKey => birimInfo?['birim_key'] as String?;

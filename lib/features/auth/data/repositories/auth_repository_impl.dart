@@ -191,7 +191,7 @@ class AuthRepositoryImpl implements AuthRepository {
     } on DioException catch (e) {
       // Güvenlik için tüm hatalar (403, 401, 400 vs.) aynı mesajı göstersin
       throw Exception('login.error.invalid_credentials');
-    } catch (e) {
+    } catch (_) {
       rethrow;
     }
   }

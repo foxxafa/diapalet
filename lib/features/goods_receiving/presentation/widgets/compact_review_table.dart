@@ -4,6 +4,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
+import 'package:diapalet/features/goods_receiving/utils/header_builder_utils.dart';
 
 class CompactReviewTable extends StatelessWidget {
   final GoodsReceivingViewModel viewModel;
@@ -52,52 +53,6 @@ class CompactReviewTable extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionDivider(BuildContext context, String title) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-      child: Row(
-        children: [
-          Icon(
-            Icons.description_outlined,
-            size: 18,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          if (isFreeReceiving && deliveryNoteNumber != null && deliveryNoteNumber!.isNotEmpty) ...[
-            const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withAlpha(77),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: theme.colorScheme.primary.withAlpha(51),
-                  width: 0.5,
-                ),
-              ),
-              child: Text(
-                deliveryNoteNumber!,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
   List<Widget> _buildOrderItemRows(BuildContext context) {
     final widgets = <Widget>[];
@@ -150,14 +105,10 @@ class CompactReviewTable extends StatelessWidget {
       
       // 🚚 Her pallet için section
       palletGroups.forEach((palletBarcode, palletItems) {
-        widgets.add(_buildPalletHeader(context, palletBarcode!));
+        widgets.add(HeaderBuilderUtils.buildPalletHeader(context, palletBarcode!));
         // Palet içindeki ürünler (indent)
         for (final item in palletItems) {
           // Sipariş içi ürünler için orderItem bilgisini bul
-          PurchaseOrderItem? relatedOrderItem;
-          if (!item.product.isOutOfOrder) {
-            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
-          }
           
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
@@ -166,7 +117,6 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
-              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -175,13 +125,9 @@ class CompactReviewTable extends StatelessWidget {
       
       // 📦 Loose Items (palet olmayan ürünler)
       if (looseItems.isNotEmpty) {
-        widgets.add(_buildLooseItemsHeader(context));
+        widgets.add(HeaderBuilderUtils.buildLooseItemsHeader(context));
         for (final item in looseItems) {
           // Sipariş içi ürünler için orderItem bilgisini bul
-          PurchaseOrderItem? relatedOrderItem;
-          if (!item.product.isOutOfOrder) {
-            relatedOrderItem = sortedOrderItems.where((orderItem) => orderItem.productId == item.product.key).firstOrNull;
-          }
           
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
@@ -190,7 +136,6 @@ class CompactReviewTable extends StatelessWidget {
               productName: item.product.name,
               stockCode: item.product.stockCode,
               items: [item],
-              orderItem: relatedOrderItem,
               isOutOfOrder: item.product.isOutOfOrder,
             ),
           ));
@@ -214,7 +159,6 @@ class CompactReviewTable extends StatelessWidget {
           productName: product.name,
           stockCode: product.stockCode,
           items: [],
-          orderItem: orderItem,
         ));
       }
     }
@@ -239,7 +183,7 @@ class CompactReviewTable extends StatelessWidget {
     // Her delivery note grubu için widget oluştur
     deliveryNoteGroups.forEach((deliveryNote, items) {
       // 📄 Delivery Note Header
-      widgets.add(_buildDeliveryNoteHeaderWithNumber(context, deliveryNote));
+      widgets.add(HeaderBuilderUtils.buildDeliveryNoteHeader(context, deliveryNote));
       
       // Bu delivery note'daki ürünleri pallet bazında grupla
       final Map<String?, List<ReceiptItemDraft>> palletGroups = {};
@@ -255,7 +199,7 @@ class CompactReviewTable extends StatelessWidget {
       
       // 🚚 Her pallet için section
       palletGroups.forEach((palletBarcode, palletItems) {
-        widgets.add(_buildPalletHeader(context, palletBarcode!));
+        widgets.add(HeaderBuilderUtils.buildPalletHeader(context, palletBarcode!));
         // Palet içindeki ürünler (indent)
         for (final item in palletItems) {
           widgets.add(Padding(
@@ -273,7 +217,7 @@ class CompactReviewTable extends StatelessWidget {
       
       // 📦 Loose Items
       if (looseItems.isNotEmpty) {
-        widgets.add(_buildLooseItemsHeader(context));
+        widgets.add(HeaderBuilderUtils.buildLooseItemsHeader(context));
         for (final item in looseItems) {
           widgets.add(Padding(
             padding: const EdgeInsets.only(left: 16),
@@ -291,7 +235,7 @@ class CompactReviewTable extends StatelessWidget {
     
     // DB'deki ürünleri ekle (sadece sipariş bazlı mal kabul modunda)
     if (outOfOrderItems.isNotEmpty && !isFreeReceiving) {
-      widgets.add(_buildDeliveryNoteHeaderWithNumber(context, "Önceki Kabuller"));
+      widgets.add(HeaderBuilderUtils.buildDeliveryNoteHeader(context, "Önceki Kabuller"));
       for (final productInfo in outOfOrderItems) {
         widgets.add(Padding(
           padding: const EdgeInsets.only(left: 16),
@@ -311,179 +255,8 @@ class CompactReviewTable extends StatelessWidget {
     return widgets;
   }
 
-  List<Widget> _buildOrderBasedOutOfOrderItems(BuildContext context) {
-    final widgets = <Widget>[];
-    
-    // Memory'deki sipariş dışı ürünler
-    final memoryOutOfOrderItems = viewModel.addedItems.where((item) => item.product.isOutOfOrder).toList();
-    
-    // Sipariş dışı ürünleri direkt liste halinde göster (delivery note header olmadan)
-    for (final item in memoryOutOfOrderItems) {
-      widgets.add(_buildProductCard(
-        context: context,
-        productName: item.product.name,
-        stockCode: item.product.stockCode,
-        items: [item],
-        isOutOfOrder: true,
-      ));
-    }
-    
-    // DB'deki önceki kabul edilmiş ürünler
-    for (final productInfo in outOfOrderItems) {
-      widgets.add(_buildProductCard(
-        context: context,
-        productName: productInfo.name,
-        stockCode: productInfo.stockCode,
-        items: [],
-        productInfo: productInfo,
-        isOutOfOrder: true,
-        isFromDB: true,
-      ));
-    }
-    
-    return widgets;
-  }
 
-  // 📄 Delivery Note Header
-  Widget _buildDeliveryNoteHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-      child: Row(
-        children: [
-          Icon(
-            Icons.receipt_long,
-            size: 18,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Delivery Note:',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (deliveryNoteNumber != null && deliveryNoteNumber!.isNotEmpty) ...[
-            Text(
-              deliveryNoteNumber!,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontFamily: 'monospace',
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ] else ...[
-            Text(
-              'Genel',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
-  // 📄 Delivery Note Header with specific number
-  Widget _buildDeliveryNoteHeaderWithNumber(BuildContext context, String? noteNumber) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: Row(
-        children: [
-          Icon(
-            Icons.receipt_long,
-            size: 18,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Delivery Note:',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            noteNumber ?? 'Genel',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontFamily: noteNumber != null ? 'monospace' : null,
-              color: noteNumber != null ? theme.colorScheme.primary : theme.colorScheme.outline,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 🚚 Pallet Header
-  Widget _buildPalletHeader(BuildContext context, String palletBarcode) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 8, 4),
-      child: Row(
-        children: [
-          Icon(
-            Icons.pallet,
-            size: 16,
-            color: theme.colorScheme.secondary,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Pallet:',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.secondary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            palletBarcode,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontFamily: 'monospace',
-              color: theme.colorScheme.secondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 📦 Loose Items Header
-  Widget _buildLooseItemsHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 8, 4),
-      child: Row(
-        children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            size: 16,
-            color: theme.colorScheme.outline,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'goods_receiving_screen.other_items'.tr(),
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.outline,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
 
   Widget _buildProductCard({
@@ -491,7 +264,6 @@ class CompactReviewTable extends StatelessWidget {
     required String productName,
     required String stockCode,
     required List<ReceiptItemDraft> items,
-    PurchaseOrderItem? orderItem,
     ProductInfo? productInfo,
     bool isOutOfOrder = false,
     bool isFromDB = false,
@@ -500,7 +272,7 @@ class CompactReviewTable extends StatelessWidget {
     final totalQuantity = items.fold<double>(0.0, (sum, item) => sum + item.quantity);
     final unit = items.isNotEmpty 
         ? items.first.product.displayUnitName ?? ''
-        : orderItem?.unitName ?? orderItem?.unit ?? productInfo?.displayUnitName ?? '';
+        : productInfo?.displayUnitName ?? '';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -518,7 +290,7 @@ class CompactReviewTable extends StatelessWidget {
         ),
       ),
       child: InkWell(
-        onTap: (!isOutOfOrder && !isFromDB && (items.isNotEmpty || orderItem != null)) ? () => _showDetailDialog(context, productName, stockCode, items, orderItem, productInfo) : null,
+        onTap: (!isOutOfOrder && !isFromDB && items.isNotEmpty) ? () => _showDetailDialog(context, productName, stockCode, items, productInfo) : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -588,13 +360,6 @@ class CompactReviewTable extends StatelessWidget {
                         color: theme.colorScheme.primary,
                       ),
                     ),
-                  ] else if (orderItem != null) ...[
-                    Text(
-                      '0 $unit',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
                   ],
                 ],
               ),
@@ -640,7 +405,7 @@ class CompactReviewTable extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildProductExtraInfo(BuildContext context, List<ReceiptItemDraft> items, {PurchaseOrderItem? orderItem, bool showPalletInfo = true, bool isOutOfOrder = false}) {
+  List<Widget> _buildProductExtraInfo(BuildContext context, List<ReceiptItemDraft> items, {bool showPalletInfo = true, bool isOutOfOrder = false}) {
     final theme = Theme.of(context);
     final widgets = <Widget>[];
     
@@ -724,7 +489,6 @@ class CompactReviewTable extends StatelessWidget {
     String productName,
     String stockCode,
     List<ReceiptItemDraft> items,
-    PurchaseOrderItem? orderItem,
     ProductInfo? productInfo,
   ) {
     showDialog(
@@ -733,7 +497,7 @@ class CompactReviewTable extends StatelessWidget {
         productName: productName,
         stockCode: stockCode,
         items: items,
-        orderItem: orderItem,
+        orderItem: null,
         productInfo: productInfo,
         onItemRemoved: onItemRemoved,
       ),
@@ -894,15 +658,15 @@ class ProductDetailDialog extends StatelessWidget {
             const SizedBox(height: 12),
           ],
           
-          _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), '${orderItem!.expectedQuantity.toStringAsFixed(0)}', unit),
+          _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem!.expectedQuantity.toStringAsFixed(0), unit),
           const SizedBox(height: 8),
-          _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), '${orderItem!.receivedQuantity.toStringAsFixed(0)}', unit),
+          _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), orderItem!.receivedQuantity.toStringAsFixed(0), unit),
           const SizedBox(height: 8),
-          _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), '${quantityBeingAdded.toStringAsFixed(0)}', unit, 
+          _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), quantityBeingAdded.toStringAsFixed(0), unit, 
             color: theme.colorScheme.primary),
           if (remaining > 0) ...[
             const SizedBox(height: 8),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), '${remaining.toStringAsFixed(0)}', unit, 
+            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), remaining.toStringAsFixed(0), unit, 
               color: theme.colorScheme.error),
           ],
         ],
@@ -949,7 +713,7 @@ class ProductDetailDialog extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Center(
-            child: _buildStatColumn(context, 'Kabul Edilen', '${quantity.toStringAsFixed(0)}', unit, 
+            child: _buildStatColumn(context, 'Kabul Edilen', quantity.toStringAsFixed(0), unit, 
               color: theme.colorScheme.secondary),
           ),
         ],
@@ -1010,136 +774,7 @@ class ProductDetailDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildItemsList(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          items.length == 1 ? 'Eklenen Ürün' : 'Eklenen Ürünler (${items.length})',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...items.asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value;
-          return _buildItemRow(context, item, index + 1);
-        }),
-      ],
-    );
-  }
 
-  Widget _buildItemRow(BuildContext context, ReceiptItemDraft item, int index) {
-    final theme = Theme.of(context);
-    final expiryText = item.expiryDate != null 
-        ? DateFormat('dd/MM/yyyy').format(item.expiryDate!) 
-        : null;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer.withAlpha(128),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.dividerColor.withAlpha(128),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Index
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Center(
-              child: Text(
-                index.toString(),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          
-          // Item info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (item.palletBarcode != null || expiryText != null) ...[
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      if (item.palletBarcode != null)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.pallet, size: 16, color: theme.colorScheme.outline),
-                            const SizedBox(width: 4),
-                            Text(
-                              item.palletBarcode!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.outline,
-                              ),
-                            ),
-                          ],
-                        ),
-                      if (expiryText != null)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.schedule, size: 16, color: theme.colorScheme.outline),
-                            const SizedBox(width: 4),
-                            Text(
-                              expiryText,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.outline,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          // Delete button
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              color: theme.colorScheme.error,
-            ),
-            onPressed: () {
-              onItemRemoved(item);
-              if (items.length == 1) {
-                Navigator.of(context).pop();
-              }
-            },
-            tooltip: 'Sil',
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildExpiryInfo(BuildContext context) {
     final theme = Theme.of(context);
@@ -1211,38 +846,4 @@ class ProductDetailDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              size: 64,
-              color: theme.colorScheme.outline.withAlpha(128),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Henüz eklenen ürün yok',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Bu ürün için miktar eklemek üzere ana ekrana geri dönebilirsiniz',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

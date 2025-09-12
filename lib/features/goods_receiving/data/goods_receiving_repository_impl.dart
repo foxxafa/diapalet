@@ -7,11 +7,11 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order_item.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/location_info.dart';
+import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -30,10 +30,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<void> saveGoodsReceipt(GoodsReceiptPayload payload) async {
-    debugPrint("--- Mal Kabul Kaydı Başlatılıyor ---");
-    debugPrint("Header: ${jsonEncode(payload.header.toJson())}");
-    debugPrint("Items: ${jsonEncode(payload.items.map((e) => e.toJson()).toList())}");
-    debugPrint("------------------------------------");
     await _saveGoodsReceiptLocally(payload);
   }
 
@@ -49,7 +45,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       deliveryNoteGroups.putIfAbsent(deliveryNote, () => []).add(item);
     }
 
-    debugPrint("Items grouped by delivery notes: ${deliveryNoteGroups.length} groups");
 
     try {
       await db.transaction((txn) async {
@@ -58,7 +53,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           final deliveryNote = entry.key;
           final items = entry.value;
           
-          debugPrint("Processing delivery note: $deliveryNote with ${items.length} items");
           
           // 1. ADIM: Bu grup için UNIQUE ID'Yİ AL
           final pendingOp = PendingOperation.create(
@@ -81,21 +75,20 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           };
           final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
 
-          const stockStatus = 'receiving';
+          const stockStatus = GoodsReceivingConstants.stockStatusReceiving;
           
           // 3. ADIM: Bu gruptaki items'ları kaydet
           final Map<int, String> itemStockUuids = {};
           
           for (var i = 0; i < items.length; i++) {
             final item = items[i];
-            debugPrint("Inserting item: ${item.productId}, qty: ${item.quantity} for delivery note: $deliveryNote");
             
             // Her item için UUID üret
             const uuid = Uuid();
             final stockUuid = uuid.v4();
             itemStockUuids[i] = stockUuid;
             
-            final itemId = await txn.insert(DbTables.goodsReceiptItems, {
+            await txn.insert(DbTables.goodsReceiptItems, {
               'receipt_id': receiptId,
               'urun_key': item.productId,
               'birim_key': item.birimKey,
@@ -107,7 +100,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               'created_at': DateTime.now().toUtc().toIso8601String(),
               'updated_at': DateTime.now().toUtc().toIso8601String(),
             });
-            debugPrint("Item inserted with ID: $itemId");
 
             // Stock güncelle
             await _updateStockWithKey(
@@ -122,7 +114,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                 item.expiryDate?.toIso8601String(),
                 receiptId,
                 stockUuid);
-            debugPrint("Stock updated for: ${item.productId}");
           }
 
           // 4. ADIM: Bu grup için enriched data oluştur ve pending operation ekle
@@ -163,9 +154,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _checkAndUpdateOrderStatus(txn, payload.header.siparisId!);
         }
       });
-      debugPrint("Mal kabul işlemi (${deliveryNoteGroups.length} delivery note grubu) başarıyla lokale kaydedildi.");
     } catch (e) {
-      debugPrint("Lokal mal kabul kaydı hatası: $e");
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
     }
   }
@@ -253,7 +242,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     // KRITIK FIX: Backend mantığı ile aynı
     // 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
     // 'available' durumunda siparis_id'yi dahil etme - konsolidasyon için
-    if (stockStatus == 'receiving') {
+    if (stockStatus == GoodsReceivingConstants.stockStatusReceiving) {
       if (siparisId == null) {
         whereClauses.add('siparis_id IS NULL');
       } else {
@@ -346,7 +335,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   @override
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
-    debugPrint("DEBUG: Getting items for order ID: $orderId");
 
     // FIX: DISTINCT kullanarak duplike kayıtları engelle
     // Barkod JOIN'ini kaldıralım, sadece temel bilgileri alalım
@@ -375,12 +363,9 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final productCode = line['StokKodu'] as String?;
       
       if (urunKey == null || productCode == null) {
-        debugPrint("DEBUG: Skipping order line due to missing keys. Line ID: ${line['id']}");
         continue;
       }
 
-      debugPrint("DEBUG: Processing order line - Product: $productCode, Unit: ${line['birimadi']}, Ordered: ${line['miktar']}");
-      debugPrint("DEBUG: sipbirimkey: ${line['sipbirimkey']}, birim_key: ${line['birim_key']}");
 
       // Alınan miktarı hesapla - bulunan urunKey'i kullan
       final receivedQuantityResult = await db.rawQuery('''
@@ -403,12 +388,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       enrichedMap['transferredQuantity'] = transferredQuantity;
       
       // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
-      debugPrint("DEBUG: Order line - Product: $productCode, Unit: ${line['birimadi']}, sipbirimkey: ${line['sipbirimkey']}, Expected: ${line['miktar']}");
       
       items.add(PurchaseOrderItem.fromDb(enrichedMap));
     }
 
-    debugPrint("DEBUG: Found ${items.length} items for order $orderId");
     return items;
   }
 
@@ -445,7 +428,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         whereArgs: [orderId],
       );
     });
-    debugPrint("Sipariş #$orderId lokal durumu $newStatus olarak güncellendi ve senkronizasyon için sıraya alındı.");
   }
 
   @override
@@ -477,7 +459,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       );
     });
 
-    debugPrint("Sipariş #$orderId lokal olarak manuel kapatıldı (status 2) ve senkronizasyon için sıraya alındı.");
   }
 
   @override
@@ -516,7 +497,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<ProductInfo?> findProductByBarcodeExactMatch(String barcode, {int? orderId}) async {
-    debugPrint("🔍 DEBUG: findProductByBarcodeExactMatch aranan barkod: '$barcode', orderId: $orderId");
 
     if (orderId != null) {
       // Sipariş bazlı arama: Tüm birimleri al ve önceliği siparişli birimlere ver
@@ -524,18 +504,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       
       if (results.isNotEmpty) {
         // Önce siparişli birim (source_type = 'order') varsa onu tercih et
-        final orderUnits = results.where((r) => r['source_type'] == 'order');
+        final orderUnits = results.where((r) => r['source_type'] == GoodsReceivingConstants.sourceTypeOrder);
         if (orderUnits.isNotEmpty) {
           final orderUnit = orderUnits.first;
-          debugPrint("✅ DEBUG: Sipariş içi birim bulundu: ${orderUnit['birimadi']}, miktar: ${orderUnit['miktar']}");
           return ProductInfo.fromDbMap(orderUnit);
         }
         
         // Sipariş dışı birim varsa (source_type = 'out_of_order')
-        final outOfOrderUnits = results.where((r) => r['source_type'] == 'out_of_order');
+        final outOfOrderUnits = results.where((r) => r['source_type'] == GoodsReceivingConstants.sourceTypeOutOfOrder);
         if (outOfOrderUnits.isNotEmpty) {
           final outOfOrderUnit = outOfOrderUnits.first;
-          debugPrint("⚠️ DEBUG: Sipariş dışı birim bulundu: ${outOfOrderUnit['birimadi']}, miktar: 0 (sipariş dışı)");
           return ProductInfo.fromDbMap(outOfOrderUnit);
         }
       }
@@ -545,10 +523,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     final result = await dbHelper.getProductByBarcode(barcode); // orderId: null
     
     if (result != null) {
-      debugPrint("✅ DEBUG: Genel aramada bulunan ürün: $result");
       return ProductInfo.fromDbMap(result);
     } else {
-      debugPrint("❌ DEBUG: Barkod ile ürün bulunamadı: '$barcode'");
       return null;
     }
   }
@@ -619,30 +595,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       WHERE gr.siparis_id = ?
     ''', [orderId]);
     
-    debugPrint("DEBUG: All receipt items for order $orderId:");
-    for (final item in allItems) {
-      debugPrint("  - ID: ${item['receipt_id']}, urun_key: ${item['urun_key']}, quantity: ${item['quantity_received']}, free: ${item['free']}");
-    }
     
     // DEBUG: Özellikle free=1 olan items'ları kontrol et
-    final freeItems = await db.rawQuery('''
+    await db.rawQuery('''
       SELECT gri.*, gr.siparis_id, gri.free
       FROM goods_receipt_items gri
       JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       WHERE gr.siparis_id = ? AND gri.free = 1
     ''', [orderId]);
     
-    debugPrint("DEBUG: Items with free=1 for order $orderId: ${freeItems.length}");
-    for (final item in freeItems) {
-      debugPrint("  - FREE ITEM: ID: ${item['receipt_id']}, urun_key: ${item['urun_key']}, quantity: ${item['quantity_received']}");
-    }
     
-    // DEBUG: 99488 key'li items'ları özel kontrol et  
-    final items99488 = allItems.where((item) => item['urun_key'] == '99488').toList();
-    debugPrint("DEBUG: Items with urun_key=99488: ${items99488.length}");
-    for (final item in items99488) {
-      debugPrint("  - 99488 ITEM: ID: ${item['receipt_id']}, free: ${item['free']}, quantity: ${item['quantity_received']}");
-    }
     
     // Sipariş dışı kabul edilen ürünleri al (free = 1) - JOIN'leri kaldır duplicate count'u önlemek için
     final outOfOrderMaps = await db.rawQuery('''
@@ -653,7 +615,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         u.StokKodu as code,
         SUM(gri.quantity_received) as quantity_received,
         MAX(gri.free) as free,
-        'out_of_order' as source_type
+        '${GoodsReceivingConstants.sourceTypeOutOfOrder}' as source_type
       FROM goods_receipt_items gri
       JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
       JOIN urunler u ON u._key = gri.urun_key
@@ -662,12 +624,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       ORDER BY MAX(gri.receipt_id) DESC
     ''', [orderId]);
     
-    debugPrint("DEBUG: Found ${outOfOrderMaps.length} out-of-order receipt items for order $orderId");
-    
-    // DEBUG: Her bir out-of-order item'ın detaylarını göster
-    for (final map in outOfOrderMaps) {
-      debugPrint("DEBUG: OUT-OF-ORDER ITEM - urun_key: ${map['product_key']}, name: ${map['name']}, quantity_received: ${map['quantity_received']}, birimadi: ${map['birimadi']}");
-    }
     
     return outOfOrderMaps.map((map) => ProductInfo.fromDbMap(map)).toList();
   }

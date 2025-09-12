@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/widgets/order_info_card.dart';
@@ -14,6 +15,8 @@ import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
 import 'package:diapalet/features/goods_receiving/presentation/widgets/compact_review_table.dart';
+import 'package:diapalet/features/goods_receiving/utils/date_validation_utils.dart';
+import 'package:diapalet/features/goods_receiving/utils/input_decoration_factory.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -157,7 +160,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                               TextFormField(
                                 controller: viewModel.deliveryNoteController,
                                 focusNode: viewModel.deliveryNoteFocusNode,
-                                decoration: _inputDecoration(
+                                decoration: InputDecorationFactory.create(
+                                  context,
                                   'goods_receiving_screen.label_delivery_note'.tr(),
                                   enabled: viewModel.isDeliveryNoteEnabled,
                                 ),
@@ -222,7 +226,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       );
   if (!mounted) return;
   if (result != null && result.isNotEmpty) {
-        await viewModel.processScannedData('product', result, context: context);
+        await viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, result, context: context);
       }
     } else if (viewModel.palletIdFocusNode.hasFocus && viewModel.palletIdController.text.isEmpty) {
   final result = await Navigator.push<String>(
@@ -231,7 +235,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       );
   if (!mounted) return;
   if (result != null && result.isNotEmpty) {
-        await viewModel.processScannedData('pallet', result, context: context);
+        await viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, result, context: context);
       }
     }
   }
@@ -303,7 +307,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 });
               } else {
                 // Search sonuçları yoksa barkod olarak işle
-                await viewModel.processScannedData('product', value, context: context);
+                await viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, value, context: context);
                 // UI güncellemesi tamamlandıktan sonra çalıştır
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted && viewModel.selectedProduct != null && viewModel.isExpiryDateEnabled) {
@@ -334,7 +338,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 );
                 if (!mounted) return;
                 if (result != null && result.isNotEmpty) {
-                  await viewModel.processScannedData('product', result, context: context);
+                  await viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, result, context: context);
                 }
               }
             }
@@ -354,16 +358,16 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       enabled: viewModel.areFieldsEnabled,
       onFieldSubmitted: (value) async {
         if (value.isNotEmpty) {
-          await viewModel.processScannedData('pallet', value, context: context);
+          await viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, value, context: context);
         }
       },
       onQrScanned: (result) async {
         // Karmaşık mantığı callback'te işle
         final currentText = viewModel.palletIdController.text.trim();
         if (currentText.isNotEmpty) {
-          await viewModel.processScannedData('pallet', currentText, context: context);
+          await viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, currentText, context: context);
         } else {
-          await viewModel.processScannedData('pallet', result, context: context);
+          await viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, result, context: context);
         }
       },
       validator: viewModel.validatePalletId,
@@ -376,15 +380,12 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     if (viewModel.selectedProduct != null && viewModel.isOrderBased) {
       // Sipariş dışı ürünler için orderItem arama yapma
       if (viewModel.selectedProduct!.isOutOfOrder) {
-        debugPrint("DEBUG: Out-of-order product, not searching for orderItem. Using ProductInfo.orderQuantity: ${viewModel.selectedProduct!.orderQuantity}");
         orderItem = null;
       } else {
         try {
           // HATA DÜZELTMESİ: item.product?.id yerine item.productId kullan
           orderItem = viewModel.orderItems.firstWhere((item) => item.productId == viewModel.selectedProduct!.key);
-          debugPrint("DEBUG: Found orderItem for product ${viewModel.selectedProduct!.key} (searching with key): expectedQuantity=${orderItem.expectedQuantity}");
         } catch (e) {
-          debugPrint("DEBUG: OrderItem not found for product ${viewModel.selectedProduct!.key} (search key). Available orderItems: ${viewModel.orderItems.map((item) => 'productId=${item.productId}, expectedQuantity=${item.expectedQuantity}')}");
           orderItem = null;
         }
       }
@@ -403,25 +404,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
 
     final totalReceived = (orderItem?.receivedQuantity ?? 0.0) + alreadyAddedInUI;
     final expectedQty = orderItem?.expectedQuantity ?? viewModel.selectedProduct?.orderQuantity ?? 0.0;
-    debugPrint("🔢 Order status calculation:");
-    debugPrint("  - Selected product: ${viewModel.selectedProduct?.name} (${viewModel.selectedProduct?.stockCode})");
-    debugPrint("  - Selected unit: ${viewModel.selectedProduct?.displayUnitName}");
-    debugPrint("  - Product key: ${viewModel.selectedProduct?.key}");
-    debugPrint("  - Is out of order: ${viewModel.selectedProduct?.isOutOfOrder}");
-    debugPrint("  - Source type: ${viewModel.selectedProduct?.birimInfo?['source_type']}");
-    debugPrint("  - OrderItem found: ${orderItem != null}");
-    if (orderItem != null) {
-      debugPrint("  - OrderItem productId: ${orderItem.productId}");
-      debugPrint("  - OrderItem expectedQuantity: ${orderItem.expectedQuantity}");
-    }
-    debugPrint("  - ProductInfo orderQuantity: ${viewModel.selectedProduct?.orderQuantity}");
-    debugPrint("  - Final expectedQty: $expectedQty");
-    debugPrint("  - Total received: $totalReceived");
-    
-    // Sipariş dışı ürün debug
-    if (orderItem == null && viewModel.selectedProduct != null) {
-      debugPrint("DEBUG: Sipariş dışı ürün - ProductInfo.orderQuantity: ${viewModel.selectedProduct!.orderQuantity}");
-    }
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,7 +416,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             enabled: viewModel.isQuantityEnabled,
-            decoration: _inputDecoration('goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.isQuantityEnabled),
+            decoration: InputDecorationFactory.create(context, 'goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.isQuantityEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) {
                 if (_formKey.currentState?.validate() ?? false) {
@@ -470,7 +452,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           inputFormatters: [
             _DateInputFormatter(),
           ],
-          decoration: _inputDecoration(
+          decoration: InputDecorationFactory.create(
+            context,
             'goods_receiving_screen.label_expiry_date'.tr(),
             enabled: viewModel.isExpiryDateEnabled,
             suffixIcon: viewModel.expiryDateController.text.isNotEmpty
@@ -492,7 +475,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             setState(() {}); // Rebuild to update suffix icon
             // DD/MM/YYYY formatı tamamlandıysa ve geçerli tarihse quantity field'a geç
             if (value.length == 10) {
-              bool isValid = _isValidDate(value);
+              bool isValid = DateValidationUtils.isValidExpiryDate(value);
               // Debug: Date: $value, IsValid: $isValid
               if (isValid) {
                 viewModel.onExpiryDateEntered();
@@ -501,11 +484,11 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           },
           onFieldSubmitted: (value) {
             if (value.length == 10) {
-              if (_isValidDate(value)) {
+              if (DateValidationUtils.isValidExpiryDate(value)) {
                 viewModel.onExpiryDateEntered();
               } else {
                 // Check if it's a past date or invalid date
-                String errorMessage = _getDateErrorMessage(value);
+                String errorMessage = DateValidationUtils.getDateValidationError(value);
                 // Debug: Error for $value: $errorMessage
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -645,24 +628,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, String? hintText}) {
-    final theme = Theme.of(context);
-    return InputDecoration(
-      labelText: label,
-      hintText: hintText,
-      filled: true,
-      fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(13),
-      border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.dividerColor.withAlpha(128))),
-      focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      isDense: true,
-      enabled: enabled,
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
-      suffixIcon: suffixIcon,
-      errorStyle: const TextStyle(height: 0.8, fontSize: 10),
-    );
-  }
 
   Future<ConfirmationAction?> _showConfirmationListDialog(GoodsReceivingViewModel viewModel) {
     FocusScope.of(context).unfocus(); // Klavyeyi gizle
@@ -735,9 +700,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     // Pallet modunda sadece pallet barcode ve product selection alanlarına el terminali ile giriş izinli
     if (viewModel.receivingMode == ReceivingMode.palet) {
       if (viewModel.palletIdFocusNode.hasFocus) {
-        viewModel.processScannedData('pallet', code, context: context);
+        viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, code, context: context);
       } else if (viewModel.productFocusNode.hasFocus) {
-        viewModel.processScannedData('product', code, context: context);
+        viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, code, context: context);
       } else {
         // Pallet modunda diğer alanlar focus'ta ise barkod okutmayı engelle
         if (viewModel.expiryDateFocusNode.hasFocus || 
@@ -749,21 +714,21 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
         
         // Eğer başka bir alan focus'ta değilse, öncelik sırasına göre işle
         if (viewModel.palletIdController.text.isEmpty) {
-          viewModel.processScannedData('pallet', code, context: context);
+          viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, code, context: context);
         } else {
           viewModel.productFocusNode.requestFocus();
-          viewModel.processScannedData('product', code, context: context);
+          viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, code, context: context);
         }
       }
     } else {
       // Product modunda eski davranışı koru
       if (viewModel.palletIdFocusNode.hasFocus) {
-        viewModel.processScannedData('pallet', code, context: context);
+        viewModel.processScannedData(GoodsReceivingConstants.fieldTypePallet, code, context: context);
       } else if (viewModel.productFocusNode.hasFocus) {
-        viewModel.processScannedData('product', code, context: context);
+        viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, code, context: context);
       } else {
         viewModel.productFocusNode.requestFocus();
-        viewModel.processScannedData('product', code, context: context);
+        viewModel.processScannedData(GoodsReceivingConstants.fieldTypeProduct, code, context: context);
       }
     }
   }
@@ -805,10 +770,6 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
               ],
             ),
             onTap: () async {
-              debugPrint("🎯 User selected product from list:");
-              debugPrint("  - Unit: ${product.displayUnitName}");
-              debugPrint("  - birim_key: ${product.birimKey}");
-              debugPrint("  - Barcode: ${product.displayBarcode}");
               await viewModel.selectProduct(product, context: context);
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted && viewModel.isExpiryDateEnabled) {
@@ -943,82 +904,6 @@ class _DateInputFormatter extends TextInputFormatter {
 
 }
 
-// Helper function to get specific error message for date validation
-String _getDateErrorMessage(String dateString) {
-  if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
-    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
-  }
-  
-  try {
-    final parts = dateString.split('/');
-    final day = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final year = int.parse(parts[2]);
-    
-    // First check if it's a valid date structure
-    if (month < 1 || month > 12 || day < 1) {
-      return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
-    }
-    
-    // Create DateTime to check if date is valid
-    final date = DateTime(year, month, day);
-    
-    // Check if date was adjusted (invalid date like Feb 30)
-    if (date.day != day || date.month != month || date.year != year) {
-      // This means the date doesn't exist (like 30/02 or 31/04)
-      return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
-    }
-    
-    // Now check if date is in the past
-    final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-    
-    if (date.isBefore(todayDate)) {
-      return 'goods_receiving_screen.error_expiry_date_past'.tr();
-    }
-    
-    // If we reach here, the date should be valid
-    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
-  } catch (e) {
-    return 'goods_receiving_screen.error_expiry_date_invalid'.tr();
-  }
-}
-
-// Helper function to validate date - using DateTime's built-in validation
-bool _isValidDate(String dateString) {
-  if (!RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(dateString)) {
-    return false;
-  }
-  
-  try {
-    final parts = dateString.split('/');
-    final day = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final year = int.parse(parts[2]);
-    
-    // Basic year check - must be current year or later
-    final currentYear = DateTime.now().year;
-    if (year < currentYear) {
-      return false;
-    }
-    
-    // Create DateTime - it will adjust invalid dates automatically
-    final date = DateTime(year, month, day);
-    
-    // DateTime constructor adjusts invalid dates, so check if it's still the same
-    if (date.day != day || date.month != month || date.year != year) {
-      return false;
-    }
-    
-    // Check if date is not in the past
-    final today = DateTime.now();
-    final todayDate = DateTime(today.year, today.month, today.day);
-    
-    return !date.isBefore(todayDate);
-  } catch (e) {
-    return false;
-  }
-}
 
 
 class _FullscreenConfirmationPage extends StatelessWidget {
@@ -1187,130 +1072,6 @@ class _FullscreenConfirmationPage extends StatelessWidget {
   }
 }
 
-class _OrderProductConfirmationCard extends StatelessWidget {
-  final PurchaseOrderItem orderItem;
-  final List<ReceiptItemDraft> itemsBeingAdded;
-  final double quantityBeingAdded;
-  final ValueChanged<ReceiptItemDraft> onRemoveItem;
-
-  const _OrderProductConfirmationCard({
-    required this.orderItem,
-    required this.itemsBeingAdded,
-    required this.quantityBeingAdded,
-    required this.onRemoveItem,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final colorScheme = theme.colorScheme;
-    final product = orderItem.product!;
-    final unit = orderItem.unit ?? '';
-    final unitName = orderItem.unitName ?? unit; // Birim adı yoksa birim kodunu kullan
-
-    final totalReceivedAfter = orderItem.receivedQuantity + quantityBeingAdded;
-    final remaining = (orderItem.expectedQuantity - totalReceivedAfter).clamp(0.0, double.infinity);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Expanded(
-                  child: Text(
-                    product.name,
-                    style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text("(${product.stockCode})", style: textTheme.bodyMedium?.copyWith(color: textTheme.bodySmall?.color)),
-              ],
-            ),
-            const Divider(height: 16),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.ordered'.tr(), orderItem.expectedQuantity, unitName),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.previously_received'.tr(), orderItem.receivedQuantity, unitName),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.currently_adding'.tr(), quantityBeingAdded, unitName, highlight: true),
-            const Divider(thickness: 1, height: 24, color: Colors.black12),
-            _buildStatRow(context, 'goods_receiving_screen.confirmation.remaining_after'.tr(), remaining, unitName, bold: true),
-            if (itemsBeingAdded.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              ...itemsBeingAdded.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.palletBarcode != null
-                                  ? 'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!})
-                                  : 'goods_receiving_screen.mode_box'.tr(),
-                              style: textTheme.bodyMedium,
-                            ),
-                            if (item.expiryDate != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                'Expires: ${DateFormat('dd/MM/yyyy').format(item.expiryDate!)}',
-                                style: textTheme.bodySmall?.copyWith(color: colorScheme.primary),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Text('${item.quantity.toStringAsFixed(0)} $unitName', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: Icon(Icons.delete_outline, color: colorScheme.error, size: 22),
-                        onPressed: () => onRemoveItem(item),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'common_labels.delete'.tr(),
-                      )
-                    ],
-                  ),
-                );
-              }),
-            ]
-          ],
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildStatRow(BuildContext context, String label, double value, String unit, {bool highlight = false, bool bold = false}) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    final valueStyle = textTheme.titleMedium?.copyWith(
-      fontWeight: bold ? FontWeight.w900 : FontWeight.bold,
-      color: highlight ? colorScheme.primary : (bold ? colorScheme.onSurface : textTheme.bodyLarge?.color),
-      fontSize: bold ? 18 : null,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: textTheme.bodyLarge),
-          Text('${value.toStringAsFixed(0)} $unit', style: valueStyle),
-        ],
-      ),
-    );
-  }
-}
 
 
 class _OrderStatusWidget extends StatefulWidget {
@@ -1360,16 +1121,13 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
         (unit) => unit['birim_key'] == newBirimKey || unit['_key'] == newBirimKey
       );
       
-      debugPrint("📍 Order status dropdown check - Current index: $_selectedUnitIndex, New index: $newIndex, birim_key: $newBirimKey");
       
       // Her zaman güncelle, aynı index olsa bile (dropdown senkronizasyonu için)
       if (newIndex != -1) {
         setState(() {
           _selectedUnitIndex = newIndex;
         });
-        debugPrint("📍 Order status dropdown SET to index: $newIndex");
       } else {
-        debugPrint("⚠️ Order status dropdown - Could not find birim_key: $newBirimKey in available units");
       }
     }
   }
@@ -1397,13 +1155,11 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
           if (_selectedUnitIndex == -1) _selectedUnitIndex = 0;
           _isLoadingUnits = false;
           
-          debugPrint("📍 Order status units loaded. Selected index: $_selectedUnitIndex (birim_key: $currentBirimKey)");
         });
       } catch (e) {
         setState(() {
           _isLoadingUnits = false;
         });
-        debugPrint('Error loading units for order status: $e');
       }
     } else {
       setState(() {
@@ -1420,12 +1176,14 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     return SizedBox(
       height: 52, // Quantity ile tam olarak aynı yükseklik
       child: InputDecorator(
-        decoration: _inputDecoration(context, 
+        decoration: InputDecorationFactory.create(
+          context,
           widget.viewModel.isOrderBased 
             ? 'goods_receiving_screen.label_order_status'.tr()
-            : 'goods_receiving_screen.label_unit_selection'.tr(), 
-          enabled: false)
-            .copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+            : 'goods_receiving_screen.label_unit_selection'.tr(),
+          enabled: false,
+          isCompact: true,
+        ).copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
       child: (widget.viewModel.selectedProduct == null)
           ? Center(
               child: Text(
@@ -1521,7 +1279,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                   final index = entry.key;
                   final unit = entry.value;
                   final unitName = unit['birimadi'] ?? '';
-                  final barcode = unit['barkod'] ?? '';
+                  // final barcode = unit['barkod'] ?? '';
                   
                   return PopupMenuItem<int>(
                     value: index,
@@ -1559,40 +1317,33 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                     // Bu birimin sipariş birimi olup olmadığını kontrol et
                     // Eğer sipariş tabanlı modda isek ve seçilen birim sipariş birimi ise 'order', değilse 'out_of_order'
                     // Serbest mal kabulde her şey 'out_of_order' olarak kabul edilir ama modal açılmaz
-                    String sourceType = 'out_of_order';
+                    String sourceType = GoodsReceivingConstants.sourceTypeOutOfOrder;
                     bool isOrderUnit = false;
                     
                     if (widget.viewModel.isOrderBased && widget.viewModel.selectedOrder != null) {
                       // Mevcut sipariş detaylarından sipariş birimlerini kontrol et
                       final orderItems = widget.viewModel.orderItems;
-                      debugPrint("📦 Checking order items (count: ${orderItems.length}) for matching unit");
-                      debugPrint("  - Looking for: StockCode=${currentProduct.stockCode}, BirimKey=$selectedBirimKey");
                       
                       for (var orderItem in orderItems) {
                         final orderBirimKey = orderItem.product?.birimKey; // ProductInfo'dan birim_key
                         final orderStockCode = orderItem.product?.stockCode;
                         
-                        debugPrint("  - Order item: StockCode=$orderStockCode, BirimKey=$orderBirimKey");
                         
                         // Stok kodu ve birim anahtarı eşleşirse bu bir sipariş birimi
                         if (orderStockCode == currentProduct.stockCode && 
                             orderBirimKey == selectedBirimKey) {
-                          sourceType = 'order';
+                          sourceType = GoodsReceivingConstants.sourceTypeOrder;
                           isOrderUnit = true;
-                          debugPrint("  ✅ MATCH FOUND! Setting as 'order'");
                           break;
                         }
                       }
                       
                       if (!isOrderUnit) {
-                        debugPrint("  ❌ No match found. Setting as 'out_of_order'");
                       }
                     } else {
-                      debugPrint("⚠️ Not in order-based mode - free receive mode, all units are valid");
                       // Serbest mal kabulde her şey geçerli, modal açılmayacak
                     }
                     
-                    debugPrint("🔄 Dropdown selection - birim_key: $selectedBirimKey, sourceType: $sourceType");
                     
                     // Yeni ProductInfo oluştur - seçilen birim bilgileriyle
                     final updatedProduct = ProductInfo.fromDbMap({
@@ -1613,7 +1364,6 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                     // Eğer sipariş dışı bir ürün seçildiyse ve sipariş tabanlı modda isek modal aç
                     // Serbest mal kabulde modal açılmamalı çünkü her şey zaten sipariş dışı
                     if (updatedProduct.isOutOfOrder && widget.viewModel.isOrderBased) {
-                      debugPrint("🚨 Out-of-order unit selected. Opening modal...");
                       final confirmedProduct = await widget.viewModel.showOutOfOrderProductModal(
                         context, 
                         updatedProduct
@@ -1630,7 +1380,6 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                             : confirmedProduct.stockCode;
                       } else {
                         // İptal edildi, önceki seçime geri dön
-                        debugPrint("🚫 Out-of-order selection cancelled. Reverting...");
                         setState(() {
                           // Önceki birim index'ini geri yükle
                           for (int i = 0; i < _availableUnits.length; i++) {
@@ -1673,231 +1422,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     );
   }
 
-  InputDecoration _inputDecoration(BuildContext context, String labelText, {bool enabled = true}) {
-    final theme = Theme.of(context);
-    final borderColor = theme.dividerColor;
-    
-    return InputDecoration(
-      labelText: labelText,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: borderColor),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: borderColor),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12.0),
-        borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    );
-  }
 }
 
-/// Sipariş dışı kabul edilen ürünleri veritabanından göstermek için kullanılan kart
-class _OutOfOrderProductInfoCard extends StatelessWidget {
-  final ProductInfo productInfo;
 
-  const _OutOfOrderProductInfoCard({
-    required this.productInfo,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final colorScheme = theme.colorScheme;
-    
-    // Quantity information from the database (if available)
-    final quantityReceived = productInfo.quantityReceived ?? 0.0;
-    final unit = productInfo.displayUnitName ?? '';
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header: Product name + stock code (same as order items)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Expanded(
-                  child: Text(
-                    productInfo.name,
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "(${productInfo.stockCode})", 
-                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
-                ),
-              ],
-            ),
-            const Divider(height: 16),
-            
-            // Content: Already received status + Quantity/Unit info
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            'goods_receiving_screen.out_of_order_already_received'.tr(),
-                            style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.secondary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${quantityReceived.toStringAsFixed(0)} $unit',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold, 
-                              color: colorScheme.secondary
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Info icon instead of delete (since it's already received)
-                Icon(
-                  Icons.info_outline,
-                  color: colorScheme.secondary,
-                  size: 24,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Memory'deki sipariş dışı ürün kartı (silinebilir)
-class _MemoryOutOfOrderItemCard extends StatelessWidget {
-  final ReceiptItemDraft item;
-  final ValueChanged<ReceiptItemDraft> onRemoveItem;
-
-  const _MemoryOutOfOrderItemCard({
-    required this.item,
-    required this.onRemoveItem,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final colorScheme = theme.colorScheme;
-    
-    // Format expiry date if exists
-    String expiryText = '';
-    if (item.expiryDate != null) {
-      expiryText = DateFormat('dd/MM/yyyy').format(item.expiryDate!);
-    }
-    
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header: Product name + stock code (same as order items)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Expanded(
-                  child: Text(
-                    item.product.name,
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "(${item.product.stockCode})", 
-                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
-                ),
-              ],
-            ),
-            const Divider(height: 16),
-            
-            // Content: Expiry + Quantity/Unit + Delete button
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (item.palletBarcode != null) ...[
-                        Text(
-                          'goods_receiving_screen.label_pallet_barcode_display_short'.tr(namedArgs: {'barcode': item.palletBarcode!}),
-                          style: textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 4),
-                      ],
-                      if (expiryText.isNotEmpty) ...[
-                        Text(
-                          'Expires: $expiryText',
-                          style: textTheme.bodyMedium?.copyWith(color: colorScheme.secondary),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                // Palet içindeki ürünler için miktar + birim adı çöp kutusu ikonunun solunda
-                // Palet içinde olmayanlar için normal konumda (spacer kullanılmış)
-                if (item.palletBarcode != null) ...[
-                  Text(
-                    '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold, 
-                      color: colorScheme.primary
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ] else ...[
-                  const Spacer(),
-                  Text(
-                    '${item.quantity.toStringAsFixed(0)} ${item.product.displayUnitName ?? ''}',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold, 
-                      color: colorScheme.primary
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                IconButton(
-                  onPressed: () => onRemoveItem(item),
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: colorScheme.error,
-                    size: 24,
-                  ),
-                  tooltip: 'common_labels.delete'.tr(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
