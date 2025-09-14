@@ -86,10 +86,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             // Her item için UUID üret
             const uuid = Uuid();
             final stockUuid = uuid.v4();
+            final itemUuid = uuid.v4();
             itemStockUuids[i] = stockUuid;
             
             await txn.insert(DbTables.goodsReceiptItems, {
               'receipt_id': receiptId,
+              'operation_unique_id': operationUniqueId,
+              'item_uuid': itemUuid,
               'urun_key': item.productId,
               'birim_key': item.birimKey,
               'quantity_received': item.quantity,

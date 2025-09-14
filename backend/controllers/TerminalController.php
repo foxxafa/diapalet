@@ -250,9 +250,10 @@ class TerminalController extends Controller
                 ->one($db);
             
             if ($stockInfo && $stockInfo['stock_uuid']) {
-                $db->createCommand()->insert('inventory_stock_tombstones', [
-                    'stock_uuid' => $stockInfo['stock_uuid'],
-                    'warehouse_code' => $warehouseCode ?: $stockInfo['warehouse_code'],
+                $db->createCommand()->insert('wms_tombstones', [
+                    'entity_type' => 0, // 0: inventory_stock
+                    'entity_uuid' => $stockInfo['stock_uuid'],
+                    'deleted_by' => $warehouseCode ?: $stockInfo['warehouse_code'],
                     'deleted_at' => new \yii\db\Expression('NOW()')
                 ])->execute();
                 
@@ -600,6 +601,8 @@ class TerminalController extends Controller
             
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId, 
+                'operation_unique_id' => $data['operation_unique_id'] ?? null, // Parent receipt'in operation_unique_id'si
+                'item_uuid' => $item['item_uuid'] ?? null, // Item'ın kendi UUID'si
                 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
                 'birim_key' => $item['birim_key'] ?? null, // Birim _key değeri
                 'quantity_received' => $item['quantity'], 
@@ -826,10 +829,21 @@ class TerminalController extends Controller
                         ];
                     }
                     
+                    // Convert to wms_tombstones format
+                    $tombstoneRecords = [];
+                    foreach ($stockUuids as $uuid) {
+                        $tombstoneRecords[] = [
+                            0, // entity_type: 0 for inventory_stock
+                            $uuid,
+                            new \yii\db\Expression('NOW()'),
+                            $employeeInfo['warehouse_code'] ?? null
+                        ];
+                    }
+                    
                     $db->createCommand()->batchInsert(
-                        'inventory_stock_tombstones',
-                        ['stock_uuid', 'warehouse_code', 'deleted_at'],
-                        $recordsToLog
+                        'wms_tombstones',
+                        ['entity_type', 'entity_uuid', 'deleted_at', 'deleted_by'],
+                        $tombstoneRecords
                     )->execute();
                     
                     Yii::info("TOMBSTONE: Logged " . count($stockUuids) . " deleted inventory_stock UUIDs", __METHOD__);
@@ -1237,7 +1251,7 @@ class TerminalController extends Controller
             // wms_putaway_status tablosu kaldırıldı
             
             // Tombstone kayıtları sayısı
-            $counts['inventory_stock_tombstones'] = $this->getTombstoneCount($warehouseCode, $serverSyncTimestamp);
+            $counts['wms_tombstones'] = $this->getTombstoneCount($warehouseCode, $serverSyncTimestamp);
 
             return [
                 'success' => true,
@@ -1373,8 +1387,9 @@ class TerminalController extends Controller
     private function getTombstoneCount($warehouseCode, $timestamp = null)
     {
         $query = (new Query())
-            ->from('inventory_stock_tombstones')
-            ->where(['warehouse_code' => $warehouseCode]);
+            ->from('wms_tombstones')
+            ->where(['entity_type' => 0]) // 0: inventory_stock
+            ->andWhere(['deleted_by' => $warehouseCode]);
 
         if ($timestamp) {
             $query->andWhere(['>=', 'deleted_at', $timestamp]);
@@ -1396,10 +1411,14 @@ class TerminalController extends Controller
 
         try {
             // UUID tabanlı tombstone tablosundan eski kayıtları temizle
-            $deleteConditions = ['<', 'deleted_at', $cutoffDateStr];
+            $deleteConditions = [
+                'and',
+                ['<', 'deleted_at', $cutoffDateStr],
+                ['entity_type' => 0] // Only inventory_stock tombstones
+            ];
 
             $deletedCount = $db->createCommand()
-                ->delete('inventory_stock_tombstones', $deleteConditions)
+                ->delete('wms_tombstones', $deleteConditions)
                 ->execute();
 
             if ($deletedCount > 0) {
@@ -1811,9 +1830,10 @@ class TerminalController extends Controller
         if ($serverSyncTimestamp) {
             // Sadece son sync'ten sonra silinmiş kayıtların UUID'lerini al
             $tombstoneQuery = (new Query())
-                ->select(['stock_uuid'])
-                ->from('inventory_stock_tombstones')
-                ->where(['>=', 'deleted_at', $serverSyncTimestamp]);
+                ->select(['entity_uuid'])
+                ->from('wms_tombstones')
+                ->where(['entity_type' => 0]) // 0: inventory_stock
+                ->andWhere(['>=', 'deleted_at', $serverSyncTimestamp]);
 
             $tombstoneUuids = $tombstoneQuery->column();
 
@@ -1836,7 +1856,7 @@ class TerminalController extends Controller
                 'barkodlar_count' => count($data['barkodlar'] ?? []),
                 'inventory_stock_count' => count($data['inventory_stock'] ?? []),
                 'inventory_transfers_count' => count($data['inventory_transfers'] ?? []),
-                'inventory_stock_tombstones_count' => count($tombstoneUuids),
+                'wms_tombstones_count' => count($tombstoneUuids),
                 'is_incremental' => !empty($lastSyncTimestamp),
                 'last_sync_timestamp' => $lastSyncTimestamp
             ]
@@ -1912,7 +1932,7 @@ class TerminalController extends Controller
                     $data = $this->getPaginatedInventoryTransfers($warehouseId, $serverSyncTimestamp, $offset, $limit);
                     break;
                 // wms_putaway_status tablosu kaldırıldı
-                case 'inventory_stock_tombstones':
+                case 'wms_tombstones':
                     $data = $this->getPaginatedTombstones($warehouseId, $serverSyncTimestamp, $offset, $limit);
                     break;
                 default:
@@ -2292,9 +2312,10 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['stock_uuid'])
-            ->from('inventory_stock_tombstones')
-            ->where(['warehouse_code' => $warehouseCode]);
+            ->select(['entity_uuid'])
+            ->from('wms_tombstones')
+            ->where(['entity_type' => 0]) // 0: inventory_stock
+            ->andWhere(['deleted_by' => $warehouseCode]);
 
         if ($serverSyncTimestamp) {
             $query->andWhere(['>=', 'deleted_at', $serverSyncTimestamp]);

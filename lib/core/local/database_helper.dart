@@ -13,7 +13,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 66; // added stock_uuid to inventory_stock table
+  static const _databaseVersion = 67; // added operation_unique_id and item_uuid to goods_receipt_items, wms_tombstones table
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -202,6 +202,8 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS goods_receipt_items (
           id INTEGER PRIMARY KEY,
           receipt_id INTEGER,
+          operation_unique_id TEXT,
+          item_uuid TEXT UNIQUE,
           urun_key TEXT,
           birim_key TEXT,
           siparis_key TEXT,
@@ -283,6 +285,7 @@ class DatabaseHelper {
           FOREIGN KEY(employee_id) REFERENCES employees(id)
         )
       ''');
+
 
       // Performance indexes - created after all tables
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_date ON goods_receipts(receipt_date)');
@@ -679,36 +682,53 @@ class DatabaseHelper {
         }
 
         // Deleted records (tombstone) processing - UUID based
-        if (data.containsKey('inventory_stock_tombstones')) {
-          final tombstones = List<String>.from(data['inventory_stock_tombstones']);
-          debugPrint('🗑️ Tombstone işleniyor: ${tombstones.length} UUID alındı');
+        if (data.containsKey('wms_tombstones')) {
+          final tombstones = List<Map<String, dynamic>>.from(data['wms_tombstones']);
+          debugPrint('🗑️ WMS Tombstone işleniyor: ${tombstones.length} kayıt alındı');
           
-          for (final stockUuid in tombstones) {
-            debugPrint('🗑️ UUID işleniyor: $stockUuid');
+          for (final tombstone in tombstones) {
+            final entityType = tombstone['entity_type'] ?? 0;
+            final entityUuid = tombstone['entity_uuid'];
             
-            // Önce kaydın var olup olmadığını kontrol et
-            final existingRecord = await txn.query(
-              'inventory_stock',
-              where: 'stock_uuid = ?',
-              whereArgs: [stockUuid],
-            );
-            debugPrint('🗑️ UUID $stockUuid için bulunan kayıt sayısı: ${existingRecord.length}');
+            debugPrint('🗑️ Entity işleniyor: type=$entityType, uuid=$entityUuid');
+            
+            String tableName = '';
+            String uuidColumn = '';
+            
+            // Entity type'a göre tablo ve sütun belirleme
+            switch (entityType) {
+              case 0: // inventory_stock
+                tableName = 'inventory_stock';
+                uuidColumn = 'stock_uuid';
+                break;
+              case 1: // goods_receipt_items
+                tableName = 'goods_receipt_items';
+                uuidColumn = 'item_uuid';
+                break;
+              case 2: // goods_receipts
+                tableName = 'goods_receipts';
+                uuidColumn = 'operation_unique_id';
+                break;
+              default:
+                debugPrint('🗑️ Bilinmeyen entity_type: $entityType');
+                continue;
+            }
             
             // UUID ile direkt silme işlemi yap
             final deletedCount = await txn.delete(
-              'inventory_stock',
-              where: 'stock_uuid = ?',
-              whereArgs: [stockUuid]
+              tableName,
+              where: '$uuidColumn = ?',
+              whereArgs: [entityUuid]
             );
             
             if (deletedCount > 0) {
-              debugPrint('🗑️ Tombstone başarılı: stock_uuid=$stockUuid silindi ($deletedCount kayıt)');
+              debugPrint('🗑️ Tombstone başarılı: $tableName.$uuidColumn=$entityUuid silindi ($deletedCount kayıt)');
             } else {
-              debugPrint('🗑️ Tombstone başarısız: stock_uuid=$stockUuid için silinecek kayıt bulunamadı');
+              debugPrint('🗑️ Tombstone başarısız: $tableName.$uuidColumn=$entityUuid için silinecek kayıt bulunamadı');
             }
             
             processedItems++;
-            updateProgress('inventory_stock_tombstones');
+            updateProgress('wms_tombstones');
           }
         }
 
@@ -770,7 +790,7 @@ class DatabaseHelper {
         for (var table in data.keys) {
           if (incrementalTables.contains(table)) continue; // Zaten yukarıda işlendi
           if (skippedTables.contains(table)) continue; // Kaldırılan tablolar
-          if (table == 'inventory_stock_tombstones') continue; // Tombstones zaten yukarıda işlendi
+          if (table == 'wms_tombstones') continue; // Tombstones zaten yukarıda işlendi
           if (data[table] is! List) continue;
           final records = List<Map<String, dynamic>>.from(data[table]);
           if (records.isEmpty) continue;
@@ -940,6 +960,16 @@ class DatabaseHelper {
         // KRITIK FIX: birim_key field handling - ensure it's properly saved
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
           newRecord['birim_key'] = newRecord['birim_key'].toString();
+        }
+        
+        // KRITIK FIX: operation_unique_id field handling - multi-device sync için gerekli
+        if (newRecord.containsKey('operation_unique_id') && newRecord['operation_unique_id'] != null) {
+          newRecord['operation_unique_id'] = newRecord['operation_unique_id'].toString();
+        }
+        
+        // KRITIK FIX: item_uuid field handling - multi-device sync için gerekli
+        if (newRecord.containsKey('item_uuid') && newRecord['item_uuid'] != null) {
+          newRecord['item_uuid'] = newRecord['item_uuid'].toString();
         }
         
         // free değerini integer olarak kaydet

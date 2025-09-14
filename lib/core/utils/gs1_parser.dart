@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 
 /// GS1 standardındaki barkodları ayrıştırmak için bir yardımcı sınıf.
 ///
@@ -85,7 +84,7 @@ class GS1Parser {
             // Kalan kısmı bu AI'ye ata ve çık.
             result[foundAi] = data.substring(currentIndex);
             currentIndex = data.length;
-            debugPrint('GS1Parser: Hatalı veri - AI $foundAi için yetersiz uzunluk.');
+            // Hatalı veri - AI için yetersiz uzunluk
             break; 
           }
         } else {
@@ -120,7 +119,7 @@ class GS1Parser {
       } else {
         // Eşleşen bir AI bulunamadı, bu muhtemelen bir GS1 olmayan barkod veya
         // verinin sonudur.
-        debugPrint('GS1Parser: Bilinmeyen AI veya veri sonu, pozisyon: $currentIndex');
+        // Bilinmeyen AI veya veri sonu
         break; // Döngüyü sonlandır
       }
     }

@@ -128,7 +128,7 @@ class _QrTextFieldState extends State<QrTextField> {
         widget.onQrScanned?.call(result);
       }
     } catch (e) {
-      debugPrint('QR scanning error: $e');
+      // QR scanning error occurred
     }
   }
 
