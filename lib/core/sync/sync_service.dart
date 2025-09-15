@@ -308,7 +308,7 @@ class SyncService with ChangeNotifier {
     final syncOrder = [
       'urunler', 'tedarikci', 'birimler', 'barkodlar', 'employees', 'shelfs',
       'siparisler', 'siparis_ayrintili', 'goods_receipts', 'goods_receipt_items',
-      'inventory_stock_tombstones', // ✅ ÖNCE tombstone'lar işlenir
+      'wms_tombstones', // ✅ ÖNCE tombstone'lar işlenir - KEY FIX
       'inventory_stock', 'inventory_transfers'
     ];
     

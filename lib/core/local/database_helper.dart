@@ -315,9 +315,15 @@ class DatabaseHelper {
       'tedarikci', 'birimler', 'barkodlar'
     ];
     await db.transaction((txn) async {
+      // Foreign key kontrollerini geçici olarak kapat
+      await txn.execute('PRAGMA foreign_keys = OFF');
+      
       for (final table in tables) {
         await txn.execute('DROP TABLE IF EXISTS $table');
       }
+      
+      // Foreign key kontrollerini tekrar aç
+      await txn.execute('PRAGMA foreign_keys = ON');
     });
     debugPrint("Yükseltme için tüm eski tablolar silindi.");
   }
@@ -681,50 +687,26 @@ class DatabaseHelper {
           }
         }
 
-        // Deleted records (tombstone) processing - UUID based
+        // Deleted records (tombstone) processing - UUID based - SADECE inventory_stock için
         if (data.containsKey('wms_tombstones')) {
-          final tombstones = List<Map<String, dynamic>>.from(data['wms_tombstones']);
-          debugPrint('🗑️ WMS Tombstone işleniyor: ${tombstones.length} kayıt alındı');
-          
-          for (final tombstone in tombstones) {
-            final entityType = tombstone['entity_type'] ?? 0;
-            final entityUuid = tombstone['entity_uuid'];
+          final tombstoneUuids = List<String>.from(data['wms_tombstones']);
+          debugPrint('🗑️ WMS Tombstone işleniyor: ${tombstoneUuids.length} inventory_stock kaydı silinecek');
+
+          for (final stockUuid in tombstoneUuids) {
             
-            debugPrint('🗑️ Entity işleniyor: type=$entityType, uuid=$entityUuid');
+            debugPrint('🗑️ Inventory stock siliniyor: stock_uuid=$stockUuid');
             
-            String tableName = '';
-            String uuidColumn = '';
-            
-            // Entity type'a göre tablo ve sütun belirleme
-            switch (entityType) {
-              case 0: // inventory_stock
-                tableName = 'inventory_stock';
-                uuidColumn = 'stock_uuid';
-                break;
-              case 1: // goods_receipt_items
-                tableName = 'goods_receipt_items';
-                uuidColumn = 'item_uuid';
-                break;
-              case 2: // goods_receipts
-                tableName = 'goods_receipts';
-                uuidColumn = 'operation_unique_id';
-                break;
-              default:
-                debugPrint('🗑️ Bilinmeyen entity_type: $entityType');
-                continue;
-            }
-            
-            // UUID ile direkt silme işlemi yap
+            // UUID ile inventory_stock silme işlemi
             final deletedCount = await txn.delete(
-              tableName,
-              where: '$uuidColumn = ?',
-              whereArgs: [entityUuid]
+              'inventory_stock',
+              where: 'stock_uuid = ?',
+              whereArgs: [stockUuid]
             );
             
             if (deletedCount > 0) {
-              debugPrint('🗑️ Tombstone başarılı: $tableName.$uuidColumn=$entityUuid silindi ($deletedCount kayıt)');
+              debugPrint('🗑️ Tombstone başarılı: inventory_stock.stock_uuid=$stockUuid silindi ($deletedCount kayıt)');
             } else {
-              debugPrint('🗑️ Tombstone başarısız: $tableName.$uuidColumn=$entityUuid için silinecek kayıt bulunamadı');
+              debugPrint('🗑️ Tombstone: inventory_stock.stock_uuid=$stockUuid için silinecek kayıt bulunamadı (muhtemelen zaten silinmiş)');
             }
             
             processedItems++;

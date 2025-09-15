@@ -14,6 +14,7 @@ import 'package:diapalet/features/goods_receiving/domain/entities/location_info.
 import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
@@ -73,23 +74,70 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             'created_at': DateTime.now().toUtc().toIso8601String(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
           };
+          
+          // DEBUG: operation_unique_id kontrolü
+          debugPrint('🔧 DEBUG: goods_receipt insert - operation_unique_id: $operationUniqueId');
+          debugPrint('🔧 DEBUG: receiptHeaderData: $receiptHeaderData');
+
+          // CRITICAL FIX: Verify database schema before insert
+          try {
+            final schemaCheck = await txn.rawQuery("PRAGMA table_info(goods_receipts)");
+            final hasOperationUniqueId = schemaCheck.any((column) => column['name'] == 'operation_unique_id');
+            debugPrint('🔧 SCHEMA CHECK: goods_receipts.operation_unique_id exists: $hasOperationUniqueId');
+
+            if (!hasOperationUniqueId) {
+              debugPrint('❌ CRITICAL: operation_unique_id column missing! Adding column...');
+              await txn.execute('ALTER TABLE goods_receipts ADD COLUMN operation_unique_id TEXT');
+            }
+          } catch (e) {
+            debugPrint('🔧 Schema check error: $e');
+          }
+
           final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
+          debugPrint('🔧 DEBUG: goods_receipt inserted with ID: $receiptId');
 
           const stockStatus = GoodsReceivingConstants.stockStatusReceiving;
           
           // 3. ADIM: Bu gruptaki items'ları kaydet
           final Map<int, String> itemStockUuids = {};
-          
+          final Map<int, String> itemUuids = {};
+
           for (var i = 0; i < items.length; i++) {
             final item = items[i];
-            
+
             // Her item için UUID üret
             const uuid = Uuid();
             final stockUuid = uuid.v4();
             final itemUuid = uuid.v4();
             itemStockUuids[i] = stockUuid;
+            itemUuids[i] = itemUuid;
             
-            await txn.insert(DbTables.goodsReceiptItems, {
+            // DEBUG: item UUID kontrolü
+            debugPrint('🔧 DEBUG: goods_receipt_item insert - item_uuid: $itemUuid');
+            debugPrint('🔧 DEBUG: goods_receipt_item insert - operation_unique_id: $operationUniqueId');
+
+            // CRITICAL FIX: Verify database schema for goods_receipt_items before insert
+            try {
+              final schemaCheck = await txn.rawQuery("PRAGMA table_info(goods_receipt_items)");
+              final hasOperationUniqueId = schemaCheck.any((column) => column['name'] == 'operation_unique_id');
+              final hasItemUuid = schemaCheck.any((column) => column['name'] == 'item_uuid');
+              debugPrint('🔧 SCHEMA CHECK: goods_receipt_items.operation_unique_id exists: $hasOperationUniqueId');
+              debugPrint('🔧 SCHEMA CHECK: goods_receipt_items.item_uuid exists: $hasItemUuid');
+
+              if (!hasOperationUniqueId) {
+                debugPrint('❌ CRITICAL: operation_unique_id column missing in goods_receipt_items! Adding column...');
+                await txn.execute('ALTER TABLE goods_receipt_items ADD COLUMN operation_unique_id TEXT');
+              }
+
+              if (!hasItemUuid) {
+                debugPrint('❌ CRITICAL: item_uuid column missing in goods_receipt_items! Adding column...');
+                await txn.execute('ALTER TABLE goods_receipt_items ADD COLUMN item_uuid TEXT UNIQUE');
+              }
+            } catch (e) {
+              debugPrint('🔧 goods_receipt_items schema check error: $e');
+            }
+
+            final itemData = {
               'receipt_id': receiptId,
               'operation_unique_id': operationUniqueId,
               'item_uuid': itemUuid,
@@ -102,7 +150,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               'free': item.isFree ? 1 : 0,
               'created_at': DateTime.now().toUtc().toIso8601String(),
               'updated_at': DateTime.now().toUtc().toIso8601String(),
-            });
+            };
+
+            debugPrint('🔧 DEBUG: goods_receipt_item data: $itemData');
+            final itemId = await txn.insert(DbTables.goodsReceiptItems, itemData);
+            debugPrint('🔧 DEBUG: goods_receipt_item inserted with ID: $itemId');
 
             // Stock güncelle
             await _updateStockWithKey(
@@ -131,7 +183,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             items: items,
           );
           
-          final enrichedData = await _createEnrichedGoodsReceiptData(txn, groupPayload, itemStockUuids);
+          final enrichedData = await _createEnrichedGoodsReceiptData(txn, groupPayload, itemStockUuids, itemUuids);
           enrichedData['operation_unique_id'] = operationUniqueId;
 
           final pendingOpForSync = PendingOperation.create(
@@ -162,7 +214,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     }
   }
 
-  Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload, Map<int, String> itemStockUuids) async {
+  Future<Map<String, dynamic>> _createEnrichedGoodsReceiptData(Transaction txn, GoodsReceiptPayload payload, Map<int, String> itemStockUuids, Map<int, String> itemUuids) async {
     final apiData = payload.toApiJson();
 
     if (payload.header.siparisId != null) {
@@ -184,10 +236,15 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         final item = payload.items[i];
         final itemData = item.toJson();
         
-        // KRITIK FIX: Önceden üretilen Stock UUID'yi payload'a ekle
+        // KRITIK FIX: Önceden üretilen Stock UUID ve item UUID'yi payload'a ekle
         final stockUuid = itemStockUuids[i];
         if (stockUuid != null) {
           itemData['stock_uuid'] = stockUuid;
+        }
+
+        final itemUuid = itemUuids[i];
+        if (itemUuid != null) {
+          itemData['item_uuid'] = itemUuid;
         }
         
         final productResult = await txn.query(
