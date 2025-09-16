@@ -173,13 +173,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u._key as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
+        (SELECT bark.barkod FROM barkodlar bark WHERE bark._key_scf_stokkart_birimleri = s.birim_key LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_key = u._key
       $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
-      GROUP BY u._key, u.UrunAdi, u.StokKodu
+      GROUP BY u._key, u.UrunAdi, u.StokKodu, s.birim_key
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
@@ -229,7 +229,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u.UrunAdi as productName,
         u.StokKodu as productCode,
         s.birim_key,
-        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
+        (SELECT bark.barkod FROM barkodlar bark WHERE bark._key_scf_stokkart_birimleri = s.birim_key LIMIT 1) as barcode,
         s.quantity as currentQuantity,
         s.expiry_date as expiryDate
       FROM inventory_stock s
@@ -551,7 +551,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       FROM siparisler o
       LEFT JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}' AND i.quantity > 0
       LEFT JOIN goods_receipts gr ON gr.siparis_id = o.id
-      LEFT JOIN goods_receipt_items gri ON gri.receipt_id = gr.goods_receipt_id AND gri.quantity_received > 0
+      LEFT JOIN goods_receipt_items gri ON gri.operation_unique_id = gr.operation_unique_id AND gri.quantity_received > 0
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.status = 2
@@ -809,12 +809,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         u._key as product_id,
         u.UrunAdi as product_name,
         u.StokKodu as product_code,
-        (SELECT bark.barkod FROM barkodlar bark JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key WHERE b.StokKodu = u.StokKodu LIMIT 1) as barcode,
+        (SELECT bark.barkod FROM barkodlar bark WHERE bark._key_scf_stokkart_birimleri = s.birim_key LIMIT 1) as barcode,
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_key = u._key
       WHERE ${whereParts.join(' AND ')}
-      GROUP BY u._key, u.UrunAdi, u.StokKodu
+      GROUP BY u._key, u.UrunAdi, u.StokKodu, s.birim_key
       LIMIT 1
     ''';
 
@@ -992,7 +992,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       final newQty = currentQty + quantityChange;
       await txn.update(
         'inventory_stock',
-        {'quantity': newQty, 'updated_at': DateTime.now().toIso8601String()},
+        {'quantity': newQty, 'updated_at': DateTime.now().toUtc().toIso8601String()},
         where: 'id = ?',
         whereArgs: [existingStock.first['id']],
       );
@@ -1010,8 +1010,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'stock_status': status,
         'siparis_id': siparisIdForAddition,
         'goods_receipt_id': goodsReceiptIdForAddition,
-        'created_at': DateTime.now().toIso8601String(), // DÜZELTME: created_at eklendi
-        'updated_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(), // DÜZELTME: created_at eklendi
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
         'expiry_date': expiryDateStr,
       });
     }
@@ -1064,7 +1064,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         if (newQty > 0.001) {
           await txn.update(DbTables.inventoryStock, {
             'quantity': newQty, 
-            'updated_at': DateTime.now().toIso8601String()
+            'updated_at': DateTime.now().toUtc().toIso8601String()
           }, where: 'id = ?', whereArgs: [stockId]);
         } else {
           // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
@@ -1276,8 +1276,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         bark.barkod
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_key = u._key
-      LEFT JOIN birimler b ON b.StokKodu = u.StokKodu
-      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
+      LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = s.birim_key
       ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
       WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?) $whereClause AND s.quantity > 0
       ORDER BY u.UrunAdi ASC

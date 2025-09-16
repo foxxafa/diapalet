@@ -22,7 +22,10 @@ class TerminalController extends Controller
         // HATA DÜZELTMESİ: Veritabanı timezone'ını UTC'ye ayarla (global uyumluluk için)
         Yii::$app->db->createCommand("SET time_zone = '+00:00'")->execute();
 
-        if ($action->id !== 'login' && $action->id !== 'health-check' && $action->id !== 'sync-shelfs') {
+        // Test endpoint'leri için API key kontrolünü atla
+        $publicActions = ['login', 'health-check', 'sync-shelfs', 'test-telegram', 'test-telegram-error', 'test-telegram-debug', 'test-telegram-updates'];
+
+        if (!in_array($action->id, $publicActions)) {
             $this->checkApiKey();
         }
 
@@ -386,26 +389,49 @@ class TerminalController extends Controller
                     $result = ['status' => 'error', 'message' => 'Inventory stock sync operations are no longer supported via pending operations'];
                 }
 
-                // 4. Başarılı ise, sonucu hem yanıt dizisine hem de idempotency tablosuna ekle
-                if (isset($result['status']) && $result['status'] === 'success') {
-                    $db->createCommand()->insert('processed_requests', [
-                        'idempotency_key' => $idempotencyKey,
-                        'response_code' => 200,
-                        'response_body' => json_encode($result)
-                    ])->execute();
+                // 4. Sonucu kontrol et
+                if (isset($result['status'])) {
+                    // Permanent error durumu - bu hatalar tekrar denenmemeli
+                    if ($result['status'] === 'permanent_error') {
+                        // Permanent error'u idempotency tablosuna kaydet
+                        $db->createCommand()->insert('processed_requests', [
+                            'idempotency_key' => $idempotencyKey,
+                            'response_code' => 400, // Permanent error için 400
+                            'response_body' => json_encode($result)
+                        ])->execute();
 
-                    $results[] = ['local_id' => (int)$localId, 'idempotency_key' => $idempotencyKey, 'result' => $result];
+                        // Result dizisine ekle - mobil taraf bunu handle edecek
+                        $results[] = [
+                            'local_id' => (int)$localId,
+                            'idempotency_key' => $idempotencyKey,
+                            'result' => $result
+                        ];
+
+                        $this->logToFile("Permanent error for operation $localId: " . $result['message'], 'WARNING');
+
+                        // Permanent error'da transaction'ı bozmayız, diğer işlemler devam etsin
+                        continue;
+                    }
+                    // Başarılı işlem
+                    elseif ($result['status'] === 'success') {
+                        $db->createCommand()->insert('processed_requests', [
+                            'idempotency_key' => $idempotencyKey,
+                            'response_code' => 200,
+                            'response_body' => json_encode($result)
+                        ])->execute();
+
+                        $results[] = ['local_id' => (int)$localId, 'idempotency_key' => $idempotencyKey, 'result' => $result];
+                    }
+                    // Geçici hata - retry yapılabilir
+                    else {
+                        // Geçici hataları idempotency'e kaydetmiyoruz ki tekrar denenebilsin
+                        $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
+                        $this->logToFile($errorMsg, 'ERROR');
+                        throw new \Exception($errorMsg);
+                    }
                 } else {
-                    // İşlem başarısız olsa bile idempotency anahtarı ile hatayı kaydet.
-                    // Bu, aynı hatalı isteğin tekrar tekrar işlenmesini önler.
-                    $db->createCommand()->insert('processed_requests', [
-                        'idempotency_key' => $idempotencyKey,
-                        'response_code' => 500, // veya uygun bir hata kodu
-                        'response_body' => json_encode($result)
-                    ])->execute();
-
+                    // Status yoksa genel hata
                     $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
-                    $this->logToFile($errorMsg, 'ERROR');
                     throw new \Exception($errorMsg);
                 }
             }
@@ -472,9 +498,28 @@ class TerminalController extends Controller
         if ($validationError) {
             return ['status' => 'error', 'message' => $validationError];
         }
-        
+
         $header = $data['header'];
         $items = $data['items'];
+        $operationUniqueId = $data['operation_unique_id'] ?? null;
+
+        // UUID bazlı duplicate kontrolü
+        if ($operationUniqueId) {
+            $existingReceipt = (new Query())
+                ->from('goods_receipts')
+                ->where(['operation_unique_id' => $operationUniqueId])
+                ->one($db);
+
+            if ($existingReceipt) {
+                $this->logToFile("Duplicate receipt detected with operation_unique_id: $operationUniqueId", 'WARNING');
+                return [
+                    'status' => 'success',
+                    'message' => 'Receipt already exists',
+                    'receipt_id' => $existingReceipt['goods_receipt_id'],
+                    'duplicate' => true
+                ];
+            }
+        }
 
         $siparisId = $header['siparis_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
@@ -482,6 +527,69 @@ class TerminalController extends Controller
         // Serbest mal kabulde fiş numarası zorunludur.
         if ($siparisId === null && empty($deliveryNoteNumber)) {
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
+        }
+
+        // KRITIK: Sipariş durumu kontrolü - kapanmış siparişe mal kabul yapılamaz
+        if ($siparisId !== null) {
+            $orderStatus = (new Query())
+                ->select('status')
+                ->from('siparisler')
+                ->where(['id' => $siparisId])
+                ->scalar($db);
+
+            if ($orderStatus === false) {
+                return [
+                    'status' => 'permanent_error',
+                    'error_code' => 'ORDER_NOT_FOUND',
+                    'message' => "Sipariş bulunamadı: #$siparisId"
+                ];
+            }
+
+            // Status: 0=Açık, 1=Kısmi Teslim, 2=Manuel Kapatıldı
+            if ($orderStatus == 2) {
+                // Çalışan bilgisini al
+                $employeeName = 'Unknown';
+                if (isset($header['employee_id'])) {
+                    $employee = (new Query())
+                        ->select(['first_name', 'last_name'])
+                        ->from('employees')
+                        ->where(['id' => $header['employee_id']])
+                        ->one($db);
+                    if ($employee) {
+                        $employeeName = trim($employee['first_name'] . ' ' . $employee['last_name']);
+                    }
+                }
+
+                // Sipariş numarasını al (fisno)
+                $orderNumber = (new Query())
+                    ->select(['fisno'])
+                    ->from('siparisler')
+                    ->where(['id' => $siparisId])
+                    ->scalar($db);
+
+                $errorMessage = "Sipariş #$orderNumber manuel olarak kapatılmış durumda. Bu siparişe mal kabul yapılamaz.";
+
+                // Yöneticilere bildirim gönder
+                try {
+                    WMSTelegramNotification::notifyGoodsReceiptError(
+                        $employeeName,
+                        $orderNumber ?: $siparisId,
+                        'Kapalı siparişe mal kabul denemesi',
+                        [
+                            'Depo' => $header['warehouse_code'] ?? 'Unknown',
+                            'İrsaliye No' => $deliveryNoteNumber ?? 'N/A'
+                        ]
+                    );
+                } catch (\Exception $e) {
+                    Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
+                }
+
+                return [
+                    'status' => 'permanent_error',
+                    'error_code' => 'ORDER_CLOSED',
+                    'message' => $errorMessage
+                ];
+            }
         }
 
         // Çalışanın depo ID'sini al - Rowhub formatında
@@ -1163,6 +1271,27 @@ class TerminalController extends Controller
         if (empty($siparisId)) {
             return ['status' => 'error', 'message' => 'Geçersiz veri: "siparis_id" eksik.'];
         }
+
+        // Önce siparişin mevcut durumunu kontrol et
+        $currentStatus = (new Query())
+            ->select('status')
+            ->from('siparisler')
+            ->where(['id' => $siparisId])
+            ->scalar($db);
+
+        if ($currentStatus === false) {
+            return ['status' => 'not_found', 'message' => "Order #$siparisId not found."];
+        }
+
+        // Sipariş zaten kapalıysa (status 2) permanent error döndür
+        if ($currentStatus == 2) {
+            return [
+                'status' => 'permanent_error',
+                'error_code' => 'ORDER_ALREADY_CLOSED',
+                'message' => "Sipariş #$siparisId zaten kapalı durumda."
+            ];
+        }
+
         // Statü: 2 (Manuel Kapatıldı)
         $count = $db->createCommand()->update('siparisler', [
             'status' => 2,
@@ -1172,7 +1301,217 @@ class TerminalController extends Controller
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];
         } else {
-            return ['status' => 'not_found', 'message' => "Order #$siparisId not found."];
+            return ['status' => 'error', 'message' => "Order #$siparisId could not be closed."];
+        }
+    }
+
+    /**
+     * Telegram bot test endpoint
+     * GET /api/terminal/test-telegram
+     */
+    public function actionTestTelegram()
+    {
+        try {
+            // Önce bot bilgilerini kontrol et
+            $botInfo = $this->getBotInfo();
+
+            // Test mesajı gönder
+            $result = WMSTelegramNotification::sendTestMessage();
+
+            if ($result) {
+                return $this->asJson([
+                    'success' => true,
+                    'message' => 'Test mesajı başarıyla gönderildi! Telegram grubunuzu kontrol edin.',
+                    'bot_info' => $botInfo
+                ]);
+            } else {
+                return $this->asJson([
+                    'success' => false,
+                    'message' => 'Test mesajı gönderilemedi. Log dosyalarını kontrol edin.',
+                    'bot_info' => $botInfo,
+                    'debug' => 'Detaylı hata bilgileri Yii log\'larında bulunabilir.'
+                ]);
+            }
+        } catch (\Exception $e) {
+            return $this->asJson([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    private function getBotInfo()
+    {
+        $botToken = WMSTelegramNotification::TELEGRAM_BOT_TOKEN;
+        $url = "https://api.telegram.org/bot{$botToken}/getMe";
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+        $result = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode === 200) {
+            return json_decode($result, true);
+        }
+
+        return ['error' => "HTTP $httpCode", 'response' => $result];
+    }
+
+    /**
+     * Telegram debug endpoint - Ham API response görür
+     * GET /api/terminal/test-telegram-debug
+     */
+    public function actionTestTelegramDebug()
+    {
+        try {
+            $botToken = WMSTelegramNotification::TELEGRAM_BOT_TOKEN;
+            $chatId = WMSTelegramNotification::TELEGRAM_CHAT_ID;
+            $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
+
+            $message = "🔧 DEBUG TEST\n\nBu bir debug test mesajıdır.";
+
+            // Manuel API çağrısı yap
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, [
+                'chat_id' => $chatId,
+                'text' => $message,
+                'parse_mode' => 'HTML'
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            // Ham response'u döndür
+            return $this->asJson([
+                'http_code' => $httpCode,
+                'curl_error' => $curlError,
+                'raw_response' => $result,
+                'parsed_response' => json_decode($result, true),
+                'request_data' => [
+                    'url' => $url,
+                    'chat_id' => $chatId,
+                    'message' => $message
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->asJson([
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Telegram Updates - Bot'a gelen mesajları görür
+     * GET /api/terminal/test-telegram-updates
+     */
+    public function actionTestTelegramUpdates()
+    {
+        try {
+            $botToken = WMSTelegramNotification::TELEGRAM_BOT_TOKEN;
+            $url = "https://api.telegram.org/bot{$botToken}/getUpdates";
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            $data = json_decode($result, true);
+            $chats = [];
+
+            if ($httpCode === 200 && isset($data['result'])) {
+                foreach ($data['result'] as $update) {
+                    if (isset($update['message']['chat'])) {
+                        $chat = $update['message']['chat'];
+                        $chats[] = [
+                            'chat_id' => $chat['id'],
+                            'title' => $chat['title'] ?? 'Private',
+                            'type' => $chat['type'],
+                            'message' => $update['message']['text'] ?? '',
+                            'date' => date('Y-m-d H:i:s', $update['message']['date'] ?? 0)
+                        ];
+                    }
+                    // Channel posts için de kontrol et
+                    if (isset($update['channel_post']['chat'])) {
+                        $chat = $update['channel_post']['chat'];
+                        $chats[] = [
+                            'chat_id' => $chat['id'],
+                            'title' => $chat['title'] ?? 'Channel',
+                            'type' => $chat['type'],
+                            'message' => $update['channel_post']['text'] ?? '',
+                            'date' => date('Y-m-d H:i:s', $update['channel_post']['date'] ?? 0)
+                        ];
+                    }
+                }
+            }
+
+            return $this->asJson([
+                'success' => $httpCode === 200,
+                'http_code' => $httpCode,
+                'found_chats' => $chats,
+                'unique_chats' => array_unique(array_column($chats, 'chat_id')),
+                'raw_updates_count' => count($data['result'] ?? []),
+                'note' => 'Gruba /start veya herhangi bir mesaj yazın ve bu endpoint\'i tekrar çağırın'
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->asJson([
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Telegram bot test - Hata simülasyonu
+     * GET /api/terminal/test-telegram-error
+     */
+    public function actionTestTelegramError()
+    {
+        try {
+            // Gerçek bir hata senaryosu simüle et
+            $result = WMSTelegramNotification::notifyGoodsReceiptError(
+                'Test Çalışan',
+                'TEST-PO-12345',
+                'Bu bir test hata mesajıdır - Sipariş kapalı durumda',
+                [
+                    'Depo' => 'DEPO-01',
+                    'İrsaliye No' => 'IRS-2024-001',
+                    'Test' => 'Bu bir test bildirimidir'
+                ]
+            );
+
+            if ($result) {
+                return $this->asJson([
+                    'success' => true,
+                    'message' => 'Hata bildirimi başarıyla gönderildi! Telegram grubunuzu kontrol edin.'
+                ]);
+            } else {
+                return $this->asJson([
+                    'success' => false,
+                    'message' => 'Hata bildirimi gönderilemedi.'
+                ]);
+            }
+        } catch (\Exception $e) {
+            return $this->asJson([
+                'success' => false,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -1713,18 +2052,19 @@ class TerminalController extends Controller
             }
 
             // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
-            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
+            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
             if ($serverSyncTimestamp) {
                 $poReceiptsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
             $poReceipts = $poReceiptsQuery->all();
             $data['goods_receipts'] = $poReceipts;
+            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
         }
 
         // ########## FREE RECEIPTS İÇİN İNKREMENTAL SYNC ##########
         // Use employee-based filtering instead of direct warehouse_id
         $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
-        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
+        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
         if (!empty($employeeIds)) {
             $freeReceiptsQuery->andWhere(['in', 'employee_id', $employeeIds]);
         } else {
@@ -1742,7 +2082,7 @@ class TerminalController extends Controller
         $receiptIds = array_column($data['goods_receipts'], 'id');
         if (!empty($receiptIds)) {
             $receiptItemsQuery = (new Query())
-                ->select(['id', 'receipt_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+                ->select(['id', 'receipt_id', 'operation_unique_id', 'item_uuid', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
                 ->from('goods_receipt_items')
                 ->where(['in', 'receipt_id', $receiptIds]);
             if ($serverSyncTimestamp) {

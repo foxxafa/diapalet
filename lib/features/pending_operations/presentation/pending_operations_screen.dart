@@ -380,7 +380,13 @@ class _OperationCard extends StatelessWidget {
     }
 
     final Widget trailingWidget;
-    if (hasError) {
+    final isPermanentError = operation.status == 'failed';
+
+    if (isPermanentError) {
+      // Kalıcı hata - tekrar denenmeyecek
+      trailingWidget = Icon(Icons.block_rounded, color: theme.colorScheme.error);
+    } else if (hasError) {
+      // Geçici hata - tekrar denenecek
       trailingWidget = Icon(Icons.error_outline_rounded, color: theme.colorScheme.error);
     } else if (isSynced) {
       trailingWidget = Icon(Icons.check_circle_outline_rounded, color: theme.colorScheme.primary);
@@ -450,20 +456,42 @@ class _OperationDetailsView extends StatelessWidget {
   }
 
   Widget _buildErrorSection(ThemeData theme) {
+    final isPermanentError = operation.status == 'failed';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'pending_operations.error_details'.tr(),
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.error,
-          ),
+        Row(
+          children: [
+            Icon(
+              isPermanentError ? Icons.block_rounded : Icons.error_outline_rounded,
+              color: theme.colorScheme.error,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isPermanentError
+                ? 'Kalıcı Hata - Tekrar Denenmeyecek'
+                : 'pending_operations.error_details'.tr(),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
-        Text(
-          operation.errorMessage!,
-          style: theme.textTheme.bodyMedium,
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.error.withAlpha(20),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.colorScheme.error.withAlpha(50)),
+          ),
+          child: Text(
+            operation.errorMessage!,
+            style: theme.textTheme.bodyMedium,
+          ),
         ),
       ],
     );

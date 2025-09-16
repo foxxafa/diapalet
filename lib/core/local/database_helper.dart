@@ -644,7 +644,7 @@ class DatabaseHelper {
                     'stock_uuid': serverUuid, // Server UUID'si ile güncelle
                     'quantity': newQuantity,
                     'birim_key': sanitizedStock['birim_key'], // birim_key'i de güncelle
-                    'updated_at': DateTime.now().toIso8601String()
+                    'updated_at': DateTime.now().toUtc().toIso8601String()
                   },
                   where: 'id = ?',
                   whereArgs: [existingId]
@@ -2290,8 +2290,8 @@ class DatabaseHelper {
               'stock_status': 'receiving',
               'expiry_date': item['expiry_date'],
               'birim_key': item['birim_key'], // KRITIK FIX: birim_key alanı eklendi
-              'created_at': DateTime.now().toIso8601String(),
-              'updated_at': DateTime.now().toIso8601String(),
+              'created_at': DateTime.now().toUtc().toIso8601String(),
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
             });
             debugPrint("    ✅ Created missing stock for receipt $receiptId: ${item['urun_key']}, qty: ${item['quantity_received']}");
           }
@@ -2439,9 +2439,10 @@ class DatabaseHelper {
 
   Future<List<PendingOperation>> getSyncedOperations() async {
     final db = await database;
+    // Hem synced hem de failed (permanent error) durumundaki işlemleri getir
     final maps = await db.query('pending_operation',
-        where: "status = ?",
-        whereArgs: ['synced'],
+        where: "status IN (?, ?)",
+        whereArgs: ['synced', 'failed'],
         orderBy: 'synced_at DESC');
 
     final enrichedMaps = <Map<String, dynamic>>[];
@@ -2510,7 +2511,7 @@ class DatabaseHelper {
       'pending_operation',
       {
         'status': 'synced',
-        'synced_at': DateTime.now().toIso8601String()
+        'synced_at': DateTime.now().toUtc().toIso8601String()
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -2527,9 +2528,24 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> markOperationAsPermanentError(int id, String errorMessage) async {
+    final db = await database;
+    await db.update(
+      'pending_operation',
+      {
+        'status': 'failed',  // permanent failure olarak işaretle
+        'error_message': errorMessage,
+        'synced_at': DateTime.now().toUtc().toIso8601String()  // History'de görünmesi için
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    debugPrint('✅ Operation $id marked as permanently failed: $errorMessage');
+  }
+
   Future<void> cleanupOldSyncedOperations({int days = 7}) async {
     final db = await database;
-    final cutoffDate = DateTime.now().subtract(Duration(days: days));
+    final cutoffDate = DateTime.now().toUtc().subtract(Duration(days: days));
     final count = await db.delete(
       'pending_operation',
       where: "status = ? AND synced_at < ?",
@@ -2544,7 +2560,7 @@ class DatabaseHelper {
   /// Status 2,3 olan siparişleri ve eski transfer kayıtlarını siler
   Future<void> cleanupOldData({int days = 7}) async {
     final db = await database;
-    final cutoffDate = DateTime.now().subtract(Duration(days: days));
+    final cutoffDate = DateTime.now().toUtc().subtract(Duration(days: days));
 
     await db.transaction((txn) async {
       // 1. Eski inventory_transfers kayıtlarını sil
@@ -2636,7 +2652,7 @@ class DatabaseHelper {
   Future<void> addSyncLog(String type, String status, String message) async {
     final db = await database;
     await db.insert('sync_log', {
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
       'type': type, 'status': status, 'message': message,
     });
   }

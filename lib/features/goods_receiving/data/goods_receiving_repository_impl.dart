@@ -156,19 +156,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             final itemId = await txn.insert(DbTables.goodsReceiptItems, itemData);
             debugPrint('🔧 DEBUG: goods_receipt_item inserted with ID: $itemId');
 
-            // Stock güncelle
-            await _updateStockWithKey(
-                txn,
-                item.productId,
-                item.birimKey,
-                null, // locationId is null for receiving area
-                item.quantity,
-                item.palletBarcode,
-                stockStatus,
-                payload.header.siparisId,
-                item.expiryDate?.toIso8601String(),
-                receiptId,
-                stockUuid);
+            // Stock management is now handled by backend only
           }
 
           // 4. ADIM: Bu grup için enriched data oluştur ve pending operation ekle
@@ -265,111 +253,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
     return apiData;
   }
 
-  // DEPRECATED: Stock management moved to backend only to prevent duplicate entries
-  // This method is kept for reference but should not be used
-  Future<void> _updateStockWithKey(Transaction txn, String urunKey, String? birimKey, int? locationId, double quantityChange, String? palletBarcode, String stockStatus, [int? siparisId, String? expiryDate, int? goodsReceiptId, String? stockUuid]) async {
-    // NULL-safe WHERE clause construction
-    final whereClauses = <String>[];
-    final whereArgs = <dynamic>[];
-    
-    whereClauses.add('urun_key = ?');
-    whereArgs.add(urunKey);
-    
-    whereClauses.add('stock_status = ?');
-    whereArgs.add(stockStatus);
-    
-    if (birimKey == null) {
-      whereClauses.add('birim_key IS NULL');
-    } else {
-      whereClauses.add('birim_key = ?');
-      whereArgs.add(birimKey);
-    }
-    
-    if (locationId == null) {
-      whereClauses.add('location_id IS NULL');
-    } else {
-      whereClauses.add('location_id = ?');
-      whereArgs.add(locationId);
-    }
-    
-    if (palletBarcode == null) {
-      whereClauses.add('pallet_barcode IS NULL');
-    } else {
-      whereClauses.add('pallet_barcode = ?');
-      whereArgs.add(palletBarcode);
-    }
-    
-    // KRITIK FIX: Backend mantığı ile aynı
-    // 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
-    // 'available' durumunda siparis_id'yi dahil etme - konsolidasyon için
-    if (stockStatus == GoodsReceivingConstants.stockStatusReceiving) {
-      if (siparisId == null) {
-        whereClauses.add('siparis_id IS NULL');
-      } else {
-        whereClauses.add('siparis_id = ?');
-        whereArgs.add(siparisId);
-      }
-    }
-    // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
-    
-    if (expiryDate == null) {
-      whereClauses.add('expiry_date IS NULL');
-    } else {
-      // KRITIK FIX: Expiry date format normalization
-      // Backend'de "2025-12-12", telefonda "2025-12-12T00:00:00.000"
-      // DATE() function ile normalize et
-      whereClauses.add('DATE(expiry_date) = DATE(?)');
-      whereArgs.add(expiryDate);
-    }
-    
-    // KRITIK FIX: Farklı delivery note'lar için ayrı stock tutmalıyız
-    // goods_receipt_id kontrolünü ekle
-    if (goodsReceiptId == null) {
-      whereClauses.add('goods_receipt_id IS NULL');
-    } else {
-      whereClauses.add('goods_receipt_id = ?');
-      whereArgs.add(goodsReceiptId);
-    }
-
-    final whereClause = whereClauses.join(' AND ');
-    final existingStock = await txn.query('inventory_stock',
-        where: whereClause,
-        whereArgs: whereArgs);
-
-    if (existingStock.isNotEmpty) {
-      final currentStock = existingStock.first;
-      final oldQty = (currentStock['quantity'] as num).toDouble();
-      final newQty = oldQty + quantityChange;
-      
-      if (newQty > 0.001) {
-        await txn.update('inventory_stock', {'quantity': newQty, 'updated_at': DateTime.now().toUtc().toIso8601String()},
-            where: 'id = ?', whereArgs: [currentStock['id']]);
-      } else {
-        await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [currentStock['id']]);
-      }
-    } else if (quantityChange > 0) {
-      // UUID kullan (parametre olarak gelmişse) veya yeni üret
-      final finalStockUuid = stockUuid ?? () {
-        const uuid = Uuid();
-        return uuid.v4();
-      }();
-      
-      await txn.insert('inventory_stock', {
-        'stock_uuid': finalStockUuid,
-        'urun_key': urunKey,
-        'birim_key': birimKey,
-        'location_id': locationId,
-        'quantity': quantityChange,
-        'pallet_barcode': palletBarcode,
-        'stock_status': stockStatus,
-        'siparis_id': siparisId,
-        'expiry_date': expiryDate,
-        'goods_receipt_id': goodsReceiptId, // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      });
-    }
-  }
 
   @override
   Future<List<PurchaseOrder>> getOpenPurchaseOrders() async {
@@ -427,11 +310,11 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       }
 
 
-      // Alınan miktarı hesapla - bulunan urunKey'i kullan
+      // Alınan miktarı hesapla - operation_unique_id üzerinden JOIN yapıyoruz
       final receivedQuantityResult = await db.rawQuery('''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+        JOIN goods_receipts gr ON gr.operation_unique_id = gri.operation_unique_id
         WHERE gr.siparis_id = ? AND gri.urun_key = ?
       ''', [orderId, urunKey]);
 
@@ -478,7 +361,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'fisno': fisno, 'status': newStatus}),
-          createdAt: DateTime.now());
+          createdAt: DateTime.now().toUtc());
       await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
 
       await txn.update(
@@ -507,7 +390,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final pendingOp = PendingOperation.create(
           type: PendingOperationType.forceCloseOrder,
           data: jsonEncode({'siparis_id': orderId, 'fisno': fisno}),
-          createdAt: DateTime.now()
+          createdAt: DateTime.now().toUtc()
       );
       await txn.insert(DbTables.pendingOperations, pendingOp.toDbMap());
 
@@ -605,8 +488,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         COALESCE(SUM(gri.quantity_received), 0) as total_received
       FROM ${DbTables.orderLines} sol
       JOIN ${DbTables.products} u ON u.${DbColumns.productsCode} = sol.${DbColumns.orderLinesProductCode}
-      LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.${DbColumns.orderLinesProductId} = u.${DbColumns.productsId}
-      LEFT JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id AND gr.siparis_id = sol.${DbColumns.orderLinesOrderId}
+      LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.urun_key = u._key
+      LEFT JOIN ${DbTables.goodsReceipts} gr ON gr.operation_unique_id = gri.operation_unique_id AND gr.siparis_id = sol.${DbColumns.orderLinesOrderId}
       WHERE sol.${DbColumns.orderLinesOrderId} = ? AND sol.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
       GROUP BY sol.${DbColumns.id}, u.${DbColumns.productsId}, sol.${DbColumns.orderLinesQuantity}
     ''', [siparisId]);
@@ -647,28 +530,28 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<ProductInfo>> getOutOfOrderReceiptItems(int orderId) async {
     final db = await dbHelper.database;
     
-    // DEBUG: Önce bu sipariş için tüm receipt items'ları kontrol et
+    // DEBUG: Önce bu sipariş için tüm receipt items'ları kontrol et - operation_unique_id ile JOIN
     await db.rawQuery('''
       SELECT gri.*, gr.siparis_id, gri.free
       FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      JOIN goods_receipts gr ON gr.operation_unique_id = gri.operation_unique_id
       WHERE gr.siparis_id = ?
     ''', [orderId]);
-    
-    
-    // DEBUG: Özellikle free=1 olan items'ları kontrol et
+
+
+    // DEBUG: Özellikle free=1 olan items'ları kontrol et - operation_unique_id ile JOIN
     await db.rawQuery('''
       SELECT gri.*, gr.siparis_id, gri.free
       FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      JOIN goods_receipts gr ON gr.operation_unique_id = gri.operation_unique_id
       WHERE gr.siparis_id = ? AND gri.free = 1
     ''', [orderId]);
     
     
     
-    // Sipariş dışı kabul edilen ürünleri al (free = 1) - JOIN'leri kaldır duplicate count'u önlemek için
+    // Sipariş dışı kabul edilen ürünleri al (free = 1) - operation_unique_id ile JOIN
     final outOfOrderMaps = await db.rawQuery('''
-      SELECT 
+      SELECT
         u.*,
         u._key as product_key,
         u.UrunAdi as name,
@@ -677,7 +560,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         MAX(gri.free) as free,
         '${GoodsReceivingConstants.sourceTypeOutOfOrder}' as source_type
       FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      JOIN goods_receipts gr ON gr.operation_unique_id = gri.operation_unique_id
       JOIN urunler u ON u._key = gri.urun_key
       WHERE gr.siparis_id = ? AND gri.free = 1
       GROUP BY u._key, u.UrunAdi, u.StokKodu

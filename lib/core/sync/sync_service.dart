@@ -552,8 +552,35 @@ class SyncService with ChangeNotifier {
       final resultData = res['result'];
       final status = resultData['status'];
       final message = resultData['message'];
+      final errorCode = resultData['error_code'];
 
-      debugPrint("İşleniyor - opId: $id, idempotencyKey: $idempotencyKey, status: $status, message: $message");
+      debugPrint("İşleniyor - opId: $id, idempotencyKey: $idempotencyKey, status: $status, message: $message, errorCode: $errorCode");
+
+      // Permanent error kontrolü - bu hatalar bir daha denenmemeli
+      if (id != null && status == 'permanent_error') {
+        debugPrint("❌ PERMANENT ERROR: İşlem $id kalıcı hata aldı: $errorCode - $message");
+
+        // İşlemi permanent error olarak işaretle ve history'e taşı
+        await dbHelper.markOperationAsPermanentError(id, message ?? 'Permanent error: $errorCode');
+
+        // Kullanıcıya kalıcı hata modalı göster
+        try {
+          // Error dialog service kullanarak global modal göster
+          // Bu, hangi ekranda olursa olsun kullanıcıya bilgi verecek
+          await Future.delayed(const Duration(milliseconds: 500)); // UI'nin hazır olması için kısa bekle
+
+          // TODO: ErrorDialogService import edilip kullanılacak
+          // ErrorDialogService.showPermanentErrorDialog(
+          //   errorCode: errorCode ?? 'UNKNOWN',
+          //   message: message ?? 'İşlem kalıcı olarak reddedildi',
+          //   details: 'Operation ID: $idempotencyKey',
+          // );
+        } catch (e) {
+          debugPrint("Error dialog gösterilemedi: $e");
+        }
+
+        continue;
+      }
 
       if (id != null && status == 'success') {
         debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
@@ -590,6 +617,7 @@ class SyncService with ChangeNotifier {
         
         dataChanged = true;
       } else if (id != null) {
+        // Geçici hata - retry yapılabilir
         await dbHelper.updateOperationWithError(id, message ?? 'Bilinmeyen sunucu hatası');
       }
     }
