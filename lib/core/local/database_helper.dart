@@ -1093,35 +1093,36 @@ class DatabaseHelper {
   /// Exact match search for better performance
   Future<List<Map<String, dynamic>>> _searchExactProductsByBarcode(
     Database db, String query, int? orderId) async {
-    
+
     String sql = '''
-      SELECT DISTINCT
+      SELECT
         u.*,
         b.birimadi,
         b.birimkod,
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key,
-        COALESCE(sa.miktar, 0.0) as miktar,
+        COALESCE(SUM(sa.miktar), 0.0) as miktar,
         COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
         sa.sipbirimkey,
         sb.birimadi as sipbirimi_adi,
         sb.birimkod as sipbirimi_kod,
-        sa.id as order_line_id,
-        CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+        MIN(sa.id) as order_line_id,
+        CASE WHEN MIN(sa.id) IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
         CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
       FROM urunler u
       JOIN birimler b ON b.StokKodu = u.StokKodu
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu
         ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
         AND sa.turu = '1'
       LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
       WHERE u.aktif = 1
         AND (bark.barkod = ? OR u.StokKodu = ?)
-      ORDER BY 
+      GROUP BY u.StokKodu, b._key, bark.barkod, sa.sipbirimkey
+      ORDER BY
         is_order_unit DESC,
-        CASE 
+        CASE
           WHEN u.StokKodu = ? THEN 0
           WHEN bark.barkod = ? THEN 1
           ELSE 2
@@ -1130,47 +1131,48 @@ class DatabaseHelper {
         u.UrunAdi ASC
       LIMIT 50
     ''';
-    
-    final params = orderId != null 
+
+    final params = orderId != null
       ? [orderId, query, query, query, query]
       : [query, query, query, query];
-      
+
     return await db.rawQuery(sql, params);
   }
 
   /// LIKE search for partial matches (fallback)
   Future<List<Map<String, dynamic>>> _searchProductsByBarcodeLike(
     Database db, String query, int? orderId) async {
-    
+
     // Optimize: Use a single query with better indexing strategy
     String sql = '''
-      SELECT DISTINCT
+      SELECT
         u.*,
         b.birimadi,
         b.birimkod,
         b._key as birim_key,
         bark.barkod,
         bark._key as barkod_key,
-        COALESCE(sa.miktar, 0.0) as miktar,
+        COALESCE(SUM(sa.miktar), 0.0) as miktar,
         COALESCE(sa.sipbirimi, b.birimkod) as sipbirimi,
         sa.sipbirimkey,
         sb.birimadi as sipbirimi_adi,
         sb.birimkod as sipbirimi_kod,
-        sa.id as order_line_id,
-        CASE WHEN sa.id IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
+        MIN(sa.id) as order_line_id,
+        CASE WHEN MIN(sa.id) IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
         CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
       FROM urunler u
       JOIN birimler b ON b.StokKodu = u.StokKodu
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+      LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu
         ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
         AND sa.turu = '1'
       LEFT JOIN birimler sb ON CAST(sa.sipbirimkey AS TEXT) = sb._key
       WHERE u.aktif = 1
         AND (bark.barkod LIKE ? OR u.StokKodu LIKE ?)
-      ORDER BY 
+      GROUP BY u.StokKodu, b._key, bark.barkod, sa.sipbirimkey
+      ORDER BY
         is_order_unit DESC,
-        CASE 
+        CASE
           WHEN u.StokKodu LIKE ? THEN 0
           WHEN bark.barkod LIKE ? THEN 1
           ELSE 2
@@ -1179,14 +1181,14 @@ class DatabaseHelper {
         u.UrunAdi ASC
       LIMIT 100
     ''';
-    
+
     final searchPattern = '%$query%';
-    final params = orderId != null 
+    final params = orderId != null
       ? [orderId, searchPattern, searchPattern, searchPattern, searchPattern]
       : [searchPattern, searchPattern, searchPattern, searchPattern];
-      
+
     final result = await db.rawQuery(sql, params);
-    
+
     debugPrint("🔍 Found ${result.length} products matching barcode (LIKE search)");
     for (int i = 0; i < result.length && i < 3; i++) {
       final item = result[i];
@@ -1196,7 +1198,7 @@ class DatabaseHelper {
       debugPrint("  - birim_key: ${item['birim_key']}, sipbirimkey: ${item['sipbirimkey']}");
       debugPrint("  - source_type: ${item['source_type']}");
     }
-    
+
     return result;
   }
 

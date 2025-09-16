@@ -279,36 +279,45 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
     final db = await dbHelper.database;
 
-    // FIX: DISTINCT kullanarak duplike kayıtları engelle
-    // Barkod JOIN'ini kaldıralım, sadece temel bilgileri alalım
+    // FIX: Aynı ürün ve birim için miktarları toplama
+    // Sunucuda aynı ürün ve birim için birden fazla satır olabiliyor
     final orderLines = await db.rawQuery('''
-      SELECT DISTINCT
-        sa.*,
+      SELECT
+        MIN(sa.id) as id,
+        sa.siparisler_id,
         u.UrunAdi,
         u.StokKodu,
+        sa.kartkodu,
         u._key as urun_key,
         b.birimadi,
         b._key as birim_key,
+        sa.sipbirimi,
+        sa.sipbirimkey,
+        SUM(sa.miktar) as miktar,
+        MIN(sa.created_at) as created_at,
+        MAX(sa.updated_at) as updated_at,
+        sa.status,
+        sa.turu,
         bark.barkod
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ? AND sa.turu = '1'
-      ORDER BY sa.id
+      GROUP BY u.StokKodu, sa.sipbirimkey, u._key, b._key
+      ORDER BY MIN(sa.id)
     ''', [orderId]);
 
     final items = <PurchaseOrderItem>[];
-    
+
     // Her sipariş satırı için zaten doğru birim bilgisi mevcut
     for (final line in orderLines) {
       final urunKey = line['urun_key'] as String?;
       final productCode = line['StokKodu'] as String?;
-      
+
       if (urunKey == null || productCode == null) {
         continue;
       }
-
 
       // Alınan miktarı hesapla - operation_unique_id üzerinden JOIN yapıyoruz
       final receivedQuantityResult = await db.rawQuery('''
@@ -318,8 +327,8 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         WHERE gr.siparis_id = ? AND gri.urun_key = ?
       ''', [orderId, urunKey]);
 
-      final receivedQuantity = receivedQuantityResult.isNotEmpty 
-          ? (receivedQuantityResult.first['total_received'] as num).toDouble() 
+      final receivedQuantity = receivedQuantityResult.isNotEmpty
+          ? (receivedQuantityResult.first['total_received'] as num).toDouble()
           : 0.0;
 
       // Yerleştirme miktarını inventory_stock'tan hesaplayabiliriz
@@ -329,9 +338,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       final enrichedMap = Map<String, dynamic>.from(line);
       enrichedMap['receivedQuantity'] = receivedQuantity;
       enrichedMap['transferredQuantity'] = transferredQuantity;
-      
-      // Debug: Hangi birimin hangi miktarda sipariş edildiğini göster
-      
+
       items.add(PurchaseOrderItem.fromDb(enrichedMap));
     }
 
