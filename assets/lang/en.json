@@ -463,6 +463,7 @@
     "validator_negative": "Cannot be negative",
     "dialog_search_hint": "Search by name or code...",
     "dialog_search_no_results": "No results found.",
+    "dialog_confirm_transfer": "Confirm Transfer",
     "dialog_confirm_transfer_title": "Confirm {mode} Transfer",
     "dialog_confirm_transfer_body": "Please confirm you want to transfer the following items from '{source}' to '{target}':",
     "dialog_button_confirm": "Confirm Transfer",

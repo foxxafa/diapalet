@@ -298,6 +298,7 @@
     "error_saving": "Transfer kaydedilemedi: {error}",
     "dialog_search_hint": "Ada veya koda göre ara...",
     "dialog_search_no_results": "Sonuç bulunamadı.",
+    "dialog_confirm_transfer": "Transferi Onayla",
     "dialog_confirm_transfer_title": "{mode} Transferini Onayla",
     "dialog_confirm_transfer_body": "Aşağıdaki kalemler {source} konumundan {target} konumuna transfer edilecek:",
     "dialog_confirm_transfer_item": "• {productName} (x{quantity})",
