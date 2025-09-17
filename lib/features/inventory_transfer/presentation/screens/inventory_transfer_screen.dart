@@ -1434,7 +1434,15 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                     
                     // Process after UI update
                     if (_selectedMode == AssignmentMode.product) {
-                      _searchProductsForTransfer(result);
+                      // Önce arama yap
+                      await _searchProductsForTransfer(result);
+
+                      // Eğer arama sonuçları varsa, ilk sonucu otomatik seç (Enter'a basma etkisi)
+                      if (_productSearchResults.isNotEmpty) {
+                        // Kısa bir gecikme ekle ki UI güncellensin
+                        await Future.delayed(const Duration(milliseconds: 100));
+                        _selectProductFromSearch(_productSearchResults.first);
+                      }
                     } else {
                       await _processScannedData('container', result);
                     }
@@ -1538,12 +1546,38 @@ class _InventoryConfirmationPage extends StatelessWidget {
     required this.targetLocationName,
   });
 
+  // Birim key'den birim adını getir
+  Future<String?> _getUnitName(String? birimKey) async {
+    if (birimKey == null || birimKey.isEmpty) return null;
+
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final db = await dbHelper.database;
+
+      final result = await db.query(
+        'birimler',
+        columns: ['birimadi'],
+        where: '_key = ?',
+        whereArgs: [birimKey],
+        limit: 1,
+      );
+
+      if (result.isNotEmpty) {
+        return result.first['birimadi'] as String?;
+      }
+    } catch (e) {
+      // Error getting unit name for birimKey
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text('inventory_transfer.dialog_confirm_transfer_title'.tr(namedArgs: {'mode': mode.apiName})),
+        title: Text('inventory_transfer.dialog_confirm_transfer'.tr()),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(false),
@@ -1560,13 +1594,34 @@ class _InventoryConfirmationPage extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const Divider(height: 24),
-          ...items.map((item) => ListTile(
-            title: Text(item.productName),
-            subtitle: Text(item.productCode),
-            trailing: Text(
-              item.quantity.toStringAsFixed(item.quantity.truncateToDouble() == item.quantity ? 0 : 2),
-              style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
+          ...items.map((item) => FutureBuilder<String?>(
+            future: _getUnitName(item.birimKey),
+            builder: (context, snapshot) {
+              final unitName = snapshot.data ?? '';
+              return ListTile(
+                title: Text(item.productName),
+                subtitle: Text(item.productCode),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.quantity.toStringAsFixed(item.quantity.truncateToDouble() == item.quantity ? 0 : 2),
+                      style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    if (unitName.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        unitName,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
           )),
         ],
       ),

@@ -1268,7 +1268,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     final whereClause = whereClauses.isNotEmpty ? ' AND ' + whereClauses.join(' AND ') : '';
     
     final sql = '''
-      SELECT DISTINCT
+      SELECT
         u._key,
         u.UrunAdi,
         u.StokKodu,
@@ -1279,6 +1279,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = s.birim_key
       ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
       WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?) $whereClause AND s.quantity > 0
+      GROUP BY u._key, u.UrunAdi, u.StokKodu, u.aktif, bark.barkod
       ORDER BY u.UrunAdi ASC
     ''';
     

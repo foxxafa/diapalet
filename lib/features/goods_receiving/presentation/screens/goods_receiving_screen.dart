@@ -16,7 +16,7 @@ import 'package:diapalet/features/goods_receiving/domain/repositories/goods_rece
 import 'package:diapalet/features/goods_receiving/presentation/screens/goods_receiving_view_model.dart';
 import 'package:diapalet/features/goods_receiving/presentation/widgets/compact_review_table.dart';
 import 'package:diapalet/features/goods_receiving/utils/date_validation_utils.dart';
-import 'package:diapalet/features/goods_receiving/utils/input_decoration_factory.dart';
+import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -160,7 +160,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                               TextFormField(
                                 controller: viewModel.deliveryNoteController,
                                 focusNode: viewModel.deliveryNoteFocusNode,
-                                decoration: InputDecorationFactory.create(
+                                decoration: SharedInputDecoration.create(
                                   context,
                                   'goods_receiving_screen.label_delivery_note'.tr(),
                                   enabled: viewModel.isDeliveryNoteEnabled,
@@ -416,7 +416,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             enabled: viewModel.isQuantityEnabled,
-            decoration: InputDecorationFactory.create(context, 'goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.isQuantityEnabled),
+            decoration: SharedInputDecoration.create(context, 'goods_receiving_screen.label_quantity'.tr(), enabled: viewModel.isQuantityEnabled),
             onFieldSubmitted: (value) {
               if (value.isNotEmpty) {
                 if (_formKey.currentState?.validate() ?? false) {
@@ -452,7 +452,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
           inputFormatters: [
             _DateInputFormatter(),
           ],
-          decoration: InputDecorationFactory.create(
+          decoration: SharedInputDecoration.create(
             context,
             'goods_receiving_screen.label_expiry_date'.tr(),
             enabled: viewModel.isExpiryDateEnabled,
@@ -918,8 +918,6 @@ class _FullscreenConfirmationPage extends StatelessWidget {
     final theme = Theme.of(context);
     final viewModel = context.watch<GoodsReceivingViewModel>();
 
-    final isCompletingOrder = viewModel.isReceiptCompletingOrder;
-
     // Calculate total accepted items count
     final totalAcceptedItems = viewModel.addedItems.fold<int>(0, (sum, item) => sum + item.quantity.toInt());
 
@@ -949,41 +947,28 @@ class _FullscreenConfirmationPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (isCompletingOrder)
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+              ),
+              onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.saveAndContinue),
+              child: Text('goods_receiving_screen.dialog_button_save_continue'.tr()),
+            ),
+            if (viewModel.isOrderBased)...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
+                  side: BorderSide(color: theme.colorScheme.error),
+                  foregroundColor: theme.colorScheme.error,
                 ),
-                onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.saveAndComplete),
-                child: Text('goods_receiving_screen.dialog_button_finish_receiving'.tr()),
-              )
-            else ...[
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                  ),
-                  onPressed: viewModel.addedItems.isEmpty ? null : () => Navigator.of(context).pop(ConfirmationAction.saveAndContinue),
-                  child: Text('goods_receiving_screen.dialog_button_save_continue'.tr()),
-                ),
-                if (viewModel.isOrderBased)...[
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: BorderSide(color: theme.colorScheme.error),
-                      foregroundColor: theme.colorScheme.error,
-                    ),
-                    onPressed: () => Navigator.of(context).pop(ConfirmationAction.forceClose),
-                    child: Text('goods_receiving_screen.dialog_button_force_close'.tr()),
-                  ),
-                ]
+                onPressed: () => Navigator.of(context).pop(ConfirmationAction.forceClose),
+                child: Text('goods_receiving_screen.dialog_button_force_close'.tr()),
+              ),
             ]
           ],
         ),
@@ -1176,13 +1161,12 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     return SizedBox(
       height: 52, // Quantity ile tam olarak aynı yükseklik
       child: InputDecorator(
-        decoration: InputDecorationFactory.create(
+        decoration: SharedInputDecoration.create(
           context,
-          widget.viewModel.isOrderBased 
+          widget.viewModel.isOrderBased
             ? 'goods_receiving_screen.label_order_status'.tr()
             : 'goods_receiving_screen.label_unit_selection'.tr(),
           enabled: false,
-          isCompact: true,
         ).copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
       child: (widget.viewModel.selectedProduct == null)
           ? Center(
