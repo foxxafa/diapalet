@@ -7,7 +7,6 @@ import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/assignment_mode.dart';
-import 'package:diapalet/features/inventory_transfer/domain/entities/product_stock_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/product_item.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_item_detail.dart';
 import 'package:diapalet/features/inventory_transfer/domain/entities/transfer_operation_header.dart';
@@ -128,7 +127,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   @Deprecated('Use getProductsAtLocation instead')
-  Future<List<ProductStockItem>> getBoxesAtLocation(
+  Future<List<ProductItem>> getBoxesAtLocation(
     int? locationId, {
     List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable],
     String? deliveryNoteNumber,
@@ -138,7 +137,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
-  Future<List<ProductStockItem>> getProductsAtLocation(
+  Future<List<ProductItem>> getProductsAtLocation(
     int? locationId, {
     List<String> stockStatuses = const [InventoryTransferConstants.stockStatusAvailable],
     String? deliveryNoteNumber,
@@ -183,7 +182,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     ''';
 
     final maps = await db.rawQuery(query, whereArgs);
-    return maps.map((map) => ProductStockItem.fromJson(map)).toList();
+    // Convert to ProductItem using the fromJson factory
+    return maps.map((map) => ProductItem.fromJson({
+      'productKey': map['product_id']?.toString() ?? '',
+      'name': map['product_name']?.toString() ?? '',
+      'productCode': map['product_code']?.toString() ?? '',
+      'barcode': map['barcode']?.toString(),
+      'currentQuantity': map['quantity'],
+    })).toList();
   }
 
   @override
@@ -766,13 +772,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
   @override
   @Deprecated('Use findProductByCodeAtLocation instead')
-  Future<ProductStockItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
+  Future<ProductItem?> findBoxByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
     // Delegate to the new method
     return findProductByCodeAtLocation(productCodeOrBarcode, locationId, stockStatuses: stockStatuses);
   }
 
   @override
-  Future<ProductStockItem?> findProductByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
+  Future<ProductItem?> findProductByCodeAtLocation(String productCodeOrBarcode, int? locationId, {List<String> stockStatuses = const ['available']}) async {
     final db = await dbHelper.database;
 
     final whereParts = <String>[];
@@ -820,7 +826,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
     final maps = await db.rawQuery(query, whereArgs);
     if (maps.isNotEmpty) {
-      return ProductStockItem.fromJson(maps.first);
+      // Convert to ProductItem
+      final map = maps.first;
+      return ProductItem.fromJson({
+        'productKey': map['product_id']?.toString() ?? '',
+        'name': map['product_name']?.toString() ?? '',
+        'productCode': map['product_code']?.toString() ?? '',
+        'barcode': map['barcode']?.toString(),
+        'currentQuantity': map['quantity'],
+      });
     }
     return null;
   }
