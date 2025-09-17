@@ -1232,25 +1232,19 @@ class TerminalController extends Controller
 
         if (empty($lines)) return;
 
-        $allLinesCompleted = true;
         $anyLineReceived = false;
 
         foreach ($lines as $line) {
-            $ordered = (float)$line['miktar'];
             $received = (float)$line['received_quantity'];
 
             if ($received > 0.001) {
                 $anyLineReceived = true;
-            }
-            if ($received < $ordered - 0.001) {
-                $allLinesCompleted = false;
+                break; // Herhangi bir satırda mal kabul varsa status 1 olacak
             }
         }
 
         $newStatus = null;
-        if ($allLinesCompleted && $anyLineReceived) {
-            $newStatus = 3; // Tamamen kabul edildi (sipariş edilen = kabul edilen)
-        } elseif ($anyLineReceived) {
+        if ($anyLineReceived) {
             $newStatus = 1; // Kısmi kabul (sipariş edilen > kabul edilen)
         }
 

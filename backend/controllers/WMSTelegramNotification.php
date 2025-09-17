@@ -141,12 +141,28 @@ class WMSTelegramNotification
      */
     public static function notifyTransferError($employeeName, $errorMessage, $details = [])
     {
-        $subject = "TRANSFER HATASI";
+        // Aynı hata için tekrar bildirim göndermeyi önle
+        $notificationKey = "transfer_error_{$employeeName}_" . md5($errorMessage);
+
+        // Cache kontrolü
+        $cache = Yii::$app->cache;
+        if ($cache) {
+            $cacheKey = "telegram_notification_" . md5($notificationKey);
+            if ($cache->exists($cacheKey)) {
+                Yii::info("Telegram notification already sent for: $notificationKey", __METHOD__);
+                return true;
+            }
+            // 30 dakika boyunca aynı hata için tekrar gönderme
+            $cache->set($cacheKey, true, 1800);
+        }
+
+        $subject = "⚠️ TRANSFER HATASI";
         $message = "Çalışan <b>{$employeeName}</b> transfer işlemi sırasında hata aldı.";
 
         $data = array_merge([
             'Hata' => $errorMessage,
             'Çalışan' => $employeeName,
+            'Zaman' => date('Y-m-d H:i:s')
         ], $details);
 
         return self::sendNotification($subject, $message, $data);
@@ -157,12 +173,133 @@ class WMSTelegramNotification
      */
     public static function notifyCriticalError($errorType, $errorMessage, $details = [])
     {
-        $subject = "KRİTİK SİSTEM HATASI";
+        $subject = "🚨 KRİTİK SİSTEM HATASI";
         $message = "WMS sisteminde kritik bir hata oluştu: <b>{$errorType}</b>";
 
         $data = array_merge([
             'Hata Tipi' => $errorType,
             'Hata Mesajı' => $errorMessage,
+            'Zaman' => date('Y-m-d H:i:s'),
+            'Sunucu' => gethostname() ?? 'Unknown'
+        ], $details);
+
+        return self::sendNotification($subject, $message, $data);
+    }
+
+    /**
+     * Başarılı transfer bildirimi (Büyük transferler için)
+     */
+    public static function notifySuccessfulTransfer($employeeName, $transferDetails = [])
+    {
+        // Sadece büyük transferler için bildirim gönder
+        $quantity = $transferDetails['Miktar'] ?? 0;
+        if ($quantity < 100) { // 100'den az ürün için bildirim gönderme
+            return true;
+        }
+
+        $subject = "✅ BÜYÜK TRANSFER TAMAMLANDI";
+        $message = "Çalışan <b>{$employeeName}</b> büyük bir transfer işlemi tamamladı.";
+
+        $data = array_merge([
+            'Çalışan' => $employeeName,
+            'Zaman' => date('Y-m-d H:i:s')
+        ], $transferDetails);
+
+        return self::sendNotification($subject, $message, $data);
+    }
+
+    /**
+     * Stok uyarısı bildirimi
+     */
+    public static function notifyLowStock($productName, $stockCode, $currentQuantity, $minQuantity, $warehouseCode)
+    {
+        // Cache kontrolü - her ürün için günde bir kez bildirim
+        $notificationKey = "low_stock_{$stockCode}_{$warehouseCode}";
+        $cache = Yii::$app->cache;
+        if ($cache) {
+            $cacheKey = "telegram_notification_" . md5($notificationKey);
+            if ($cache->exists($cacheKey)) {
+                return true;
+            }
+            // 24 saat boyunca aynı ürün için tekrar gönderme
+            $cache->set($cacheKey, true, 86400);
+        }
+
+        $subject = "📉 DÜŞÜK STOK UYARISI";
+        $message = "Ürün <b>{$productName}</b> için stok kritik seviyede.";
+
+        $data = [
+            'Ürün' => $productName,
+            'Stok Kodu' => $stockCode,
+            'Mevcut Miktar' => $currentQuantity,
+            'Minimum Miktar' => $minQuantity,
+            'Depo' => $warehouseCode,
+            'Zaman' => date('Y-m-d H:i:s')
+        ];
+
+        return self::sendNotification($subject, $message, $data);
+    }
+
+    /**
+     * Sipariş kapama hatası bildirimi
+     */
+    public static function notifyOrderCloseError($employeeName, $orderId, $errorMessage, $details = [])
+    {
+        $subject = "⛔ SİPARİŞ KAPAMA HATASI";
+        $message = "Çalışan <b>{$employeeName}</b> sipariş <b>#{$orderId}</b> kapatılırken hata oluştu.";
+
+        $data = array_merge([
+            'Hata' => $errorMessage,
+            'Çalışan' => $employeeName,
+            'Sipariş' => "#$orderId",
+            'Zaman' => date('Y-m-d H:i:s')
+        ], $details);
+
+        return self::sendNotification($subject, $message, $data);
+    }
+
+    /**
+     * DIA entegrasyon hatası bildirimi
+     */
+    public static function notifyDIAError($operation, $errorMessage, $details = [])
+    {
+        // Cache kontrolü - aynı işlem için 30 dakika içinde tekrar gönderme
+        $notificationKey = "dia_error_{$operation}_" . md5($errorMessage);
+        $cache = Yii::$app->cache;
+        if ($cache) {
+            $cacheKey = "telegram_notification_" . md5($notificationKey);
+            if ($cache->exists($cacheKey)) {
+                return true;
+            }
+            $cache->set($cacheKey, true, 1800);
+        }
+
+        $subject = "🔌 DIA ENTEGRASYON HATASI";
+        $message = "DIA sistemi ile iletişimde hata: <b>{$operation}</b>";
+
+        $data = array_merge([
+            'İşlem' => $operation,
+            'Hata' => $errorMessage,
+            'Zaman' => date('Y-m-d H:i:s')
+        ], $details);
+
+        return self::sendNotification($subject, $message, $data);
+    }
+
+    /**
+     * Permanent error bildirimi (Kalıcı hatalar)
+     */
+    public static function notifyPermanentError($employeeName, $operation, $errorMessage, $details = [])
+    {
+        $subject = "🔴 KALICI HATA";
+        $message = "<b>{$operation}</b> işlemi kalıcı bir hata nedeniyle başarısız oldu.";
+
+        $data = array_merge([
+            'İşlem' => $operation,
+            'Hata' => $errorMessage,
+            'Çalışan' => $employeeName,
+            'Durum' => 'Bu işlem tekrar denenmeyecek',
+            'Zaman' => date('Y-m-d H:i:s')
         ], $details);
 
         return self::sendNotification($subject, $message, $data);
