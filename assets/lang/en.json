@@ -37,6 +37,7 @@
     },
     "inventory_inquiry": "Inventory Inquiry",
     "inventory_inquiry_desc": "Search and view real-time stock levels across all locations",
+    "warehouse_count": "Warehouse Count",
     "status": {
       "partially_received": "Partially Received"
     }
@@ -313,7 +314,8 @@
     "titles": {
       "goods_receipt": "Goods Receipt",
       "inventory_transfer": "Inventory Transfer",
-      "force_close_order": "Force Close Order"
+      "force_close_order": "Force Close Order",
+      "warehouse_count": "Warehouse Count"
     },
     "subtitles": {
       "goods_receipt": "Receipt - {count} items",
@@ -321,6 +323,7 @@
       "inventory_transfer": "{source} → {target} - {count} items",
       "force_close_order": "Closing Order",
       "force_close_order_with_po": "Closing {poId}",
+      "warehouse_count": "{sheetNumber} - {count} items",
       "parsing_error": "Could not read details."
     },
     "sync_now": "Sync Now",
@@ -798,6 +801,75 @@
     "reset": "Reset",
     "confirm_yes": "Yes, Reset",
     "confirm_no": "No, Keep"
+  },
+  "warehouse_count": {
+    "title": "Warehouse Count",
+    "new_count": "Start New Count",
+    "previous_counts": "Previous Counts",
+    "no_previous_counts": "No previous counts for this warehouse",
+    "warehouse": "Warehouse",
+    "select_warehouse": "Select Warehouse",
+    "notes_optional": "Notes (Optional)",
+    "start_counting": "Start Counting",
+    "start_date": "Started",
+    "complete_date": "Completed",
+    "last_saved": "Last Saved",
+    "notes": "Notes",
+    "status": {
+      "in_progress": "In Progress",
+      "completed": "Completed"
+    },
+    "mode": {
+      "product": "Product",
+      "pallet": "Pallet"
+    },
+    "shelf": "Shelf",
+    "quantity": "Quantity",
+    "scanned": "Scanned Successfully",
+    "scan_again": "Scan Again",
+    "save_continue": "Save & Continue",
+    "save_finish": "Save & Finish",
+    "no_items_counted": "No items have been counted yet",
+    "table": {
+      "type": "Type",
+      "barcode": "Barcode",
+      "stock_code": "Stock Code",
+      "shelf": "Shelf",
+      "quantity": "Quantity",
+      "actions": "Actions"
+    },
+    "delete_item": "Delete Item",
+    "confirm_finish": {
+      "title": "Finish Count?",
+      "message": "Once you finish, this count sheet cannot be edited. Are you sure?"
+    },
+    "info": {
+      "sheet_completed": "This count sheet is completed and cannot be edited"
+    },
+    "success": {
+      "item_added": "Item added to count",
+      "item_removed": "Item removed from count",
+      "saved_online": "Count saved to server successfully",
+      "completed": "Count completed and queued for sync"
+    },
+    "warning": {
+      "saved_local_only": "Saved locally only (offline mode)"
+    },
+    "error": {
+      "load_warehouses": "Failed to load warehouse list",
+      "select_warehouse": "Please select a warehouse first",
+      "create_sheet": "Failed to create count sheet",
+      "scan_barcode": "Please scan a barcode first",
+      "enter_shelf": "Please enter shelf code",
+      "enter_quantity": "Please enter quantity",
+      "invalid_quantity": "Please enter a valid quantity",
+      "quantity_too_large": "Quantity exceeds maximum allowed",
+      "add_item": "Failed to add item",
+      "remove_item": "Failed to remove item",
+      "save_failed": "Failed to save count",
+      "finish_failed": "Failed to complete count",
+      "no_items": "Please add at least one item before finishing"
+    }
   },
   "sync": {
     "loading_screen": {

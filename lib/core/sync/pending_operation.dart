@@ -10,6 +10,7 @@ enum PendingOperationType {
   inventoryTransfer,
   forceCloseOrder,
   inventoryStock,
+  warehouseCount,
 }
 
 extension PendingOperationTypeExtension on PendingOperationType {
@@ -23,6 +24,8 @@ extension PendingOperationTypeExtension on PendingOperationType {
         return 'forceCloseOrder';
       case PendingOperationType.inventoryStock:
         return 'inventoryStock';
+      case PendingOperationType.warehouseCount:
+        return 'warehouseCount';
     }
   }
 
@@ -36,6 +39,8 @@ extension PendingOperationTypeExtension on PendingOperationType {
         return PendingOperationType.forceCloseOrder;
       case 'inventoryStock':
         return PendingOperationType.inventoryStock;
+      case 'warehouseCount':
+        return PendingOperationType.warehouseCount;
       default:
         throw ArgumentError('Unknown pending operation type: $type');
     }
@@ -74,6 +79,8 @@ class PendingOperation {
         return 'pending_operations.titles.force_close_order'.tr();
       case PendingOperationType.inventoryStock:
         return 'Inventory Stock Sync';
+      case PendingOperationType.warehouseCount:
+        return 'pending_operations.titles.warehouse_count'.tr();
     }
   }
 
@@ -141,6 +148,13 @@ class PendingOperation {
         case PendingOperationType.inventoryStock:
           final stockCount = (dataMap['stocks'] as List?)?.length ?? 0;
           return 'Syncing $stockCount inventory stock records';
+        case PendingOperationType.warehouseCount:
+          final sheetNumber = dataMap['sheet']?['sheet_number'];
+          final itemCount = (dataMap['items'] as List?)?.length ?? 0;
+          return 'pending_operations.subtitles.warehouse_count'.tr(namedArgs: {
+            'sheetNumber': sheetNumber?.toString() ?? 'N/A',
+            'count': itemCount.toString()
+          });
       }
     } catch (e) {
       return 'pending_operations.subtitles.parsing_error'.tr();
@@ -167,7 +181,7 @@ class PendingOperation {
           break;
         case PendingOperationType.inventoryTransfer:
           // Try to get po_id from enriched data first, then fallback to original data
-          identifier = dataMap['header']?['po_id']?.toString() ?? 
+          identifier = dataMap['header']?['po_id']?.toString() ??
                       dataMap['header']?['container_id']?.toString() ?? '';
           break;
         case PendingOperationType.forceCloseOrder:
@@ -175,6 +189,9 @@ class PendingOperation {
           break;
         case PendingOperationType.inventoryStock:
           identifier = 'stock';
+          break;
+        case PendingOperationType.warehouseCount:
+          identifier = dataMap['sheet']?['sheet_number']?.toString() ?? '';
           break;
       }
     } catch (e) {

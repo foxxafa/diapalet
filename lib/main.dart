@@ -18,6 +18,8 @@ import 'package:diapalet/features/inventory_transfer/data/repositories/inventory
 import 'package:diapalet/features/inventory_transfer/domain/repositories/inventory_transfer_repository.dart';
 // DÜZELTME: InventoryTransferViewModel artık global olarak sağlanmıyor.
 // import 'package:diapalet/features/inventory_transfer/presentation/screens/inventory_transfer_view_model.dart';
+import 'package:diapalet/features/warehouse_count/data/repositories/warehouse_count_repository_impl.dart';
+import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -86,6 +88,12 @@ void main() async {
           Provider<InventoryInquiryRepository>(
             create: (context) => InventoryInquiryRepositoryImpl(
               dbHelper: context.read<DatabaseHelper>(),
+            ),
+          ),
+          Provider<WarehouseCountRepository>(
+            create: (context) => WarehouseCountRepositoryImpl(
+              dbHelper: context.read<DatabaseHelper>(),
+              dio: context.read<Dio>(),
             ),
           ),
 

@@ -13,7 +13,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 67; // added operation_unique_id and item_uuid to goods_receipt_items, wms_tombstones table
+  static const _databaseVersion = 68; // added count_sheets and count_items tables for warehouse count module
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -301,6 +301,56 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_barkod ON barkodlar(barkod)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_key_birimler ON barkodlar(_key_scf_stokkart_birimleri)');
 
+      // Warehouse Count Tables
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS count_sheets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          count_sheet_id INTEGER,
+          operation_unique_id TEXT NOT NULL UNIQUE,
+          sheet_number TEXT NOT NULL UNIQUE,
+          employee_id INTEGER NOT NULL,
+          warehouse_code TEXT NOT NULL,
+          warehouse_name TEXT,
+          status TEXT NOT NULL DEFAULT 'in_progress',
+          notes TEXT,
+          start_date TEXT NOT NULL,
+          complete_date TEXT,
+          last_saved_date TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          FOREIGN KEY(employee_id) REFERENCES employees(id)
+        )
+      ''');
+
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS count_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          count_sheet_id INTEGER NOT NULL,
+          operation_unique_id TEXT NOT NULL,
+          item_uuid TEXT NOT NULL UNIQUE,
+          urun_key TEXT,
+          birim_key TEXT,
+          pallet_barcode TEXT,
+          location_id INTEGER NOT NULL,
+          quantity_counted REAL NOT NULL,
+          barcode TEXT,
+          StokKodu TEXT,
+          shelf_code TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          FOREIGN KEY(count_sheet_id) REFERENCES count_sheets(id),
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key),
+          FOREIGN KEY(location_id) REFERENCES shelfs(id)
+        )
+      ''');
+
+      // Count tables indexes
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_status ON count_sheets(status)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_employee ON count_sheets(employee_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_sheet ON count_items(count_sheet_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_location ON count_items(location_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_uuid ON count_items(item_uuid)');
+
       await batch.commit(noResult: true);
     });
 
@@ -308,23 +358,43 @@ class DatabaseHelper {
   }
 
   Future<void> _dropAllTables(Database db) async {
+    // ÖNEMLI: Child tablolar önce silinmeli (foreign key dependency)
     const tables = [
-      'pending_operation', 'sync_log', 'shelfs', 'employees', 'urunler',
-      'siparisler', 'siparis_ayrintili', 'goods_receipts',
-      'goods_receipt_items', 'inventory_stock', 'inventory_transfers',
-      'tedarikci', 'birimler', 'barkodlar'
+      // Child tables first (have foreign keys)
+      'count_items',           // → count_sheets, shelfs
+      'goods_receipt_items',   // → goods_receipts
+      'inventory_stock',       // → shelfs, goods_receipts
+      'inventory_transfers',   // → shelfs
+      'siparis_ayrintili',     // → siparisler
+      'barkodlar',             // → urunler
+
+      // Parent tables next
+      'count_sheets',          // → employees
+      'goods_receipts',        // → siparisler, employees
+      'siparisler',            // → tedarikci
+
+      // Independent tables
+      'pending_operation',
+      'sync_log',
+      'shelfs',
+      'employees',
+      'urunler',
+      'tedarikci',
+      'birimler',
     ];
+
+    // Foreign key kontrollerini transaction DIŞINDA kapat (bazı SQLite versiyonlarında gerekli)
+    await db.execute('PRAGMA foreign_keys = OFF');
+
     await db.transaction((txn) async {
-      // Foreign key kontrollerini geçici olarak kapat
-      await txn.execute('PRAGMA foreign_keys = OFF');
-      
       for (final table in tables) {
         await txn.execute('DROP TABLE IF EXISTS $table');
       }
-      
-      // Foreign key kontrollerini tekrar aç
-      await txn.execute('PRAGMA foreign_keys = ON');
     });
+
+    // Foreign key kontrollerini tekrar aç
+    await db.execute('PRAGMA foreign_keys = ON');
+
     debugPrint("Yükseltme için tüm eski tablolar silindi.");
   }
 
@@ -2590,7 +2660,14 @@ class DatabaseHelper {
 
         // Doğru silme sırası: Child tabloları önce sil
 
-        // 1. goods_receipt_items (en child tablo)
+        // 1. inventory_stock (goods_receipts'e bağlı olan kayıtları sil)
+        await txn.delete(
+          'inventory_stock',
+          where: 'goods_receipt_id IN (SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ?)',
+          whereArgs: [orderId]
+        );
+
+        // 2. goods_receipt_items (en child tablo)
         final receiptItems = await txn.delete(
           'goods_receipt_items',
           where: 'receipt_id IN (SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ?)',
@@ -2598,7 +2675,7 @@ class DatabaseHelper {
         );
         receiptItemCount += receiptItems;
 
-        // 2. goods_receipts (parent tablo)
+        // 3. goods_receipts (parent tablo)
         final receipts = await txn.delete(
           'goods_receipts',
           where: 'siparis_id = ?',

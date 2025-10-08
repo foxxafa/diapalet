@@ -7,6 +7,8 @@ import 'package:diapalet/features/goods_receiving/presentation/screens/goods_rec
 import 'package:diapalet/features/inventory_inquiry/presentation/screens/inventory_inquiry_screen.dart';
 import 'package:diapalet/features/inventory_transfer/presentation/screens/transfer_type_selection_screen.dart';
 import 'package:diapalet/features/pending_operations/presentation/pending_operations_screen.dart';
+import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
+import 'package:diapalet/features/warehouse_count/presentation/screens/warehouse_count_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
@@ -175,6 +177,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => const InventoryInquiryScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _HomeButton(
+                    icon: Icons.inventory_outlined,
+                    label: 'home.warehouse_count'.tr(),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => WarehouseCountListScreen(
+                            repository: context.read<WarehouseCountRepository>(),
+                          ),
                         ),
                       );
                     },

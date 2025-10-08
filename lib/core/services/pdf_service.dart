@@ -47,6 +47,9 @@ class PdfService {
         case PendingOperationType.inventoryStock:
           // Inventory stock sync operations should not generate PDFs (internal operation)
           throw UnsupportedError('Inventory stock sync operations do not support PDF generation');
+        case PendingOperationType.warehouseCount:
+          // Warehouse count PDF generation not yet implemented
+          throw UnsupportedError('Warehouse count PDF generation is not yet implemented');
       }
     } catch (e) {
       debugPrint('Error generating enriched PDF filename: $e');
@@ -98,6 +101,9 @@ class PdfService {
       case PendingOperationType.inventoryStock:
         // Inventory stock sync operations should not generate PDFs (internal operation)
         throw UnsupportedError('Inventory stock sync operations do not support PDF generation');
+      case PendingOperationType.warehouseCount:
+        // Warehouse count PDF generation not yet implemented
+        throw UnsupportedError('Warehouse count PDF generation is not yet implemented');
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class AuthRepositoryImpl implements AuthRepository {
   final DatabaseHelper dbHelper;
@@ -139,8 +140,18 @@ class AuthRepositoryImpl implements AuthRepository {
           dio.options.headers['Authorization'] = 'Bearer $apiKey';
           debugPrint("API Key ($apiKey) Dio istemcisine eklendi.");
 
-          // ===== ÖNEMLİ: Warehouse değişimi kontrolü =====
+          // Warehouse listesini al ve kaydet
+          final warehouses = responseData['warehouses'] as List<dynamic>? ?? [];
           final prefs = await SharedPreferences.getInstance();
+
+          if (warehouses.isNotEmpty) {
+            await prefs.setString('warehouses_list', jsonEncode(warehouses));
+            debugPrint("✅ Warehouse listesi kaydedildi: ${warehouses.length} depo");
+          } else {
+            debugPrint("⚠️ Warehouse listesi boş geldi");
+          }
+
+          // ===== ÖNEMLİ: Warehouse değişimi kontrolü =====
           final previousWarehouseCode = prefs.getString('warehouse_code');
           final newWarehouseCode = user['warehouse_code'] as String;
           final newUserId = user['id'] as int;
@@ -309,6 +320,14 @@ class AuthRepositoryImpl implements AuthRepository {
           debugPrint('  ✅ API KEY KORUNDU ve Dio\'ya eklendi - sync yapılabilecek');
         } else {
           debugPrint('  ⚠️ API KEY YOK - sync yapılamayacak, önce online login gerekli');
+        }
+
+        // Warehouse listesini koru
+        final existingWarehouses = prefs.getString('warehouses_list');
+        if (existingWarehouses != null) {
+          debugPrint('  ✅ warehouses_list KORUNDU');
+        } else {
+          debugPrint('  ⚠️ warehouses_list YOK - önce online login gerekli');
         }
 
         return {'success': true};

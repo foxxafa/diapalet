@@ -314,9 +314,31 @@ class TerminalController extends Controller
                     'branch_id' => (int)($user['branch_id'] ?? 1),
                     'branch_name' => $user['branch_name'],
                 ];
+
+                // Kullanıcının branch_code'una göre tüm warehouse'ları çek
+                $branchCode = $user['branch_code'] ?? null;
+                $warehouses = [];
+
+                if ($branchCode) {
+                    $warehouses = (new Query())
+                        ->select(['warehouse_code', 'name', 'receiving_mode', 'id'])
+                        ->from('warehouses')
+                        ->where(['branch_code' => $branchCode])
+                        ->all();
+
+                    // Cast işlemleri
+                    foreach ($warehouses as &$warehouse) {
+                        $warehouse['id'] = (int)$warehouse['id'];
+                        $warehouse['receiving_mode'] = (int)($warehouse['receiving_mode'] ?? 2);
+                    }
+                }
+
                 return $this->asJson([
-                    'status' => 200, 'message' => 'Giriş başarılı.',
-                    'user' => $userData, 'apikey' => $apiKey
+                    'status' => 200,
+                    'message' => 'Giriş başarılı.',
+                    'user' => $userData,
+                    'apikey' => $apiKey,
+                    'warehouses' => $warehouses
                 ]);
             } else {
                 return $this->asJson(['status' => 401, 'message' => 'Kullanıcı adı veya şifre hatalı.']);
@@ -384,6 +406,10 @@ class TerminalController extends Controller
                     $result = $this->_createInventoryTransfer($opData, $db);
                 } elseif ($opType === 'forceCloseOrder') {
                     $result = $this->_forceCloseOrder($opData, $db);
+                } elseif ($opType === 'warehouseCount') {
+                    $this->logToFile("Creating warehouse count for local_id: $localId", 'DEBUG');
+                    $result = $this->_createWarehouseCount($opData, $db);
+                    $this->logToFile("Warehouse count result: " . json_encode($result), 'DEBUG');
                 } elseif ($opType === 'inventoryStock') {
                     // Inventory stock sync removed - use normal table sync instead
                     $result = ['status' => 'error', 'message' => 'Inventory stock sync operations are no longer supported via pending operations'];
@@ -777,6 +803,21 @@ class TerminalController extends Controller
         } catch (\Exception $e) {
             // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder
             $this->logToFile("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), 'ERROR');
+
+            // DIA entegrasyon hatası bildirimi
+            try {
+                WMSTelegramNotification::notifyDIAError(
+                    'Mal Kabul İrsaliye Ekleme',
+                    $e->getMessage(),
+                    [
+                        'Mal Kabul ID' => $receiptId,
+                        'Sipariş ID' => $siparisId ?? 'Serbest Mal Kabul',
+                        'İrsaliye No' => $deliveryNoteNumber ?? 'N/A'
+                    ]
+                );
+            } catch (\Exception $notifE) {
+                Yii::warning("DIA error Telegram notification gönderilemedi: " . $notifE->getMessage(), __METHOD__);
+            }
         }
 
         if ($siparisId) {
@@ -842,7 +883,38 @@ class TerminalController extends Controller
                 }
                 
                 if (!$productInfo) {
-                    return ['status' => 'error', 'message' => "Ürün bulunamadı: {$item['urun_key']} (tip: " . gettype($item['urun_key']) . ")"];
+                    $errorMessage = "Ürün bulunamadı: {$item['urun_key']} (tip: " . gettype($item['urun_key']) . ")";
+
+                    // Çalışan bilgisini al
+                    $employeeName = 'Bilinmeyen';
+                    if (isset($header['employee_id'])) {
+                        $employeeData = (new Query())
+                            ->select(['name'])
+                            ->from('employees')
+                            ->where(['id' => $header['employee_id']])
+                            ->one($db);
+                        if ($employeeData) {
+                            $employeeName = $employeeData['name'];
+                        }
+                    }
+
+                    // Telegram bildirimi gönder
+                    try {
+                        WMSTelegramNotification::notifyTransferError(
+                            $employeeName,
+                            $errorMessage,
+                            [
+                                'Arınan Ürün Key' => $item['urun_key'],
+                                'Tip' => gettype($item['urun_key']),
+                                'Kaynak Lokasyon' => $sourceLocationId ?? 'Mal Kabul Alanı',
+                                'Hedef Lokasyon' => $targetLocationId ?? 'Unknown'
+                            ]
+                        );
+                    } catch (\Exception $e) {
+                        Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
+                    }
+
+                    return ['status' => 'error', 'message' => $errorMessage];
                 }
             }
             
@@ -886,7 +958,39 @@ class TerminalController extends Controller
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
             if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
                 $errorContext = $isPutawayOperation ? "Putaway for Receipt #$goodsReceiptId / Order #$siparisId" : "Shelf Transfer";
-                return ['status' => 'error', 'message' => "Yetersiz stok. Ürün ID: {$urunKey}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}. Context: {$errorContext}"];
+                $errorMessage = "Yetersiz stok. Ürün ID: {$urunKey}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}";
+
+                // Çalışan bilgisini al
+                $employeeName = 'Bilinmeyen';
+                if (isset($header['employee_id'])) {
+                    $employeeData = (new Query())
+                        ->select(['name'])
+                        ->from('employees')
+                        ->where(['id' => $header['employee_id']])
+                        ->one($db);
+                    if ($employeeData) {
+                        $employeeName = $employeeData['name'];
+                    }
+                }
+
+                // Telegram bildirimi gönder
+                try {
+                    WMSTelegramNotification::notifyTransferError(
+                        $employeeName,
+                        $errorMessage,
+                        [
+                            'İşlem Tipi' => $errorContext,
+                            'Ürün Kodu' => $productInfo['StokKodu'] ?? 'Unknown',
+                            'Ürün Adı' => $productInfo['UrunAdi'] ?? 'Unknown',
+                            'Kaynak Lokasyon' => $sourceLocationId ?? 'Mal Kabul Alanı',
+                            'Hedef Lokasyon' => $targetLocationId ?? 'Unknown'
+                        ]
+                    );
+                } catch (\Exception $e) {
+                    Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
+                }
+
+                return ['status' => 'error', 'message' => $errorMessage . ". Context: {$errorContext}"];
             }
 
             // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
@@ -1279,6 +1383,31 @@ class TerminalController extends Controller
 
         // Sipariş zaten kapalıysa (status 2) permanent error döndür
         if ($currentStatus == 2) {
+            // Çalışan bilgisini al
+            $employeeName = 'Bilinmeyen';
+            if (isset($data['employee_id'])) {
+                $employeeData = (new Query())
+                    ->select(['name'])
+                    ->from('employees')
+                    ->where(['id' => $data['employee_id']])
+                    ->one($db);
+                if ($employeeData) {
+                    $employeeName = $employeeData['name'];
+                }
+            }
+
+            // Telegram bildirimi gönder
+            try {
+                WMSTelegramNotification::notifyPermanentError(
+                    $employeeName,
+                    'Sipariş Kapama',
+                    "Sipariş #$siparisId zaten kapalı durumda.",
+                    ['Sipariş No' => $siparisId]
+                );
+            } catch (\Exception $e) {
+                Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
+            }
+
             return [
                 'status' => 'permanent_error',
                 'error_code' => 'ORDER_ALREADY_CLOSED',
@@ -1295,6 +1424,30 @@ class TerminalController extends Controller
         if ($count > 0) {
             return ['status' => 'success', 'message' => "Order #$siparisId closed."];
         } else {
+            // Kapama başarısız olduysa bildirim gönder
+            $employeeName = 'Bilinmeyen';
+            if (isset($data['employee_id'])) {
+                $employeeData = (new Query())
+                    ->select(['name'])
+                    ->from('employees')
+                    ->where(['id' => $data['employee_id']])
+                    ->one($db);
+                if ($employeeData) {
+                    $employeeName = $employeeData['name'];
+                }
+            }
+
+            try {
+                WMSTelegramNotification::notifyOrderCloseError(
+                    $employeeName,
+                    $siparisId,
+                    "Veritabanı güncellemesi başarısız.",
+                    ['Güncellenen Kayıt Sayısı' => $count]
+                );
+            } catch (\Exception $e) {
+                Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
+            }
+
             return ['status' => 'error', 'message' => "Order #$siparisId could not be closed."];
         }
     }
@@ -2722,5 +2875,150 @@ class TerminalController extends Controller
             ->all();
 
         return ['success' => true, 'data' => $receipts];
+    }
+
+    /**
+     * Save warehouse count (for "Save & Continue" feature)
+     * Endpoint: POST /terminal/warehouse-count-save
+     */
+    public function actionWarehouseCountSave()
+    {
+        $data = $this->getJsonBody();
+
+        if (empty($data['sheet']) || empty($data['items'])) {
+            return [
+                'status' => 400,
+                'message' => 'Geçersiz veri: sheet ve items zorunludur.'
+            ];
+        }
+
+        // _createWarehouseCount metodunu kullan
+        $db = Yii::$app->db;
+        $result = $this->_createWarehouseCount([
+            'header' => $data['sheet'],
+            'items' => $data['items']
+        ], $db);
+
+        if ($result['status'] === 'success') {
+            return [
+                'status' => 200,
+                'message' => $result['message'],
+                'count_sheet_id' => $result['count_sheet_id']
+            ];
+        } else {
+            return [
+                'status' => 400,
+                'message' => $result['message']
+            ];
+        }
+    }
+
+    /**
+     * Warehouse count validation
+     */
+    private function validateWarehouseCountData($data)
+    {
+        $header = $data['header'] ?? [];
+        $items = $data['items'] ?? [];
+
+        if (empty($header) || empty($items)) {
+            return 'Geçersiz sayım verisi: Header veya items eksik.';
+        }
+
+        if (!isset($header['operation_unique_id'], $header['sheet_number'],
+                   $header['employee_id'], $header['warehouse_code'])) {
+            return 'Geçersiz sayım header verisi.';
+        }
+
+        return null; // Valid
+    }
+
+    /**
+     * Create or update warehouse count
+     */
+    private function _createWarehouseCount($data, $db)
+    {
+        $validationError = $this->validateWarehouseCountData($data);
+        if ($validationError) {
+            return ['status' => 'error', 'message' => $validationError];
+        }
+
+        $header = $data['header'];
+        $items = $data['items'] ?? [];
+        $operationUniqueId = $header['operation_unique_id'];
+
+        try {
+            // Aynı operation_unique_id var mı kontrol et
+            $existingSheet = (new Query())
+                ->from('wms_count_sheets')
+                ->where(['operation_unique_id' => $operationUniqueId])
+                ->one($db);
+
+            if ($existingSheet) {
+                // GÜNCELLEME (SAVE & CONTINUE durumu)
+                $db->createCommand()->update('wms_count_sheets', [
+                    'status' => $header['status'] ?? 'in_progress',
+                    'notes' => $header['notes'] ?? null,
+                    'last_saved_date' => $header['last_saved_date'] ?? new \yii\db\Expression('NOW()'),
+                    'complete_date' => $header['complete_date'] ?? null,
+                    'updated_at' => new \yii\db\Expression('NOW()'),
+                ], ['operation_unique_id' => $operationUniqueId])->execute();
+
+                $sheetId = $existingSheet['id'];
+
+                // Mevcut items'ları sil ve yeniden ekle (full replace)
+                $db->createCommand()->delete('wms_count_items', ['count_sheet_id' => $sheetId])->execute();
+
+                $this->logToFile("Warehouse count updated: $operationUniqueId (sheet_id: $sheetId)", 'INFO');
+
+            } else {
+                // YENİ KAYIT
+                $db->createCommand()->insert('wms_count_sheets', [
+                    'operation_unique_id' => $operationUniqueId,
+                    'sheet_number' => $header['sheet_number'],
+                    'employee_id' => $header['employee_id'],
+                    'warehouse_code' => $header['warehouse_code'],
+                    'warehouse_name' => $header['warehouse_name'] ?? null,
+                    'status' => $header['status'] ?? 'in_progress',
+                    'notes' => $header['notes'] ?? null,
+                    'start_date' => $header['start_date'],
+                    'last_saved_date' => $header['last_saved_date'] ?? new \yii\db\Expression('NOW()'),
+                    'complete_date' => $header['complete_date'] ?? null,
+                    'created_at' => new \yii\db\Expression('NOW()'),
+                ])->execute();
+
+                $sheetId = $db->getLastInsertID();
+
+                $this->logToFile("New warehouse count created: $operationUniqueId (sheet_id: $sheetId)", 'INFO');
+            }
+
+            // Items ekle
+            foreach ($items as $item) {
+                $db->createCommand()->insert('wms_count_items', [
+                    'count_sheet_id' => $sheetId,
+                    'operation_unique_id' => $operationUniqueId,
+                    'item_uuid' => $item['item_uuid'],
+                    'urun_key' => $item['urun_key'] ?? null,
+                    'birim_key' => $item['birim_key'] ?? null,
+                    'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                    'location_id' => $item['location_id'],
+                    'quantity_counted' => $item['quantity_counted'],
+                    'barcode' => $item['barcode'] ?? null,
+                    'StokKodu' => $item['StokKodu'] ?? null,
+                    'shelf_code' => $item['shelf_code'] ?? null,
+                    'created_at' => new \yii\db\Expression('NOW()'),
+                ])->execute();
+            }
+
+            return [
+                'status' => 'success',
+                'count_sheet_id' => $sheetId,
+                'message' => 'Sayım başarıyla kaydedildi'
+            ];
+
+        } catch (\Exception $e) {
+            $this->logToFile("Warehouse count error: " . $e->getMessage(), 'ERROR');
+            return ['status' => 'error', 'message' => 'Veritabanı hatası: ' . $e->getMessage()];
+        }
     }
 }
