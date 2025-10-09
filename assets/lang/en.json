@@ -883,7 +883,8 @@
       "remove_item": "Failed to remove item",
       "save_failed": "Failed to save count",
       "finish_failed": "Failed to complete count",
-      "no_items": "Please add at least one item before finishing"
+      "no_items": "Please add at least one item before finishing",
+      "scan_pallet": "Please scan or enter pallet barcode"
     }
   },
   "sync": {

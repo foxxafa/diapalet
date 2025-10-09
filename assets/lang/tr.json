@@ -652,6 +652,7 @@
       "select_warehouse": "Lütfen önce bir depo seçin",
       "create_sheet": "Sayım formu oluşturulamadı",
       "scan_barcode": "Lütfen önce bir barkod okutun",
+      "scan_pallet": "Lütfen palet barkodunu okutun",
       "enter_shelf": "Lütfen raf kodunu girin",
       "invalid_shelf": "Geçersiz raf kodu - raf bulunamadı",
       "validation_failed": "Doğrulama işlemi başarısız oldu",

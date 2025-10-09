@@ -39,11 +39,13 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   static const double _gap = 12;
 
   CountMode _selectedMode = CountMode.product;
+  final TextEditingController _palletBarcodeController = TextEditingController();
   final TextEditingController _productSearchController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _shelfController = TextEditingController();
   final TextEditingController _expiryDateController = TextEditingController();
 
+  final FocusNode _palletBarcodeFocusNode = FocusNode();
   final FocusNode _productSearchFocusNode = FocusNode();
   final FocusNode _quantityFocusNode = FocusNode();
   final FocusNode _shelfFocusNode = FocusNode();
@@ -77,10 +79,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   @override
   void dispose() {
     _barcodeSub?.cancel();
+    _palletBarcodeController.dispose();
     _productSearchController.dispose();
     _quantityController.dispose();
     _shelfController.dispose();
     _expiryDateController.dispose();
+    _palletBarcodeFocusNode.dispose();
     _productSearchFocusNode.dispose();
     _quantityFocusNode.dispose();
     _shelfFocusNode.dispose();
@@ -127,7 +131,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
 
     try {
-      // Kısmi arama yap - ASLA otomatik seçme! (goods_receiving mantığı)
+      // HEM PRODUCT HEM PALLET MODUNDA ürün araması yap
       final searchResults = await widget.repository.searchProductsPartial(query.trim());
 
       if (mounted) {
@@ -269,7 +273,16 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Future<void> _addCountItem() async {
-    // Validate inputs
+    // Pallet modunda pallet barkodu zorunlu
+    if (_selectedMode.isPallet) {
+      final palletBarcode = _palletBarcodeController.text.trim();
+      if (palletBarcode.isEmpty) {
+        _showError('warehouse_count.error.scan_pallet'.tr());
+        return;
+      }
+    }
+
+    // Validate inputs - Product barkodu zorunlu
     if (_selectedBarcode == null || _selectedBarcode!.isEmpty) {
       _showError('warehouse_count.error.scan_barcode'.tr());
       return;
@@ -305,32 +318,35 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       return;
     }
 
-    // For product mode, expiry date is required
-    if (_selectedMode.isProduct && _expiryDateController.text.trim().isEmpty) {
+    // Expiry date required (hem product hem pallet modunda ürün ekleniyor)
+    if (_expiryDateController.text.trim().isEmpty) {
       _showError('warehouse_count.error.expiry_required'.tr());
       return;
     }
 
-    // For product mode, unit selection is required
-    if (_selectedMode.isProduct && (_selectedBirimKey == null || _selectedBirimKey!.isEmpty)) {
+    // Unit selection required (hem product hem pallet modunda ürün ekleniyor)
+    if (_selectedBirimKey == null || _selectedBirimKey!.isEmpty) {
       _showError('goods_receiving_screen.validator_unit_required'.tr());
       return;
     }
 
     try {
-      // TODO: For pallet mode: validate pallet exists
-
       final countItem = CountItem(
         countSheetId: widget.countSheet.id!,
         operationUniqueId: widget.countSheet.operationUniqueId,
         itemUuid: const Uuid().v4(),
-        palletBarcode: _selectedMode.isPallet ? _selectedBarcode : null,
+        // Pallet modunda: palletBarcodeController'dan al
+        // Product modunda: null
+        palletBarcode: _selectedMode.isPallet ? _palletBarcodeController.text.trim() : null,
         quantityCounted: quantity,
-        barcode: _selectedMode.isProduct ? _selectedBarcode : null,
+        // Product barkodu her zaman var (hem product hem pallet modunda ürün ekleniyor)
+        barcode: _selectedBarcode,
         shelfCode: shelfCode,
-        birimKey: _selectedMode.isProduct ? _selectedBirimKey : null,
-        expiryDate: _selectedMode.isProduct ? _expiryDateController.text.trim() : null,
-        stokKodu: _selectedMode.isProduct ? _selectedStokKodu : null,
+        // Birim key her zaman var (ürün ekleniyorsa birim gerekli)
+        birimKey: _selectedBirimKey,
+        // Expiry date her zaman var (ürün ekleniyorsa gerekli)
+        expiryDate: _expiryDateController.text.trim().isNotEmpty ? _expiryDateController.text.trim() : null,
+        stokKodu: _selectedStokKodu,
       );
 
       final savedItem = await widget.repository.addCountItem(countItem);
@@ -352,18 +368,25 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   void _clearInputs() {
+    _palletBarcodeController.clear();
     _productSearchController.clear();
     _quantityController.clear();
     _shelfController.clear();
     _expiryDateController.clear();
     _selectedBarcode = null;
     _selectedStokKodu = null;
-    _selectedProductName = null; // Ürün adını da temizle
+    _selectedProductName = null;
     _selectedBirimKey = null;
     _availableUnits = [];
     _productSearchResults = [];
-    _isShelfValid = false; // Shelf validation'ı resetle
-    _productSearchFocusNode.requestFocus();
+    _isShelfValid = false;
+
+    // Focus'u doğru alana ver
+    if (_selectedMode.isPallet) {
+      _palletBarcodeFocusNode.requestFocus();
+    } else {
+      _productSearchFocusNode.requestFocus();
+    }
   }
 
   Future<void> _removeCountItem(CountItem item) async {
@@ -422,15 +445,19 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                     _buildModeSelector(),
                     const SizedBox(height: _gap),
 
-                    // Product Search with QR
+                    // Pallet Barcode Field (only for pallet mode)
+                    if (_selectedMode.isPallet) ...[
+                      _buildPalletBarcodeField(),
+                      const SizedBox(height: _gap),
+                    ],
+
+                    // Product Search with QR (HER ZAMAN VAR - hem product hem pallet modda)
                     _buildProductSearchField(),
                     const SizedBox(height: _gap),
 
-                    // Expiry Date and Unit Row (only for product mode)
-                    if (_selectedMode.isProduct) ...[
-                      _buildExpiryDateAndUnitRow(),
-                      const SizedBox(height: _gap),
-                    ],
+                    // Expiry Date and Unit Row (HER ZAMAN VAR - hem product hem pallet modda)
+                    _buildExpiryDateAndUnitRow(),
+                    const SizedBox(height: _gap),
 
                     // Quantity and Shelf Row (yer değiştirdik: önce quantity, sonra shelf)
                     _buildQuantityAndShelfRow(),
@@ -485,6 +512,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     );
   }
 
+  Widget _buildPalletBarcodeField() {
+    return QrTextField(
+      controller: _palletBarcodeController,
+      focusNode: _palletBarcodeFocusNode,
+      labelText: 'warehouse_count.pallet_barcode'.tr(),
+      showClearButton: true,
+      onQrTap: _openQrScanner,
+      validator: (value) {
+        if (_selectedMode.isPallet && (value == null || value.isEmpty)) {
+          return 'warehouse_count.error.scan_pallet'.tr();
+        }
+        return null;
+      },
+    );
+  }
+
   Widget _buildProductSearchField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -495,10 +538,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           // Label: Ürün seçiliyse "ÜRÜN ADI (STOK KODU)", değilse "Search or Scan Product"
           labelText: _selectedProductName != null && _selectedStokKodu != null
               ? '$_selectedProductName ($_selectedStokKodu)'
-              : (_selectedMode.isProduct
-                  ? 'warehouse_count.search_product'.tr()
-                  : 'warehouse_count.pallet_barcode'.tr()),
-          showClearButton: true, // Clear button ekle (goods_receiving gibi)
+              : 'warehouse_count.search_product'.tr(),
+          showClearButton: true,
           onQrTap: _openQrScanner,
           onChanged: (value) {
             // Kullanıcı yazmaya başlarsa seçimi temizle
