@@ -16,6 +16,8 @@ import 'package:diapalet/features/warehouse_count/domain/entities/count_mode.dar
 import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
 import 'package:diapalet/features/warehouse_count/presentation/widgets/counted_items_review_table.dart';
 import 'package:diapalet/features/warehouse_count/presentation/screens/warehouse_count_review_screen.dart';
+import 'package:diapalet/features/goods_receiving/utils/date_validation_utils.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 
@@ -151,31 +153,59 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _selectProduct(Map<String, dynamic> productInfo) {
+  void _selectProduct(Map<String, dynamic> productInfo) async {
+    final stockCode = productInfo['StokKodu'] as String? ?? '';
+
     setState(() {
       _selectedBarcode = productInfo['barkod'] as String?;
-      _selectedStokKodu = productInfo['StokKodu'] as String?;
+      _selectedStokKodu = stockCode;
       _productSearchResults = [];
 
       // Product controller'a ürün adını yaz
       final productName = productInfo['UrunAdi'] as String? ?? '';
-      final stockCode = productInfo['StokKodu'] as String? ?? '';
       _productSearchController.text = '$productName ($stockCode)';
-
-      // Birim bilgilerini doldur
-      if (productInfo['birim_key'] != null) {
-        _availableUnits = [
-          {
-            'birim_key': productInfo['birim_key'],
-            'birim_adi': productInfo['birimadi'] ?? 'Birim',
-          }
-        ];
-        _selectedBirimKey = productInfo['birim_key'] as String;
-      } else {
-        _availableUnits = [];
-        _selectedBirimKey = null;
-      }
     });
+
+    // Ürünün TÜM birimlerini veritabanından getir (Goods Receiving gibi)
+    if (stockCode.isNotEmpty) {
+      try {
+        final dbHelper = DatabaseHelper.instance;
+        final units = await dbHelper.getAllUnitsForProduct(stockCode);
+
+        if (mounted) {
+          setState(() {
+            _availableUnits = units;
+
+            // Mevcut seçili birimi bul
+            final currentBirimKey = productInfo['birim_key'] as String?;
+            if (currentBirimKey != null) {
+              final index = units.indexWhere(
+                (unit) => unit['birim_key'] == currentBirimKey || unit['_key'] == currentBirimKey
+              );
+              if (index != -1) {
+                _selectedBirimKey = currentBirimKey;
+              } else if (units.isNotEmpty) {
+                // Bulunamadıysa ilk birimi seç
+                _selectedBirimKey = units[0]['birim_key'] as String?;
+              }
+            } else if (units.isNotEmpty) {
+              // Birim key yoksa ilk birimi seç
+              _selectedBirimKey = units[0]['birim_key'] as String?;
+            } else {
+              _selectedBirimKey = null;
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading units: $e');
+        if (mounted) {
+          setState(() {
+            _availableUnits = [];
+            _selectedBirimKey = null;
+          });
+        }
+      }
+    }
 
     // Son kullanma tarihi alanına focus yap (hem ürün hem palet modunda)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -482,19 +512,91 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Widget _buildExpiryDateField() {
-    return TextFormField(
-      controller: _expiryDateController,
-      focusNode: _expiryDateFocusNode,
-      decoration: SharedInputDecoration.create(
-        context,
-        'goods_receiving_screen.label_expiry_date'.tr(),
-      ),
-      keyboardType: TextInputType.datetime,
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9/]')),
-        LengthLimitingTextInputFormatter(10),
-      ],
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return TextFormField(
+          controller: _expiryDateController,
+          focusNode: _expiryDateFocusNode,
+          enabled: _selectedBarcode != null,
+          readOnly: false,
+          keyboardType: const TextInputType.numberWithOptions(decimal: false),
+          inputFormatters: [
+            _DateInputFormatter(),
+          ],
+          decoration: SharedInputDecoration.create(
+            context,
+            'goods_receiving_screen.label_expiry_date'.tr(),
+            enabled: _selectedBarcode != null,
+            suffixIcon: _expiryDateController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: _selectedBarcode != null
+                        ? () {
+                            _expiryDateController.clear();
+                            setState(() {}); // Rebuild to update suffix icon
+                            _expiryDateFocusNode.requestFocus();
+                          }
+                        : null,
+                  )
+                : const Icon(Icons.edit_calendar_outlined),
+            hintText: 'DD/MM/YYYY',
+          ),
+          validator: (value) {
+            if (_selectedBarcode == null) return null;
+
+            // Expiry date is mandatory
+            if (value == null || value.isEmpty) {
+              return 'goods_receiving_screen.validator_expiry_date_required'.tr();
+            }
+
+            // Use comprehensive validation
+            bool isValid = DateValidationUtils.isValidExpiryDate(value);
+            if (!isValid) {
+              return DateValidationUtils.getDateValidationError(value);
+            }
+
+            return null;
+          },
+          onChanged: (value) {
+            setState(() {}); // Rebuild to update suffix icon
+            // DD/MM/YYYY formatı tamamlandıysa ve geçerli tarihse quantity field'a geç
+            if (value.length == 10) {
+              bool isValid = DateValidationUtils.isValidExpiryDate(value);
+              if (isValid) {
+                _onExpiryDateEntered();
+              }
+            }
+          },
+          onFieldSubmitted: (value) {
+            if (value.length == 10) {
+              if (DateValidationUtils.isValidExpiryDate(value)) {
+                _onExpiryDateEntered();
+              } else {
+                // Show error message
+                String errorMessage = DateValidationUtils.getDateValidationError(value);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(errorMessage),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+        );
+      },
     );
+  }
+
+  void _onExpiryDateEntered() {
+    if (_expiryDateController.text.isNotEmpty && _selectedBarcode != null) {
+      // Focus to quantity field
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _quantityFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   Widget _buildUnitDropdown() {
@@ -507,7 +609,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       items: _availableUnits.map((unit) {
         return DropdownMenuItem<String>(
           value: unit['birim_key'] as String,
-          child: Text(unit['birim_adi'] as String),
+          child: Text(unit['birimadi'] as String? ?? 'Birim'),
         );
       }).toList(),
       onChanged: (value) {
@@ -595,5 +697,123 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         ),
       ),
     );
+  }
+}
+
+class _DateInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // Handle deletion - if user deletes a slash, delete the preceding digit too
+    if (newValue.text.length < oldValue.text.length) {
+      if (newValue.text.isNotEmpty && oldValue.text.length > newValue.text.length) {
+        final deletedChar = oldValue.text[newValue.text.length];
+        if (deletedChar == '/' && newValue.text.isNotEmpty) {
+          return TextEditingValue(
+            text: newValue.text.substring(0, newValue.text.length - 1),
+            selection: TextSelection.collapsed(offset: newValue.text.length - 1),
+          );
+        }
+      }
+      return newValue;
+    }
+
+    // Only allow digits
+    final text = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (text.isEmpty) {
+      return const TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
+    }
+
+    if (text.length > 8) return oldValue;
+
+    // Smart formatting with validation
+    String formatted = _smartFormatDate(text);
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+
+  String _smartFormatDate(String digits) {
+    String result = '';
+
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 2 || i == 4) result += '/';
+
+      // Add digit with smart validation
+      String digit = digits[i];
+
+      // Day validation (position 0-1)
+      if (i < 2) {
+        if (i == 0 && int.parse(digit) > 3) {
+          digit = '3'; // Max day starts with 3
+        } else if (i == 1 && result.isNotEmpty) {
+          int firstDigit = int.parse(result[0]);
+          int dayValue = firstDigit * 10 + int.parse(digit);
+          if (dayValue > 31) {
+            digit = '1'; // 31 max
+          } else if (dayValue == 0) {
+            digit = '1'; // Min 01
+          }
+        }
+      }
+      // Month validation (position 2-3)
+      else if (i < 4) {
+        int monthPos = i - 2;
+        if (monthPos == 0 && int.parse(digit) > 1) {
+          digit = '1'; // Max month starts with 1
+        } else if (monthPos == 1) {
+          String monthFirstDigit = result.split('/')[1];
+          int firstDigit = int.parse(monthFirstDigit);
+          int monthValue = firstDigit * 10 + int.parse(digit);
+          if (monthValue > 12) {
+            digit = '2'; // 12 max
+          } else if (monthValue == 0) {
+            digit = '1'; // Min 01
+          }
+        }
+      }
+
+      result += digit;
+    }
+
+    // Final validation when we have complete date (8 digits)
+    if (digits.length == 8) {
+      result = _validateCompleteDate(result);
+    }
+
+    return result;
+  }
+
+  String _validateCompleteDate(String dateStr) {
+    try {
+      final parts = dateStr.split('/');
+      if (parts.length != 3) return dateStr;
+
+      int day = int.parse(parts[0]);
+      int month = int.parse(parts[1]);
+      int year = int.parse(parts[2]);
+
+      // Create DateTime to check validity
+      final date = DateTime(year, month, day);
+
+      // If date was adjusted, use the adjusted values
+      if (date.day != day || date.month != month) {
+        // DateTime adjusted it, which means original was invalid
+        // Use last day of the intended month
+        final lastDay = DateTime(year, month + 1, 0).day;
+        day = day > lastDay ? lastDay : day;
+
+        return '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/${year.toString().padLeft(4, '0')}';
+      }
+
+      return dateStr;
+    } catch (e) {
+      return dateStr;
+    }
   }
 }
