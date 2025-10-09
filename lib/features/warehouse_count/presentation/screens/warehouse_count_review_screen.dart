@@ -225,9 +225,16 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
       // Complete the count sheet
       await widget.repository.completeCountSheet(widget.countSheet.id!);
 
-      // Queue for sync (offline operation)
+      // Reload the updated count sheet from database to get complete_date and status
+      final updatedSheet = await widget.repository.getCountSheetById(widget.countSheet.id!);
+
+      if (updatedSheet == null) {
+        throw Exception('Failed to reload count sheet after completion');
+      }
+
+      // Queue for sync (offline operation) with UPDATED sheet
       await widget.repository.queueCountSheetForSync(
-        widget.countSheet,
+        updatedSheet,
         widget.countedItems,
       );
 

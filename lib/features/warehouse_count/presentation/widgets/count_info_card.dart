@@ -76,14 +76,14 @@ class CountInfoCard extends StatelessWidget {
                 ),
               ],
 
-              // Last saved date (if in progress and saved)
-              if (!isCompleted && countSheet.lastSavedDate != null) ...[
+              // Last updated date (if in progress and updated)
+              if (!isCompleted && countSheet.updatedAt != null) ...[
                 const SizedBox(height: 8),
                 _buildInfoRow(
                   context,
                   icon: Icons.cloud_upload,
-                  label: 'warehouse_count.last_saved'.tr(),
-                  value: DateFormat('dd/MM/yyyy HH:mm').format(countSheet.lastSavedDate!),
+                  label: 'warehouse_count.last_updated'.tr(),
+                  value: DateFormat('dd/MM/yyyy HH:mm').format(countSheet.updatedAt!),
                 ),
               ],
 

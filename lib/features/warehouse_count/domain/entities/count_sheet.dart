@@ -10,7 +10,6 @@ class CountSheet {
   final String? notes;
   final DateTime startDate;
   final DateTime? completeDate;
-  final DateTime? lastSavedDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -24,7 +23,6 @@ class CountSheet {
     this.notes,
     required this.startDate,
     this.completeDate,
-    this.lastSavedDate,
     this.createdAt,
     this.updatedAt,
   });
@@ -42,9 +40,6 @@ class CountSheet {
       startDate: DateTime.parse(map['start_date'] as String),
       completeDate: map['complete_date'] != null
           ? DateTime.parse(map['complete_date'] as String)
-          : null,
-      lastSavedDate: map['last_saved_date'] != null
-          ? DateTime.parse(map['last_saved_date'] as String)
           : null,
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'] as String)
@@ -67,7 +62,6 @@ class CountSheet {
       if (notes != null) 'notes': notes,
       'start_date': startDate.toIso8601String(),
       if (completeDate != null) 'complete_date': completeDate!.toIso8601String(),
-      if (lastSavedDate != null) 'last_saved_date': lastSavedDate!.toIso8601String(),
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
@@ -85,7 +79,8 @@ class CountSheet {
       if (notes != null) 'notes': notes,
       'start_date': startDate.toIso8601String(),
       if (completeDate != null) 'complete_date': completeDate!.toIso8601String(),
-      if (lastSavedDate != null) 'last_saved_date': lastSavedDate!.toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
   }
 
@@ -103,7 +98,6 @@ class CountSheet {
     String? notes,
     DateTime? startDate,
     DateTime? completeDate,
-    DateTime? lastSavedDate,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -117,7 +111,6 @@ class CountSheet {
       notes: notes ?? this.notes,
       startDate: startDate ?? this.startDate,
       completeDate: completeDate ?? this.completeDate,
-      lastSavedDate: lastSavedDate ?? this.lastSavedDate,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

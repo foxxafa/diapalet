@@ -51,12 +51,53 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   Future<List<CountItem>> getCountItemsBySheetId(int countSheetId) async {
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'count_items',
-      where: 'count_sheet_id = ?',
+
+    // First get the operation_unique_id from count_sheets
+    final sheetResult = await db.query(
+      'count_sheets',
+      columns: ['operation_unique_id'],
+      where: 'id = ?',
       whereArgs: [countSheetId],
-      orderBy: 'created_at ASC',
+      limit: 1,
     );
+
+    if (sheetResult.isEmpty) {
+      return [];
+    }
+
+    final operationUniqueId = sheetResult.first['operation_unique_id'] as String;
+
+    // JOIN with birimler table to get birimadi
+    // Use operation_unique_id for relation (no more count_sheet_id FK)
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT
+        ci.*,
+        b.birimadi as birim_adi
+      FROM count_items ci
+      LEFT JOIN birimler b ON ci.birim_key = b._key
+      WHERE ci.operation_unique_id = ?
+      ORDER BY ci.created_at ASC
+    ''', [operationUniqueId]);
+
+    // Debug: Print detailed info to verify JOIN is working
+    debugPrint('🔍 Retrieved ${maps.length} count items for operation_unique_id: $operationUniqueId');
+    for (var map in maps) {
+      debugPrint('📦 CountItem: birim_key=${map['birim_key']}, birim_adi=${map['birim_adi']}, stokKodu=${map['StokKodu']}');
+
+      // Extra debug: Check if birim exists in birimler table
+      if (map['birim_adi'] == null && map['birim_key'] != null) {
+        final birimCheck = await db.query(
+          'birimler',
+          where: '_key = ?',
+          whereArgs: [map['birim_key']],
+          limit: 1,
+        );
+        debugPrint('⚠️ Birim lookup failed. birim_key=${map['birim_key']}, Found in birimler: ${birimCheck.isNotEmpty}');
+        if (birimCheck.isNotEmpty) {
+          debugPrint('   Found birim: ${birimCheck.first}');
+        }
+      }
+    }
 
     return maps.map((map) => CountItem.fromMap(map)).toList();
   }
@@ -87,11 +128,13 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   Future<void> completeCountSheet(int countSheetId) async {
     final db = await dbHelper.database;
+    final now = DateTime.now().toUtc();
     await db.update(
       'count_sheets',
       {
         'status': WarehouseCountConstants.statusCompleted,
-        'complete_date': DateTime.now().toIso8601String(),
+        'complete_date': now.toIso8601String(),
+        'updated_at': now.toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [countSheetId],
@@ -134,10 +177,26 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   Future<void> deleteAllItemsForSheet(int countSheetId) async {
     final db = await dbHelper.database;
+
+    // Get operation_unique_id first
+    final sheetResult = await db.query(
+      'count_sheets',
+      columns: ['operation_unique_id'],
+      where: 'id = ?',
+      whereArgs: [countSheetId],
+      limit: 1,
+    );
+
+    if (sheetResult.isEmpty) {
+      return;
+    }
+
+    final operationUniqueId = sheetResult.first['operation_unique_id'] as String;
+
     await db.delete(
       'count_items',
-      where: 'count_sheet_id = ?',
-      whereArgs: [countSheetId],
+      where: 'operation_unique_id = ?',
+      whereArgs: [operationUniqueId],
     );
   }
 
@@ -159,11 +218,11 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       if (response.statusCode == 200 && response.data['status'] == 200) {
         debugPrint('✅ Count sheet saved to server successfully');
 
-        // Update local last_saved_date
+        // Update local updated_at timestamp
         final db = await dbHelper.database;
         await db.update(
           'count_sheets',
-          {'last_saved_date': DateTime.now().toIso8601String()},
+          {'updated_at': DateTime.now().toIso8601String()},
           where: 'id = ?',
           whereArgs: [sheet.id],
         );
@@ -187,7 +246,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
     debugPrint('📤 Queueing count sheet for sync (Save & Finish)...');
 
     final payload = {
-      'sheet': sheet.toJson(),
+      'header': sheet.toJson(),  // Backend expects 'header', not 'sheet'
       'items': items.map((item) => item.toJson()).toList(),
     };
 

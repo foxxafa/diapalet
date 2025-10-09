@@ -813,7 +813,7 @@
     "start_counting": "Start Counting",
     "start_date": "Started",
     "complete_date": "Completed",
-    "last_saved": "Last Saved",
+    "last_updated": "Last Updated",
     "notes": "Notes",
     "status": {
       "in_progress": "In Progress",

@@ -108,6 +108,7 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
       final sheetNumber = widget.repository.generateSheetNumber(employeeId);
 
       // Create new count sheet
+      final now = DateTime.now().toUtc();
       final newSheet = CountSheet(
         operationUniqueId: operationUniqueId,
         sheetNumber: sheetNumber,
@@ -115,7 +116,9 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
         warehouseCode: _selectedWarehouseCode!,
         status: WarehouseCountConstants.statusInProgress,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        startDate: DateTime.now(),
+        startDate: now,
+        createdAt: now,
+        updatedAt: now,
       );
 
       // Save to database

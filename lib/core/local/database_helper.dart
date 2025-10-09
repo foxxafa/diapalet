@@ -13,7 +13,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 68; // added count_sheets and count_items tables for warehouse count module
+  static const _databaseVersion = 71; // removed count_sheet_id from count_items - use operation_unique_id for relation
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -301,11 +301,10 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_barkod ON barkodlar(barkod)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_key_birimler ON barkodlar(_key_scf_stokkart_birimleri)');
 
-      // Warehouse Count Tables
+      // Warehouse Count Tables (Upload-only, no sync back)
       batch.execute('''
         CREATE TABLE IF NOT EXISTS count_sheets (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          count_sheet_id INTEGER,
           operation_unique_id TEXT NOT NULL UNIQUE,
           sheet_number TEXT NOT NULL UNIQUE,
           employee_id INTEGER NOT NULL,
@@ -314,7 +313,6 @@ class DatabaseHelper {
           notes TEXT,
           start_date TEXT NOT NULL,
           complete_date TEXT,
-          last_saved_date TEXT,
           created_at TEXT,
           updated_at TEXT,
           FOREIGN KEY(employee_id) REFERENCES employees(id)
@@ -324,7 +322,6 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS count_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          count_sheet_id INTEGER NOT NULL,
           operation_unique_id TEXT NOT NULL,
           item_uuid TEXT NOT NULL UNIQUE,
           birim_key TEXT,
@@ -335,15 +332,15 @@ class DatabaseHelper {
           shelf_code TEXT,
           expiry_date TEXT,
           created_at TEXT,
-          updated_at TEXT,
-          FOREIGN KEY(count_sheet_id) REFERENCES count_sheets(id)
+          updated_at TEXT
         )
       ''');
 
       // Count tables indexes
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_status ON count_sheets(status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_employee ON count_sheets(employee_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_sheet ON count_items(count_sheet_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_operation_uid ON count_sheets(operation_unique_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_operation_uid ON count_items(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_uuid ON count_items(item_uuid)');
 
       await batch.commit(noResult: true);

@@ -94,13 +94,11 @@ class CountedItemsReviewTable extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Stok Kodu veya Barkod
+          // Stok Kodu (her zaman göster)
           Expanded(
-            flex: 3,
+            flex: 2,
             child: Text(
-              isProduct
-                ? (item.stokKodu ?? item.barcode ?? 'N/A')
-                : (item.palletBarcode ?? 'N/A'),
+              item.stokKodu ?? 'N/A',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w500,
                 fontSize: 12,
@@ -110,6 +108,22 @@ class CountedItemsReviewTable extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+
+          // Pallet Barkodu (sadece pallet modunda)
+          if (!isProduct) ...[
+            Expanded(
+              flex: 2,
+              child: Text(
+                item.palletBarcode ?? '-',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
 
           // Shelf
           Container(
@@ -129,22 +143,49 @@ class CountedItemsReviewTable extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Quantity
+          // Quantity + Birim
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: theme.colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(
-              _formatQuantity(item.quantityCounted),
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                color: theme.colorScheme.primary,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formatQuantity(item.quantityCounted),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                if (item.birimAdi != null && item.birimAdi!.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    item.birimAdi!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ] else ...[
+                  // Debug: Show birimKey if birimAdi is missing
+                  if (item.birimKey != null)
+                    Text(
+                      ' [${item.birimKey}]',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 9,
+                        color: Colors.red,
+                      ),
+                    ),
+                ],
+              ],
             ),
           ),
+          const SizedBox(width: 8),
 
           // Sil butonu (eğer read-only değilse)
           if (!isReadOnly && onItemRemoved != null)

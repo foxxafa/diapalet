@@ -98,6 +98,30 @@ class TerminalController extends Controller
         return (new \DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z');
     }
 
+    /**
+     * Convert ISO8601 datetime to MySQL datetime format
+     * Converts: 2025-10-09T14:13:34.543910Z -> 2025-10-09 14:13:34
+     */
+    private function convertIso8601ToMysqlDatetime($iso8601String)
+    {
+        if (empty($iso8601String)) {
+            $this->logToFile("Date conversion: empty input", 'DEBUG');
+            return null;
+        }
+
+        try {
+            // Parse ISO8601 string (supports both Z and timezone formats)
+            $dt = new \DateTime($iso8601String);
+            // Return MySQL datetime format (without microseconds)
+            $mysqlFormat = $dt->format('Y-m-d H:i:s');
+            $this->logToFile("Date conversion: {$iso8601String} -> {$mysqlFormat}", 'DEBUG');
+            return $mysqlFormat;
+        } catch (\Exception $e) {
+            $this->logToFile("Date conversion error: {$iso8601String} - {$e->getMessage()}", 'WARNING');
+            return null;
+        }
+    }
+
     private function hasValidConditions($conditions)
     {
         return count($conditions) > 1;
@@ -2959,20 +2983,21 @@ class TerminalController extends Controller
                 $db->createCommand()->update('wms_count_sheets', [
                     'status' => $header['status'] ?? 'in_progress',
                     'notes' => $header['notes'] ?? null,
-                    'last_saved_date' => $header['last_saved_date'] ?? new \yii\db\Expression('NOW()'),
-                    'complete_date' => $header['complete_date'] ?? null,
+                    'complete_date' => isset($header['complete_date']) ? $this->convertIso8601ToMysqlDatetime($header['complete_date']) : null,
                     'updated_at' => new \yii\db\Expression('NOW()'),
                 ], ['operation_unique_id' => $operationUniqueId])->execute();
 
                 $sheetId = $existingSheet['id'];
 
-                // Mevcut items'ları sil ve yeniden ekle (full replace)
-                $db->createCommand()->delete('wms_count_items', ['count_sheet_id' => $sheetId])->execute();
+                // Mevcut items'ları sil ve yeniden ekle (full replace) - UUID ile
+                $db->createCommand()->delete('wms_count_items', ['operation_unique_id' => $operationUniqueId])->execute();
 
                 $this->logToFile("Warehouse count updated: $operationUniqueId (sheet_id: $sheetId)", 'INFO');
 
             } else {
                 // YENİ KAYIT
+                $this->logToFile("Header data: " . json_encode($header), 'DEBUG');
+
                 $db->createCommand()->insert('wms_count_sheets', [
                     'operation_unique_id' => $operationUniqueId,
                     'sheet_number' => $header['sheet_number'],
@@ -2980,10 +3005,10 @@ class TerminalController extends Controller
                     'warehouse_code' => $header['warehouse_code'],
                     'status' => $header['status'] ?? 'in_progress',
                     'notes' => $header['notes'] ?? null,
-                    'start_date' => $header['start_date'],
-                    'last_saved_date' => $header['last_saved_date'] ?? new \yii\db\Expression('NOW()'),
-                    'complete_date' => $header['complete_date'] ?? null,
-                    'created_at' => new \yii\db\Expression('NOW()'),
+                    'start_date' => $this->convertIso8601ToMysqlDatetime($header['start_date']),
+                    'complete_date' => isset($header['complete_date']) ? $this->convertIso8601ToMysqlDatetime($header['complete_date']) : null,
+                    'created_at' => isset($header['created_at']) ? $this->convertIso8601ToMysqlDatetime($header['created_at']) : new \yii\db\Expression('NOW()'),
+                    'updated_at' => isset($header['updated_at']) ? $this->convertIso8601ToMysqlDatetime($header['updated_at']) : new \yii\db\Expression('NOW()'),
                 ])->execute();
 
                 $sheetId = $db->getLastInsertID();
@@ -2994,7 +3019,6 @@ class TerminalController extends Controller
             // Items ekle
             foreach ($items as $item) {
                 $db->createCommand()->insert('wms_count_items', [
-                    'count_sheet_id' => $sheetId,
                     'operation_unique_id' => $operationUniqueId,
                     'item_uuid' => $item['item_uuid'],
                     'birim_key' => $item['birim_key'] ?? null,
@@ -3004,7 +3028,8 @@ class TerminalController extends Controller
                     'StokKodu' => $item['StokKodu'] ?? null,
                     'shelf_code' => $item['shelf_code'] ?? null,
                     'expiry_date' => $item['expiry_date'] ?? null,
-                    'created_at' => new \yii\db\Expression('NOW()'),
+                    'created_at' => isset($item['created_at']) ? $this->convertIso8601ToMysqlDatetime($item['created_at']) : new \yii\db\Expression('NOW()'),
+                    'updated_at' => isset($item['updated_at']) ? $this->convertIso8601ToMysqlDatetime($item['updated_at']) : new \yii\db\Expression('NOW()'),
                 ])->execute();
             }
 

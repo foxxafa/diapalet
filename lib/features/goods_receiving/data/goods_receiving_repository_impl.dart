@@ -96,8 +96,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           final receiptId = await txn.insert(DbTables.goodsReceipts, receiptHeaderData);
           debugPrint('🔧 DEBUG: goods_receipt inserted with ID: $receiptId');
 
-          const stockStatus = GoodsReceivingConstants.stockStatusReceiving;
-          
           // 3. ADIM: Bu gruptaki items'ları kaydet
           final Map<int, String> itemStockUuids = {};
           final Map<int, String> itemUuids = {};

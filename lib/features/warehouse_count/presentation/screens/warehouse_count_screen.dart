@@ -331,8 +331,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
 
     try {
+      final now = DateTime.now().toUtc();
       final countItem = CountItem(
-        countSheetId: widget.countSheet.id!,
         operationUniqueId: widget.countSheet.operationUniqueId,
         itemUuid: const Uuid().v4(),
         // Pallet modunda: palletBarcodeController'dan al
@@ -344,16 +344,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         shelfCode: shelfCode,
         // Birim key her zaman var (ürün ekleniyorsa birim gerekli)
         birimKey: _selectedBirimKey,
+        // birimAdi will be loaded via JOIN when reading from DB
         // Expiry date her zaman var (ürün ekleniyorsa gerekli)
         expiryDate: _expiryDateController.text.trim().isNotEmpty ? _expiryDateController.text.trim() : null,
         stokKodu: _selectedStokKodu,
+        createdAt: now,
+        updatedAt: now,
       );
 
-      final savedItem = await widget.repository.addCountItem(countItem);
+      await widget.repository.addCountItem(countItem);
+
+      // Reload items from database with JOIN to get birimAdi
+      final reloadedItems = await widget.repository.getCountItemsBySheetId(widget.countSheet.id!);
 
       if (mounted) {
         setState(() {
-          _countedItems.add(savedItem);
+          _countedItems = reloadedItems;
           _clearInputs();
         });
 
