@@ -654,6 +654,7 @@
       "scan_barcode": "Lütfen önce bir barkod okutun",
       "enter_shelf": "Lütfen raf kodunu girin",
       "invalid_shelf": "Geçersiz raf kodu - raf bulunamadı",
+      "validation_failed": "Doğrulama işlemi başarısız oldu",
       "enter_quantity": "Lütfen miktar girin",
       "invalid_quantity": "Lütfen geçerli bir miktar girin",
       "quantity_too_large": "Miktar izin verilen maksimum değeri aşıyor",

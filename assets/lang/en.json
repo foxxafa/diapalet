@@ -872,6 +872,7 @@
       "scan_barcode": "Please scan a barcode first",
       "enter_shelf": "Please enter shelf code",
       "invalid_shelf": "Invalid shelf code - shelf not found",
+      "validation_failed": "Validation failed",
       "enter_quantity": "Please enter quantity",
       "invalid_quantity": "Please enter a valid quantity",
       "quantity_too_large": "Quantity exceeds maximum allowed",

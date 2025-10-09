@@ -55,9 +55,13 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   // Product selection state
   String? _selectedBarcode;
   String? _selectedStokKodu;
+  String? _selectedProductName; // Ürün adını sakla
   List<Map<String, dynamic>> _availableUnits = [];
   String? _selectedBirimKey;
   List<Map<String, dynamic>> _productSearchResults = [];
+
+  // Shelf validation state
+  bool _isShelfValid = false;
 
   late BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _barcodeSub;
@@ -123,24 +127,13 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
 
     try {
-      // Eğer tam eşleşme varsa direkt seç
-      final exactMatch = await widget.repository.searchProductByBarcode(query.trim());
+      // Kısmi arama yap - ASLA otomatik seçme! (goods_receiving mantığı)
+      final searchResults = await widget.repository.searchProductsPartial(query.trim());
 
-      if (exactMatch != null && mounted) {
-        // Tam eşleşme bulundu - direkt seç
-        _selectProduct(exactMatch);
+      if (mounted) {
         setState(() {
-          _productSearchResults = [];
+          _productSearchResults = searchResults;
         });
-      } else {
-        // Kısmi arama yap (ilk 5 sonuç)
-        final searchResults = await widget.repository.searchProductsPartial(query.trim());
-
-        if (mounted) {
-          setState(() {
-            _productSearchResults = searchResults;
-          });
-        }
       }
     } catch (e) {
       debugPrint('Error searching product: $e');
@@ -155,15 +148,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
   void _selectProduct(Map<String, dynamic> productInfo) async {
     final stockCode = productInfo['StokKodu'] as String? ?? '';
+    final barcode = productInfo['barkod'] as String?;
+    final productName = productInfo['UrunAdi'] as String? ?? '';
 
     setState(() {
-      _selectedBarcode = productInfo['barkod'] as String?;
+      _selectedBarcode = barcode;
       _selectedStokKodu = stockCode;
+      _selectedProductName = productName; // Ürün adını sakla
       _productSearchResults = [];
 
-      // Product controller'a ürün adını yaz
-      final productName = productInfo['UrunAdi'] as String? ?? '';
-      _productSearchController.text = '$productName ($stockCode)';
+      // Text field'a BARKOD + STOK KODU yaz (goods_receiving gibi)
+      // Eğer barkod varsa: "BARKOD (STOKKODU)", yoksa sadece "STOKKODU"
+      if (barcode != null && barcode.isNotEmpty) {
+        _productSearchController.text = '$barcode ($stockCode)';
+      } else {
+        _productSearchController.text = stockCode;
+      }
     });
 
     // Ürünün TÜM birimlerini veritabanından getir (Goods Receiving gibi)
@@ -176,23 +176,24 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           setState(() {
             _availableUnits = units;
 
-            // Mevcut seçili birimi bul
-            final currentBirimKey = productInfo['birim_key'] as String?;
-            if (currentBirimKey != null) {
-              final index = units.indexWhere(
-                (unit) => unit['birim_key'] == currentBirimKey || unit['_key'] == currentBirimKey
-              );
-              if (index != -1) {
-                _selectedBirimKey = currentBirimKey;
-              } else if (units.isNotEmpty) {
-                // Bulunamadıysa ilk birimi seç
-                _selectedBirimKey = units[0]['birim_key'] as String?;
-              }
-            } else if (units.isNotEmpty) {
-              // Birim key yoksa ilk birimi seç
-              _selectedBirimKey = units[0]['birim_key'] as String?;
+            // ARAMA SONUCUNDAN gelen birim_key'i kullan!
+            // Eğer kullanıcı ARAMA LİSTESİNDEN belirli bir birimi seçtiyse (BOX veya UNIT)
+            // o birimi dropdown'da otomatik seç
+            final searchBirimKey = productInfo['birim_key'] as String?;
+
+            if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
+              // Arama sonucundan gelen birim mevcut, onu seç
+              _selectedBirimKey = searchBirimKey;
+              debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
             } else {
+              // Arama sonucundan birim yok veya bulunamadı, NULL bırak
               _selectedBirimKey = null;
+              debugPrint('⚠️ No unit auto-selected, user must choose manually');
+            }
+
+            debugPrint('🔄 Updated _availableUnits: ${units.length} units');
+            for (var unit in units) {
+              debugPrint('   - ${unit['birimadi']} (key: ${unit['birim_key']})');
             }
           });
         }
@@ -225,6 +226,45 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
     if (barcode != null && mounted) {
       _handleBarcodeScanned(barcode);
+    }
+  }
+
+  Future<void> _validateShelf(String shelfCode) async {
+    if (shelfCode.trim().isEmpty) {
+      setState(() {
+        _isShelfValid = false;
+      });
+      return;
+    }
+
+    try {
+      // Convert to uppercase for validation (case-insensitive)
+      final upperShelfCode = shelfCode.trim().toUpperCase();
+      final isValid = await widget.repository.validateShelfCode(upperShelfCode);
+
+      if (mounted) {
+        setState(() {
+          _isShelfValid = isValid;
+        });
+
+        if (!isValid) {
+          _showError('warehouse_count.error.invalid_shelf'.tr());
+        } else {
+          // Update controller with uppercase value
+          _shelfController.text = upperShelfCode;
+
+          // Move to Add button - focus stays on shelf but user can press Add
+          // No auto-focus to quantity since shelf validation happens on enter
+        }
+      }
+    } catch (e) {
+      debugPrint('Error validating shelf: $e');
+      if (mounted) {
+        setState(() {
+          _isShelfValid = false;
+        });
+        _showError('warehouse_count.error.validation_failed'.tr());
+      }
     }
   }
 
@@ -271,6 +311,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       return;
     }
 
+    // For product mode, unit selection is required
+    if (_selectedMode.isProduct && (_selectedBirimKey == null || _selectedBirimKey!.isEmpty)) {
+      _showError('goods_receiving_screen.validator_unit_required'.tr());
+      return;
+    }
+
     try {
       // TODO: For pallet mode: validate pallet exists
 
@@ -308,12 +354,15 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   void _clearInputs() {
     _productSearchController.clear();
     _quantityController.clear();
+    _shelfController.clear();
     _expiryDateController.clear();
     _selectedBarcode = null;
     _selectedStokKodu = null;
+    _selectedProductName = null; // Ürün adını da temizle
     _selectedBirimKey = null;
     _availableUnits = [];
     _productSearchResults = [];
+    _isShelfValid = false; // Shelf validation'ı resetle
     _productSearchFocusNode.requestFocus();
   }
 
@@ -377,20 +426,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                     _buildProductSearchField(),
                     const SizedBox(height: _gap),
 
-                    // Expiry Date (only for product mode)
+                    // Expiry Date and Unit Row (only for product mode)
                     if (_selectedMode.isProduct) ...[
-                      _buildExpiryDateField(),
+                      _buildExpiryDateAndUnitRow(),
                       const SizedBox(height: _gap),
                     ],
 
-                    // Unit Selection (only for product mode if product selected)
-                    if (_selectedMode.isProduct && _availableUnits.isNotEmpty) ...[
-                      _buildUnitDropdown(),
-                      const SizedBox(height: _gap),
-                    ],
-
-                    // Shelf and Quantity Row
-                    _buildShelfAndQuantityRow(),
+                    // Quantity and Shelf Row (yer değiştirdik: önce quantity, sonra shelf)
+                    _buildQuantityAndShelfRow(),
                     const SizedBox(height: _gap),
 
                     // Add Button
@@ -449,11 +492,25 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         QrTextField(
           controller: _productSearchController,
           focusNode: _productSearchFocusNode,
-          labelText: _selectedMode.isProduct
-              ? 'warehouse_count.search_product'.tr()
-              : 'warehouse_count.pallet_barcode'.tr(),
+          // Label: Ürün seçiliyse "ÜRÜN ADI (STOK KODU)", değilse "Search or Scan Product"
+          labelText: _selectedProductName != null && _selectedStokKodu != null
+              ? '$_selectedProductName ($_selectedStokKodu)'
+              : (_selectedMode.isProduct
+                  ? 'warehouse_count.search_product'.tr()
+                  : 'warehouse_count.pallet_barcode'.tr()),
+          showClearButton: true, // Clear button ekle (goods_receiving gibi)
           onQrTap: _openQrScanner,
           onChanged: (value) {
+            // Kullanıcı yazmaya başlarsa seçimi temizle
+            if (value.isNotEmpty && _selectedProductName != null) {
+              setState(() {
+                _selectedBarcode = null;
+                _selectedStokKodu = null;
+                _selectedProductName = null;
+                _availableUnits = [];
+                _selectedBirimKey = null;
+              });
+            }
             _searchProduct(value);
           },
         ),
@@ -599,41 +656,78 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
+  Widget _buildExpiryDateAndUnitRow() {
+    return Row(
+      children: [
+        // Expiry Date Field
+        Expanded(
+          child: _buildExpiryDateField(),
+        ),
+        const SizedBox(width: 8),
+        // Unit Dropdown - always visible when product selected
+        Expanded(
+          child: _buildUnitDropdown(),
+        ),
+      ],
+    );
+  }
+
   Widget _buildUnitDropdown() {
+    debugPrint('🎨 Building unit dropdown with ${_availableUnits.length} units, selected: $_selectedBirimKey');
+
+    // ITEMS LİSTESİNİ OLUŞTUR
+    final dropdownItems = _availableUnits.isNotEmpty
+        ? _availableUnits.map((unit) {
+            final unitName = unit['birimadi'] as String? ?? 'Birim';
+            final unitKey = unit['birim_key'] as String? ?? unit['_key'] as String?;
+            debugPrint('   📋 Dropdown item: $unitName (key: $unitKey)');
+
+            if (unitKey == null) {
+              debugPrint('   ⚠️ WARNING: Unit key is NULL for $unitName! Full unit data: $unit');
+            }
+
+            return DropdownMenuItem<String>(
+              value: unitKey ?? 'unknown_$unitName',
+              child: Text(unitName),
+            );
+          }).toList()
+        : <DropdownMenuItem<String>>[]; // Boş liste yerine empty list
+
+    debugPrint('   🎯 Total dropdown items created: ${dropdownItems.length}');
+
     return DropdownButtonFormField<String>(
       value: _selectedBirimKey,
+      hint: Text('goods_receiving_screen.label_unit_selection'.tr()),
       decoration: SharedInputDecoration.create(
         context,
         'goods_receiving_screen.label_unit_selection'.tr(),
+        enabled: _availableUnits.isNotEmpty,
       ),
-      items: _availableUnits.map((unit) {
-        return DropdownMenuItem<String>(
-          value: unit['birim_key'] as String,
-          child: Text(unit['birimadi'] as String? ?? 'Birim'),
-        );
-      }).toList(),
-      onChanged: (value) {
-        setState(() {
-          _selectedBirimKey = value;
-        });
+      items: dropdownItems.isEmpty ? null : dropdownItems, // Boşsa NULL ver!
+      onChanged: _availableUnits.isNotEmpty
+          ? (value) {
+              setState(() {
+                _selectedBirimKey = value;
+                debugPrint('   ✅ Unit selected: $value');
+              });
+            }
+          : null,
+      validator: (value) {
+        // Eğer product mode'da ve ürün seçiliyse birim zorunlu
+        if (_selectedMode.isProduct && _selectedBarcode != null && _availableUnits.isNotEmpty) {
+          if (value == null || value.isEmpty) {
+            return 'goods_receiving_screen.validator_unit_required'.tr();
+          }
+        }
+        return null;
       },
     );
   }
 
-  Widget _buildShelfAndQuantityRow() {
+  Widget _buildQuantityAndShelfRow() {
     return Row(
       children: [
-        Expanded(
-          child: TextFormField(
-            controller: _shelfController,
-            focusNode: _shelfFocusNode,
-            decoration: SharedInputDecoration.create(
-              context,
-              'warehouse_count.shelf'.tr(),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
+        // Quantity field (önce miktar)
         Expanded(
           child: TextFormField(
             controller: _quantityController,
@@ -643,6 +737,39 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               'warehouse_count.quantity'.tr(),
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Shelf field (sonra raf)
+        Expanded(
+          child: QrTextField(
+            controller: _shelfController,
+            focusNode: _shelfFocusNode,
+            labelText: 'warehouse_count.shelf'.tr(),
+            isValid: _isShelfValid,
+            textCapitalization: TextCapitalization.characters, // Otomatik büyük harf
+            validator: (val) {
+              if (val == null || val.isEmpty) {
+                return 'warehouse_count.error.enter_shelf'.tr();
+              }
+              return null;
+            },
+            onFieldSubmitted: (value) async {
+              if (value.trim().isNotEmpty) {
+                await _validateShelf(value.trim());
+              }
+            },
+            onQrScanned: (result) async {
+              await _validateShelf(result);
+            },
+            onChanged: (value) {
+              // Reset validation state when user types
+              if (_isShelfValid) {
+                setState(() {
+                  _isShelfValid = false;
+                });
+              }
+            },
           ),
         ),
       ],

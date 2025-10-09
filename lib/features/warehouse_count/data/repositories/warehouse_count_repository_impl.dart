@@ -277,8 +277,16 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
       INNER JOIN urunler u ON bi.StokKodu = u.StokKodu
       WHERE b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?
+      ORDER BY
+        CASE
+          WHEN u.StokKodu LIKE ? THEN 1  -- Stok kodu eşleşmesi (ÖNCELİKLİ)
+          WHEN b.barkod LIKE ? THEN 2    -- Barkod eşleşmesi
+          WHEN u.UrunAdi LIKE ? THEN 3   -- Ürün adı eşleşmesi
+          ELSE 4
+        END,
+        u.UrunAdi ASC
       LIMIT 5
-    ''', ['%$query%', '%$query%', '%$query%']);
+    ''', ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
 
     return searchResults;
   }

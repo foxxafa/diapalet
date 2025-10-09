@@ -20,6 +20,7 @@ class QrTextField extends StatefulWidget {
   final TextInputAction? textInputAction;
   final int? maxLines;
   final bool showClearButton;
+  final TextCapitalization textCapitalization;
 
   const QrTextField({
     super.key,
@@ -37,6 +38,7 @@ class QrTextField extends StatefulWidget {
     this.textInputAction,
     this.maxLines = 1,
     this.showClearButton = false,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   @override
@@ -80,6 +82,7 @@ class _QrTextFieldState extends State<QrTextField> {
             onFieldSubmitted: widget.onFieldSubmitted,
             textInputAction: widget.textInputAction ?? TextInputAction.next,
             validator: widget.validator,
+            textCapitalization: widget.textCapitalization,
           ),
         ),
         const SizedBox(width: 8),
