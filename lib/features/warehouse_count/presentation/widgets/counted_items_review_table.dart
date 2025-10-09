@@ -37,7 +37,7 @@ class CountedItemsReviewTable extends StatelessWidget {
         child: DataTable(
           headingRowColor: WidgetStateProperty.resolveWith<Color>(
             (Set<WidgetState> states) {
-              return Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3);
+              return Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3);
             },
           ),
           columns: [
@@ -101,8 +101,8 @@ class CountedItemsReviewTable extends StatelessWidget {
               style: const TextStyle(fontSize: 12),
             ),
             backgroundColor: item.isProductCount
-                ? Colors.blue.withOpacity(0.2)
-                : Colors.purple.withOpacity(0.2),
+                ? Colors.blue.withValues(alpha: 0.2)
+                : Colors.purple.withValues(alpha: 0.2),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           ),
         ),
@@ -128,7 +128,7 @@ class CountedItemsReviewTable extends StatelessWidget {
         // Shelf
         DataCell(
           Text(
-            item.shelfCode ?? 'ID: ${item.locationId}',
+            item.shelfCode ?? '-',
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w500,
             ),

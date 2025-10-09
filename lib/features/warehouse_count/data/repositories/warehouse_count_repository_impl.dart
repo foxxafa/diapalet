@@ -211,4 +211,104 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
 
     return '${WarehouseCountConstants.sheetNumberPrefix}-$dateStr-$employeeId-$uuid';
   }
+
+  @override
+  Future<Map<String, dynamic>?> searchProductByBarcode(String barcode) async {
+    final db = await dbHelper.database;
+
+    // Barkod ile ürün ara (barkodlar tablosundan)
+    final barcodeResult = await db.rawQuery('''
+      SELECT
+        b.barkod,
+        b._key_scf_stokkart_birimleri as birim_key,
+        bi.birimadi,
+        bi.StokKodu,
+        u._key as urun_key,
+        u.UrunAdi,
+        u.UrunId
+      FROM barkodlar b
+      INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+      INNER JOIN urunler u ON bi.StokKodu = u.StokKodu
+      WHERE b.barkod = ?
+      LIMIT 1
+    ''', [barcode]);
+
+    if (barcodeResult.isNotEmpty) {
+      return barcodeResult.first;
+    }
+
+    // Barkod bulunamadıysa, direkt StokKodu olabilir mi dene
+    final stockCodeResult = await db.rawQuery('''
+      SELECT
+        u.StokKodu as barkod,
+        bi._key as birim_key,
+        bi.birimadi,
+        bi.StokKodu,
+        u._key as urun_key,
+        u.UrunAdi,
+        u.UrunId
+      FROM urunler u
+      LEFT JOIN birimler bi ON u.StokKodu = bi.StokKodu
+      WHERE u.StokKodu = ?
+      LIMIT 1
+    ''', [barcode]);
+
+    if (stockCodeResult.isNotEmpty) {
+      return stockCodeResult.first;
+    }
+
+    return null;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchProductsPartial(String query) async {
+    final db = await dbHelper.database;
+
+    final searchResults = await db.rawQuery('''
+      SELECT DISTINCT
+        b.barkod,
+        bi._key as birim_key,
+        bi.birimadi,
+        bi.StokKodu,
+        u._key as urun_key,
+        u.UrunAdi,
+        u.UrunId
+      FROM barkodlar b
+      INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+      INNER JOIN urunler u ON bi.StokKodu = u.StokKodu
+      WHERE b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?
+      LIMIT 5
+    ''', ['%$query%', '%$query%', '%$query%']);
+
+    return searchResults;
+  }
+
+  @override
+  Future<bool> validateShelfCode(String shelfCode) async {
+    final db = await dbHelper.database;
+    final result = await db.query(
+      'shelfs',
+      where: 'name = ? AND is_active = 1',
+      whereArgs: [shelfCode],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  @override
+  Future<int?> getLocationIdByShelfCode(String shelfCode) async {
+    final db = await dbHelper.database;
+    final result = await db.query(
+      'shelfs',
+      columns: ['id'],
+      where: 'name = ? AND is_active = 1',
+      whereArgs: [shelfCode],
+      limit: 1,
+    );
+
+    if (result.isNotEmpty) {
+      return result.first['id'] as int?;
+    }
+    return null;
+  }
 }

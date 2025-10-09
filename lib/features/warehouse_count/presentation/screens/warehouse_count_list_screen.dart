@@ -27,7 +27,6 @@ class WarehouseCountListScreen extends StatefulWidget {
 class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
   final TextEditingController _notesController = TextEditingController();
   String? _selectedWarehouseCode;
-  String? _selectedWarehouseName;
   List<Map<String, dynamic>> _warehouses = [];
   List<CountSheet> _existingSheets = [];
   bool _isLoading = false;
@@ -59,7 +58,6 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
         // Set first warehouse as default selection
         if (_warehouses.isNotEmpty && _selectedWarehouseCode == null) {
           _selectedWarehouseCode = _warehouses.first['warehouse_code'] as String;
-          _selectedWarehouseName = _warehouses.first['name'] as String;
           await _loadExistingSheets();
         }
       }
@@ -115,7 +113,6 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
         sheetNumber: sheetNumber,
         employeeId: employeeId,
         warehouseCode: _selectedWarehouseCode!,
-        warehouseName: _selectedWarehouseName,
         status: WarehouseCountConstants.statusInProgress,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         startDate: DateTime.now(),
@@ -221,12 +218,8 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
                             }).toList(),
                             onChanged: (value) {
                               if (value != null) {
-                                final warehouse = _warehouses.firstWhere(
-                                  (w) => w['warehouse_code'] == value,
-                                );
                                 setState(() {
                                   _selectedWarehouseCode = value;
-                                  _selectedWarehouseName = warehouse['name'] as String;
                                 });
                                 _loadExistingSheets();
                               }

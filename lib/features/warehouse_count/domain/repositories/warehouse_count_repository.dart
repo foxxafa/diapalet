@@ -46,4 +46,16 @@ abstract class WarehouseCountRepository {
 
   /// Generate a unique sheet number in format: COUNT-YYYYMMDD-EMPLOYEEID-UUID4
   String generateSheetNumber(int employeeId);
+
+  /// Search products by barcode (for product counting)
+  Future<Map<String, dynamic>?> searchProductByBarcode(String barcode);
+
+  /// Search products with partial match (for autocomplete)
+  Future<List<Map<String, dynamic>>> searchProductsPartial(String query);
+
+  /// Validate if shelf exists by shelf code
+  Future<bool> validateShelfCode(String shelfCode);
+
+  /// Get shelf location ID by shelf code
+  Future<int?> getLocationIdByShelfCode(String shelfCode);
 }

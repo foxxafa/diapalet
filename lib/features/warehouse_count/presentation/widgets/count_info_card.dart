@@ -52,7 +52,7 @@ class CountInfoCard extends StatelessWidget {
                 context,
                 icon: Icons.warehouse,
                 label: 'warehouse_count.warehouse'.tr(),
-                value: countSheet.warehouseName ?? countSheet.warehouseCode,
+                value: countSheet.warehouseCode,
               ),
 
               const SizedBox(height: 8),
@@ -123,7 +123,7 @@ class CountInfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color, width: 1),
       ),

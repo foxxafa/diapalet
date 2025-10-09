@@ -583,5 +583,88 @@
       "cancelled": "Senkronizasyon kullanıcı tarafından iptal edildi",
       "general": "Senkronizasyon başarısız. Lütfen tekrar deneyiniz."
     }
+  },
+  "warehouse_count": {
+    "title": "Depo Sayımı",
+    "new_count": "Yeni Sayım Başlat",
+    "previous_counts": "Önceki Sayımlar",
+    "no_previous_counts": "Bu depo için önceki sayım bulunamadı",
+    "warehouse": "Depo",
+    "select_warehouse": "Depo Seçin",
+    "notes_optional": "Notlar (Opsiyonel)",
+    "start_counting": "Sayıma Başla",
+    "start_date": "Başlangıç",
+    "complete_date": "Tamamlanma",
+    "last_saved": "Son Kayıt",
+    "notes": "Notlar",
+    "status": {
+      "in_progress": "Devam Ediyor",
+      "completed": "Tamamlandı"
+    },
+    "mode": {
+      "product": "Ürün",
+      "pallet": "Palet"
+    },
+    "shelf": "Raf",
+    "quantity": "Miktar",
+    "scanned": "Başarıyla Okutuldu",
+    "scan_again": "Tekrar Okut",
+    "save_continue": "Kaydet ve Devam Et",
+    "save_finish": "Kaydet ve Bitir",
+    "review_items": "Sayımı Gözden Geçir",
+    "review_title": "Sayım Kontrolü",
+    "review_summary": "Sayım Özeti",
+    "total_items": "Toplam Kalem",
+    "product_count": "Ürünler",
+    "pallet_count": "Paletler",
+    "no_items_counted": "Henüz sayım yapılmadı",
+    "counted_items": "Sayılan Ürünler",
+    "search_product": "Ürün Ara veya Okut",
+    "pallet_barcode": "Palet Barkodu",
+    "add_item": "Sayıma Ekle",
+    "table": {
+      "type": "Tip",
+      "barcode": "Barkod",
+      "stock_code": "Stok Kodu",
+      "shelf": "Raf",
+      "quantity": "Miktar",
+      "actions": "İşlemler"
+    },
+    "delete_item": "Kalemi Sil",
+    "confirm_finish": {
+      "title": "Sayımı Bitir?",
+      "message": "Sayımı bitirdikten sonra düzenleme yapılamaz. Emin misiniz?"
+    },
+    "info": {
+      "sheet_completed": "Bu sayım tamamlanmış ve düzenlenemez"
+    },
+    "success": {
+      "item_added": "Kalem sayıma eklendi",
+      "item_removed": "Kalem sayımdan çıkarıldı",
+      "saved_online": "Sayım sunucuya başarıyla kaydedildi",
+      "completed": "Sayım tamamlandı ve senkronizasyon kuyruğuna eklendi"
+    },
+    "warning": {
+      "saved_local_only": "Sadece yerel olarak kaydedildi (çevrimdışı mod)"
+    },
+    "error": {
+      "load_warehouses": "Depo listesi yüklenemedi",
+      "select_warehouse": "Lütfen önce bir depo seçin",
+      "create_sheet": "Sayım formu oluşturulamadı",
+      "scan_barcode": "Lütfen önce bir barkod okutun",
+      "enter_shelf": "Lütfen raf kodunu girin",
+      "invalid_shelf": "Geçersiz raf kodu - raf bulunamadı",
+      "enter_quantity": "Lütfen miktar girin",
+      "invalid_quantity": "Lütfen geçerli bir miktar girin",
+      "quantity_too_large": "Miktar izin verilen maksimum değeri aşıyor",
+      "expiry_required": "Ürün sayımı için son kullanma tarihi gereklidir",
+      "product_not_found": "Ürün bulunamadı",
+      "search_failed": "Ürün araması başarısız",
+      "add_item": "Kalem eklenemedi",
+      "remove_item": "Kalem silinemedi",
+      "save_failed": "Sayım kaydedilemedi",
+      "finish_failed": "Sayım tamamlanamadı",
+      "no_items": "Bitirmeden önce en az bir kalem ekleyin"
+    }
   }
 }

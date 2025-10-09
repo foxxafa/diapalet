@@ -310,7 +310,6 @@ class DatabaseHelper {
           sheet_number TEXT NOT NULL UNIQUE,
           employee_id INTEGER NOT NULL,
           warehouse_code TEXT NOT NULL,
-          warehouse_name TEXT,
           status TEXT NOT NULL DEFAULT 'in_progress',
           notes TEXT,
           start_date TEXT NOT NULL,
@@ -328,19 +327,16 @@ class DatabaseHelper {
           count_sheet_id INTEGER NOT NULL,
           operation_unique_id TEXT NOT NULL,
           item_uuid TEXT NOT NULL UNIQUE,
-          urun_key TEXT,
           birim_key TEXT,
           pallet_barcode TEXT,
-          location_id INTEGER NOT NULL,
           quantity_counted REAL NOT NULL,
           barcode TEXT,
           StokKodu TEXT,
           shelf_code TEXT,
+          expiry_date TEXT,
           created_at TEXT,
           updated_at TEXT,
-          FOREIGN KEY(count_sheet_id) REFERENCES count_sheets(id),
-          FOREIGN KEY(urun_key) REFERENCES urunler(_key),
-          FOREIGN KEY(location_id) REFERENCES shelfs(id)
+          FOREIGN KEY(count_sheet_id) REFERENCES count_sheets(id)
         )
       ''');
 
@@ -348,7 +344,6 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_status ON count_sheets(status)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_employee ON count_sheets(employee_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_sheet ON count_items(count_sheet_id)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_location ON count_items(location_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_uuid ON count_items(item_uuid)');
 
       await batch.commit(noResult: true);

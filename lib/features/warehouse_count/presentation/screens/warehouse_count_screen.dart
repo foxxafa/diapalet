@@ -1,16 +1,23 @@
 // lib/features/warehouse_count/presentation/screens/warehouse_count_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
+import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/core/widgets/qr_text_field.dart';
+import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
+import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 import 'package:diapalet/features/warehouse_count/constants/warehouse_count_constants.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_sheet.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_item.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_mode.dart';
 import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
 import 'package:diapalet/features/warehouse_count/presentation/widgets/counted_items_review_table.dart';
+import 'package:diapalet/features/warehouse_count/presentation/screens/warehouse_count_review_screen.dart';
+import 'package:provider/provider.dart';
+import 'dart:async';
 
 class WarehouseCountScreen extends StatefulWidget {
   final WarehouseCountRepository repository;
@@ -27,28 +34,60 @@ class WarehouseCountScreen extends StatefulWidget {
 }
 
 class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
+  static const double _gap = 12;
+
   CountMode _selectedMode = CountMode.product;
+  final TextEditingController _productSearchController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
   final TextEditingController _shelfController = TextEditingController();
-  final MobileScannerController _scannerController = MobileScannerController();
+  final TextEditingController _expiryDateController = TextEditingController();
+
+  final FocusNode _productSearchFocusNode = FocusNode();
+  final FocusNode _quantityFocusNode = FocusNode();
+  final FocusNode _shelfFocusNode = FocusNode();
+  final FocusNode _expiryDateFocusNode = FocusNode();
 
   List<CountItem> _countedItems = [];
-  String? _scannedBarcode;
   bool _isLoading = false;
-  bool _isSaving = false;
+
+  // Product selection state
+  String? _selectedBarcode;
+  String? _selectedStokKodu;
+  List<Map<String, dynamic>> _availableUnits = [];
+  String? _selectedBirimKey;
+  List<Map<String, dynamic>> _productSearchResults = [];
+
+  late BarcodeIntentService _barcodeService;
+  StreamSubscription<String>? _barcodeSub;
 
   @override
   void initState() {
     super.initState();
+    _barcodeService = Provider.of<BarcodeIntentService>(context, listen: false);
+    _initBarcodeListener();
     _loadExistingItems();
   }
 
   @override
   void dispose() {
+    _barcodeSub?.cancel();
+    _productSearchController.dispose();
     _quantityController.dispose();
     _shelfController.dispose();
-    _scannerController.dispose();
+    _expiryDateController.dispose();
+    _productSearchFocusNode.dispose();
+    _quantityFocusNode.dispose();
+    _shelfFocusNode.dispose();
+    _expiryDateFocusNode.dispose();
     super.dispose();
+  }
+
+  void _initBarcodeListener() {
+    _barcodeSub = _barcodeService.stream.listen((barcode) {
+      if (mounted) {
+        _handleBarcodeScanned(barcode);
+      }
+    });
   }
 
   Future<void> _loadExistingItems() async {
@@ -65,70 +104,157 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _onBarcodeScanned(String barcode) {
+  void _handleBarcodeScanned(String barcode) {
     setState(() {
-      _scannedBarcode = barcode;
+      _productSearchController.text = barcode;
+      _selectedBarcode = barcode;
     });
+    _searchProduct(barcode);
+  }
+
+  Future<void> _searchProduct(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _productSearchResults = [];
+      });
+      return;
+    }
+
+    try {
+      // Eğer tam eşleşme varsa direkt seç
+      final exactMatch = await widget.repository.searchProductByBarcode(query.trim());
+
+      if (exactMatch != null && mounted) {
+        // Tam eşleşme bulundu - direkt seç
+        _selectProduct(exactMatch);
+        setState(() {
+          _productSearchResults = [];
+        });
+      } else {
+        // Kısmi arama yap (ilk 5 sonuç)
+        final searchResults = await widget.repository.searchProductsPartial(query.trim());
+
+        if (mounted) {
+          setState(() {
+            _productSearchResults = searchResults;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error searching product: $e');
+      if (mounted) {
+        setState(() {
+          _productSearchResults = [];
+        });
+        _showError('warehouse_count.error.search_failed'.tr());
+      }
+    }
+  }
+
+  void _selectProduct(Map<String, dynamic> productInfo) {
+    setState(() {
+      _selectedBarcode = productInfo['barkod'] as String?;
+      _selectedStokKodu = productInfo['StokKodu'] as String?;
+      _productSearchResults = [];
+
+      // Product controller'a ürün adını yaz
+      final productName = productInfo['UrunAdi'] as String? ?? '';
+      final stockCode = productInfo['StokKodu'] as String? ?? '';
+      _productSearchController.text = '$productName ($stockCode)';
+
+      // Birim bilgilerini doldur
+      if (productInfo['birim_key'] != null) {
+        _availableUnits = [
+          {
+            'birim_key': productInfo['birim_key'],
+            'birim_adi': productInfo['birimadi'] ?? 'Birim',
+          }
+        ];
+        _selectedBirimKey = productInfo['birim_key'] as String;
+      } else {
+        _availableUnits = [];
+        _selectedBirimKey = null;
+      }
+    });
+
+    // Son kullanma tarihi alanına focus yap (hem ürün hem palet modunda)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _expiryDateFocusNode.requestFocus();
+      }
+    });
+  }
+
+  Future<void> _openQrScanner() async {
+    final barcode = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const QrScannerScreen(),
+      ),
+    );
+
+    if (barcode != null && mounted) {
+      _handleBarcodeScanned(barcode);
+    }
   }
 
   Future<void> _addCountItem() async {
     // Validate inputs
-    if (_scannedBarcode == null || _scannedBarcode!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.scan_barcode'.tr())),
-      );
+    if (_selectedBarcode == null || _selectedBarcode!.isEmpty) {
+      _showError('warehouse_count.error.scan_barcode'.tr());
       return;
     }
 
-    if (_shelfController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.enter_shelf'.tr())),
-      );
+    final shelfCode = _shelfController.text.trim();
+    if (shelfCode.isEmpty) {
+      _showError('warehouse_count.error.enter_shelf'.tr());
+      return;
+    }
+
+    // Raf kodunu doğrula
+    final isValidShelf = await widget.repository.validateShelfCode(shelfCode);
+    if (!isValidShelf) {
+      _showError('warehouse_count.error.invalid_shelf'.tr());
       return;
     }
 
     final quantityText = _quantityController.text.trim();
     if (quantityText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.enter_quantity'.tr())),
-      );
+      _showError('warehouse_count.error.enter_quantity'.tr());
       return;
     }
 
     final quantity = double.tryParse(quantityText);
     if (quantity == null || quantity < WarehouseCountConstants.minQuantity) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.invalid_quantity'.tr())),
-      );
+      _showError('warehouse_count.error.invalid_quantity'.tr());
       return;
     }
 
     if (quantity > WarehouseCountConstants.maxQuantity) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.quantity_too_large'.tr())),
-      );
+      _showError('warehouse_count.error.quantity_too_large'.tr());
+      return;
+    }
+
+    // For product mode, expiry date is required
+    if (_selectedMode.isProduct && _expiryDateController.text.trim().isEmpty) {
+      _showError('warehouse_count.error.expiry_required'.tr());
       return;
     }
 
     try {
-      // In a real implementation, you would:
-      // 1. Look up shelf by code to get location_id
-      // 2. For product mode: look up product info by barcode
-      // 3. For pallet mode: validate pallet exists
-
-      // For now, using placeholder values
-      // TODO: Implement proper lookup logic
+      // TODO: For pallet mode: validate pallet exists
 
       final countItem = CountItem(
         countSheetId: widget.countSheet.id!,
         operationUniqueId: widget.countSheet.operationUniqueId,
         itemUuid: const Uuid().v4(),
-        palletBarcode: _selectedMode.isPallet ? _scannedBarcode : null,
-        locationId: 1, // TODO: Look up actual location_id from shelf code
+        palletBarcode: _selectedMode.isPallet ? _selectedBarcode : null,
         quantityCounted: quantity,
-        barcode: _selectedMode.isProduct ? _scannedBarcode : null,
-        shelfCode: _shelfController.text.trim(),
-        // TODO: Add urunKey, birimKey, StokKodu from product lookup
+        barcode: _selectedMode.isProduct ? _selectedBarcode : null,
+        shelfCode: shelfCode,
+        birimKey: _selectedMode.isProduct ? _selectedBirimKey : null,
+        expiryDate: _selectedMode.isProduct ? _expiryDateController.text.trim() : null,
+        stokKodu: _selectedMode.isProduct ? _selectedStokKodu : null,
       );
 
       final savedItem = await widget.repository.addCountItem(countItem);
@@ -136,24 +262,29 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       if (mounted) {
         setState(() {
           _countedItems.add(savedItem);
-          // Clear inputs
-          _scannedBarcode = null;
-          _quantityController.clear();
-          _shelfController.clear();
+          _clearInputs();
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.success.item_added'.tr())),
-        );
+        _showSuccess('warehouse_count.success.item_added'.tr());
       }
     } catch (e) {
       debugPrint('Error adding count item: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.error.add_item'.tr())),
-        );
+        _showError('warehouse_count.error.add_item'.tr());
       }
     }
+  }
+
+  void _clearInputs() {
+    _productSearchController.clear();
+    _quantityController.clear();
+    _expiryDateController.clear();
+    _selectedBarcode = null;
+    _selectedStokKodu = null;
+    _selectedBirimKey = null;
+    _availableUnits = [];
+    _productSearchResults = [];
+    _productSearchFocusNode.requestFocus();
   }
 
   Future<void> _removeCountItem(CountItem item) async {
@@ -163,109 +294,33 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         setState(() {
           _countedItems.remove(item);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.success.item_removed'.tr())),
-        );
+        _showSuccess('warehouse_count.success.item_removed'.tr());
       }
     } catch (e) {
       debugPrint('Error removing count item: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.error.remove_item'.tr())),
-        );
+        _showError('warehouse_count.error.remove_item'.tr());
       }
     }
   }
 
-  Future<void> _saveAndContinue() async {
-    setState(() => _isSaving = true);
-    try {
-      final success = await widget.repository.saveCountSheetToServer(
-        widget.countSheet,
-        _countedItems,
-      );
 
-      if (mounted) {
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('warehouse_count.success.saved_online'.tr())),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('warehouse_count.warning.saved_local_only'.tr())),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error saving count sheet: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.error.save_failed'.tr())),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<void> _saveAndFinish() async {
-    if (_countedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('warehouse_count.error.no_items'.tr())),
-      );
-      return;
-    }
-
-    // Confirm action
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('warehouse_count.confirm_finish.title'.tr()),
-        content: Text('warehouse_count.confirm_finish.message'.tr()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('common.cancel'.tr()),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('common.confirm'.tr()),
-          ),
-        ],
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
       ),
     );
+  }
 
-    if (confirmed != true) return;
-
-    setState(() => _isSaving = true);
-    try {
-      // Complete the count sheet
-      await widget.repository.completeCountSheet(widget.countSheet.id!);
-
-      // Queue for sync
-      final completedSheet = widget.countSheet.copyWith(
-        status: WarehouseCountConstants.statusCompleted,
-        completeDate: DateTime.now(),
-      );
-
-      await widget.repository.queueCountSheetForSync(completedSheet, _countedItems);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.success.completed'.tr())),
-        );
-        Navigator.pop(context); // Return to list screen
-      }
-    } catch (e) {
-      debugPrint('Error finishing count sheet: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('warehouse_count.error.finish_failed'.tr())),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
@@ -274,164 +329,271 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       appBar: SharedAppBar(
         title: widget.countSheet.sheetNumber,
       ),
+      bottomNavigationBar: _buildBottomBar(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Mode Selector
+                    _buildModeSelector(),
+                    const SizedBox(height: _gap),
+
+                    // Product Search with QR
+                    _buildProductSearchField(),
+                    const SizedBox(height: _gap),
+
+                    // Expiry Date (only for product mode)
+                    if (_selectedMode.isProduct) ...[
+                      _buildExpiryDateField(),
+                      const SizedBox(height: _gap),
+                    ],
+
+                    // Unit Selection (only for product mode if product selected)
+                    if (_selectedMode.isProduct && _availableUnits.isNotEmpty) ...[
+                      _buildUnitDropdown(),
+                      const SizedBox(height: _gap),
+                    ],
+
+                    // Shelf and Quantity Row
+                    _buildShelfAndQuantityRow(),
+                    const SizedBox(height: _gap),
+
+                    // Add Button
+                    _buildAddButton(),
+                    const SizedBox(height: 24),
+
+                    // Items Review Table
+                    if (_countedItems.isNotEmpty) ...[
+                      Text(
+                        'warehouse_count.counted_items'.tr(),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      CountedItemsReviewTable(
+                        items: _countedItems,
+                        onItemRemoved: _removeCountItem,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildModeSelector() {
+    return SegmentedButton<CountMode>(
+      segments: [
+        ButtonSegment(
+          value: CountMode.product,
+          label: Text('warehouse_count.mode.product'.tr()),
+          icon: const Icon(Icons.inventory_2),
+        ),
+        ButtonSegment(
+          value: CountMode.pallet,
+          label: Text('warehouse_count.mode.pallet'.tr()),
+          icon: const Icon(Icons.widgets),
+        ),
+      ],
+      selected: {_selectedMode},
+      onSelectionChanged: (Set<CountMode> newSelection) {
+        setState(() {
+          _selectedMode = newSelection.first;
+          _clearInputs();
+        });
+      },
+    );
+  }
+
+  Widget _buildProductSearchField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        QrTextField(
+          controller: _productSearchController,
+          focusNode: _productSearchFocusNode,
+          labelText: _selectedMode.isProduct
+              ? 'warehouse_count.search_product'.tr()
+              : 'warehouse_count.pallet_barcode'.tr(),
+          onQrTap: _openQrScanner,
+          onChanged: (value) {
+            _searchProduct(value);
+          },
+        ),
+        if (_productSearchResults.isNotEmpty)
+          _buildProductSuggestions(),
+      ],
+    );
+  }
+
+  Widget _buildProductSuggestions() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).cardColor,
+      ),
+      child: Column(
+        children: _productSearchResults.map((product) {
+          return ListTile(
+            dense: true,
+            title: Text(
+              product['UrunAdi'] as String? ?? '',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Count Mode Segmented Button
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SegmentedButton<CountMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: CountMode.product,
-                        label: Text('warehouse_count.mode.product'.tr()),
-                        icon: const Icon(Icons.inventory_2),
-                      ),
-                      ButtonSegment(
-                        value: CountMode.pallet,
-                        label: Text('warehouse_count.mode.pallet'.tr()),
-                        icon: const Icon(Icons.widgets),
-                      ),
-                    ],
-                    selected: {_selectedMode},
-                    onSelectionChanged: (Set<CountMode> newSelection) {
-                      setState(() {
-                        _selectedMode = newSelection.first;
-                        _scannedBarcode = null;
-                      });
-                    },
+                Text(
+                  'Stok Kodu: ${product['StokKodu']}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  'Barkod: ${product['barkod']}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
                   ),
                 ),
-
-                // Scanner Section
-                Container(
-                  height: 200,
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
+                if (product['birimadi'] != null)
+                  Text(
+                    'Birim: ${product['birimadi']}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
-                  child: _scannedBarcode == null
-                      ? MobileScanner(
-                          controller: _scannerController,
-                          onDetect: (capture) {
-                            final List<Barcode> barcodes = capture.barcodes;
-                            if (barcodes.isNotEmpty) {
-                              final barcode = barcodes.first.rawValue;
-                              if (barcode != null) {
-                                _onBarcodeScanned(barcode);
-                              }
-                            }
-                          },
-                        )
-                      : Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.check_circle, size: 48, color: Colors.green),
-                              const SizedBox(height: 8),
-                              Text(
-                                'warehouse_count.scanned'.tr(),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              Text(_scannedBarcode!),
-                              const SizedBox(height: 8),
-                              TextButton.icon(
-                                onPressed: () => setState(() => _scannedBarcode = null),
-                                icon: const Icon(Icons.refresh),
-                                label: Text('warehouse_count.scan_again'.tr()),
-                              ),
-                            ],
-                          ),
-                        ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Input Fields
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _shelfController,
-                          decoration: InputDecoration(
-                            labelText: 'warehouse_count.shelf'.tr(),
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.location_on),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _quantityController,
-                          decoration: InputDecoration(
-                            labelText: 'warehouse_count.quantity'.tr(),
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.numbers),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: _addCountItem,
-                        icon: const Icon(Icons.add_circle),
-                        iconSize: 40,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Items Review Table
-                Expanded(
-                  child: CountedItemsReviewTable(
-                    items: _countedItems,
-                    onItemRemoved: _removeCountItem,
-                  ),
-                ),
-
-                // Action Buttons
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isSaving ? null : _saveAndContinue,
-                          icon: const Icon(Icons.cloud_upload),
-                          label: Text('warehouse_count.save_continue'.tr()),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _saveAndFinish,
-                          icon: const Icon(Icons.check_circle),
-                          label: Text('warehouse_count.save_finish'.tr()),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
+            onTap: () {
+              _selectProduct(product);
+              // Product name zaten _selectProduct içinde set ediliyor, tekrar set etme!
+            },
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildExpiryDateField() {
+    return TextFormField(
+      controller: _expiryDateController,
+      focusNode: _expiryDateFocusNode,
+      decoration: SharedInputDecoration.create(
+        context,
+        'goods_receiving_screen.label_expiry_date'.tr(),
+      ),
+      keyboardType: TextInputType.datetime,
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9/]')),
+        LengthLimitingTextInputFormatter(10),
+      ],
+    );
+  }
+
+  Widget _buildUnitDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedBirimKey,
+      decoration: SharedInputDecoration.create(
+        context,
+        'goods_receiving_screen.label_unit_selection'.tr(),
+      ),
+      items: _availableUnits.map((unit) {
+        return DropdownMenuItem<String>(
+          value: unit['birim_key'] as String,
+          child: Text(unit['birim_adi'] as String),
+        );
+      }).toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedBirimKey = value;
+        });
+      },
+    );
+  }
+
+  Widget _buildShelfAndQuantityRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _shelfController,
+            focusNode: _shelfFocusNode,
+            decoration: SharedInputDecoration.create(
+              context,
+              'warehouse_count.shelf'.tr(),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextFormField(
+            controller: _quantityController,
+            focusNode: _quantityFocusNode,
+            decoration: SharedInputDecoration.create(
+              context,
+              'warehouse_count.quantity'.tr(),
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddButton() {
+    return ElevatedButton.icon(
+      onPressed: _addCountItem,
+      icon: const Icon(Icons.add_circle),
+      label: Text('warehouse_count.add_item'.tr()),
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _countedItems.isEmpty ? null : _openReviewScreen,
+          icon: const Icon(Icons.checklist_rtl),
+          label: Text('warehouse_count.review_items'.tr()),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openReviewScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => WarehouseCountReviewScreen(
+          countSheet: widget.countSheet,
+          countedItems: _countedItems,
+          repository: widget.repository,
+        ),
+      ),
     );
   }
 }

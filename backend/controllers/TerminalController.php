@@ -2978,7 +2978,6 @@ class TerminalController extends Controller
                     'sheet_number' => $header['sheet_number'],
                     'employee_id' => $header['employee_id'],
                     'warehouse_code' => $header['warehouse_code'],
-                    'warehouse_name' => $header['warehouse_name'] ?? null,
                     'status' => $header['status'] ?? 'in_progress',
                     'notes' => $header['notes'] ?? null,
                     'start_date' => $header['start_date'],
@@ -2998,14 +2997,13 @@ class TerminalController extends Controller
                     'count_sheet_id' => $sheetId,
                     'operation_unique_id' => $operationUniqueId,
                     'item_uuid' => $item['item_uuid'],
-                    'urun_key' => $item['urun_key'] ?? null,
                     'birim_key' => $item['birim_key'] ?? null,
                     'pallet_barcode' => $item['pallet_barcode'] ?? null,
-                    'location_id' => $item['location_id'],
                     'quantity_counted' => $item['quantity_counted'],
                     'barcode' => $item['barcode'] ?? null,
                     'StokKodu' => $item['StokKodu'] ?? null,
                     'shelf_code' => $item['shelf_code'] ?? null,
+                    'expiry_date' => $item['expiry_date'] ?? null,
                     'created_at' => new \yii\db\Expression('NOW()'),
                 ])->execute();
             }
