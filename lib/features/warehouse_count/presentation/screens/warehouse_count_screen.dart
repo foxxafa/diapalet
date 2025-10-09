@@ -467,17 +467,17 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                     _buildAddButton(),
                     const SizedBox(height: 24),
 
-                    // Items Review Table
+                    // Last Added Item Display
                     if (_countedItems.isNotEmpty) ...[
                       Text(
-                        'warehouse_count.counted_items'.tr(),
+                        '${'warehouse_count.counted_items'.tr()} (${_countedItems.length})',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                       ),
                       const SizedBox(height: 8),
                       CountedItemsReviewTable(
-                        items: _countedItems,
+                        items: [_countedItems.last], // Sadece son eklenen item
                         onItemRemoved: _removeCountItem,
                       ),
                     ],

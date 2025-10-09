@@ -32,7 +32,6 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text('warehouse_count.review_title'.tr()),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Column(
         children: [
@@ -64,71 +63,86 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
 
     return Container(
       margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Text(
-            'warehouse_count.review_summary'.tr(),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+          // Total items
+          _buildCompactSummaryItem(
+            context,
+            totalItems.toString(),
+            Icons.summarize,
+            Colors.grey[800]!,
+            'Total',
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildSummaryItem(
-                context,
-                'warehouse_count.total_items'.tr(),
-                totalItems.toString(),
-                Icons.inventory,
-              ),
-              _buildSummaryItem(
-                context,
-                'warehouse_count.product_count'.tr(),
-                totalProductCount.toString(),
-                Icons.shopping_basket,
-              ),
-              _buildSummaryItem(
-                context,
-                'warehouse_count.pallet_count'.tr(),
-                totalPalletCount.toString(),
-                Icons.palette,
-              ),
-            ],
+          Container(
+            width: 1,
+            height: 35,
+            color: Colors.grey[300],
+          ),
+          // Products
+          _buildCompactSummaryItem(
+            context,
+            totalProductCount.toString(),
+            Icons.inventory_2,
+            Colors.grey[800]!,
+            'Product',
+          ),
+          Container(
+            width: 1,
+            height: 35,
+            color: Colors.grey[300],
+          ),
+          // Pallets
+          _buildCompactSummaryItem(
+            context,
+            totalPalletCount.toString(),
+            Icons.view_in_ar,
+            Colors.grey[800]!,
+            'Pallet',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryItem(BuildContext context, String label, String value, IconData icon) {
+  Widget _buildCompactSummaryItem(BuildContext context, String value, IconData icon, Color color, String label) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 32,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: color,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ],
     );
