@@ -8,7 +8,6 @@ import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
-import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 import 'package:diapalet/features/warehouse_count/constants/warehouse_count_constants.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_sheet.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_item.dart';
@@ -62,7 +61,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   String? _selectedBirimKey;
   List<Map<String, dynamic>> _productSearchResults = [];
 
-  // Shelf validation state
+  // Validation error states
   bool _isShelfValid = false;
 
   late BarcodeIntentService _barcodeService;
@@ -119,10 +118,10 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       _productSearchController.text = barcode;
       _selectedBarcode = barcode;
     });
-    _searchProduct(barcode);
+    _searchProduct(barcode, isFromBarcodeScanner: true);
   }
 
-  Future<void> _searchProduct(String query) async {
+  Future<void> _searchProduct(String query, {bool isFromBarcodeScanner = false}) async {
     if (query.trim().isEmpty) {
       setState(() {
         _productSearchResults = [];
@@ -138,6 +137,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         setState(() {
           _productSearchResults = searchResults;
         });
+
+        // 🔥 YENİ: SADECE BARKOD OKUTULDUĞUNDA otomatik seç
+        if (isFromBarcodeScanner && searchResults.length == 1) {
+          debugPrint('✅ Barkod okutuldu ve tek ürün bulundu, otomatik seçiliyor...');
+          _selectProduct(searchResults.first, isFromBarcodeScanner: true);
+        }
       }
     } catch (e) {
       debugPrint('Error searching product: $e');
@@ -150,7 +155,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _selectProduct(Map<String, dynamic> productInfo) async {
+  void _selectProduct(Map<String, dynamic> productInfo, {bool isFromBarcodeScanner = false}) async {
     final stockCode = productInfo['StokKodu'] as String? ?? '';
     final barcode = productInfo['barkod'] as String?;
     final productName = productInfo['UrunAdi'] as String? ?? '';
@@ -180,24 +185,53 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           setState(() {
             _availableUnits = units;
 
-            // ARAMA SONUCUNDAN gelen birim_key'i kullan!
-            // Eğer kullanıcı ARAMA LİSTESİNDEN belirli bir birimi seçtiyse (BOX veya UNIT)
-            // o birimi dropdown'da otomatik seç
-            final searchBirimKey = productInfo['birim_key'] as String?;
+            // 🔥 YENİ MANTIK: SADECE BARKOD OKUTULDUĞUNDA BOX birimini öncelikle seç
+            if (isFromBarcodeScanner) {
+              // BARKOD OKUTULDU: Önce BOX birimi var mı kontrol et
+              final boxUnit = units.firstWhere(
+                (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
+                orElse: () => <String, dynamic>{},
+              );
 
-            if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
-              // Arama sonucundan gelen birim mevcut, onu seç
-              _selectedBirimKey = searchBirimKey;
-              debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
+              if (boxUnit.isNotEmpty) {
+                // BOX birimi bulundu, otomatik seç
+                _selectedBirimKey = boxUnit['birim_key'] as String?;
+                debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $_selectedBirimKey');
+              } else {
+                // BOX yok, arama sonucundan gelen birim_key'i kullan
+                final searchBirimKey = productInfo['birim_key'] as String?;
+
+                if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
+                  _selectedBirimKey = searchBirimKey;
+                  debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
+                } else {
+                  _selectedBirimKey = null;
+                  debugPrint('⚠️ No unit auto-selected, user must choose manually');
+                }
+              }
             } else {
-              // Arama sonucundan birim yok veya bulunamadı, NULL bırak
-              _selectedBirimKey = null;
-              debugPrint('⚠️ No unit auto-selected, user must choose manually');
+              // MANUEL ARAMA: Kullanıcının seçtiği birim gelsin
+              final searchBirimKey = productInfo['birim_key'] as String?;
+
+              if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
+                // Arama sonucundan gelen birim mevcut, onu seç
+                _selectedBirimKey = searchBirimKey;
+                debugPrint('✅ Manuel seçim: kullanıcının seçtiği birim: $searchBirimKey');
+              } else {
+                // Arama sonucundan birim yok veya bulunamadı, NULL bırak
+                _selectedBirimKey = null;
+                debugPrint('⚠️ No unit auto-selected, user must choose manually');
+              }
             }
 
             debugPrint('🔄 Updated _availableUnits: ${units.length} units');
             for (var unit in units) {
               debugPrint('   - ${unit['birimadi']} (key: ${unit['birim_key']})');
+            }
+
+            // 🔥 YENİ: Birim seçildiyse text field'ı güncelle
+            if (_selectedBirimKey != null) {
+              _updateProductSearchText();
             }
           });
         }
@@ -319,8 +353,16 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
 
     // Expiry date required (hem product hem pallet modunda ürün ekleniyor)
-    if (_expiryDateController.text.trim().isEmpty) {
+    final expiryDate = _expiryDateController.text.trim();
+    if (expiryDate.isEmpty) {
       _showError('warehouse_count.error.expiry_required'.tr());
+      return;
+    }
+
+    // Tarih formatını ve geçerliliğini kontrol et
+    if (!DateValidationUtils.isValidExpiryDate(expiryDate)) {
+      final errorMessage = DateValidationUtils.getDateValidationError(expiryDate);
+      _showError(errorMessage);
       return;
     }
 
@@ -369,6 +411,45 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       debugPrint('Error adding count item: $e');
       if (mounted) {
         _showError('warehouse_count.error.add_item'.tr());
+      }
+    }
+  }
+
+  void _updateProductSearchText() async {
+    // Text field'ı seçili birimin barkodu ile güncelle
+    if (_selectedStokKodu != null && _selectedBirimKey != null) {
+      try {
+        // Seçili birimin barkodunu veritabanından çek
+        final dbHelper = DatabaseHelper.instance;
+        final db = await dbHelper.database;
+
+        // barkodlar._key_scf_stokkart_birimleri = birimler._key (birim_key)
+        final result = await db.rawQuery('''
+          SELECT barkod
+          FROM barkodlar
+          WHERE _key_scf_stokkart_birimleri = ?
+          LIMIT 1
+        ''', [_selectedBirimKey]);
+
+        if (result.isNotEmpty && mounted) {
+          final unitBarcode = result.first['barkod'] as String?;
+
+          setState(() {
+            _selectedBarcode = unitBarcode;
+
+            // Format: "BARKOD (STOKKODU)"
+            if (unitBarcode != null && unitBarcode.isNotEmpty) {
+              _productSearchController.text = '$unitBarcode ($_selectedStokKodu)';
+            } else {
+              _productSearchController.text = _selectedStokKodu!;
+            }
+
+            debugPrint('🔄 Birim değişti - Yeni barkod: $unitBarcode');
+            debugPrint('🔄 Text field güncellendi: ${_productSearchController.text}');
+          });
+        }
+      } catch (e) {
+        debugPrint('❌ Birim barkodu alınırken hata: $e');
       }
     }
   }
@@ -461,11 +542,11 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                     _buildProductSearchField(),
                     const SizedBox(height: _gap),
 
-                    // Expiry Date and Unit Row (HER ZAMAN VAR - hem product hem pallet modda)
+                    // Row 1: Expiry Date + Unit Dropdown
                     _buildExpiryDateAndUnitRow(),
                     const SizedBox(height: _gap),
 
-                    // Quantity and Shelf Row (yer değiştirdik: önce quantity, sonra shelf)
+                    // Row 2: Quantity + Shelf (with QR)
                     _buildQuantityAndShelfRow(),
                     const SizedBox(height: _gap),
 
@@ -638,10 +719,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           inputFormatters: [
             _DateInputFormatter(),
           ],
-          decoration: SharedInputDecoration.create(
-            context,
-            'goods_receiving_screen.label_expiry_date'.tr(),
+          decoration: InputDecoration(
+            labelText: 'goods_receiving_screen.label_expiry_date'.tr(),
+            hintText: 'DD/MM/YYYY',
             enabled: _selectedBarcode != null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.0),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             suffixIcon: _expiryDateController.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
@@ -654,7 +739,6 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                         : null,
                   )
                 : const Icon(Icons.edit_calendar_outlined),
-            hintText: 'DD/MM/YYYY',
           ),
           validator: (value) {
             if (_selectedBarcode == null) return null;
@@ -717,12 +801,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   Widget _buildExpiryDateAndUnitRow() {
     return Row(
       children: [
-        // Expiry Date Field
+        // Expiry Date Field - eşit genişlik
         Expanded(
           child: _buildExpiryDateField(),
         ),
         const SizedBox(width: 8),
-        // Unit Dropdown - always visible when product selected
+        // Unit Dropdown - eşit genişlik
         Expanded(
           child: _buildUnitDropdown(),
         ),
@@ -756,10 +840,13 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     return DropdownButtonFormField<String>(
       value: _selectedBirimKey,
       hint: Text('goods_receiving_screen.label_unit_selection'.tr()),
-      decoration: SharedInputDecoration.create(
-        context,
-        'goods_receiving_screen.label_unit_selection'.tr(),
+      decoration: InputDecoration(
+        labelText: 'goods_receiving_screen.label_unit_selection'.tr(),
         enabled: _availableUnits.isNotEmpty,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       items: dropdownItems.isEmpty ? null : dropdownItems, // Boşsa NULL ver!
       onChanged: _availableUnits.isNotEmpty
@@ -767,6 +854,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               setState(() {
                 _selectedBirimKey = value;
                 debugPrint('   ✅ Unit selected: $value');
+
+                // 🔥 YENİ: Birim değiştiğinde text field'ı güncelle
+                _updateProductSearchText();
               });
             }
           : null,
@@ -785,21 +875,26 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   Widget _buildQuantityAndShelfRow() {
     return Row(
       children: [
-        // Quantity field (önce miktar)
+        // Quantity field - %30 genişlik
         Expanded(
+          flex: 3,
           child: TextFormField(
             controller: _quantityController,
             focusNode: _quantityFocusNode,
-            decoration: SharedInputDecoration.create(
-              context,
-              'warehouse_count.quantity'.tr(),
+            decoration: InputDecoration(
+              labelText: 'warehouse_count.quantity'.tr(),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
         ),
         const SizedBox(width: 8),
-        // Shelf field (sonra raf)
+        // Shelf field - %70 genişlik
         Expanded(
+          flex: 7,
           child: QrTextField(
             controller: _shelfController,
             focusNode: _shelfFocusNode,
