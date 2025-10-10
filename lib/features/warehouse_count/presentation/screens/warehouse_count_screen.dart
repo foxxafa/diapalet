@@ -560,6 +560,17 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             }
             _searchProduct(value);
           },
+          onClear: () {
+            // Çarpı ikonu tıklandığında tüm ürün seçimini temizle
+            setState(() {
+              _selectedBarcode = null;
+              _selectedStokKodu = null;
+              _selectedProductName = null;
+              _availableUnits = [];
+              _selectedBirimKey = null;
+              _productSearchResults = [];
+            });
+          },
         ),
         if (_productSearchResults.isNotEmpty)
           _buildProductSuggestions(),

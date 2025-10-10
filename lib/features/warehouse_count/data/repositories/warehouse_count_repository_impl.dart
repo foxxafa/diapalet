@@ -206,12 +206,12 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       debugPrint('🌐 Attempting to save count sheet to server (Save & Continue)...');
 
       final payload = {
-        'sheet': sheet.toJson(),
+        'header': sheet.toJson(),  // Backend expects 'header', not 'sheet'
         'items': items.map((item) => item.toJson()).toList(),
       };
 
       final response = await dio.post(
-        '/terminal/warehouse-count-save',
+        '/index.php?r=terminal/warehouse-count-save',
         data: payload,
       );
 
@@ -222,7 +222,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
         final db = await dbHelper.database;
         await db.update(
           'count_sheets',
-          {'updated_at': DateTime.now().toIso8601String()},
+          {'updated_at': DateTime.now().toUtc().toIso8601String()},
           where: 'id = ?',
           whereArgs: [sheet.id],
         );
@@ -265,10 +265,17 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   String generateSheetNumber(int employeeId) {
     final now = DateTime.now();
-    final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    // Yılın son 2 hanesi + ay (2) + gün (2) = 6 karakter
+    final yearShort = (now.year % 100).toString().padLeft(2, '0'); // Son 2 hane
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    final dateStr = '$yearShort$month$day'; // Örn: 251009
+
     final uuid = const Uuid().v4().split('-').first.toUpperCase(); // First segment of UUID
 
-    return '${WarehouseCountConstants.sheetNumberPrefix}-$dateStr-$employeeId-$uuid';
+    // Format: CNT + YYMMDD + EmployeeID + UUID
+    // Örnek: CNT251009488FC2C581
+    return '${WarehouseCountConstants.sheetNumberPrefix}$dateStr$employeeId$uuid';
   }
 
   @override

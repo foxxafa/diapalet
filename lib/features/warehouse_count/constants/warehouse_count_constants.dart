@@ -6,7 +6,7 @@ class WarehouseCountConstants {
   static const String statusCompleted = 'completed';
 
   // Sheet number prefix
-  static const String sheetNumberPrefix = 'COUNT';
+  static const String sheetNumberPrefix = 'CNT';
 
   // UI dimensions
   static const double cardPadding = 16.0;

@@ -183,8 +183,8 @@ class AuthRepositoryImpl implements AuthRepository {
           await prefs.setInt('receiving_mode', user['receiving_mode'] as int? ?? 2);
           await prefs.setString('branch_name', user['branch_name'] as String? ?? 'N/A');
           await prefs.setString('apikey', apiKey);
-          await prefs.setString('first_name', user['first_name'] as String);
-          await prefs.setString('last_name', user['last_name'] as String);
+          await prefs.setString('first_name', user['first_name'] as String? ?? '');
+          await prefs.setString('last_name', user['last_name'] as String? ?? '');
           await prefs.setString('role', userRole ?? 'UNKNOWN');
 
           // Eski generic timestamp key'ini temizle (artık user-specific kullanıyoruz)

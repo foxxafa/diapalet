@@ -149,7 +149,7 @@ class PendingOperation {
           final stockCount = (dataMap['stocks'] as List?)?.length ?? 0;
           return 'Syncing $stockCount inventory stock records';
         case PendingOperationType.warehouseCount:
-          final sheetNumber = dataMap['sheet']?['sheet_number'];
+          final sheetNumber = dataMap['header']?['sheet_number'];
           final itemCount = (dataMap['items'] as List?)?.length ?? 0;
           return 'pending_operations.subtitles.warehouse_count'.tr(namedArgs: {
             'sheetNumber': sheetNumber?.toString() ?? 'N/A',

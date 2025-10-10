@@ -2909,17 +2909,17 @@ class TerminalController extends Controller
     {
         $data = $this->getJsonBody();
 
-        if (empty($data['sheet']) || empty($data['items'])) {
+        if (empty($data['header']) || empty($data['items'])) {
             return [
                 'status' => 400,
-                'message' => 'Geçersiz veri: sheet ve items zorunludur.'
+                'message' => 'Geçersiz veri: header ve items zorunludur.'
             ];
         }
 
         // _createWarehouseCount metodunu kullan
         $db = Yii::$app->db;
         $result = $this->_createWarehouseCount([
-            'header' => $data['sheet'],
+            'header' => $data['header'],
             'items' => $data['items']
         ], $db);
 

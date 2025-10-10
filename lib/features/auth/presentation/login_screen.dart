@@ -70,8 +70,10 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             );
 
-            // Start sync after showing loading screen
-            syncService.performFullSync();
+            // Start sync after frame is built to ensure stream listeners are ready
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              syncService.performFullSync();
+            });
           } else {
             // Offline login - go directly to home screen
             Navigator.of(context).pushReplacement(

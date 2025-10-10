@@ -292,17 +292,19 @@ class _OperationCard extends StatelessWidget {
           child: _OperationDetailsView(operation: operation),
         ),
         actions: [
-          TextButton(
-            onPressed: () => _generateOperationPdf(context, operation),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.picture_as_pdf, size: PendingOperationsConstants.mediumIconSize),
-                const SizedBox(width: PendingOperationsConstants.detailSectionSpacing / 2),
-                Text('pdf_report.actions.generate'.tr()),
-              ],
+          // PDF button - hide for warehouse count operations
+          if (operation.type != PendingOperationType.warehouseCount)
+            TextButton(
+              onPressed: () => _generateOperationPdf(context, operation),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.picture_as_pdf, size: PendingOperationsConstants.mediumIconSize),
+                  const SizedBox(width: PendingOperationsConstants.detailSectionSpacing / 2),
+                  Text('pdf_report.actions.generate'.tr()),
+                ],
+              ),
             ),
-          ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text('common_labels.close'.tr()),
@@ -1056,33 +1058,33 @@ class _OperationDetailsView extends StatelessWidget {
   }
 
   Future<Widget> _buildWarehouseCountDetailsAsync(BuildContext context, Map<String, dynamic> data) async {
-    final sheet = data['sheet'] as Map<String, dynamic>?;
+    final header = data['header'] as Map<String, dynamic>?;
     final items = data['items'] as List<dynamic>?;
 
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.warehouse_count'.tr(),
       details: {
-        'Sheet Number': sheet?['sheet_number']?.toString() ?? 'N/A',
-        'Warehouse': sheet?['warehouse_name']?.toString() ?? sheet?['warehouse_code']?.toString() ?? 'N/A',
+        'Sheet Number': header?['sheet_number']?.toString() ?? 'N/A',
+        'Warehouse': header?['warehouse_name']?.toString() ?? header?['warehouse_code']?.toString() ?? 'N/A',
         'Items Counted': items?.length.toString() ?? '0',
-        'Status': sheet?['status']?.toString() ?? 'N/A',
+        'Status': header?['status']?.toString() ?? 'N/A',
       },
     );
   }
 
   Widget _buildWarehouseCountDetails(BuildContext context, Map<String, dynamic> data) {
-    final sheet = data['sheet'] as Map<String, dynamic>?;
+    final header = data['header'] as Map<String, dynamic>?;
     final items = data['items'] as List<dynamic>?;
 
     return _buildDetailSection(
       context: context,
       title: 'pending_operations.titles.warehouse_count'.tr(),
       details: {
-        'Sheet Number': sheet?['sheet_number']?.toString() ?? 'N/A',
-        'Warehouse': sheet?['warehouse_name']?.toString() ?? sheet?['warehouse_code']?.toString() ?? 'N/A',
+        'Sheet Number': header?['sheet_number']?.toString() ?? 'N/A',
+        'Warehouse': header?['warehouse_name']?.toString() ?? header?['warehouse_code']?.toString() ?? 'N/A',
         'Items Counted': items?.length.toString() ?? '0',
-        'Status': sheet?['status']?.toString() ?? 'N/A',
+        'Status': header?['status']?.toString() ?? 'N/A',
       },
     );
   }

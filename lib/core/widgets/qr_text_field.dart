@@ -21,6 +21,7 @@ class QrTextField extends StatefulWidget {
   final int? maxLines;
   final bool showClearButton;
   final TextCapitalization textCapitalization;
+  final VoidCallback? onClear; // Çarpı ikonu tıklandığında çağrılır
 
   const QrTextField({
     super.key,
@@ -39,6 +40,7 @@ class QrTextField extends StatefulWidget {
     this.maxLines = 1,
     this.showClearButton = false,
     this.textCapitalization = TextCapitalization.none,
+    this.onClear,
   });
 
   @override
@@ -170,7 +172,7 @@ class _QrTextFieldState extends State<QrTextField> {
         borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      suffixIcon: widget.showClearButton && widget.controller.text.isNotEmpty ? 
+      suffixIcon: widget.showClearButton && widget.controller.text.isNotEmpty ?
         IconButton(
           icon: const Icon(Icons.clear, size: 20),
           onPressed: () {
@@ -178,6 +180,8 @@ class _QrTextFieldState extends State<QrTextField> {
             if (widget.onChanged != null) {
               widget.onChanged!('');
             }
+            // Özel clear callback'ini çağır
+            widget.onClear?.call();
           },
         ) : null,
     );
