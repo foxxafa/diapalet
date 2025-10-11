@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
+import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_sheet.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_item.dart';
 import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
@@ -239,6 +241,14 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
       );
 
       if (!mounted) return;
+
+      // 🔥 YENİ: Senkronizasyonu başlat (goods_receiving gibi)
+      // Arka planda senkronizasyonu tetikle, ama sonucunu bekleme.
+      // Hata olursa (örn. offline), SyncService bunu daha sonra tekrar deneyecek.
+      final syncService = context.read<SyncService>();
+      syncService.uploadPendingOperations().catchError((e) {
+        debugPrint('Senkronizasyon hatası (arka planda devam edecek): $e');
+      });
 
       _showSuccess('warehouse_count.success.queued_for_sync'.tr());
 

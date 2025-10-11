@@ -860,7 +860,8 @@
       "item_added": "Item added to count",
       "item_removed": "Item removed from count",
       "saved_online": "Count saved to server successfully",
-      "completed": "Count completed and queued for sync"
+      "completed": "Count completed and queued for sync",
+      "queued_for_sync": "Count completed and queued for sync. Syncing in background..."
     },
     "warning": {
       "saved_local_only": "Saved locally only (offline mode)"

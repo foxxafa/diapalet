@@ -642,7 +642,8 @@
       "item_added": "Kalem sayıma eklendi",
       "item_removed": "Kalem sayımdan çıkarıldı",
       "saved_online": "Sayım sunucuya başarıyla kaydedildi",
-      "completed": "Sayım tamamlandı ve senkronizasyon kuyruğuna eklendi"
+      "completed": "Sayım tamamlandı ve senkronizasyon kuyruğuna eklendi",
+      "queued_for_sync": "Sayım tamamlandı ve senkronizasyon kuyruğuna eklendi. Arka planda senkronize ediliyor..."
     },
     "warning": {
       "saved_local_only": "Sadece yerel olarak kaydedildi (çevrimdışı mod)"
