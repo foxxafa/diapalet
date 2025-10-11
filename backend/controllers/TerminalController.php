@@ -22,8 +22,8 @@ class TerminalController extends Controller
         // HATA DÜZELTMESİ: Veritabanı timezone'ını UTC'ye ayarla (global uyumluluk için)
         Yii::$app->db->createCommand("SET time_zone = '+00:00'")->execute();
 
-        // Test endpoint'leri için API key kontrolünü atla
-        $publicActions = ['login', 'health-check', 'sync-shelfs', 'test-telegram', 'test-telegram-error', 'test-telegram-debug', 'test-telegram-updates'];
+        // Test endpoint'leri ve telegram-log-file için API key kontrolünü atla
+        $publicActions = ['login', 'health-check', 'sync-shelfs', 'test-telegram', 'test-telegram-error', 'test-telegram-debug', 'test-telegram-updates', 'telegram-log-file'];
 
         if (!in_array($action->id, $publicActions)) {
             $this->checkApiKey();
@@ -2933,6 +2933,56 @@ class TerminalController extends Controller
             return [
                 'status' => 400,
                 'message' => $result['message']
+            ];
+        }
+    }
+
+    /**
+     * Telegram log file endpoint
+     * Flutter'dan gelen hata loglarını TXT dosyası olarak Telegram'a gönderir
+     * Endpoint: POST /terminal/telegram-log-file
+     */
+    public function actionTelegramLogFile()
+    {
+        $data = $this->getJsonBody();
+
+        if (empty($data['title']) || empty($data['log_content'])) {
+            return [
+                'status' => 400,
+                'message' => 'Geçersiz veri: title ve log_content zorunludur.'
+            ];
+        }
+
+        try {
+            $title = $data['title'];
+            $logContent = $data['log_content'];
+            $deviceInfo = $data['device_info'] ?? [];
+            $employeeName = $data['employee_name'] ?? null;
+
+            // Telegram'a dosya gönder
+            $success = WMSTelegramNotification::sendLogFile(
+                $title,
+                $logContent,
+                $deviceInfo,
+                $employeeName
+            );
+
+            if ($success) {
+                return [
+                    'status' => 200,
+                    'message' => 'Log dosyası Telegram\'a başarıyla gönderildi.'
+                ];
+            } else {
+                return [
+                    'status' => 500,
+                    'message' => 'Telegram\'a log gönderme başarısız oldu.'
+                ];
+            }
+        } catch (\Exception $e) {
+            $this->logToFile("Telegram log file error: " . $e->getMessage(), 'ERROR');
+            return [
+                'status' => 500,
+                'message' => 'Sunucu hatası: ' . $e->getMessage()
             ];
         }
     }

@@ -1,9 +1,11 @@
 // main.dart
+import 'dart:ui';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/theme/theme_provider.dart';
@@ -30,6 +32,43 @@ import 'package:diapalet/core/network/api_config.dart'; // ApiConfig'i import et
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
+
+  // ========================================
+  // GLOBAL ERROR HANDLER (Tüm Uygulama)
+  // ========================================
+
+  // Flutter framework hataları (widget hataları vb.)
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details); // Console'a yaz
+
+    // Telegram'a gönder
+    TelegramLoggerService.logError(
+      'Flutter Framework Error',
+      details.exception.toString(),
+      stackTrace: details.stack,
+      context: {
+        'error_type': 'FlutterError',
+        'library': details.library ?? 'unknown',
+        'context': details.context?.toString() ?? 'none',
+      },
+    );
+  };
+
+  // Async hatalar (Future, Stream vb.)
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('❌ Uncaught async error: $error');
+
+    TelegramLoggerService.logError(
+      'Uncaught Async Error',
+      error.toString(),
+      stackTrace: stack,
+      context: {
+        'error_type': 'AsyncError',
+      },
+    );
+
+    return true; // Hatayı handle ettik
+  };
 
   final dbHelper = DatabaseHelper.instance;
   await dbHelper.database;

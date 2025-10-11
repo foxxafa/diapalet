@@ -259,6 +259,104 @@ class WMSTelegramNotification
     }
 
     /**
+     * Log dosyası gönder (TXT dosyası olarak)
+     * Flutter'dan gelen detaylı hata loglarını Telegram'a dosya olarak gönderir
+     */
+    public static function sendLogFile($title, $logContent, $deviceInfo = [], $employeeName = null)
+    {
+        try {
+            $botToken = Yii::$app->params['telegramBotToken'] ?? self::TELEGRAM_BOT_TOKEN;
+            $chatId = Yii::$app->params['telegramChatId'] ?? self::TELEGRAM_CHAT_ID;
+
+            if (empty($botToken) || empty($chatId)) {
+                Yii::warning('Telegram bot token veya chat ID tanımlı değil', __METHOD__);
+                return false;
+            }
+
+            // Dosya adı oluştur (timestamp ile)
+            $timestamp = date('Ymd_His');
+            $filename = "wms_log_{$timestamp}.txt";
+
+            // Geçici dosya oluştur
+            $tempPath = sys_get_temp_dir() . '/' . $filename;
+            file_put_contents($tempPath, $logContent);
+
+            // Caption oluştur (kısa özet)
+            $caption = self::formatLogCaption($title, $deviceInfo, $employeeName);
+
+            // Telegram API'ye sendDocument ile gönder
+            $url = "https://api.telegram.org/bot{$botToken}/sendDocument";
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, [
+                'chat_id' => $chatId,
+                'document' => new \CURLFile($tempPath, 'text/plain', $filename),
+                'caption' => $caption,
+                'parse_mode' => 'HTML',
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30); // Dosya yüklemesi için daha uzun timeout
+
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            // Geçici dosyayı sil
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+
+            // Debug için detaylı log
+            Yii::info("Telegram sendDocument Response - HTTP: $httpCode, Result: $result, Error: $curlError", __METHOD__);
+
+            if ($httpCode !== 200) {
+                Yii::error("Telegram sendDocument hatası: HTTP $httpCode - $result - CURL Error: $curlError", __METHOD__);
+
+                // Response'u decode et ve hata mesajını al
+                $responseData = json_decode($result, true);
+                if (isset($responseData['description'])) {
+                    Yii::error("Telegram Error Description: " . $responseData['description'], __METHOD__);
+                }
+
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            Yii::error("Telegram log file gönderme hatası: " . $e->getMessage(), __METHOD__);
+            return false;
+        }
+    }
+
+    /**
+     * Log dosyası için kısa caption oluştur
+     */
+    private static function formatLogCaption($title, $deviceInfo = [], $employeeName = null)
+    {
+        $caption = "<b>🤖 WMS ERROR LOG</b>\n\n";
+        $caption .= "<b>📋 {$title}</b>\n";
+
+        if (!empty($deviceInfo['Device'])) {
+            $caption .= "📱 {$deviceInfo['Device']}\n";
+        }
+
+        if (!empty($deviceInfo['OS Version'])) {
+            $caption .= "🤖 {$deviceInfo['OS Version']}\n";
+        }
+
+        if ($employeeName) {
+            $caption .= "👤 {$employeeName}\n";
+        }
+
+        $caption .= "\n⏰ " . date('Y-m-d H:i:s');
+
+        return $caption;
+    }
+
+    /**
      * DIA entegrasyon hatası bildirimi
      */
     public static function notifyDIAError($operation, $errorMessage, $details = [])

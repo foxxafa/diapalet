@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:dio/dio.dart';
@@ -202,6 +203,17 @@ class SyncService with ChangeNotifier {
       debugPrint("performFullSync sırasında hata: $e\nStack: $s");
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
       _updateStatus(SyncStatus.error);
+
+      // Telegram'a hata logla
+      await TelegramLoggerService.logError(
+        'Sync Failed: performFullSync',
+        e.toString(),
+        stackTrace: s,
+        context: {
+          'operation': 'performFullSync',
+          'status': 'error',
+        },
+      );
 
       // Error stage
       _emitProgress(SyncProgress(
@@ -536,8 +548,20 @@ class SyncService with ChangeNotifier {
         final serverError = response.data['details'] ?? response.data['error'] ?? 'Bilinmeyen sunucu hatası';
         throw Exception("Sunucu toplu işlemi reddetti: $serverError");
       }
-    } catch (e) {
+    } catch (e, s) {
       await dbHelper.addSyncLog('upload', 'error', "Upload hatası: $e");
+
+      // Telegram'a hata logla
+      await TelegramLoggerService.logError(
+        'Upload Failed: uploadPendingOperations',
+        e.toString(),
+        stackTrace: s,
+        context: {
+          'operation': 'uploadPendingOperations',
+          'pending_count': pendingOps.length,
+        },
+      );
+
       rethrow;
     }
   }

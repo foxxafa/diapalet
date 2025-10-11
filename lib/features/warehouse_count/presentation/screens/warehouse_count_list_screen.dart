@@ -6,6 +6,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/features/warehouse_count/constants/warehouse_count_constants.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_sheet.dart';
 import 'package:diapalet/features/warehouse_count/domain/repositories/warehouse_count_repository.dart';
@@ -142,8 +143,22 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
         // Reload sheets after returning
         await _loadExistingSheets();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Error creating count sheet: $e');
+
+      // Log to Telegram
+      TelegramLoggerService.logError(
+        'Warehouse Count Sheet Creation Failed',
+        e.toString(),
+        stackTrace: stackTrace,
+        context: {
+          'screen': 'WarehouseCountListScreen',
+          'method': '_createNewCountSheet',
+          'warehouse_code': _selectedWarehouseCode ?? 'null',
+          'employee_id': (await SharedPreferences.getInstance()).getInt('employee_id')?.toString() ?? 'null',
+        },
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('warehouse_count.error.create_sheet'.tr())),

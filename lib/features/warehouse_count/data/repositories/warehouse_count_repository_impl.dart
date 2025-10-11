@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/features/warehouse_count/constants/warehouse_count_constants.dart';
 import 'package:diapalet/features/warehouse_count/domain/entities/count_sheet.dart';
@@ -232,11 +233,36 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
         debugPrint('⚠️ Server returned non-success status: ${response.data}');
         return false;
       }
-    } on DioException catch (e) {
+    } on DioException catch (e, stackTrace) {
       debugPrint('❌ Failed to save count sheet to server: ${e.message}');
+
+      TelegramLoggerService.logError(
+        'Warehouse Count Server Save Failed',
+        e.message ?? e.toString(),
+        stackTrace: stackTrace,
+        context: {
+          'repository': 'WarehouseCountRepositoryImpl',
+          'method': 'saveCountSheetToServer',
+          'sheet_number': sheet.sheetNumber,
+          'item_count': items.length.toString(),
+        },
+      );
+
       return false;
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('❌ Unexpected error saving count sheet: $e');
+
+      TelegramLoggerService.logError(
+        'Warehouse Count Unexpected Error',
+        e.toString(),
+        stackTrace: stackTrace,
+        context: {
+          'repository': 'WarehouseCountRepositoryImpl',
+          'method': 'saveCountSheetToServer',
+          'sheet_number': sheet.sheetNumber,
+        },
+      );
+
       return false;
     }
   }

@@ -5,6 +5,7 @@ import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -50,6 +51,107 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     if (mounted) _loadData();
   }
 
+  void _showSendLogsDialog(BuildContext context) async {
+    final db = DatabaseHelper.instance;
+    final logCount = await db.getLogCount();
+
+    if (!mounted) return;
+
+    if (logCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📭 Gönderilecek log bulunamadı'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('📨 Log Gönder'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Toplam $logCount adet log kaydı bulundu.'),
+            const SizedBox(height: 16),
+            const Text(
+              'Tüm loglar Telegram\'a TXT dosyası olarak gönderilecek ve cihazdan silinecek.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '⚠️ Bu işlem geri alınamaz!',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _sendLogsToTelegram();
+            },
+            icon: const Icon(Icons.send),
+            label: const Text('Gönder'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendLogsToTelegram() async {
+    // Loading göster
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Loglar gönderiliyor...'),
+          ],
+        ),
+      ),
+    );
+
+    // Logları gönder
+    final success = await TelegramLoggerService.sendAllLogs();
+
+    if (!mounted) return;
+    Navigator.pop(context); // Loading'i kapat
+
+    // Sonuç mesajı
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? '✅ Loglar başarıyla Telegram\'a gönderildi ve silindi'
+              : '❌ Log gönderimi başarısız oldu',
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
+
+    // Başarılı ise sayfayı yenile (log count'u güncellemek için)
+    if (success) {
+      setState(() {});
+    }
+  }
+
   Future<void> _loadData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -62,8 +164,17 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
           _syncedOperations = newHistory;
         });
       }
-    } catch (e) {
-      // Veri yükleme hatası - hata yönetimi için log tutulabilir
+    } catch (e, stackTrace) {
+      // Telegram'a hata logla
+      TelegramLoggerService.logError(
+        'Failed to load pending operations',
+        e.toString(),
+        stackTrace: stackTrace,
+        context: {
+          'screen': 'PendingOperationsScreen',
+          'method': '_loadData',
+        },
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -82,6 +193,49 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     return Scaffold(
       appBar: SharedAppBar(
         title: 'pending_operations.title'.tr(),
+        actions: [
+          // Log gönder butonu
+          FutureBuilder<int>(
+            future: DatabaseHelper.instance.getLogCount(),
+            builder: (context, snapshot) {
+              final logCount = snapshot.data ?? 0;
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.bug_report_outlined),
+                    tooltip: 'Log Gönder',
+                    onPressed: () => _showSendLogsDialog(context),
+                  ),
+                  if (logCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          logCount > 99 ? '99+' : logCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: [

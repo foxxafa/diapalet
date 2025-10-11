@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_log.dart';
 import 'package:diapalet/core/local/database_constants.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 71; // removed count_sheet_id from count_items - use operation_unique_id for relation
+  static const _databaseVersion = 72; // added log_entries table for hybrid logging system
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -69,6 +70,22 @@ class DatabaseHelper {
       ''');
 
       batch.execute(SyncLog.createTableQuery);
+
+      // Log entries table for storing app logs
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS log_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          level TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          stack_trace TEXT,
+          context TEXT,
+          device_info TEXT,
+          employee_id INTEGER,
+          employee_name TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS shelfs (
@@ -1351,25 +1368,26 @@ class DatabaseHelper {
   /// ESKİ SQLite UYUMLU: ROW_NUMBER() yerine subquery kullanıyor
   /// İLİŞKİ: birimler._key_scf_stokkart = urunler._key
   Future<List<Map<String, dynamic>>> getAllUnitsForProduct(String stokKodu) async {
-    final db = await database;
+    try {
+      final db = await database;
 
-    // Önce ürünün _key'ini bul
-    const getProductKeySql = '''SELECT _key FROM urunler WHERE StokKodu = ? AND aktif = 1 LIMIT 1''';
-    final productKeyResult = await db.rawQuery(getProductKeySql, [stokKodu]);
+      // Önce ürünün _key'ini bul
+      const getProductKeySql = '''SELECT _key FROM urunler WHERE StokKodu = ? AND aktif = 1 LIMIT 1''';
+      final productKeyResult = await db.rawQuery(getProductKeySql, [stokKodu]);
 
-    if (productKeyResult.isEmpty) {
-      debugPrint("⚠️ Product not found for StokKodu: $stokKodu");
-      return [];
-    }
+      if (productKeyResult.isEmpty) {
+        debugPrint("⚠️ Product not found for StokKodu: $stokKodu");
+        return [];
+      }
 
-    final productKey = productKeyResult.first['_key'] as String;
-    debugPrint("🔍 Found product _key: $productKey for StokKodu: $stokKodu");
+      final productKey = productKeyResult.first['_key'] as String;
+      debugPrint("🔍 Found product _key: $productKey for StokKodu: $stokKodu");
 
-    // Önce basit sorgu ile birimler olup olmadığını kontrol et
-    const checkSql = '''SELECT COUNT(*) as count FROM birimler WHERE _key_scf_stokkart = ?''';
-    final checkResult = await db.rawQuery(checkSql, [productKey]);
-    final birimCount = checkResult.first['count'] as int;
-    debugPrint("🔍 Found $birimCount units in birimler table for product _key $productKey");
+      // Önce basit sorgu ile birimler olup olmadığını kontrol et
+      const checkSql = '''SELECT COUNT(*) as count FROM birimler WHERE _key_scf_stokkart = ?''';
+      final checkResult = await db.rawQuery(checkSql, [productKey]);
+      final birimCount = checkResult.first['count'] as int;
+      debugPrint("🔍 Found $birimCount units in birimler table for product _key $productKey");
 
     // ESKİ SQLite UYUMLU SORGU
     // İLİŞKİ KULLANIMI: birimler._key_scf_stokkart = urunler._key
@@ -1406,12 +1424,28 @@ class DatabaseHelper {
         b.birimadi ASC
     ''';
 
-    final result = await db.rawQuery(sql, [productKey]);
-    debugPrint("📦 Found ${result.length} unique units for product $stokKodu (grouped by unit name)");
-    for (var unit in result) {
-      debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod'] ?? 'NULL'}, has_barcode: ${unit['barkod'] != null && unit['barkod'].toString().isNotEmpty}");
+      final result = await db.rawQuery(sql, [productKey]);
+      debugPrint("📦 Found ${result.length} unique units for product $stokKodu (grouped by unit name)");
+      for (var unit in result) {
+        debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod'] ?? 'NULL'}, has_barcode: ${unit['barkod'] != null && unit['barkod'].toString().isNotEmpty}");
+      }
+      return result;
+    } catch (e, stackTrace) {
+      // Telegram'a hata logla
+      debugPrint("❌ getAllUnitsForProduct failed: $e");
+
+      TelegramLoggerService.logError(
+        'Database Query Failed: getAllUnitsForProduct',
+        e.toString(),
+        stackTrace: stackTrace,
+        context: {
+          'method': 'getAllUnitsForProduct',
+          'stokKodu': stokKodu,
+        },
+      );
+
+      rethrow; // Hatayı yukarı fırlat ki UI layer'da yakalanabilsin
     }
-    return result;
   }
 
   Future<String?> getPoIdBySiparisId(int siparisId) async {
@@ -3002,5 +3036,87 @@ class DatabaseHelper {
       debugPrint('❌ TRANSFER SYNC UPDATE: updateLocalInventoryTransferWithServerId hatası: $e');
       debugPrint('Stack trace: $s');
     }
+  }
+
+  // ==================== LOG ENTRIES ====================
+
+  /// Stores a log entry in the database
+  Future<int> saveLogEntry({
+    required String level,
+    required String title,
+    required String message,
+    String? stackTrace,
+    Map<String, dynamic>? context,
+    Map<String, dynamic>? deviceInfo,
+    int? employeeId,
+    String? employeeName,
+  }) async {
+    final db = await database;
+    return await db.insert('log_entries', {
+      'level': level,
+      'title': title,
+      'message': message,
+      'stack_trace': stackTrace,
+      'context': context != null ? jsonEncode(context) : null,
+      'device_info': deviceInfo != null ? jsonEncode(deviceInfo) : null,
+      'employee_id': employeeId,
+      'employee_name': employeeName,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Gets all log entries within a time range
+  Future<List<Map<String, dynamic>>> getLogEntries({
+    DateTime? since,
+    String? level,
+    int? limit,
+  }) async {
+    final db = await database;
+
+    String where = '';
+    List<dynamic> whereArgs = [];
+
+    if (since != null) {
+      where = 'created_at >= ?';
+      whereArgs.add(since.toIso8601String());
+    }
+
+    if (level != null) {
+      if (where.isNotEmpty) where += ' AND ';
+      where += 'level = ?';
+      whereArgs.add(level);
+    }
+
+    return await db.query(
+      'log_entries',
+      where: where.isNotEmpty ? where : null,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
+
+  /// Deletes old log entries
+  Future<int> cleanOldLogs({int days = 7}) async {
+    final db = await database;
+    final cutoffDate = DateTime.now().subtract(Duration(days: days));
+    return await db.delete(
+      'log_entries',
+      where: 'created_at < ?',
+      whereArgs: [cutoffDate.toIso8601String()],
+    );
+  }
+
+  /// Gets log count
+  Future<int> getLogCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM log_entries');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Deletes all logs
+  Future<int> deleteAllLogs() async {
+    final db = await database;
+    return await db.delete('log_entries');
   }
 }
