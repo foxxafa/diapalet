@@ -283,6 +283,8 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
     final db = await dbHelper.database;
 
     // Barkod ile ürün ara (barkodlar tablosundan)
+    // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
+    //         birimler._key_scf_stokkart = urunler._key
     final barcodeResult = await db.rawQuery('''
       SELECT
         b.barkod,
@@ -294,7 +296,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
         u.UrunId
       FROM barkodlar b
       INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
-      INNER JOIN urunler u ON bi.StokKodu = u.StokKodu
+      INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
       WHERE b.barkod = ?
       LIMIT 1
     ''', [barcode]);
@@ -304,6 +306,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
     }
 
     // Barkod bulunamadıysa, direkt StokKodu olabilir mi dene
+    // İLİŞKİ: birimler._key_scf_stokkart = urunler._key
     final stockCodeResult = await db.rawQuery('''
       SELECT
         u.StokKodu as barkod,
@@ -314,7 +317,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
         u.UrunAdi,
         u.UrunId
       FROM urunler u
-      LEFT JOIN birimler bi ON u.StokKodu = bi.StokKodu
+      LEFT JOIN birimler bi ON bi._key_scf_stokkart = u._key
       WHERE u.StokKodu = ?
       LIMIT 1
     ''', [barcode]);
@@ -330,6 +333,8 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   Future<List<Map<String, dynamic>>> searchProductsPartial(String query) async {
     final db = await dbHelper.database;
 
+    // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
+    //         birimler._key_scf_stokkart = urunler._key
     final searchResults = await db.rawQuery('''
       SELECT DISTINCT
         b.barkod,
@@ -341,7 +346,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
         u.UrunId
       FROM barkodlar b
       INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
-      INNER JOIN urunler u ON bi.StokKodu = u.StokKodu
+      INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
       WHERE b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?
       ORDER BY
         CASE

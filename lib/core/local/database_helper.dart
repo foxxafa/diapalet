@@ -1348,56 +1348,65 @@ class DatabaseHelper {
   }
 
   /// Bir ürünün tüm birimlerini getir (StokKodu'na göre)
+  /// ESKİ SQLite UYUMLU: ROW_NUMBER() yerine subquery kullanıyor
+  /// İLİŞKİ: birimler._key_scf_stokkart = urunler._key
   Future<List<Map<String, dynamic>>> getAllUnitsForProduct(String stokKodu) async {
     final db = await database;
-    
+
+    // Önce ürünün _key'ini bul
+    const getProductKeySql = '''SELECT _key FROM urunler WHERE StokKodu = ? AND aktif = 1 LIMIT 1''';
+    final productKeyResult = await db.rawQuery(getProductKeySql, [stokKodu]);
+
+    if (productKeyResult.isEmpty) {
+      debugPrint("⚠️ Product not found for StokKodu: $stokKodu");
+      return [];
+    }
+
+    final productKey = productKeyResult.first['_key'] as String;
+    debugPrint("🔍 Found product _key: $productKey for StokKodu: $stokKodu");
+
     // Önce basit sorgu ile birimler olup olmadığını kontrol et
-    const checkSql = '''SELECT COUNT(*) as count FROM birimler WHERE StokKodu = ?''';
-    final checkResult = await db.rawQuery(checkSql, [stokKodu]);
+    const checkSql = '''SELECT COUNT(*) as count FROM birimler WHERE _key_scf_stokkart = ?''';
+    final checkResult = await db.rawQuery(checkSql, [productKey]);
     final birimCount = checkResult.first['count'] as int;
-    debugPrint("🔍 Found $birimCount units in birimler table for product $stokKodu");
-    
+    debugPrint("🔍 Found $birimCount units in birimler table for product _key $productKey");
+
+    // ESKİ SQLite UYUMLU SORGU
+    // İLİŞKİ KULLANIMI: birimler._key_scf_stokkart = urunler._key
+    // Her birimadi için sadece BİR kayıt döndür (barkodlu olanı tercih et)
     const sql = '''
-      SELECT DISTINCT 
+      SELECT
         u.*,
-        selected_units.birimadi,
-        selected_units.birimkod,
-        selected_units.birim_key,
-        selected_units.barkod,
-        selected_units.barkod_key
+        b.birimadi,
+        b.birimkod,
+        b._key as birim_key,
+        (SELECT bark.barkod
+         FROM barkodlar bark
+         WHERE bark._key_scf_stokkart_birimleri = b._key
+         LIMIT 1) as barkod,
+        (SELECT bark._key
+         FROM barkodlar bark
+         WHERE bark._key_scf_stokkart_birimleri = b._key
+         LIMIT 1) as barkod_key
       FROM urunler u
-      JOIN (
-        SELECT 
-          b.StokKodu,
-          b.birimadi,
-          b.birimkod,
-          b._key as birim_key,
-          COALESCE(bark.barkod, '') as barkod,
-          bark._key as barkod_key,
-          ROW_NUMBER() OVER (
-            PARTITION BY b.StokKodu, b.birimadi 
-            ORDER BY 
-              CASE 
-                WHEN bark.barkod IS NOT NULL AND TRIM(bark.barkod) != '' THEN 0 
-                ELSE 1 
-              END,
-              b._key ASC
-          ) as rn
-        FROM birimler b
-        LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-        WHERE b.StokKodu = ?
-      ) selected_units ON selected_units.StokKodu = u.StokKodu AND selected_units.rn = 1
-      WHERE u.StokKodu = ?
+      JOIN birimler b ON b._key_scf_stokkart = u._key
+      WHERE u._key = ?
         AND u.aktif = 1
-      ORDER BY 
-        CASE 
-          WHEN selected_units.barkod != '' THEN 0 
-          ELSE 1 
+        AND b._key IN (
+          SELECT MIN(b2._key)
+          FROM birimler b2
+          WHERE b2._key_scf_stokkart = u._key
+          GROUP BY b2.birimadi
+        )
+      ORDER BY
+        CASE
+          WHEN (SELECT COUNT(*) FROM barkodlar bark WHERE bark._key_scf_stokkart_birimleri = b._key) > 0 THEN 0
+          ELSE 1
         END,
-        selected_units.birimadi ASC
+        b.birimadi ASC
     ''';
-    
-    final result = await db.rawQuery(sql, [stokKodu, stokKodu]);
+
+    final result = await db.rawQuery(sql, [productKey]);
     debugPrint("📦 Found ${result.length} unique units for product $stokKodu (grouped by unit name)");
     for (var unit in result) {
       debugPrint("  - Unit: ${unit['birimadi']} (${unit['birimkod']}), key: ${unit['birim_key']}, barcode: ${unit['barkod'] ?? 'NULL'}, has_barcode: ${unit['barkod'] != null && unit['barkod'].toString().isNotEmpty}");

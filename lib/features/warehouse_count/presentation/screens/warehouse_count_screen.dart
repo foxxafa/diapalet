@@ -455,7 +455,11 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   void _clearInputs() {
-    _palletBarcodeController.clear();
+    // Pallet modunda pallet barkodunu KORUYORUZ (sadece ürün bilgilerini temizle)
+    if (!_selectedMode.isPallet) {
+      _palletBarcodeController.clear();
+    }
+
     _productSearchController.clear();
     _quantityController.clear();
     _shelfController.clear();
@@ -469,11 +473,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     _isShelfValid = false;
 
     // Focus'u doğru alana ver
-    if (_selectedMode.isPallet) {
-      _palletBarcodeFocusNode.requestFocus();
-    } else {
-      _productSearchFocusNode.requestFocus();
-    }
+    // Pallet modunda product search'e, product modunda product search'e focus ver
+    _productSearchFocusNode.requestFocus();
   }
 
   Future<void> _removeCountItem(CountItem item) async {
@@ -801,13 +802,15 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   Widget _buildExpiryDateAndUnitRow() {
     return Row(
       children: [
-        // Expiry Date Field - eşit genişlik
+        // Expiry Date Field - %60 genişlik
         Expanded(
+          flex: 6,
           child: _buildExpiryDateField(),
         ),
         const SizedBox(width: 8),
-        // Unit Dropdown - eşit genişlik
+        // Unit Dropdown - %40 genişlik
         Expanded(
+          flex: 4,
           child: _buildUnitDropdown(),
         ),
       ],
@@ -839,6 +842,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
     return DropdownButtonFormField<String>(
       value: _selectedBirimKey,
+      isExpanded: true, // Taşmayı önlemek için
       hint: Text('goods_receiving_screen.label_unit_selection'.tr()),
       decoration: InputDecoration(
         labelText: 'goods_receiving_screen.label_unit_selection'.tr(),

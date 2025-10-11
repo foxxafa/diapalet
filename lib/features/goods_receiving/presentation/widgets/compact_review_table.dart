@@ -815,52 +815,53 @@ class ProductDetailDialog extends StatelessWidget {
           width: 0.5,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.schedule,
-            size: 18,
-            color: theme.colorScheme.onSurfaceVariant,
+          Row(
+            children: [
+              Icon(
+                Icons.schedule,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'goods_receiving_screen.label_expiry_date'.tr(),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(
-            'goods_receiving_screen.label_expiry_date'.tr(),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: expiryDates.length == 1
-                ? Text(
-                    DateFormat('dd/MM/yyyy').format(expiryDates.first),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    textAlign: TextAlign.end,
-                  )
-                : Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: expiryDates.map((date) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withAlpha(26),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        DateFormat('dd/MM/yy').format(date),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    )).toList(),
+          const SizedBox(height: 8),
+          expiryDates.length == 1
+              ? Text(
+                  DateFormat('dd/MM/yyyy').format(expiryDates.first),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
                   ),
-          ),
+                )
+              : Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: expiryDates.map((date) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withAlpha(26),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yy').format(date),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )).toList(),
+                ),
         ],
       ),
     );
