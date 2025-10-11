@@ -65,51 +65,34 @@ class CountedItemsReviewTable extends StatelessWidget {
     final isProduct = item.isProductCount;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       color: index.isEven ? Colors.grey[50] : Colors.white,
       child: Row(
         children: [
           // Tip ikonu (küçük)
           Icon(
-            isProduct ? Icons.inventory_2 : Icons.view_in_ar,
-            size: 18,
-            color: Colors.grey[700],
+            isProduct ? Icons.inventory_2 : Icons.pallet,
+            size: 16,
+            color: theme.colorScheme.primary.withOpacity(0.7),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // Tip yazısı
-          SizedBox(
-            width: 50,
-            child: Text(
-              isProduct
-                ? 'warehouse_count.mode.product'.tr()
-                : 'warehouse_count.mode.pallet'.tr(),
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontSize: 11,
-                color: Colors.grey[800],
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Stok Kodu (her zaman göster)
+          // Stok Kodu (daha geniş)
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Text(
               item.stokKodu ?? 'N/A',
               style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 fontSize: 12,
                 color: Colors.black87,
               ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // Pallet Barkodu (sadece pallet modunda)
+          // Pallet Barkodu (sadece pallet modunda, kompakt)
           if (!isProduct) ...[
             Expanded(
               flex: 2,
@@ -117,17 +100,17 @@ class CountedItemsReviewTable extends StatelessWidget {
                 item.palletBarcode ?? '-',
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontSize: 11,
-                  color: Colors.grey[600],
+                  color: Colors.grey[700],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
           ],
 
-          // Shelf
+          // Shelf (kompakt badge)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(4),
@@ -141,11 +124,11 @@ class CountedItemsReviewTable extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // Quantity + Birim
+          // Quantity + Birim (kompakt)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
               color: theme.colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
@@ -162,7 +145,7 @@ class CountedItemsReviewTable extends StatelessWidget {
                   ),
                 ),
                 if (item.birimAdi != null && item.birimAdi!.isNotEmpty) ...[
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 3),
                   Text(
                     item.birimAdi!,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -185,10 +168,10 @@ class CountedItemsReviewTable extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
 
           // Sil butonu (eğer read-only değilse)
-          if (!isReadOnly && onItemRemoved != null)
+          if (!isReadOnly && onItemRemoved != null) ...[
+            const SizedBox(width: 6),
             IconButton(
               icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey[600]),
               padding: EdgeInsets.zero,
@@ -196,6 +179,7 @@ class CountedItemsReviewTable extends StatelessWidget {
               onPressed: () => onItemRemoved!(item),
               tooltip: 'warehouse_count.delete_item'.tr(),
             ),
+          ],
         ],
       ),
     );

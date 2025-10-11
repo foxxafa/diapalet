@@ -28,6 +28,13 @@ class WarehouseCountReviewScreen extends StatefulWidget {
 
 class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen> {
   bool _isSaving = false;
+  late List<CountItem> _currentItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentItems = List.from(widget.countedItems);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,10 +50,11 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
           // Items table
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
               child: CountedItemsReviewTable(
-                items: widget.countedItems,
-                isReadOnly: true,
+                items: _currentItems,
+                isReadOnly: false,
+                onItemRemoved: _removeItem,
               ),
             ),
           ),
@@ -58,14 +66,33 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
     );
   }
 
+  Future<void> _removeItem(CountItem item) async {
+    try {
+      // Remove from database
+      await widget.repository.deleteCountItem(item.id!);
+
+      if (mounted) {
+        setState(() {
+          _currentItems.remove(item);
+        });
+        _showSuccess('warehouse_count.success.item_removed'.tr());
+      }
+    } catch (e) {
+      debugPrint('Error removing count item: $e');
+      if (mounted) {
+        _showError('warehouse_count.error.remove_item'.tr());
+      }
+    }
+  }
+
   Widget _buildSummaryCard() {
-    final totalItems = widget.countedItems.length;
-    final totalProductCount = widget.countedItems.where((item) => item.isProductCount).length;
-    final totalPalletCount = widget.countedItems.where((item) => !item.isProductCount).length;
+    final totalItems = _currentItems.length;
+    final totalProductCount = _currentItems.where((item) => item.isProductCount).length;
+    final totalPalletCount = _currentItems.where((item) => !item.isProductCount).length;
 
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
@@ -106,7 +133,7 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
           _buildCompactSummaryItem(
             context,
             totalPalletCount.toString(),
-            Icons.view_in_ar,
+            Icons.pallet,
             Colors.grey[800]!,
             'Pallet',
           ),
@@ -198,7 +225,7 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
       // Save to server directly (online operation)
       final success = await widget.repository.saveCountSheetToServer(
         widget.countSheet,
-        widget.countedItems,
+        _currentItems,
       );
 
       if (!mounted) return;
@@ -237,7 +264,7 @@ class _WarehouseCountReviewScreenState extends State<WarehouseCountReviewScreen>
       // Queue for sync (offline operation) with UPDATED sheet
       await widget.repository.queueCountSheetForSync(
         updatedSheet,
-        widget.countedItems,
+        _currentItems,
       );
 
       if (!mounted) return;
