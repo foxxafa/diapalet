@@ -316,8 +316,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       }
     }
 
-    // Validate inputs - Product barkodu zorunlu
-    if (_selectedBarcode == null || _selectedBarcode!.isEmpty) {
+    // Validate inputs - Ürün seçimi zorunlu (barkod olmasa bile StokKodu olmalı)
+    if (_selectedStokKodu == null || _selectedStokKodu!.isEmpty) {
       _showError('warehouse_count.error.scan_barcode'.tr());
       return;
     }
@@ -709,12 +709,15 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Widget _buildExpiryDateField() {
+    // Ürün seçiliyse enabled (barkodu olsun olmasın)
+    final isProductSelected = _selectedStokKodu != null;
+
     return StatefulBuilder(
       builder: (context, setState) {
         return TextFormField(
           controller: _expiryDateController,
           focusNode: _expiryDateFocusNode,
-          enabled: _selectedBarcode != null,
+          enabled: isProductSelected,
           readOnly: false,
           keyboardType: const TextInputType.numberWithOptions(decimal: false),
           inputFormatters: [
@@ -723,7 +726,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           decoration: InputDecoration(
             labelText: 'goods_receiving_screen.label_expiry_date'.tr(),
             hintText: 'DD/MM/YYYY',
-            enabled: _selectedBarcode != null,
+            enabled: isProductSelected,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12.0),
             ),
@@ -731,7 +734,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             suffixIcon: _expiryDateController.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
-                    onPressed: _selectedBarcode != null
+                    onPressed: isProductSelected
                         ? () {
                             _expiryDateController.clear();
                             setState(() {}); // Rebuild to update suffix icon
@@ -742,7 +745,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                 : const Icon(Icons.edit_calendar_outlined),
           ),
           validator: (value) {
-            if (_selectedBarcode == null) return null;
+            if (!isProductSelected) return null;
 
             // Expiry date is mandatory
             if (value == null || value.isEmpty) {
@@ -789,7 +792,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   void _onExpiryDateEntered() {
-    if (_expiryDateController.text.isNotEmpty && _selectedBarcode != null) {
+    if (_expiryDateController.text.isNotEmpty && _selectedStokKodu != null) {
       // Focus to quantity field
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {

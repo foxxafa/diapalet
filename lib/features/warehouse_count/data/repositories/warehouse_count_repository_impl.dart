@@ -335,19 +335,21 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
 
     // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
     //         birimler._key_scf_stokkart = urunler._key
+    // NOT: LEFT JOIN kullanıyoruz ki barkodu olmayan ürünler de gelsin
     final searchResults = await db.rawQuery('''
       SELECT DISTINCT
         b.barkod,
         bi._key as birim_key,
         bi.birimadi,
-        bi.StokKodu,
+        u.StokKodu,
         u._key as urun_key,
         u.UrunAdi,
         u.UrunId
-      FROM barkodlar b
-      INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
-      INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
-      WHERE b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?
+      FROM urunler u
+      INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+      LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+      WHERE u.aktif = 1
+        AND (b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?)
       ORDER BY
         CASE
           WHEN u.StokKodu LIKE ? THEN 1  -- Stok kodu eşleşmesi (ÖNCELİKLİ)

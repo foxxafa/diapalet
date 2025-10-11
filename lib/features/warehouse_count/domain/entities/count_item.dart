@@ -79,14 +79,14 @@ class CountItem {
       if (id != null) 'id': id,
       'operation_unique_id': operationUniqueId,
       'item_uuid': itemUuid,
-      if (birimKey != null) 'birim_key': birimKey,
+      'birim_key': birimKey, // Always send, even if null
       // birimAdi is NOT sent to API, server can look it up via birim_key
-      if (palletBarcode != null) 'pallet_barcode': palletBarcode,
+      'pallet_barcode': palletBarcode, // Always send, even if null
       'quantity_counted': quantityCounted,
-      if (barcode != null) 'barcode': barcode,
-      if (stokKodu != null) 'StokKodu': stokKodu,
-      if (shelfCode != null) 'shelf_code': shelfCode,
-      if (expiryDate != null) 'expiry_date': expiryDate,
+      'barcode': barcode, // Always send, even if null (barkodu olmayan ürünler için)
+      'StokKodu': stokKodu, // Always send, even if null
+      'shelf_code': shelfCode, // Always send, even if null
+      'expiry_date': expiryDate, // Always send, even if null
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
