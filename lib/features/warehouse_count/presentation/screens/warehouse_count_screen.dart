@@ -172,7 +172,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           setState(() {
             _productSearchResults = []; // Dropdown'ı GÖSTERME
           });
-          _selectProduct(searchResults.first, isFromBarcodeScanner: isFromBarcodeScanner);
+          // 🔥 Otomatik seçim bayrağını ekle
+          _selectProduct(searchResults.first, isFromBarcodeScanner: isFromBarcodeScanner, isAutoSelection: true);
           return; // Erken çık, dropdown gösterilmeyecek
         } else if (searchResults.isNotEmpty) {
           debugPrint('⚠️ Birden fazla ürün bulundu, dropdown gösteriliyor...');
@@ -196,10 +197,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _selectProduct(Map<String, dynamic> productInfo, {bool isFromBarcodeScanner = false}) async {
+  void _selectProduct(Map<String, dynamic> productInfo, {bool isFromBarcodeScanner = false, bool isAutoSelection = false}) async {
     final stockCode = productInfo['StokKodu'] as String? ?? '';
     final barcode = productInfo['barkod'] as String?;
     final productName = productInfo['UrunAdi'] as String? ?? '';
+
+    debugPrint('🔵 _selectProduct called: isAutoSelection=$isAutoSelection');
 
     setState(() {
       _selectedBarcode = barcode;
@@ -228,28 +231,43 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           setState(() {
             _availableUnits = units;
 
-            // 🔥 OTOMATİK SEÇİM MANTĞI: Ürün otomatik seçiliyorsa BOX birimini önceliklendir
-            // Önce BOX birimi var mı kontrol et
-            final boxUnit = units.firstWhere(
-              (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
-              orElse: () => <String, dynamic>{},
-            );
+            // 🔥 BOX OTOMATIK SEÇME: SADECE otomatik seçimde (tek ürün) çalışsın
+            if (isAutoSelection) {
+              debugPrint('✅ Otomatik seçim aktif - BOX birimi aranıyor...');
+              // Önce BOX birimi var mı kontrol et
+              final boxUnit = units.firstWhere(
+                (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
+                orElse: () => <String, dynamic>{},
+              );
 
-            if (boxUnit.isNotEmpty) {
-              // BOX birimi bulundu, otomatik seç
-              _selectedBirimKey = boxUnit['birim_key'] as String?;
-              boxUnitSelected = true;
-              debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $_selectedBirimKey');
+              if (boxUnit.isNotEmpty) {
+                // BOX birimi bulundu, otomatik seç
+                _selectedBirimKey = boxUnit['birim_key'] as String?;
+                boxUnitSelected = true;
+                debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $_selectedBirimKey');
+              } else {
+                // BOX yok, arama sonucundan gelen birim_key'i kullan
+                final searchBirimKey = productInfo['birim_key'] as String?;
+
+                if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
+                  _selectedBirimKey = searchBirimKey;
+                  debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
+                } else {
+                  _selectedBirimKey = null;
+                  debugPrint('⚠️ No unit auto-selected, user must choose manually');
+                }
+              }
             } else {
-              // BOX yok, arama sonucundan gelen birim_key'i kullan
+              // MANUEL SEÇİM: Dropdown'dan seçilen ürün - kullanıcının seçtiği birim gelsin
+              debugPrint('🟡 Manuel seçim - Kullanıcının seçtiği birim kullanılacak');
               final searchBirimKey = productInfo['birim_key'] as String?;
 
               if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
                 _selectedBirimKey = searchBirimKey;
-                debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
+                debugPrint('✅ Manuel seçim: kullanıcının seçtiği birim: $searchBirimKey');
               } else {
                 _selectedBirimKey = null;
-                debugPrint('⚠️ No unit auto-selected, user must choose manually');
+                debugPrint('⚠️ No unit found from search result');
               }
             }
 
@@ -260,7 +278,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           });
 
           // 🔥 YENİ: Birim seçildiyse text field'ı güncelle VE BOX bildirimi göster
-          if (_selectedBirimKey != null) {
+          if (_selectedBirimKey != null && isAutoSelection) {
             _updateProductSearchText();
 
             // BOX birimi seçildi ise kısa snackbar göster
@@ -274,6 +292,16 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               );
             }
           }
+
+          // Birimler yüklendikten SONRA expiry date'e focus yap (SADECE otomatik seçimde)
+          if (isAutoSelection) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                debugPrint('🎯 Focus yapılıyor: Expiry Date');
+                _expiryDateFocusNode.requestFocus();
+              }
+            });
+          }
         }
       } catch (e) {
         debugPrint('Error loading units: $e');
@@ -285,13 +313,6 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         }
       }
     }
-
-    // Son kullanma tarihi alanına focus yap (hem ürün hem palet modunda)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _expiryDateFocusNode.requestFocus();
-      }
-    });
   }
 
   Future<void> _openQrScanner() async {
