@@ -113,8 +113,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final iconSize = screenWidth * 0.25;
 
     return Scaffold(
       body: Center(
@@ -126,14 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Image.asset(
-                  'assets/images/RHt1.png',
-                  width: iconSize,
-                  height: iconSize,
-                  fit: BoxFit.contain,
-                  // color ve colorBlendMode'u kaldırıyoruz - bunlar mavi kaplama yapıyor
-                ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 40),
                 Text(
                   'login.title'.tr(),
                   textAlign: TextAlign.center,

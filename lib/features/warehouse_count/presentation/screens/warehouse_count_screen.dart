@@ -64,6 +64,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   // Validation error states
   bool _isShelfValid = false;
 
+  // 🔥 YENİ: Barkod okutma flag'i
+  bool _isProcessingBarcodeScanner = false;
+
   late BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _barcodeSub;
 
@@ -113,12 +116,21 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _handleBarcodeScanned(String barcode) {
-    setState(() {
-      _productSearchController.text = barcode;
-      _selectedBarcode = barcode;
-    });
-    _searchProduct(barcode, isFromBarcodeScanner: true);
+  void _handleBarcodeScanned(String barcode) async {
+    debugPrint('🔴 _handleBarcodeScanned called with: $barcode');
+
+    // Flag'i set et
+    _isProcessingBarcodeScanner = true;
+
+    // Text controller'ı güncelle (bu onChanged'i tetikleyebilir)
+    _productSearchController.text = barcode;
+    _selectedBarcode = barcode;
+
+    // Arama yap
+    await _searchProduct(barcode, isFromBarcodeScanner: true);
+
+    // İşlem bittiğinde flag'i sıfırla
+    _isProcessingBarcodeScanner = false;
   }
 
   Future<void> _searchProduct(String query, {bool isFromBarcodeScanner = false}) async {
@@ -133,19 +145,48 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       // HEM PRODUCT HEM PALLET MODUNDA ürün araması yap
       final searchResults = await widget.repository.searchProductsPartial(query.trim());
 
+      debugPrint('🔍 _searchProduct çalıştı:');
+      debugPrint('   - Query: $query');
+      debugPrint('   - isFromBarcodeScanner: $isFromBarcodeScanner');
+      debugPrint('   - searchResults.length: ${searchResults.length}');
+
       if (mounted) {
+        // 🔥 YENİ: Benzersiz ürün sayısını kontrol et
+        final uniqueProducts = <String>{};
+        for (var result in searchResults) {
+          final stokKodu = result['StokKodu'] as String?;
+          debugPrint('   - Sonuç: StokKodu=$stokKodu, UrunAdi=${result['UrunAdi']}');
+          if (stokKodu != null) {
+            uniqueProducts.add(stokKodu);
+          }
+        }
+
+        debugPrint('   - Benzersiz ürün sayısı: ${uniqueProducts.length}');
+
+        // TEK ÜRÜN KONTROLÜ (hem barkod scanner hem manuel arama için)
+        if (searchResults.isNotEmpty && uniqueProducts.length == 1) {
+          // TEK ÜRÜN VAR! Dropdown göstermeden otomatik seç
+          debugPrint('✅ TEK ÜRÜN BULUNDU! Otomatik seçiliyor...');
+          debugPrint('   - Seçilen ürün: ${searchResults.first}');
+          debugPrint('   - isFromBarcodeScanner: $isFromBarcodeScanner');
+          setState(() {
+            _productSearchResults = []; // Dropdown'ı GÖSTERME
+          });
+          _selectProduct(searchResults.first, isFromBarcodeScanner: isFromBarcodeScanner);
+          return; // Erken çık, dropdown gösterilmeyecek
+        } else if (searchResults.isNotEmpty) {
+          debugPrint('⚠️ Birden fazla ürün bulundu, dropdown gösteriliyor...');
+        } else {
+          debugPrint('⚠️ Boş sonuç');
+        }
+
+        // MANUEL ARAMA veya ÇOKLU SONUÇ: Dropdown'ı göster
         setState(() {
           _productSearchResults = searchResults;
         });
-
-        // 🔥 YENİ: SADECE BARKOD OKUTULDUĞUNDA otomatik seç
-        if (isFromBarcodeScanner && searchResults.length == 1) {
-          debugPrint('✅ Barkod okutuldu ve tek ürün bulundu, otomatik seçiliyor...');
-          _selectProduct(searchResults.first, isFromBarcodeScanner: true);
-        }
       }
     } catch (e) {
-      debugPrint('Error searching product: $e');
+      debugPrint('❌ Error searching product: $e');
       if (mounted) {
         setState(() {
           _productSearchResults = [];
@@ -182,43 +223,31 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         final units = await dbHelper.getAllUnitsForProduct(stockCode);
 
         if (mounted) {
+          bool boxUnitSelected = false; // BOX birim seçildi mi?
+
           setState(() {
             _availableUnits = units;
 
-            // 🔥 YENİ MANTIK: SADECE BARKOD OKUTULDUĞUNDA BOX birimini öncelikle seç
-            if (isFromBarcodeScanner) {
-              // BARKOD OKUTULDU: Önce BOX birimi var mı kontrol et
-              final boxUnit = units.firstWhere(
-                (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
-                orElse: () => <String, dynamic>{},
-              );
+            // 🔥 OTOMATİK SEÇİM MANTĞI: Ürün otomatik seçiliyorsa BOX birimini önceliklendir
+            // Önce BOX birimi var mı kontrol et
+            final boxUnit = units.firstWhere(
+              (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
+              orElse: () => <String, dynamic>{},
+            );
 
-              if (boxUnit.isNotEmpty) {
-                // BOX birimi bulundu, otomatik seç
-                _selectedBirimKey = boxUnit['birim_key'] as String?;
-                debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $_selectedBirimKey');
-              } else {
-                // BOX yok, arama sonucundan gelen birim_key'i kullan
-                final searchBirimKey = productInfo['birim_key'] as String?;
-
-                if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
-                  _selectedBirimKey = searchBirimKey;
-                  debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
-                } else {
-                  _selectedBirimKey = null;
-                  debugPrint('⚠️ No unit auto-selected, user must choose manually');
-                }
-              }
+            if (boxUnit.isNotEmpty) {
+              // BOX birimi bulundu, otomatik seç
+              _selectedBirimKey = boxUnit['birim_key'] as String?;
+              boxUnitSelected = true;
+              debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $_selectedBirimKey');
             } else {
-              // MANUEL ARAMA: Kullanıcının seçtiği birim gelsin
+              // BOX yok, arama sonucundan gelen birim_key'i kullan
               final searchBirimKey = productInfo['birim_key'] as String?;
 
               if (searchBirimKey != null && units.any((u) => u['birim_key'] == searchBirimKey)) {
-                // Arama sonucundan gelen birim mevcut, onu seç
                 _selectedBirimKey = searchBirimKey;
-                debugPrint('✅ Manuel seçim: kullanıcının seçtiği birim: $searchBirimKey');
+                debugPrint('✅ Auto-selected unit from search: $searchBirimKey');
               } else {
-                // Arama sonucundan birim yok veya bulunamadı, NULL bırak
                 _selectedBirimKey = null;
                 debugPrint('⚠️ No unit auto-selected, user must choose manually');
               }
@@ -228,12 +257,23 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             for (var unit in units) {
               debugPrint('   - ${unit['birimadi']} (key: ${unit['birim_key']})');
             }
-
-            // 🔥 YENİ: Birim seçildiyse text field'ı güncelle
-            if (_selectedBirimKey != null) {
-              _updateProductSearchText();
-            }
           });
+
+          // 🔥 YENİ: Birim seçildiyse text field'ı güncelle VE BOX bildirimi göster
+          if (_selectedBirimKey != null) {
+            _updateProductSearchText();
+
+            // BOX birimi seçildi ise kısa snackbar göster
+            if (boxUnitSelected && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('BOX birimi otomatik seçildi'),
+                  duration: const Duration(milliseconds: 800),
+                  backgroundColor: Colors.blue.shade700,
+                ),
+              );
+            }
+          }
         }
       } catch (e) {
         debugPrint('Error loading units: $e');
@@ -630,6 +670,17 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           showClearButton: true,
           onQrTap: _openQrScanner,
           onChanged: (value) {
+            debugPrint('🟢 onChanged called: value=$value, flag=$_isProcessingBarcodeScanner');
+
+            // 🔥 YENİ: Eğer barkod scanner işlemi devam ediyorsa, onChanged'i yok say
+            if (_isProcessingBarcodeScanner) {
+              debugPrint('   ⏸️ Barkod scanner işlemi devam ediyor, onChanged ignore ediliyor');
+              setState(() {
+                _isProcessingBarcodeScanner = false; // Flag'i sıfırla
+              });
+              return; // Erken çık, arama yapma
+            }
+
             // Kullanıcı yazmaya başlarsa seçimi temizle
             if (value.isNotEmpty && _selectedProductName != null) {
               setState(() {

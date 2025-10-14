@@ -89,18 +89,25 @@ class _QrTextFieldState extends State<QrTextField> {
         ),
         const SizedBox(width: 8),
         // QR butonu - text field ile aynı yükseklikte kare
+        // GestureDetector kullanarak sadece dokunmatik ekran tıklamalarını yakala
         SizedBox(
           height: 56, // Text field ile aynı yükseklik
           width: 56,  // Kare yapı
-          child: ElevatedButton(
-            onPressed: widget.enabled ? () => _onQrButtonPressed(context) : null,
-            style: ElevatedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0)
+          child: GestureDetector(
+            onTap: widget.enabled ? () => _onQrButtonPressed(context) : null,
+            child: Container(
+              decoration: BoxDecoration(
+                color: widget.enabled
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).disabledColor,
+                borderRadius: BorderRadius.circular(12.0),
               ),
-              padding: EdgeInsets.zero,
+              child: Icon(
+                Icons.qr_code_scanner,
+                size: 28,
+                color: Colors.white,
+              ),
             ),
-            child: const Icon(Icons.qr_code_scanner, size: 28),
           ),
         ),
       ],
