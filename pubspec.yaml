@@ -51,7 +51,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/lang/
-    - assets/images/RHt1.png
+    - assets/images/RHB2.PNG
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware
@@ -81,7 +81,6 @@ flutter:
 
 flutter_launcher_icons:
   android: true
-  ios: true
-  image_path: "assets/images/RHt1.png"
+  ios: false
+  image_path: "assets/images/RHB2.PNG"
   min_sdk_android: 21
-  remove_alpha_ios: true

@@ -96,6 +96,9 @@ class _WarehouseCountListScreenState extends State<WarehouseCountListScreen> {
     }
 
     try {
+      // 🧪 TEST: Kasıtlı hata (test bitince kaldır)
+      // throw Exception('🧪 TEST ERROR: This is a test error to verify Telegram logging system!');
+
       final prefs = await SharedPreferences.getInstance();
       final employeeId = prefs.getInt('employee_id');
 

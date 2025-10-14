@@ -60,7 +60,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     if (logCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('📭 Gönderilecek log bulunamadı'),
+          content: Text('📭 No logs to send'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -70,20 +70,20 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('📨 Log Gönder'),
+        title: const Text('📨 Send Logs'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Toplam $logCount adet log kaydı bulundu.'),
+            Text('Found $logCount log entries.'),
             const SizedBox(height: 16),
             const Text(
-              'Tüm loglar Telegram\'a TXT dosyası olarak gönderilecek ve cihazdan silinecek.',
+              'All logs will be sent to Telegram as TXT file and deleted from device.',
               style: TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 8),
             const Text(
-              '⚠️ Bu işlem geri alınamaz!',
+              '⚠️ This action cannot be undone!',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange,
@@ -95,7 +95,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('İptal'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton.icon(
             onPressed: () async {
@@ -103,7 +103,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
               await _sendLogsToTelegram();
             },
             icon: const Icon(Icons.send),
-            label: const Text('Gönder'),
+            label: const Text('Send'),
           ),
         ],
       ),
@@ -122,7 +122,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
           children: [
             CircularProgressIndicator(),
             SizedBox(width: 16),
-            Text('Loglar gönderiliyor...'),
+            Text('Sending logs...'),
           ],
         ),
       ),
@@ -139,8 +139,8 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       SnackBar(
         content: Text(
           success
-              ? '✅ Loglar başarıyla Telegram\'a gönderildi ve silindi'
-              : '❌ Log gönderimi başarısız oldu',
+              ? '✅ Logs sent to Telegram successfully and deleted'
+              : '❌ Failed to send logs',
         ),
         backgroundColor: success ? Colors.green : Colors.red,
       ),
@@ -203,28 +203,28 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
                 children: [
                   IconButton(
                     icon: const Icon(Icons.bug_report_outlined),
-                    tooltip: 'Log Gönder',
+                    tooltip: 'Send Logs',
                     onPressed: () => _showSendLogsDialog(context),
                   ),
                   if (logCount > 0)
                     Positioned(
-                      right: 8,
-                      top: 8,
+                      right: 6,
+                      top: 6,
                       child: Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        constraints: const BoxConstraints(
+                          minWidth: 14,
+                          minHeight: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.red,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
+                          borderRadius: BorderRadius.circular(7),
                         ),
                         child: Text(
                           logCount > 99 ? '99+' : logCount.toString(),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 10,
+                            fontSize: 8,
                             fontWeight: FontWeight.bold,
                           ),
                           textAlign: TextAlign.center,
