@@ -313,6 +313,7 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_goods_receipts_op_uid ON goods_receipts(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_employees_warehouse ON employees(warehouse_code)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_stokkodu ON urunler(StokKodu)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_aktif ON urunler(aktif)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_key ON birimler(_key)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_stokkodu ON birimler(StokKodu)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_barkod ON barkodlar(barkod)');

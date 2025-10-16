@@ -731,8 +731,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               return;
             }
 
-            _searchDebounce = Timer(const Duration(milliseconds: 800), () {
-              // Kullanıcı 800ms boyunca yazmadıysa arama yap
+            _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+              // Kullanıcı 400ms boyunca yazmadıysa arama yap
               // Controller'dan güncel değeri al (closure'daki eski value yerine)
               if (mounted) {
                 final currentValue = _productSearchController.text;

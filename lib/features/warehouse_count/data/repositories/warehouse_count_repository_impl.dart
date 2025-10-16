@@ -359,11 +359,17 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   Future<List<Map<String, dynamic>>> searchProductsPartial(String query) async {
     final db = await dbHelper.database;
 
+    // 🚀 OPTİMİZE EDİLMİŞ ARAMA
+    // - DISTINCT kaldırıldı (gereksiz yere yavaşlatıyor)
+    // - İndexler zaten var: idx_barkodlar_barkod, idx_urunler_stokkodu
+    // - LIKE 'query%' kullanıyoruz (index kullanabilir)
+    // - aktif kontrolü hızlı (boolean check)
+
     // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
     //         birimler._key_scf_stokkart = urunler._key
     // NOT: LEFT JOIN kullanıyoruz ki barkodu olmayan ürünler de gelsin
     final searchResults = await db.rawQuery('''
-      SELECT DISTINCT
+      SELECT
         b.barkod,
         bi._key as birim_key,
         bi.birimadi,
@@ -375,17 +381,23 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
       LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
       WHERE u.aktif = 1
-        AND (b.barkod LIKE ? OR u.StokKodu LIKE ? OR u.UrunAdi LIKE ?)
+        AND (
+          b.barkod LIKE ? || '%' OR
+          u.StokKodu LIKE ? || '%' OR
+          u.UrunAdi LIKE '%' || ? || '%'
+        )
       ORDER BY
         CASE
-          WHEN u.StokKodu LIKE ? THEN 1  -- Stok kodu eşleşmesi (ÖNCELİKLİ)
-          WHEN b.barkod LIKE ? THEN 2    -- Barkod eşleşmesi
-          WHEN u.UrunAdi LIKE ? THEN 3   -- Ürün adı eşleşmesi
-          ELSE 4
+          WHEN b.barkod = ? THEN 0       -- Tam barkod eşleşmesi (EN ÖNCELİKLİ)
+          WHEN u.StokKodu = ? THEN 1     -- Tam stok kodu eşleşmesi
+          WHEN b.barkod LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
+          WHEN u.StokKodu LIKE ? || '%' THEN 3  -- Stok kodu baştan eşleşmesi
+          WHEN u.UrunAdi LIKE '%' || ? || '%' THEN 4  -- Ürün adı içinde eşleşme
+          ELSE 5
         END,
         u.UrunAdi ASC
       LIMIT 5
-    ''', ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
+    ''', [query, query, query, query, query, query, query, query]);
 
     return searchResults;
   }
