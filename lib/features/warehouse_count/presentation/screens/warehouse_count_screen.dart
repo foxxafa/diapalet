@@ -70,6 +70,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   late BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _barcodeSub;
 
+  // 🔥 Debounce timer for search
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +84,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   @override
   void dispose() {
     _barcodeSub?.cancel();
+    _searchDebounce?.cancel();
     _palletBarcodeController.dispose();
     _productSearchController.dispose();
     _quantityController.dispose();
@@ -285,7 +289,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             if (boxUnitSelected && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: const Text('BOX birimi otomatik seçildi'),
+                  content: const Text('BOX unit auto-selected'),
                   duration: const Duration(milliseconds: 800),
                   backgroundColor: Colors.blue.shade700,
                 ),
@@ -533,6 +537,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     _productSearchResults = [];
     _isShelfValid = false;
 
+    // Debounce timer'ı iptal et
+    _searchDebounce?.cancel();
+
     // Focus'u doğru alana ver
     // Pallet modunda product search'e, product modunda product search'e focus ver
     _productSearchFocusNode.requestFocus();
@@ -648,7 +655,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         ButtonSegment(
           value: CountMode.pallet,
           label: Text('warehouse_count.mode.pallet'.tr()),
-          icon: const Icon(Icons.widgets),
+          icon: const Icon(Icons.pallet),
         ),
       ],
       selected: {_selectedMode},
@@ -712,10 +719,32 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                 _selectedBirimKey = null;
               });
             }
-            _searchProduct(value);
+
+            // 🔥 Debounce mekanizması: Önceki timer'ı iptal et ve yeni timer başlat
+            _searchDebounce?.cancel();
+
+            // Boş değer ise sonuçları temizle
+            if (value.trim().isEmpty) {
+              setState(() {
+                _productSearchResults = [];
+              });
+              return;
+            }
+
+            _searchDebounce = Timer(const Duration(milliseconds: 800), () {
+              // Kullanıcı 800ms boyunca yazmadıysa arama yap
+              // Controller'dan güncel değeri al (closure'daki eski value yerine)
+              if (mounted) {
+                final currentValue = _productSearchController.text;
+                if (currentValue.trim().isNotEmpty) {
+                  _searchProduct(currentValue);
+                }
+              }
+            });
           },
           onClear: () {
             // Çarpı ikonu tıklandığında tüm ürün seçimini temizle
+            _searchDebounce?.cancel();
             setState(() {
               _selectedBarcode = null;
               _selectedStokKodu = null;
@@ -781,7 +810,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Widget _buildExpiryDateField() {
-    // Ürün seçiliyse enabled (barkodu olsun olmasın)
+    // Ürün seçiliyse yazılabilir (barkodu olsun olmasın)
     final isProductSelected = _selectedStokKodu != null;
 
     return StatefulBuilder(
@@ -789,8 +818,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         return TextFormField(
           controller: _expiryDateController,
           focusNode: _expiryDateFocusNode,
-          enabled: isProductSelected,
-          readOnly: false,
+          readOnly: !isProductSelected, // Ürün seçilmemişse sadece oku
           keyboardType: const TextInputType.numberWithOptions(decimal: false),
           inputFormatters: [
             _DateInputFormatter(),
@@ -798,7 +826,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           decoration: InputDecoration(
             labelText: 'goods_receiving_screen.label_expiry_date'.tr(),
             hintText: 'DD/MM/YYYY',
-            enabled: isProductSelected,
+            // enabled parametresini KALDIRDIK - her zaman enabled, sadece readOnly değişiyor
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12.0),
             ),
@@ -895,9 +923,21 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   Widget _buildUnitDropdown() {
     debugPrint('🎨 Building unit dropdown with ${_availableUnits.length} units, selected: $_selectedBirimKey');
 
-    // ITEMS LİSTESİNİ OLUŞTUR
-    final dropdownItems = _availableUnits.isNotEmpty
-        ? _availableUnits.map((unit) {
+    // 🔥 YENİ: Önce benzersiz (unique) birimleri filtrele
+    final Map<String, Map<String, dynamic>> uniqueUnitsMap = {};
+    for (var unit in _availableUnits) {
+      final unitKey = unit['birim_key'] as String? ?? unit['_key'] as String?;
+      if (unitKey != null && !uniqueUnitsMap.containsKey(unitKey)) {
+        uniqueUnitsMap[unitKey] = unit;
+      }
+    }
+
+    final uniqueUnits = uniqueUnitsMap.values.toList();
+    debugPrint('   🔄 Filtered to ${uniqueUnits.length} unique units');
+
+    // ITEMS LİSTESİNİ OLUŞTUR (benzersiz birimlerden)
+    final dropdownItems = uniqueUnits.isNotEmpty
+        ? uniqueUnits.map((unit) {
             final unitName = unit['birimadi'] as String? ?? 'Birim';
             final unitKey = unit['birim_key'] as String? ?? unit['_key'] as String?;
             debugPrint('   📋 Dropdown item: $unitName (key: $unitKey)');
@@ -968,6 +1008,11 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.next,
+            onFieldSubmitted: (value) {
+              // Quantity girildikten sonra shelf'e focus yap
+              _shelfFocusNode.requestFocus();
+            },
           ),
         ),
         const SizedBox(width: 8),
