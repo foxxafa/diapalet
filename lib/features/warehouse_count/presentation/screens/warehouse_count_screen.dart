@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/sound_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/widgets/qr_text_field.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
@@ -72,6 +73,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
   // 🔥 Debounce timer for search
   Timer? _searchDebounce;
+
+  // 🔥 YENİ: Hızlı yazım algılama (el terminali tespiti)
+  String _previousValue = ''; // Önceki değer
+  DateTime? _lastChangeTime; // Son değişiklik zamanı
+  static const _scannerInputThreshold = Duration(milliseconds: 100); // 100ms'den hızlı = el terminali
+  static const _minBarcodeLength = 8; // Minimum barkod uzunluğu
 
   @override
   void initState() {
@@ -166,6 +173,29 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         }
 
         debugPrint('   - Benzersiz ürün sayısı: ${uniqueProducts.length}');
+
+        // 🔊 SES BİLDİRİMİ: El terminali ile arama yapıldıysa ses çal
+        if (isFromBarcodeScanner) {
+          final soundService = Provider.of<SoundService>(context, listen: false);
+          if (searchResults.isNotEmpty) {
+            // Ürün bulundu - başarı sesi
+            soundService.playSuccessSound();
+            debugPrint('🔊 Başarılı arama - boopk.mp3 çalınıyor');
+          } else {
+            // Ürün bulunamadı - hata sesi + snackbar
+            soundService.playErrorSound();
+            debugPrint('🔊 Başarısız arama - wrongk.mp3 çalınıyor');
+
+            // Snackbar ile kullanıcıya bildir
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('No product found'),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
+        }
 
         // TEK ÜRÜN KONTROLÜ (hem barkod scanner hem manuel arama için)
         if (searchResults.isNotEmpty && uniqueProducts.length == 1) {
@@ -291,7 +321,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                 SnackBar(
                   content: const Text('BOX unit auto-selected'),
                   duration: const Duration(milliseconds: 800),
-                  backgroundColor: Colors.blue.shade700,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
               );
             }
@@ -540,6 +570,10 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     // Debounce timer'ı iptal et
     _searchDebounce?.cancel();
 
+    // Scanner algılama değişkenlerini sıfırla
+    _previousValue = '';
+    _lastChangeTime = null;
+
     // Focus'u doğru alana ver
     // Pallet modunda product search'e, product modunda product search'e focus ver
     _productSearchFocusNode.requestFocus();
@@ -567,7 +601,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
   }
@@ -576,7 +610,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: const Color(0xFF4CAF50), // AppTheme.accentColor (yeşil)
       ),
     );
   }
@@ -593,54 +627,54 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           : GestureDetector(
               onTap: () => FocusScope.of(context).unfocus(),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Mode Selector
-                    _buildModeSelector(),
-                    const SizedBox(height: _gap),
-
-                    // Pallet Barcode Field (only for pallet mode)
-                    if (_selectedMode.isPallet) ...[
-                      _buildPalletBarcodeField(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Mode Selector
+                      _buildModeSelector(),
                       const SizedBox(height: _gap),
+
+                      // Pallet Barcode Field (only for pallet mode)
+                      if (_selectedMode.isPallet) ...[
+                        _buildPalletBarcodeField(),
+                        const SizedBox(height: _gap),
+                      ],
+
+                      // Product Search with QR (HER ZAMAN VAR - hem product hem pallet modda)
+                      _buildProductSearchField(),
+                      const SizedBox(height: _gap),
+
+                      // Row 1: Expiry Date + Unit Dropdown
+                      _buildExpiryDateAndUnitRow(),
+                      const SizedBox(height: _gap),
+
+                      // Row 2: Quantity + Shelf (with QR)
+                      _buildQuantityAndShelfRow(),
+                      const SizedBox(height: _gap),
+
+                      // Add Button
+                      _buildAddButton(),
+                      const SizedBox(height: 24),
+
+                      // Last Added Item Display
+                      if (_countedItems.isNotEmpty) ...[
+                        Text(
+                          '${'warehouse_count.counted_items'.tr()} (${_countedItems.length})',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        CountedItemsReviewTable(
+                          items: [_countedItems.last], // Sadece son eklenen item
+                          onItemRemoved: _removeCountItem,
+                        ),
+                      ],
                     ],
-
-                    // Product Search with QR (HER ZAMAN VAR - hem product hem pallet modda)
-                    _buildProductSearchField(),
-                    const SizedBox(height: _gap),
-
-                    // Row 1: Expiry Date + Unit Dropdown
-                    _buildExpiryDateAndUnitRow(),
-                    const SizedBox(height: _gap),
-
-                    // Row 2: Quantity + Shelf (with QR)
-                    _buildQuantityAndShelfRow(),
-                    const SizedBox(height: _gap),
-
-                    // Add Button
-                    _buildAddButton(),
-                    const SizedBox(height: 24),
-
-                    // Last Added Item Display
-                    if (_countedItems.isNotEmpty) ...[
-                      Text(
-                        '${'warehouse_count.counted_items'.tr()} (${_countedItems.length})',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      CountedItemsReviewTable(
-                        items: [_countedItems.last], // Sadece son eklenen item
-                        onItemRemoved: _removeCountItem,
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
-            ),
     );
   }
 
@@ -698,7 +732,44 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           showClearButton: true,
           onQrTap: _openQrScanner,
           onChanged: (value) {
-            debugPrint('🟢 onChanged called: value=$value, flag=$_isProcessingBarcodeScanner');
+            debugPrint('🟢 onChanged called: value=$value');
+
+            // 🔥 YENİ: Hızlı girdi algılama (el terminali tespiti)
+            final now = DateTime.now();
+            bool isFromScanner = false;
+
+            // Eğer önceki değer BOŞ veya ÇOK KISA idi ve şimdi bir anda UZUN bir değer geldiyse = EL TERMİNALİ
+            final previousLength = _previousValue.length;
+            final currentLength = value.length;
+            final addedChars = currentLength - previousLength;
+
+            debugPrint('   📊 Önceki uzunluk: $previousLength, Şimdiki uzunluk: $currentLength');
+            debugPrint('   📝 Eklenen karakter sayısı: $addedChars');
+
+            // Eğer _lastChangeTime varsa, son değişiklikten beri geçen süreyi ölç
+            if (_lastChangeTime != null) {
+              final timeSinceLastChange = now.difference(_lastChangeTime!);
+              debugPrint('   ⏱️ Son değişiklikten beri geçen süre: ${timeSinceLastChange.inMilliseconds}ms');
+
+              // SCANNER KOŞULLARI:
+              // 1. Bir anda çok fazla karakter eklendiyse (>= 8)
+              // 2. Çok kısa sürede gerçekleştiyse (<= 100ms)
+              // 3. Toplam uzunluk minimum barkod uzunluğundan fazlaysa
+              if (addedChars >= _minBarcodeLength &&
+                  timeSinceLastChange <= _scannerInputThreshold &&
+                  currentLength >= _minBarcodeLength) {
+                isFromScanner = true;
+                debugPrint('   🔴 EL TERMİNALİ ALGILANDI! ($addedChars karakter ${timeSinceLastChange.inMilliseconds}ms içinde eklendi)');
+              }
+            } else if (currentLength >= _minBarcodeLength && previousLength == 0) {
+              // İLK GİRİŞ ve UZUN: Muhtemelen scanner (field boşken bir anda 13 karakter geldi)
+              isFromScanner = true;
+              debugPrint('   🔴 EL TERMİNALİ ALGILANDI! (Field boşken bir anda $currentLength karakter geldi)');
+            }
+
+            // Değişkenleri güncelle
+            _previousValue = value;
+            _lastChangeTime = now;
 
             // 🔥 YENİ: Eğer barkod scanner işlemi devam ediyorsa, onChanged'i yok say
             if (_isProcessingBarcodeScanner) {
@@ -727,6 +798,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             if (value.trim().isEmpty) {
               setState(() {
                 _productSearchResults = [];
+                _previousValue = '';
+                _lastChangeTime = null;
               });
               return;
             }
@@ -737,7 +810,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               if (mounted) {
                 final currentValue = _productSearchController.text;
                 if (currentValue.trim().isNotEmpty) {
-                  _searchProduct(currentValue);
+                  // El terminali algılandıysa flag'i set et
+                  _searchProduct(currentValue, isFromBarcodeScanner: isFromScanner);
                 }
               }
             });
@@ -752,6 +826,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               _availableUnits = [];
               _selectedBirimKey = null;
               _productSearchResults = [];
+              _previousValue = '';
+              _lastChangeTime = null;
             });
           },
         ),
@@ -880,7 +956,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(errorMessage),
-                    backgroundColor: Colors.red,
+                    backgroundColor: Theme.of(context).colorScheme.error,
                   ),
                 );
               }

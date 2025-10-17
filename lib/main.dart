@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/sound_service.dart';
 import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
@@ -91,6 +92,7 @@ void main() async {
           Provider<Dio>.value(value: dio),
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<BarcodeIntentService>(create: (_) => BarcodeIntentService()),
+          Provider<SoundService>(create: (_) => SoundService()),
           ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
 
           // SyncService
