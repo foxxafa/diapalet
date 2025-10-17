@@ -359,17 +359,36 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   Future<List<Map<String, dynamic>>> searchProductsPartial(String query) async {
     final db = await dbHelper.database;
 
-    // 🚀 OPTİMİZE EDİLMİŞ ARAMA
-    // - Her birim için SADECE BİR barkod getir (GROUP BY ile)
-    // - İndexler zaten var: idx_barkodlar_barkod, idx_urunler_stokkodu
-    // - LIKE 'query%' kullanıyoruz (index kullanabilir)
-    // - aktif kontrolü hızlı (boolean check)
+    // 🔥 KELİME BAZLI ESNEk ARAMA
+    // Kullanıcı "caca 500" yazarsa -> CACAO ve 500 içeren ürünleri bul
+    // Kelimelerin sırası önemli değil, tümü eşleşmeli
+
+    // Query'yi kelimelere böl ve temizle
+    final keywords = query
+        .trim()
+        .toUpperCase()
+        .split(RegExp(r'\s+'))  // Boşluklara göre böl
+        .where((word) => word.isNotEmpty)
+        .toList();
+
+    if (keywords.isEmpty) {
+      return [];
+    }
+
+    debugPrint('🔍 Arama kelimeleri: $keywords');
 
     // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
     //         birimler._key_scf_stokkart = urunler._key
     // NOT: LEFT JOIN kullanıyoruz ki barkodu olmayan ürünler de gelsin
     //      GROUP BY ile her birim için sadece 1 kayıt (ilk barkod veya NULL)
-    final searchResults = await db.rawQuery('''
+
+    // WHERE koşulunu dinamik olarak oluştur
+    // Her kelime için: (UrunAdi LIKE '%kelime%' OR StokKodu LIKE '%kelime%' OR barkod LIKE '%kelime%')
+    final whereConditions = keywords.map((keyword) {
+      return "(UPPER(u.UrunAdi) LIKE '%$keyword%' OR UPPER(u.StokKodu) LIKE '%$keyword%' OR UPPER(b.barkod) LIKE '%$keyword%')";
+    }).join(' AND ');
+
+    final sqlQuery = '''
       SELECT
         MIN(b.barkod) as barkod,
         bi._key as birim_key,
@@ -382,24 +401,33 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
       LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
       WHERE u.aktif = 1
-        AND (
-          b.barkod LIKE ? || '%' OR
-          u.StokKodu LIKE ? || '%' OR
-          u.UrunAdi LIKE '%' || ? || '%'
-        )
+        AND ($whereConditions)
       GROUP BY bi._key, u._key
       ORDER BY
         CASE
-          WHEN MIN(b.barkod) = ? THEN 0       -- Tam barkod eşleşmesi (EN ÖNCELİKLİ)
-          WHEN u.StokKodu = ? THEN 1          -- Tam stok kodu eşleşmesi
-          WHEN MIN(b.barkod) LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
-          WHEN u.StokKodu LIKE ? || '%' THEN 3       -- Stok kodu baştan eşleşmesi
-          WHEN u.UrunAdi LIKE '%' || ? || '%' THEN 4 -- Ürün adı içinde eşleşme
-          ELSE 5
+          -- Tam eşleşmeler (en yüksek öncelik)
+          WHEN UPPER(MIN(b.barkod)) = ? THEN 0       -- Tam barkod eşleşmesi
+          WHEN UPPER(u.StokKodu) = ? THEN 1          -- Tam stok kodu eşleşmesi
+          -- Baştan eşleşmeler
+          WHEN UPPER(MIN(b.barkod)) LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
+          WHEN UPPER(u.StokKodu) LIKE ? || '%' THEN 3       -- Stok kodu baştan eşleşmesi
+          -- Ürün adı eşleşmeleri
+          WHEN UPPER(u.UrunAdi) LIKE ? || '%' THEN 4        -- Ürün adı baştan eşleşmesi
+          WHEN UPPER(u.UrunAdi) LIKE '%' || ? || '%' THEN 5 -- Ürün adı içinde eşleşme
+          ELSE 6
         END,
         u.UrunAdi ASC
-      LIMIT 5
-    ''', [query, query, query, query, query, query, query, query]);
+      LIMIT 20
+    ''';
+
+    // Parametreleri hazırla (önceliklendirme için ilk kelimeyi kullan)
+    final firstKeyword = keywords.first;
+    final searchResults = await db.rawQuery(
+      sqlQuery,
+      [firstKeyword, firstKeyword, firstKeyword, firstKeyword, firstKeyword, firstKeyword],
+    );
+
+    debugPrint('🔍 Bulunan sonuç sayısı: ${searchResults.length}');
 
     return searchResults;
   }
