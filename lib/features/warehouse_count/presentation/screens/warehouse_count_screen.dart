@@ -89,6 +89,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     _barcodeService = Provider.of<BarcodeIntentService>(context, listen: false);
     _initBarcodeListener();
     _loadExistingItems();
+
+    // 🔥 YENİ: Sayfa açıldığında doğru alana focus ver
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Varsayılan mod product, bu yüzden product search'e focus ver
+        _productSearchFocusNode.requestFocus();
+      }
+    });
   }
 
   @override
@@ -353,7 +361,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  Future<void> _openQrScanner() async {
+  Future<void> _openQrScannerForProduct() async {
     final barcode = await Navigator.push<String>(
       context,
       MaterialPageRoute(
@@ -575,11 +583,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
-  void _clearInputs() {
-    // Pallet modunda pallet barkodunu KORUYORUZ (sadece ürün bilgilerini temizle)
-    if (!_selectedMode.isPallet) {
-      _palletBarcodeController.clear();
-    }
+  void _clearInputs({
+    bool focusOnPallet = false,
+    bool skipFocus = false,
+    bool includeModeChange = false,
+    CountMode? newMode
+  }) {
+    debugPrint('🟡 _clearInputs BAŞLADI: focusOnPallet=$focusOnPallet, skipFocus=$skipFocus, current mode=$_selectedMode');
+
+    // 🔥 YENİ: Add to Count'dan sonra pallet barkodunu da sıfırla
+    // NOT: İlerde pallet barkodunun korunması istenirse aşağıdaki satırı yorum satırı yapın
+    _palletBarcodeController.clear();
+
+    // 🔥 ESKİ KOD (İlerde pallet barkodu korunması istenirse alttaki 3 satırı uncomment edin):
+    // if (!_selectedMode.isPallet) {
+    //   _palletBarcodeController.clear();
+    // }
 
     _productSearchController.clear();
     _quantityController.clear();
@@ -594,7 +613,15 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       _availableUnits = [];
       _productSearchResults = [];
       _isShelfValid = false;
+
+      // 🔥 YENİ: Eğer mod değişikliği varsa burada da değiştir
+      if (includeModeChange && newMode != null) {
+        debugPrint('🟡 _clearInputs: Mode değiştiriliyor (includeModeChange=true): $_selectedMode -> $newMode');
+        _selectedMode = newMode;
+      }
     });
+
+    debugPrint('🟡 _clearInputs: setState tamamlandı, current mode=$_selectedMode');
 
     // Debounce timer'ı iptal et
     _searchDebounce?.cancel();
@@ -604,12 +631,33 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     _lastChangeTime = null;
     _inputStartTime = null;
 
-    // Focus'u doğru alana ver (async olarak, frame bitiminde)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _productSearchFocusNode.requestFocus();
-      }
-    });
+    // Focus'u doğru alana ver (setState'ten sonra, frame bitiminde)
+    if (!skipFocus) {
+      debugPrint('🟡 _clearInputs: Focus yönetimi başlıyor (skipFocus=false)');
+      // 🔥 Widget tree rebuild edildikten sonra focus ver
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          debugPrint('🟡 _clearInputs: postFrameCallback çalıştı');
+
+          // Kısa bir gecikme ile doğru alana focus ver
+          // Bu, widget tree'nin tamamen rebuild edilmesini bekler
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              // 🔥 YENİ: Eğer pallet moduna geçiliyorsa pallet barcode'a focus ver
+              if (focusOnPallet) {
+                debugPrint('🟢 _clearInputs: Focus veriliyor -> PALLET BARCODE (current mode=$_selectedMode)');
+                _palletBarcodeFocusNode.requestFocus();
+              } else {
+                debugPrint('🟢 _clearInputs: Focus veriliyor -> PRODUCT SEARCH (current mode=$_selectedMode)');
+                _productSearchFocusNode.requestFocus();
+              }
+            }
+          });
+        }
+      });
+    } else {
+      debugPrint('🟡 _clearInputs: Focus atlandı (skipFocus=true)');
+    }
   }
 
   Future<void> _removeCountItem(CountItem item) async {
@@ -670,12 +718,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
                       // Pallet Barcode Field (only for pallet mode)
                       if (_selectedMode.isPallet) ...[
-                        _buildPalletBarcodeField(),
+                        Builder(
+                          builder: (context) {
+                            debugPrint('🔵 BUILD: Pallet Barcode Field render ediliyor (mode=$_selectedMode)');
+                            return _buildPalletBarcodeField();
+                          },
+                        ),
                         const SizedBox(height: _gap),
                       ],
 
                       // Product Search with QR (HER ZAMAN VAR - hem product hem pallet modda)
-                      _buildProductSearchField(),
+                      Builder(
+                        builder: (context) {
+                          debugPrint('🔵 BUILD: Product Search Field render ediliyor (mode=$_selectedMode)');
+                          return _buildProductSearchField();
+                        },
+                      ),
                       const SizedBox(height: _gap),
 
                       // Row 1: Expiry Date + Unit Dropdown
@@ -731,21 +789,36 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       ],
       selected: {_selectedMode},
       onSelectionChanged: (Set<CountMode> newSelection) {
+        final newMode = newSelection.first;
+        debugPrint('🔴 MODE SELECTOR: onSelectionChanged called, newMode=$newMode, current mode=$_selectedMode');
+
+        // 🔥 EN ÖNCE tüm focus'ları temizle (setState'ten ÖNCE!)
+        FocusScope.of(context).unfocus();
+        debugPrint('🔴 MODE SELECTOR: Focus temizlendi');
+
+        // 🔥 SONRA modu değiştir (setState ile)
         setState(() {
-          _selectedMode = newSelection.first;
-          _clearInputs();
+          _selectedMode = newMode;
+          debugPrint('🔴 MODE SELECTOR: setState completed, _selectedMode=$_selectedMode');
         });
+
+        // 🔥 EN SON inputları temizle ve focus yönet
+        // includeModeChange: false çünkü mod zaten yukarıda değiştirildi
+        debugPrint('🔴 MODE SELECTOR: Calling _clearInputs with focusOnPallet=${newMode.isPallet}');
+        _clearInputs(focusOnPallet: newMode.isPallet, includeModeChange: false);
       },
     );
   }
 
   Widget _buildPalletBarcodeField() {
+    debugPrint('🟣 _buildPalletBarcodeField: Building, hasFocus=${_palletBarcodeFocusNode.hasFocus}');
     return QrTextField(
       controller: _palletBarcodeController,
       focusNode: _palletBarcodeFocusNode,
       labelText: 'warehouse_count.pallet_barcode'.tr(),
       showClearButton: true,
-      onQrTap: _openQrScanner,
+      // onQrTap verilmediğinde QrTextField varsayılan davranışı kullanır:
+      // QR scanner açar ve sonucu controller'a yazar (shelf gibi)
       validator: (value) {
         if (_selectedMode.isPallet && (value == null || value.isEmpty)) {
           return 'warehouse_count.error.scan_pallet'.tr();
@@ -756,6 +829,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Widget _buildProductSearchField() {
+    debugPrint('🟣 _buildProductSearchField: Building, hasFocus=${_productSearchFocusNode.hasFocus}');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -767,7 +841,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               ? '$_selectedProductName ($_selectedStokKodu)'
               : 'warehouse_count.search_product'.tr(),
           showClearButton: true,
-          onQrTap: _openQrScanner,
+          onQrTap: _openQrScannerForProduct, // 🔥 YENİ: Product'a özel QR scanner
           onChanged: (value) {
             debugPrint('🟢 onChanged called: value=$value');
 
