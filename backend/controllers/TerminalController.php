@@ -3078,6 +3078,7 @@ class TerminalController extends Controller
                     'StokKodu' => $item['StokKodu'] ?? null,
                     'shelf_code' => $item['shelf_code'] ?? null,
                     'expiry_date' => $item['expiry_date'] ?? null,
+                    'is_damaged' => isset($item['is_damaged']) ? ($item['is_damaged'] ? 1 : 0) : 0,
                     'created_at' => isset($item['created_at']) ? $this->convertIso8601ToMysqlDatetime($item['created_at']) : new \yii\db\Expression('NOW()'),
                     'updated_at' => isset($item['updated_at']) ? $this->convertIso8601ToMysqlDatetime($item['updated_at']) : new \yii\db\Expression('NOW()'),
                 ])->execute();

@@ -65,6 +65,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
   // Validation error states
   bool _isShelfValid = false;
+  bool _isDamaged = false; // Damaged product checkbox state
 
   // 🔥 YENİ: Barkod okutma flag'i
   bool _isProcessingBarcodeScanner = false;
@@ -515,6 +516,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
         // Expiry date her zaman var (ürün ekleniyorsa gerekli)
         expiryDate: _expiryDateController.text.trim().isNotEmpty ? _expiryDateController.text.trim() : null,
         stokKodu: _selectedStokKodu,
+        isDamaged: _isDamaged,
         createdAt: now,
         updatedAt: now,
       );
@@ -613,6 +615,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       _availableUnits = [];
       _productSearchResults = [];
       _isShelfValid = false;
+      _isDamaged = false; // Reset damaged checkbox
 
       // 🔥 YENİ: Eğer mod değişikliği varsa burada da değiştir
       if (includeModeChange && newMode != null) {
@@ -742,6 +745,10 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
                       // Row 2: Quantity + Shelf (with QR)
                       _buildQuantityAndShelfRow(),
+                      const SizedBox(height: _gap),
+
+                      // Damaged Product Checkbox
+                      _buildDamagedCheckbox(),
                       const SizedBox(height: _gap),
 
                       // Add Button
@@ -938,8 +945,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               return;
             }
 
-            _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-              // Kullanıcı 400ms boyunca yazmadıysa arama yap
+            _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+              // Kullanıcı 250ms boyunca yazmadıysa arama yap (optimize edildi)
               // Controller'dan güncel değeri al (closure'daki eski value yerine)
               if (mounted) {
                 final currentValue = _productSearchController.text;
@@ -1219,7 +1226,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            textInputAction: TextInputAction.next,
+            textInputAction: TextInputAction.done,
             onFieldSubmitted: (value) {
               // Quantity girildikten sonra shelf'e focus yap
               _shelfFocusNode.requestFocus();
@@ -1261,6 +1268,23 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDamagedCheckbox() {
+    return CheckboxListTile(
+      value: _isDamaged,
+      onChanged: (value) {
+        setState(() {
+          _isDamaged = value ?? false;
+        });
+      },
+      title: const Text('Is the product damaged?'),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      controlAffinity: ListTileControlAffinity.leading,
+      dense: true,
+      activeColor: Theme.of(context).colorScheme.error,
+      checkColor: Colors.white,
     );
   }
 

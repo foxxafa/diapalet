@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 72; // added log_entries table for hybrid logging system
+  static const _databaseVersion = 74; // added is_damaged column to count_items table for damaged product tracking
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -319,6 +319,14 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_barkod ON barkodlar(barkod)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_barkodlar_key_birimler ON barkodlar(_key_scf_stokkart_birimleri)');
 
+      // 🚀 PRODUCT SEARCH PERFORMANCE INDEXES - Added for warehouse count search optimization
+      // These indexes dramatically speed up multi-keyword product searches (e.g., "yog 500")
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_urunadi ON urunler(UrunAdi)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_birimler_scf_stokkart ON birimler(_key_scf_stokkart)');
+
+      // Composite index for common search patterns (aktif + UrunAdi)
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_urunler_aktif_urunadi ON urunler(aktif, UrunAdi)');
+
       // Warehouse Count Tables (Upload-only, no sync back)
       batch.execute('''
         CREATE TABLE IF NOT EXISTS count_sheets (
@@ -349,6 +357,7 @@ class DatabaseHelper {
           StokKodu TEXT,
           shelf_code TEXT,
           expiry_date TEXT,
+          is_damaged INTEGER DEFAULT 0,
           created_at TEXT,
           updated_at TEXT
         )

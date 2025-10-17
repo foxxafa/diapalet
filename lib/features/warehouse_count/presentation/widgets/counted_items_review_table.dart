@@ -71,11 +71,13 @@ class CountedItemsReviewTable extends StatelessWidget {
       color: index.isEven ? Colors.grey[50] : Colors.white,
       child: Row(
         children: [
-          // Tip ikonu (küçük)
+          // Tip ikonu (küçük) - Hasarlıysa kırmızı
           Icon(
             isProduct ? Icons.inventory_2 : Icons.pallet,
             size: 16,
-            color: theme.colorScheme.primary.withOpacity(0.7),
+            color: item.isDamaged
+                ? theme.colorScheme.error
+                : theme.colorScheme.primary.withOpacity(0.7),
           ),
           const SizedBox(width: 6),
 

@@ -358,16 +358,12 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   Future<List<Map<String, dynamic>>> searchProductsPartial(String query) async {
     final db = await dbHelper.database;
+    final stopwatch = Stopwatch()..start();
 
-    // 🔥 KELİME BAZLI ESNEk ARAMA
-    // Kullanıcı "caca 500" yazarsa -> CACAO ve 500 içeren ürünleri bul
-    // Kelimelerin sırası önemli değil, tümü eşleşmeli
-
-    // Query'yi kelimelere böl ve temizle
     final keywords = query
         .trim()
         .toUpperCase()
-        .split(RegExp(r'\s+'))  // Boşluklara göre böl
+        .split(RegExp(r'\s+'))
         .where((word) => word.isNotEmpty)
         .toList();
 
@@ -377,20 +373,73 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
 
     debugPrint('🔍 Arama kelimeleri: $keywords');
 
-    // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
-    //         birimler._key_scf_stokkart = urunler._key
-    // NOT: LEFT JOIN kullanıyoruz ki barkodu olmayan ürünler de gelsin
-    //      GROUP BY ile her birim için sadece 1 kayıt (ilk barkod veya NULL)
+    // Tek kelime ve rakam ise barkod/stok kodu olabilir
+    final isSingleNumeric = keywords.length == 1 && RegExp(r'^\d+$').hasMatch(keywords.first);
 
-    // WHERE koşulunu dinamik olarak oluştur
-    // Her kelime için: (UrunAdi LIKE '%kelime%' OR StokKodu LIKE '%kelime%' OR barkod LIKE '%kelime%')
-    final whereConditions = keywords.map((keyword) {
-      return "(UPPER(u.UrunAdi) LIKE '%$keyword%' OR UPPER(u.StokKodu) LIKE '%$keyword%' OR UPPER(b.barkod) LIKE '%$keyword%')";
-    }).join(' AND ');
+    if (isSingleNumeric) {
+      // Önce barkod araması (çok hızlı - indexed)
+      final barkodQuery = '''
+        SELECT
+          b.barkod,
+          bi._key as birim_key,
+          bi.birimadi,
+          u.StokKodu,
+          u._key as urun_key,
+          u.UrunAdi,
+          u.UrunId
+        FROM barkodlar b
+        INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+        INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
+        WHERE u.aktif = 1 AND b.barkod LIKE ?
+        LIMIT 20
+      ''';
 
-    final sqlQuery = '''
+      var searchResults = await db.rawQuery(barkodQuery, ['${keywords.first}%']);
+
+      debugPrint('⚡ Barkod araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+      // Barkod bulunamadıysa StokKodu'nda ara
+      if (searchResults.isEmpty) {
+        final stokQuery = '''
+          SELECT
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.StokKodu LIKE ?
+          ORDER BY u.StokKodu ASC
+          LIMIT 20
+        ''';
+
+        searchResults = await db.rawQuery(stokQuery, ['${keywords.first}%']);
+        debugPrint('⚡ StokKodu araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+      }
+
+      stopwatch.stop();
+      debugPrint('🔍 Toplam: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+      return searchResults;
+    }
+
+    // Çoklu kelime veya harf içeriyor - UrunAdi'nde ara
+    final List<String> conditions = [];
+    final List<String> params = [];
+
+    for (final keyword in keywords) {
+      conditions.add('u.UrunAdi LIKE ?');
+      params.add('$keyword%');
+    }
+
+    final whereClause = conditions.join(' AND ');
+
+    final simpleQuery = '''
       SELECT
-        MIN(b.barkod) as barkod,
+        b.barkod,
         bi._key as birim_key,
         bi.birimadi,
         u.StokKodu,
@@ -400,34 +449,51 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
       FROM urunler u
       INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
       LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
-      WHERE u.aktif = 1
-        AND ($whereConditions)
-      GROUP BY bi._key, u._key
-      ORDER BY
-        CASE
-          -- Tam eşleşmeler (en yüksek öncelik)
-          WHEN UPPER(MIN(b.barkod)) = ? THEN 0       -- Tam barkod eşleşmesi
-          WHEN UPPER(u.StokKodu) = ? THEN 1          -- Tam stok kodu eşleşmesi
-          -- Baştan eşleşmeler
-          WHEN UPPER(MIN(b.barkod)) LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
-          WHEN UPPER(u.StokKodu) LIKE ? || '%' THEN 3       -- Stok kodu baştan eşleşmesi
-          -- Ürün adı eşleşmeleri
-          WHEN UPPER(u.UrunAdi) LIKE ? || '%' THEN 4        -- Ürün adı baştan eşleşmesi
-          WHEN UPPER(u.UrunAdi) LIKE '%' || ? || '%' THEN 5 -- Ürün adı içinde eşleşme
-          ELSE 6
-        END,
-        u.UrunAdi ASC
+      WHERE u.aktif = 1 AND $whereClause
+      ORDER BY u.UrunAdi ASC
       LIMIT 20
     ''';
 
-    // Parametreleri hazırla (önceliklendirme için ilk kelimeyi kullan)
-    final firstKeyword = keywords.first;
-    final searchResults = await db.rawQuery(
-      sqlQuery,
-      [firstKeyword, firstKeyword, firstKeyword, firstKeyword, firstKeyword, firstKeyword],
-    );
+    var searchResults = await db.rawQuery(simpleQuery, params);
 
-    debugPrint('🔍 Bulunan sonuç sayısı: ${searchResults.length}');
+    debugPrint('⚡ UrunAdi araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+    // Yeterli sonuç yoksa genel arama
+    if (searchResults.length < 5) {
+      debugPrint('🔍 Genel arama yapılıyor...');
+
+      final List<String> generalCond = [];
+      final List<String> generalParams = [];
+
+      for (final keyword in keywords) {
+        generalCond.add('u.UrunAdi LIKE ?');
+        generalParams.add('%$keyword%');
+      }
+
+      final generalWhere = generalCond.join(' AND ');
+
+      final generalQuery = '''
+        SELECT
+          b.barkod,
+          bi._key as birim_key,
+          bi.birimadi,
+          u.StokKodu,
+          u._key as urun_key,
+          u.UrunAdi,
+          u.UrunId
+        FROM urunler u
+        INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+        LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+        WHERE u.aktif = 1 AND $generalWhere
+        ORDER BY u.UrunAdi ASC
+        LIMIT 20
+      ''';
+
+      searchResults = await db.rawQuery(generalQuery, generalParams);
+    }
+
+    stopwatch.stop();
+    debugPrint('🔍 Toplam: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
 
     return searchResults;
   }

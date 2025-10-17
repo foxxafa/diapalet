@@ -12,6 +12,7 @@ class CountItem {
   final String? stokKodu; // Stock code
   final String? shelfCode; // Shelf code for display
   final String? expiryDate; // Expiry date (for product mode)
+  final bool isDamaged; // Whether the product is damaged
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -27,6 +28,7 @@ class CountItem {
     this.stokKodu,
     this.shelfCode,
     this.expiryDate,
+    this.isDamaged = false, // Default to not damaged
     this.createdAt,
     this.updatedAt,
   });
@@ -45,6 +47,7 @@ class CountItem {
       stokKodu: map['StokKodu'] as String?,
       shelfCode: map['shelf_code'] as String?,
       expiryDate: map['expiry_date'] as String?,
+      isDamaged: (map['is_damaged'] as int?) == 1,
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'] as String)
           : null,
@@ -68,6 +71,7 @@ class CountItem {
       if (stokKodu != null) 'StokKodu': stokKodu,
       if (shelfCode != null) 'shelf_code': shelfCode,
       if (expiryDate != null) 'expiry_date': expiryDate,
+      'is_damaged': isDamaged ? 1 : 0,
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
@@ -87,6 +91,7 @@ class CountItem {
       'StokKodu': stokKodu, // Always send, even if null
       'shelf_code': shelfCode, // Always send, even if null
       'expiry_date': expiryDate, // Always send, even if null
+      'is_damaged': isDamaged ? 1 : 0, // Always send
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
@@ -111,6 +116,7 @@ class CountItem {
     String? stokKodu,
     String? shelfCode,
     String? expiryDate,
+    bool? isDamaged,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -126,6 +132,7 @@ class CountItem {
       stokKodu: stokKodu ?? this.stokKodu,
       shelfCode: shelfCode ?? this.shelfCode,
       expiryDate: expiryDate ?? this.expiryDate,
+      isDamaged: isDamaged ?? this.isDamaged,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
