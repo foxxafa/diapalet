@@ -53,6 +53,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
   List<CountItem> _countedItems = [];
   bool _isLoading = false;
+  bool _isAdding = false; // 🔥 YENİ: Ekleme işlemi devam ediyor mu?
 
   // Product selection state
   String? _selectedBarcode;
@@ -77,7 +78,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   // 🔥 YENİ: Hızlı yazım algılama (el terminali tespiti)
   String _previousValue = ''; // Önceki değer
   DateTime? _lastChangeTime; // Son değişiklik zamanı
+  DateTime? _inputStartTime; // İlk karakter ne zaman geldi (ortalama hız için)
   static const _scannerInputThreshold = Duration(milliseconds: 100); // 100ms'den hızlı = el terminali
+  static const _avgCharInputThreshold = 20; // Ortalama karakter başına max 20ms = scanner
   static const _minBarcodeLength = 8; // Minimum barkod uzunluğu
 
   @override
@@ -197,10 +200,11 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           }
         }
 
-        // TEK ÜRÜN KONTROLÜ (hem barkod scanner hem manuel arama için)
-        if (searchResults.isNotEmpty && uniqueProducts.length == 1) {
-          // TEK ÜRÜN VAR! Dropdown göstermeden otomatik seç
-          debugPrint('✅ TEK ÜRÜN BULUNDU! Otomatik seçiliyor...');
+        // 🔥 TEK KAYIT KONTROLÜ: Sadece searchResults.length == 1 ise otomatik seç
+        // (Aynı üründen farklı birimler varsa dropdown göster)
+        if (searchResults.length == 1) {
+          // TEK KAYIT VAR! Dropdown göstermeden otomatik seç
+          debugPrint('✅ TEK KAYIT BULUNDU! Otomatik seçiliyor...');
           debugPrint('   - Seçilen ürün: ${searchResults.first}');
           debugPrint('   - isFromBarcodeScanner: $isFromBarcodeScanner');
           setState(() {
@@ -209,8 +213,8 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
           // 🔥 Otomatik seçim bayrağını ekle
           _selectProduct(searchResults.first, isFromBarcodeScanner: isFromBarcodeScanner, isAutoSelection: true);
           return; // Erken çık, dropdown gösterilmeyecek
-        } else if (searchResults.isNotEmpty) {
-          debugPrint('⚠️ Birden fazla ürün bulundu, dropdown gösteriliyor...');
+        } else if (searchResults.length > 1) {
+          debugPrint('⚠️ ${searchResults.length} kayıt bulundu (${uniqueProducts.length} benzersiz ürün), dropdown gösteriliyor...');
         } else {
           debugPrint('⚠️ Boş sonuç');
         }
@@ -402,10 +406,19 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
   }
 
   Future<void> _addCountItem() async {
+    // 🔥 YENİ: Eğer zaten ekleme işlemi devam ediyorsa, tekrar çalıştırma
+    if (_isAdding) {
+      debugPrint('⚠️ Ekleme işlemi zaten devam ediyor, çıkılıyor...');
+      return;
+    }
+
+    setState(() => _isAdding = true);
+
     // Pallet modunda pallet barkodu zorunlu
     if (_selectedMode.isPallet) {
       final palletBarcode = _palletBarcodeController.text.trim();
       if (palletBarcode.isEmpty) {
+        setState(() => _isAdding = false);
         _showError('warehouse_count.error.scan_pallet'.tr());
         return;
       }
@@ -413,12 +426,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
     // Validate inputs - Ürün seçimi zorunlu (barkod olmasa bile StokKodu olmalı)
     if (_selectedStokKodu == null || _selectedStokKodu!.isEmpty) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.scan_barcode'.tr());
       return;
     }
 
     final shelfCode = _shelfController.text.trim();
     if (shelfCode.isEmpty) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.enter_shelf'.tr());
       return;
     }
@@ -426,23 +441,27 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     // Raf kodunu doğrula
     final isValidShelf = await widget.repository.validateShelfCode(shelfCode);
     if (!isValidShelf) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.invalid_shelf'.tr());
       return;
     }
 
     final quantityText = _quantityController.text.trim();
     if (quantityText.isEmpty) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.enter_quantity'.tr());
       return;
     }
 
     final quantity = double.tryParse(quantityText);
     if (quantity == null || quantity < WarehouseCountConstants.minQuantity) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.invalid_quantity'.tr());
       return;
     }
 
     if (quantity > WarehouseCountConstants.maxQuantity) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.quantity_too_large'.tr());
       return;
     }
@@ -450,12 +469,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     // Expiry date required (hem product hem pallet modunda ürün ekleniyor)
     final expiryDate = _expiryDateController.text.trim();
     if (expiryDate.isEmpty) {
+      setState(() => _isAdding = false);
       _showError('warehouse_count.error.expiry_required'.tr());
       return;
     }
 
     // Tarih formatını ve geçerliliğini kontrol et
     if (!DateValidationUtils.isValidExpiryDate(expiryDate)) {
+      setState(() => _isAdding = false);
       final errorMessage = DateValidationUtils.getDateValidationError(expiryDate);
       _showError(errorMessage);
       return;
@@ -463,6 +484,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
     // Unit selection required (hem product hem pallet modunda ürün ekleniyor)
     if (_selectedBirimKey == null || _selectedBirimKey!.isEmpty) {
+      setState(() => _isAdding = false);
       _showError('goods_receiving_screen.validator_unit_required'.tr());
       return;
     }
@@ -497,14 +519,18 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       if (mounted) {
         setState(() {
           _countedItems = reloadedItems;
-          _clearInputs();
+          _isAdding = false; // İşlem tamamlandı
         });
+
+        // İnputları temizle (setState dışında, çünkü içinde kendi setState'i var)
+        _clearInputs();
 
         _showSuccess('warehouse_count.success.item_added'.tr());
       }
     } catch (e) {
       debugPrint('Error adding count item: $e');
       if (mounted) {
+        setState(() => _isAdding = false); // Hata durumunda da sıfırla
         _showError('warehouse_count.error.add_item'.tr());
       }
     }
@@ -559,13 +585,16 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     _quantityController.clear();
     _shelfController.clear();
     _expiryDateController.clear();
-    _selectedBarcode = null;
-    _selectedStokKodu = null;
-    _selectedProductName = null;
-    _selectedBirimKey = null;
-    _availableUnits = [];
-    _productSearchResults = [];
-    _isShelfValid = false;
+
+    setState(() {
+      _selectedBarcode = null;
+      _selectedStokKodu = null;
+      _selectedProductName = null;
+      _selectedBirimKey = null;
+      _availableUnits = [];
+      _productSearchResults = [];
+      _isShelfValid = false;
+    });
 
     // Debounce timer'ı iptal et
     _searchDebounce?.cancel();
@@ -573,10 +602,14 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     // Scanner algılama değişkenlerini sıfırla
     _previousValue = '';
     _lastChangeTime = null;
+    _inputStartTime = null;
 
-    // Focus'u doğru alana ver
-    // Pallet modunda product search'e, product modunda product search'e focus ver
-    _productSearchFocusNode.requestFocus();
+    // Focus'u doğru alana ver (async olarak, frame bitiminde)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _productSearchFocusNode.requestFocus();
+      }
+    });
   }
 
   Future<void> _removeCountItem(CountItem item) async {
@@ -666,9 +699,13 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                               ),
                         ),
                         const SizedBox(height: 8),
-                        CountedItemsReviewTable(
-                          items: [_countedItems.last], // Sadece son eklenen item
-                          onItemRemoved: _removeCountItem,
+                        SizedBox(
+                          height: 80, // Fixed height for last added item
+                          child: CountedItemsReviewTable(
+                            items: [_countedItems.last], // Sadece son eklenen item
+                            onItemRemoved: _removeCountItem,
+                            enableScroll: false, // Parent scrollview var, scroll kapalı olsun
+                          ),
                         ),
                       ],
                     ],
@@ -746,6 +783,12 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             debugPrint('   📊 Önceki uzunluk: $previousLength, Şimdiki uzunluk: $currentLength');
             debugPrint('   📝 Eklenen karakter sayısı: $addedChars');
 
+            // 🔥 YENİ: İlk karakter ise başlangıç zamanını kaydet
+            if (previousLength == 0 && currentLength > 0) {
+              _inputStartTime = now;
+              debugPrint('   🏁 Giriş başladı: $_inputStartTime');
+            }
+
             // Eğer _lastChangeTime varsa, son değişiklikten beri geçen süreyi ölç
             if (_lastChangeTime != null) {
               final timeSinceLastChange = now.difference(_lastChangeTime!);
@@ -765,6 +808,22 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               // İLK GİRİŞ ve UZUN: Muhtemelen scanner (field boşken bir anda 13 karakter geldi)
               isFromScanner = true;
               debugPrint('   🔴 EL TERMİNALİ ALGILANDI! (Field boşken bir anda $currentLength karakter geldi)');
+            }
+
+            // 🔥 YENİ: Ortalama hız kontrolü (daha güvenilir)
+            if (!isFromScanner && currentLength >= _minBarcodeLength && _inputStartTime != null) {
+              final totalInputTime = now.difference(_inputStartTime!);
+              final avgTimePerChar = totalInputTime.inMilliseconds / currentLength;
+
+              debugPrint('   📈 Ortalama hız analizi:');
+              debugPrint('      - Toplam süre: ${totalInputTime.inMilliseconds}ms');
+              debugPrint('      - Karakter sayısı: $currentLength');
+              debugPrint('      - Ortalama karakter başına süre: ${avgTimePerChar.toStringAsFixed(1)}ms');
+
+              if (avgTimePerChar < _avgCharInputThreshold) {
+                isFromScanner = true;
+                debugPrint('   🔴 EL TERMİNALİ ALGILANDI (Ortalama Hız)! (${avgTimePerChar.toStringAsFixed(1)}ms/karakter < $_avgCharInputThreshold ms/karakter)');
+              }
             }
 
             // Değişkenleri güncelle
@@ -800,6 +859,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
                 _productSearchResults = [];
                 _previousValue = '';
                 _lastChangeTime = null;
+                _inputStartTime = null;
               });
               return;
             }
@@ -828,6 +888,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               _productSearchResults = [];
               _previousValue = '';
               _lastChangeTime = null;
+              _inputStartTime = null;
             });
           },
         ),
@@ -1131,9 +1192,15 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
 
   Widget _buildAddButton() {
     return ElevatedButton.icon(
-      onPressed: _addCountItem,
-      icon: const Icon(Icons.add_circle),
-      label: Text('warehouse_count.add_item'.tr()),
+      onPressed: _isAdding ? null : _addCountItem, // İşlem devam ediyorsa devre dışı
+      icon: _isAdding
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+          : const Icon(Icons.add_circle),
+      label: Text(_isAdding ? 'Adding...' : 'warehouse_count.add_item'.tr()),
       style: ElevatedButton.styleFrom(
         padding: const EdgeInsets.all(16),
       ),

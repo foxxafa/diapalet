@@ -9,12 +9,14 @@ class CountedItemsReviewTable extends StatelessWidget {
   final List<CountItem> items;
   final ValueChanged<CountItem>? onItemRemoved;
   final bool isReadOnly;
+  final bool enableScroll; // Scroll aktif olsun mu?
 
   const CountedItemsReviewTable({
     super.key,
     required this.items,
     this.onItemRemoved,
     this.isReadOnly = false,
+    this.enableScroll = true, // Varsayılan olarak scroll aktif
   });
 
   @override
@@ -46,8 +48,8 @@ class CountedItemsReviewTable extends StatelessWidget {
     }
 
     return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: !enableScroll, // Scroll kapalıysa shrinkWrap kullan
+      physics: enableScroll ? null : const NeverScrollableScrollPhysics(), // Scroll kapalıysa physics kapat
       itemCount: items.length,
       separatorBuilder: (context, index) => Divider(
         height: 1,

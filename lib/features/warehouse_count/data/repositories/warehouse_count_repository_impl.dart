@@ -360,7 +360,7 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
     final db = await dbHelper.database;
 
     // 🚀 OPTİMİZE EDİLMİŞ ARAMA
-    // - DISTINCT kaldırıldı (gereksiz yere yavaşlatıyor)
+    // - Her birim için SADECE BİR barkod getir (GROUP BY ile)
     // - İndexler zaten var: idx_barkodlar_barkod, idx_urunler_stokkodu
     // - LIKE 'query%' kullanıyoruz (index kullanabilir)
     // - aktif kontrolü hızlı (boolean check)
@@ -368,9 +368,10 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
     // İLİŞKİ: barkodlar._key_scf_stokkart_birimleri = birimler._key
     //         birimler._key_scf_stokkart = urunler._key
     // NOT: LEFT JOIN kullanıyoruz ki barkodu olmayan ürünler de gelsin
+    //      GROUP BY ile her birim için sadece 1 kayıt (ilk barkod veya NULL)
     final searchResults = await db.rawQuery('''
       SELECT
-        b.barkod,
+        MIN(b.barkod) as barkod,
         bi._key as birim_key,
         bi.birimadi,
         u.StokKodu,
@@ -386,13 +387,14 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
           u.StokKodu LIKE ? || '%' OR
           u.UrunAdi LIKE '%' || ? || '%'
         )
+      GROUP BY bi._key, u._key
       ORDER BY
         CASE
-          WHEN b.barkod = ? THEN 0       -- Tam barkod eşleşmesi (EN ÖNCELİKLİ)
-          WHEN u.StokKodu = ? THEN 1     -- Tam stok kodu eşleşmesi
-          WHEN b.barkod LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
-          WHEN u.StokKodu LIKE ? || '%' THEN 3  -- Stok kodu baştan eşleşmesi
-          WHEN u.UrunAdi LIKE '%' || ? || '%' THEN 4  -- Ürün adı içinde eşleşme
+          WHEN MIN(b.barkod) = ? THEN 0       -- Tam barkod eşleşmesi (EN ÖNCELİKLİ)
+          WHEN u.StokKodu = ? THEN 1          -- Tam stok kodu eşleşmesi
+          WHEN MIN(b.barkod) LIKE ? || '%' THEN 2    -- Barkod baştan eşleşmesi
+          WHEN u.StokKodu LIKE ? || '%' THEN 3       -- Stok kodu baştan eşleşmesi
+          WHEN u.UrunAdi LIKE '%' || ? || '%' THEN 4 -- Ürün adı içinde eşleşme
           ELSE 5
         END,
         u.UrunAdi ASC

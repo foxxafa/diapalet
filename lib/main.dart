@@ -93,7 +93,7 @@ void main() async {
           Provider<DatabaseHelper>.value(value: dbHelper),
           Provider<BarcodeIntentService>(create: (_) => BarcodeIntentService()),
           Provider<SoundService>(create: (_) => SoundService()),
-          ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
 
           // SyncService
           ChangeNotifierProvider<SyncService>(
