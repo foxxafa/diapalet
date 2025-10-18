@@ -14,54 +14,36 @@ class OrderInfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // Bu tasarım doğrudan goods_receiving_screen.dart'tan alınmıştır.
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+    return Container(
+      width: double.infinity, // Tam genişlik
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.primaryContainer),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // PO ID
+          Text(
+            order.poId ?? 'common_labels.not_available'.tr(),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600, // Bold yerine w600
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
+          ),
+          // Supplier Name (alt satırda)
+          if (order.supplierName != null && order.supplierName!.isNotEmpty) ...[
+            const SizedBox(height: 2),
             Text(
-              'goods_receiving_screen.order_info_title'.tr(),
-              style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer
+              order.supplierName!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
               ),
             ),
-            const SizedBox(height: 4),
-            RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: order.poId ?? 'common_labels.not_available'.tr(),
-                    style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer
-                    ),
-                  ),
-                  if (order.supplierName != null && order.supplierName!.isNotEmpty) ...[
-                    TextSpan(
-                      text: ' • ',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer
-                      ),
-                    ),
-                    TextSpan(
-                      text: order.supplierName!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            )
           ],
-        ),
+        ],
       ),
     );
   }

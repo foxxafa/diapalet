@@ -130,7 +130,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                       child: GestureDetector(
                       onTap: () => FocusScope.of(context).unfocus(),
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                         child: Form(
                           key: _formKey,
                           child: Column(
@@ -146,6 +146,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                               builder: (context, snapshot) {
                                 if (snapshot.data == true) {
                                   return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       _buildModeSelector(viewModel),
                                       const SizedBox(height: _gap),
@@ -241,28 +242,23 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
   }
 
   Widget _buildModeSelector(GoodsReceivingViewModel viewModel) {
-    return Center(
-      child: SegmentedButton<ReceivingMode>(
-        segments: [
-          ButtonSegment(
-              value: ReceivingMode.palet,
-              label: Text('goods_receiving_screen.mode_pallet'.tr()),
-              icon: const Icon(Icons.pallet)),
-          ButtonSegment(
-              value: ReceivingMode.product,
-              label: Text('goods_receiving_screen.mode_box'.tr()),
-              icon: const Icon(Icons.inventory_2_outlined)),
-        ],
-        selected: {viewModel.receivingMode},
-        onSelectionChanged: (newSelection) {
-          viewModel.changeReceivingMode(newSelection.first);
-        },
-        style: SegmentedButton.styleFrom(
-          visualDensity: VisualDensity.comfortable,
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
+    return SegmentedButton<ReceivingMode>(
+      segments: [
+        ButtonSegment(
+          value: ReceivingMode.product,
+          label: Text('goods_receiving_screen.mode_box'.tr()),
+          icon: const Icon(Icons.inventory_2),
         ),
-      ),
+        ButtonSegment(
+          value: ReceivingMode.palet,
+          label: Text('goods_receiving_screen.mode_pallet'.tr()),
+          icon: const Icon(Icons.pallet),
+        ),
+      ],
+      selected: {viewModel.receivingMode},
+      onSelectionChanged: (newSelection) {
+        viewModel.changeReceivingMode(newSelection.first);
+      },
     );
   }
 
@@ -1159,7 +1155,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
     final textTheme = theme.textTheme;
 
     return SizedBox(
-      height: 52, // Quantity ile tam olarak aynı yükseklik
+      height: 56, // TextFormField ile aynı yükseklik (52'den 56'ya)
       child: InputDecorator(
         decoration: SharedInputDecoration.create(
           context,
@@ -1167,7 +1163,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
             ? 'goods_receiving_screen.label_order_status'.tr()
             : 'goods_receiving_screen.label_unit_selection'.tr(),
           enabled: false,
-        ).copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+        ).copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),  // vertical: 8'den 12'ye
       child: (widget.viewModel.selectedProduct == null)
           ? Center(
               child: Text(
@@ -1190,7 +1186,7 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
       children: [
           // Quantity display - sol tarafta ve ortada
           Expanded(
-            flex: 6,
+            flex: 4,  // 6'dan 4'e düşürdük - daha az yer
             child: Center(
               child: RichText(
                 textAlign: TextAlign.center,
@@ -1199,207 +1195,219 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                   children: [
                     TextSpan(
                       text: widget.totalReceived.toStringAsFixed(0),
-                      style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.w900, fontSize: 16),
+                      style: TextStyle(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,  // Sol sayı 16px
+                      ),
                     ),
-                    TextSpan(text: '/', style: TextStyle(color: textTheme.bodyLarge?.color?.withValues(alpha: 0.7))),
-                    TextSpan(text: '${widget.expectedQty.toStringAsFixed(0)} ', style: TextStyle(color: textTheme.bodyLarge?.color)),
+                    TextSpan(
+                      text: '/',
+                      style: TextStyle(
+                        color: textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    TextSpan(
+                      text: '${widget.expectedQty.toStringAsFixed(0)} ',
+                      style: TextStyle(
+                        color: textTheme.bodyLarge?.color,
+                        fontWeight: FontWeight.w900,  // Sağ sayı da w900
+                        fontSize: 16,  // Sağ sayı da 16px
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 4), // Çok az boşluk
+          const SizedBox(width: 8), // Biraz daha boşluk
           // Unit dropdown with barcode - sağa yaslı
           Expanded(
-            flex: 4,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_isLoadingUnits)
-                  const SizedBox(
-                    width: 80,
-                    height: 20,
-                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                  )
-                else if (_availableUnits.isNotEmpty && _selectedUnitIndex != null && _selectedUnitIndex! >= 0)
-                  PopupMenuButton<int>(
-              initialValue: _selectedUnitIndex,
-              offset: const Offset(0, 5),
-              constraints: const BoxConstraints(minWidth: 120, maxWidth: 180),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              child: Container(
-                height: 32, // Dropdown'un yüksekliğini arttır
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Padding'i de biraz arttır
-                decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.outline),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center, // İçeriği ortala
-                  children: [
-                    Flexible( // Text overflow'u engellemek için Flexible kullan
-                      child: Text(
-                        _availableUnits[_selectedUnitIndex!]['birimadi'] ?? '',
-                        style: TextStyle(
-                          fontSize: 15, // Font boyutunu biraz küçült
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
+            flex: 6,  // 4'ten 6'ya çıkardık - daha çok yer
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return _isLoadingUnits
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                        overflow: TextOverflow.ellipsis, // Uzun metinleri kes
-                      ),
-                    ),
-                    const SizedBox(width: 6), // Boşluğu azalt
-                    Icon(
-                      Icons.arrow_drop_down,
-                      color: theme.colorScheme.primary,
-                      size: 20, // Icon boyutunu küçült
-                    ),
-                  ],
-                ),
-              ),
-              itemBuilder: (BuildContext popupContext) {
-                return _availableUnits.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final unit = entry.value;
-                  final unitName = unit['birimadi'] ?? '';
-                  // final barcode = unit['barkod'] ?? '';
-                  
-                  return PopupMenuItem<int>(
-                    value: index,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                      child: Text(
-                        unitName,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      )
+                    : (_availableUnits.isNotEmpty && _selectedUnitIndex != null && _selectedUnitIndex! >= 0)
+                        ? Align(
+                            alignment: Alignment.centerRight,
+                            child: PopupMenuButton<int>(
+                              initialValue: _selectedUnitIndex,
+                              offset: const Offset(0, 5),
+                              constraints: const BoxConstraints(minWidth: 120, maxWidth: 200),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: constraints.maxWidth, // Parent genişliğini aşma
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),  // Padding azaltıldı
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: theme.colorScheme.outline),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          _availableUnits[_selectedUnitIndex!]['birimadi'] ?? '',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.arrow_drop_down,
+                                        color: theme.colorScheme.primary,
+                                        size: 18,  // Icon boyutunu küçülttük
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              itemBuilder: (BuildContext popupContext) {
+                                return _availableUnits.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final unit = entry.value;
+                                  final unitName = unit['birimadi'] ?? '';
+
+                                  return PopupMenuItem<int>(
+                                    value: index,
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                                      child: Text(
+                                        unitName,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  );
+                                }).toList();
+                              },
+                              onSelected: (newIndex) async {
+                                if (newIndex < _availableUnits.length) {
+                                  setState(() {
+                                    _selectedUnitIndex = newIndex;
+                                  });
+
+                                  // Seçilen birimi al
+                                  final selectedUnit = _availableUnits[newIndex];
+                                  final barcode = selectedUnit['barkod'] ?? '';
+
+                                  // Mevcut product'ı seçilen birim bilgisiyle güncelle
+                                  final currentProduct = widget.viewModel.selectedProduct;
+                                  if (currentProduct != null) {
+                                    // Seçilen birim anahtarını al
+                                    final selectedBirimKey = selectedUnit['birim_key'];
+
+                                    String sourceType = GoodsReceivingConstants.sourceTypeOutOfOrder;
+                                    bool isOrderUnit = false;
+
+                                    if (widget.viewModel.isOrderBased && widget.viewModel.selectedOrder != null) {
+                                      final orderItems = widget.viewModel.orderItems;
+
+                                      for (var orderItem in orderItems) {
+                                        final orderBirimKey = orderItem.product?.birimKey;
+                                        final orderStockCode = orderItem.product?.stockCode;
+
+                                        if (orderStockCode == currentProduct.stockCode &&
+                                            orderBirimKey == selectedBirimKey) {
+                                          sourceType = GoodsReceivingConstants.sourceTypeOrder;
+                                          isOrderUnit = true;
+                                          break;
+                                        }
+                                      }
+                                    }
+
+                                    final updatedProduct = ProductInfo.fromDbMap({
+                                      ...currentProduct.toJson(),
+                                      'birimadi': selectedUnit['birimadi'],
+                                      'birimkod': selectedUnit['birimkod'],
+                                      'birim_key': selectedBirimKey,
+                                      'barkod': selectedUnit['barkod'],
+                                      '_key': currentProduct.productKey,
+                                      'UrunId': currentProduct.id,
+                                      'UrunAdi': currentProduct.name,
+                                      'StokKodu': currentProduct.stockCode,
+                                      'aktif': currentProduct.isActive ? 1 : 0,
+                                      'source_type': sourceType,
+                                      'is_order_unit': isOrderUnit ? 1 : 0,
+                                    });
+
+                                    if (updatedProduct.isOutOfOrder && widget.viewModel.isOrderBased) {
+                                      final confirmedProduct = await widget.viewModel.showOutOfOrderProductModal(
+                                          context, updatedProduct);
+
+                                      if (confirmedProduct != null) {
+                                        widget.viewModel.updateSelectedProduct(confirmedProduct);
+
+                                        final confirmedBarcode = confirmedProduct.productBarcode ?? '';
+                                        widget.viewModel.productController.text = confirmedBarcode.isNotEmpty
+                                            ? '$confirmedBarcode (${confirmedProduct.stockCode})'
+                                            : confirmedProduct.stockCode;
+                                      } else {
+                                        setState(() {
+                                          for (int i = 0; i < _availableUnits.length; i++) {
+                                            if (_availableUnits[i]['birim_key'] == currentProduct.birimKey) {
+                                              _selectedUnitIndex = i;
+                                              break;
+                                            }
+                                          }
+                                        });
+                                      }
+                                    } else {
+                                      widget.viewModel.updateSelectedProduct(updatedProduct);
+
+                                      widget.viewModel.productController.text = barcode.isNotEmpty
+                                          ? '$barcode (${currentProduct.stockCode})'
+                                          : currentProduct.stockCode;
+                                    }
+                                  }
+                                }
+                              },
+                            ),
+                          )
+                    : Align(
+                        alignment: Alignment.centerRight,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: constraints.maxWidth,
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            child: Text(
+                              widget.viewModel.selectedProduct?.displayUnitName ?? '',
+                              style: TextStyle(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }).toList();
-              },
-              onSelected: (newIndex) async {
-                if (newIndex < _availableUnits.length) {
-                  setState(() {
-                    _selectedUnitIndex = newIndex;
-                  });
-                  
-                  // Seçilen birimi al
-                  final selectedUnit = _availableUnits[newIndex];
-                  final barcode = selectedUnit['barkod'] ?? '';
-                  
-                  // Mevcut product'ı seçilen birim bilgisiyle güncelle
-                  final currentProduct = widget.viewModel.selectedProduct;
-                  if (currentProduct != null) {
-                    // Seçilen birim anahtarını al
-                    final selectedBirimKey = selectedUnit['birim_key'];
-                    
-                    // Bu birimin sipariş birimi olup olmadığını kontrol et
-                    // Eğer sipariş tabanlı modda isek ve seçilen birim sipariş birimi ise 'order', değilse 'out_of_order'
-                    // Serbest mal kabulde her şey 'out_of_order' olarak kabul edilir ama modal açılmaz
-                    String sourceType = GoodsReceivingConstants.sourceTypeOutOfOrder;
-                    bool isOrderUnit = false;
-                    
-                    if (widget.viewModel.isOrderBased && widget.viewModel.selectedOrder != null) {
-                      // Mevcut sipariş detaylarından sipariş birimlerini kontrol et
-                      final orderItems = widget.viewModel.orderItems;
-                      
-                      for (var orderItem in orderItems) {
-                        final orderBirimKey = orderItem.product?.birimKey; // ProductInfo'dan birim_key
-                        final orderStockCode = orderItem.product?.stockCode;
-                        
-                        
-                        // Stok kodu ve birim anahtarı eşleşirse bu bir sipariş birimi
-                        if (orderStockCode == currentProduct.stockCode && 
-                            orderBirimKey == selectedBirimKey) {
-                          sourceType = GoodsReceivingConstants.sourceTypeOrder;
-                          isOrderUnit = true;
-                          break;
-                        }
-                      }
-                      
-                      if (!isOrderUnit) {
-                      }
-                    } else {
-                      // Serbest mal kabulde her şey geçerli, modal açılmayacak
-                    }
-                    
-                    
-                    // Yeni ProductInfo oluştur - seçilen birim bilgileriyle
-                    final updatedProduct = ProductInfo.fromDbMap({
-                      ...currentProduct.toJson(),
-                      'birimadi': selectedUnit['birimadi'],
-                      'birimkod': selectedUnit['birimkod'],
-                      'birim_key': selectedBirimKey, // KRITIK: birim_key eklendi
-                      'barkod': selectedUnit['barkod'],
-                      '_key': currentProduct.productKey,
-                      'UrunId': currentProduct.id,
-                      'UrunAdi': currentProduct.name,
-                      'StokKodu': currentProduct.stockCode,
-                      'aktif': currentProduct.isActive ? 1 : 0,
-                      'source_type': sourceType, // Doğru source_type hesaplaması
-                      'is_order_unit': isOrderUnit ? 1 : 0, // is_order_unit flag'i
-                    });
-                    
-                    // Eğer sipariş dışı bir ürün seçildiyse ve sipariş tabanlı modda isek modal aç
-                    // Serbest mal kabulde modal açılmamalı çünkü her şey zaten sipariş dışı
-                    if (updatedProduct.isOutOfOrder && widget.viewModel.isOrderBased) {
-                      final confirmedProduct = await widget.viewModel.showOutOfOrderProductModal(
-                        context, 
-                        updatedProduct
                       );
-                      
-                      if (confirmedProduct != null) {
-                        // Modal'dan onaylanan ürünü kullan
-                        widget.viewModel.updateSelectedProduct(confirmedProduct);
-                        
-                        // Product text alanını güncelle
-                        final confirmedBarcode = confirmedProduct.productBarcode ?? '';
-                        widget.viewModel.productController.text = confirmedBarcode.isNotEmpty 
-                            ? '$confirmedBarcode (${confirmedProduct.stockCode})' 
-                            : confirmedProduct.stockCode;
-                      } else {
-                        // İptal edildi, önceki seçime geri dön
-                        setState(() {
-                          // Önceki birim index'ini geri yükle
-                          for (int i = 0; i < _availableUnits.length; i++) {
-                            if (_availableUnits[i]['birim_key'] == currentProduct.birimKey) {
-                              _selectedUnitIndex = i;
-                              break;
-                            }
-                          }
-                        });
-                      }
-                    } else {
-                      // Sipariş içi ürün veya serbest mal kabul - direkt güncelle
-                      widget.viewModel.updateSelectedProduct(updatedProduct);
-                      
-                      // Product text alanını güncelle
-                      widget.viewModel.productController.text = barcode.isNotEmpty 
-                          ? '$barcode (${currentProduct.stockCode})' 
-                          : currentProduct.stockCode;
-                    }
-                  }
-                }
               },
-            )
-          else
-            Container(
-              alignment: Alignment.center,
-              child: Text(
-                widget.viewModel.selectedProduct?.displayUnitName ?? '',
-                style: TextStyle(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-              ],
             ),
           ),
       ],

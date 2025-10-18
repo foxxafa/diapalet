@@ -41,7 +41,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   bool _isSaving = false;
   bool _isOrderDetailsLoading = false;
   bool _isDisposed = false;
-  ReceivingMode _receivingMode = ReceivingMode.palet;
+  ReceivingMode _receivingMode = ReceivingMode.product; // Default: Product mode
 
   PurchaseOrder? _selectedOrder;
   List<PurchaseOrderItem> _orderItems = [];

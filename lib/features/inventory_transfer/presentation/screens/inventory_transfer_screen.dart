@@ -897,7 +897,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             key: _formKey,
             autovalidateMode: AutovalidateMode.disabled,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.smallGap),
+              padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.standardGap),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1014,33 +1014,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Widget _buildFreeReceiptInfoCard() {
     final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(InventoryTransferConstants.borderRadius),
-        side: BorderSide(color: theme.colorScheme.primaryContainer),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(InventoryTransferConstants.standardGap),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'inventory_transfer.delivery_note_info_title'.tr(),
-              style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.selectedDeliveryNote ?? 'common_labels.not_available'.tr(),
-              style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onPrimaryContainer
-              ),
-            ),
-          ],
+      padding: const EdgeInsets.all(InventoryTransferConstants.standardGap),
+      child: Text(
+        widget.selectedDeliveryNote ?? 'common_labels.not_available'.tr(),
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onPrimaryContainer,
         ),
       ),
     );
@@ -1110,44 +1095,47 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           return const SizedBox.shrink();
         }
 
-        return Center(
-          child: SegmentedButton<AssignmentMode>(
-            segments: [
-              ButtonSegment(
-                  value: AssignmentMode.pallet,
-                  label: Text('inventory_transfer.mode_pallet'.tr()),
-                  icon: const Icon(Icons.pallet),
-                  enabled: _isPalletModeAvailable
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<AssignmentMode>(
+              segments: [
+                ButtonSegment(
+                    value: AssignmentMode.pallet,
+                    label: Text('inventory_transfer.mode_pallet'.tr()),
+                    icon: const Icon(Icons.pallet),
+                    enabled: _isPalletModeAvailable
+                ),
+                ButtonSegment(
+                    value: AssignmentMode.product,
+                    label: Text('inventory_transfer.mode_product'.tr()),
+                    icon: const Icon(Icons.inventory_2),
+                    enabled: _isBoxModeAvailable
+                ),
+              ],
+              selected: {_selectedMode},
+              onSelectionChanged: (newSelection) {
+                final newMode = newSelection.first;
+                if (_isModeAvailable(newMode)) {
+                  setState(() {
+                    _selectedMode = newMode;
+                    _isPalletOpening = false;
+                    _resetContainerAndProducts();
+
+                    // Reload containers with new mode
+                    if (_selectedSourceLocationName != null || widget.isFreePutAway || widget.selectedOrder != null) {
+                      _loadContainersForLocation();
+                    }
+                  });
+                }
+              },
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.comfortable,
+                selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+                selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
               ),
-              ButtonSegment(
-                  value: AssignmentMode.product,
-                  label: Text('inventory_transfer.mode_product'.tr()),
-                  icon: const Icon(Icons.inventory_2_outlined),
-                  enabled: _isBoxModeAvailable
-              ),
-            ],
-            selected: {_selectedMode},
-        onSelectionChanged: (newSelection) {
-          final newMode = newSelection.first;
-          if (_isModeAvailable(newMode)) {
-            setState(() {
-              _selectedMode = newMode;
-              _isPalletOpening = false;
-              _resetContainerAndProducts();
-              
-              // Reload containers with new mode
-              if (_selectedSourceLocationName != null || widget.isFreePutAway || widget.selectedOrder != null) {
-                _loadContainersForLocation();
-              }
-            });
-          }
-        },
-        style: SegmentedButton.styleFrom(
-          visualDensity: VisualDensity.comfortable,
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-        ),
-          ),
+            ),
+          ],
         );
       },
     );

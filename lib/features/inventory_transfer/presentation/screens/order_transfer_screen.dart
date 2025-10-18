@@ -523,7 +523,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                     key: _formKey,
                     autovalidateMode: AutovalidateMode.disabled,
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.smallGap),
+                      padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.largePadding, vertical: InventoryTransferConstants.standardGap),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -622,40 +622,43 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
   }
 
   Widget _buildModeSelector() {
-    return Center(
-      child: SegmentedButton<AssignmentMode>(
-        segments: [
-          ButtonSegment(
-            value: AssignmentMode.pallet,
-            label: Text('order_transfer.mode_pallet'.tr()),
-            icon: const Icon(Icons.pallet),
-            enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<AssignmentMode>(
+          segments: [
+            ButtonSegment(
+              value: AssignmentMode.pallet,
+              label: Text('order_transfer.mode_pallet'.tr()),
+              icon: const Icon(Icons.pallet),
+              enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
+            ),
+            ButtonSegment(
+              value: AssignmentMode.product,
+              label: Text('order_transfer.mode_box'.tr()),
+              icon: const Icon(Icons.inventory_2),
+              enabled: _hasBoxContainers, // GÜNCELLEME: Dinamik enable/disable
+            ),
+          ],
+          selected: {_selectedMode},
+          onSelectionChanged: (newSelection) {
+            final newMode = newSelection.first;
+            if (_isModeAvailable(newMode)) {
+              setState(() {
+                _selectedMode = newMode;
+                _isPalletOpening = false;
+                _resetContainerAndProducts();
+                _filterContainersByMode();
+              });
+            }
+          },
+          style: SegmentedButton.styleFrom(
+            visualDensity: VisualDensity.comfortable,
+            selectedBackgroundColor: Theme.of(context).colorScheme.primary,
+            selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
           ),
-          ButtonSegment(
-            value: AssignmentMode.product,
-            label: Text('order_transfer.mode_box'.tr()),
-            icon: const Icon(Icons.inventory_2_outlined),
-            enabled: _hasBoxContainers, // GÜNCELLEME: Dinamik enable/disable
-          ),
-        ],
-        selected: {_selectedMode},
-        onSelectionChanged: (newSelection) {
-          final newMode = newSelection.first;
-          if (_isModeAvailable(newMode)) {
-            setState(() {
-              _selectedMode = newMode;
-              _isPalletOpening = false;
-              _resetContainerAndProducts();
-              _filterContainersByMode();
-            });
-          }
-        },
-        style: SegmentedButton.styleFrom(
-          visualDensity: VisualDensity.comfortable,
-          selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-          selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
         ),
-      ),
+      ],
     );
   }
 
