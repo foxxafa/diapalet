@@ -164,6 +164,7 @@ class SyncService with ChangeNotifier {
       ));
 
       await uploadPendingOperations();
+      await uploadUnknownBarcodes();
 
       final prefs = await SharedPreferences.getInstance();
       final warehouseCode = prefs.getString('warehouse_code');
@@ -563,6 +564,62 @@ class SyncService with ChangeNotifier {
       );
 
       rethrow;
+    }
+  }
+
+  Future<void> uploadUnknownBarcodes() async {
+    try {
+      final unknownBarcodes = await dbHelper.getUnsyncedUnknownBarcodes();
+
+      if (unknownBarcodes.isEmpty) {
+        debugPrint("📦 Gönderilecek bilinmeyen barkod yok.");
+        return;
+      }
+
+      debugPrint("📦 ${unknownBarcodes.length} adet bilinmeyen barkod sunucuya gönderiliyor...");
+
+      // Prepare payload - sadece barcode, employee_id, warehouse_code, scanned_at gönder
+      final payload = unknownBarcodes.map((item) {
+        return {
+          'barcode': item['barcode'],
+          'employee_id': item['employee_id'],
+          'warehouse_code': item['warehouse_code'],
+          'scanned_at': item['scanned_at'],
+        };
+      }).toList();
+
+      final response = await dio.post(
+        ApiConfig.unknownBarcodesUpload,
+        data: {'unknown_barcodes': payload},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        // Başarıyla gönderilen barkodları sil
+        final ids = unknownBarcodes.map((item) => item['id'] as int).toList();
+        await dbHelper.deleteUnknownBarcodes(ids);
+
+        debugPrint("✅ ${unknownBarcodes.length} adet bilinmeyen barkod başarıyla gönderildi ve silindi.");
+        await dbHelper.addSyncLog('unknown_barcodes', 'success', '${unknownBarcodes.length} bilinmeyen barkod gönderildi.');
+      } else {
+        final serverError = response.data['error'] ?? 'Bilinmeyen sunucu hatası';
+        throw Exception("Bilinmeyen barkodlar gönderilemedi: $serverError");
+      }
+    } catch (e, s) {
+      debugPrint("❌ Bilinmeyen barkodlar upload hatası: $e");
+      await dbHelper.addSyncLog('unknown_barcodes', 'error', "Upload hatası: $e");
+
+      // Telegram'a hata logla
+      await TelegramLoggerService.logError(
+        'Upload Failed: uploadUnknownBarcodes',
+        e.toString(),
+        stackTrace: s,
+        context: {
+          'operation': 'uploadUnknownBarcodes',
+        },
+      );
+
+      // Hatayı yutma - sync devam etsin
+      // rethrow; // Commented out - diğer sync işlemlerini etkilemesin
     }
   }
 

@@ -19,6 +19,7 @@ import 'package:diapalet/features/warehouse_count/presentation/screens/warehouse
 import 'package:diapalet/features/goods_receiving/utils/date_validation_utils.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
 class WarehouseCountScreen extends StatefulWidget {
@@ -197,6 +198,9 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             // Ürün bulunamadı - hata sesi + snackbar
             soundService.playErrorSound();
             debugPrint('🔊 Başarısız arama - wrongk.mp3 çalınıyor');
+
+            // 📝 Bilinmeyen barkodu kaydet
+            _saveUnknownBarcode(query.trim());
 
             // Snackbar ile kullanıcıya bildir
             ScaffoldMessenger.of(context).showSnackBar(
@@ -680,6 +684,27 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
     }
   }
 
+
+  Future<void> _saveUnknownBarcode(String barcode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final employeeId = prefs.getInt('user_id');
+      // CountSheet'ten warehouse_code al (sayım ekranına girmeden önce seçilen depo)
+      final warehouseCode = widget.countSheet.warehouseCode;
+
+      final dbHelper = DatabaseHelper.instance;
+      await dbHelper.saveUnknownBarcode(
+        barcode,
+        employeeId: employeeId,
+        warehouseCode: warehouseCode,
+      );
+
+      debugPrint('📝 Bilinmeyen barkod kaydedildi: $barcode (Warehouse: $warehouseCode)');
+    } catch (e) {
+      debugPrint('❌ Bilinmeyen barkod kaydetme hatası: $e');
+      // Hata sessizce yutulur, kullanıcı deneyimini etkilemez
+    }
+  }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(

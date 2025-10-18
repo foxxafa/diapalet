@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 74; // added is_damaged column to count_items table for damaged product tracking
+  static const _databaseVersion = 75; // added unknown_barcodes table to collect unrecognized barcodes from scanners
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -369,6 +369,21 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_sheets_operation_uid ON count_sheets(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_operation_uid ON count_items(operation_unique_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_count_items_uuid ON count_items(item_uuid)');
+
+      // Unknown Barcodes Table (for collecting unrecognized barcodes from scanners)
+      batch.execute('''
+        CREATE TABLE IF NOT EXISTS unknown_barcodes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          barcode TEXT NOT NULL,
+          employee_id INTEGER,
+          warehouse_code TEXT,
+          scanned_at TEXT NOT NULL,
+          synced INTEGER DEFAULT 0
+        )
+      ''');
+
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_unknown_barcodes_synced ON unknown_barcodes(synced)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_unknown_barcodes_barcode ON unknown_barcodes(barcode)');
 
       await batch.commit(noResult: true);
     });
@@ -2786,6 +2801,96 @@ class DatabaseHelper {
     final maps = await db.query('sync_log', orderBy: 'timestamp DESC', limit: 100);
     return maps.map((map) => SyncLog.fromMap(map)).toList();
   }
+
+  // ==================== UNKNOWN BARCODES METHODS ====================
+
+  /// Veritabanında bulunamayan barkodu kaydet
+  Future<int> saveUnknownBarcode(String barcode, {int? employeeId, String? warehouseCode}) async {
+    final db = await database;
+
+    try {
+      final id = await db.insert('unknown_barcodes', {
+        'barcode': barcode,
+        'employee_id': employeeId,
+        'warehouse_code': warehouseCode,
+        'scanned_at': DateTime.now().toUtc().toIso8601String(),
+        'synced': 0,
+      });
+
+      debugPrint('📝 Bilinmeyen barkod kaydedildi: $barcode (ID: $id)');
+      return id;
+    } catch (e) {
+      debugPrint('❌ Bilinmeyen barkod kaydetme hatası: $e');
+      return -1;
+    }
+  }
+
+  /// Henüz sync edilmemiş bilinmeyen barkodları getir
+  Future<List<Map<String, dynamic>>> getUnsyncedUnknownBarcodes() async {
+    final db = await database;
+
+    try {
+      final results = await db.query(
+        'unknown_barcodes',
+        where: 'synced = ?',
+        whereArgs: [0],
+        orderBy: 'scanned_at ASC',
+      );
+
+      debugPrint('📋 ${results.length} adet sync edilmemiş bilinmeyen barkod bulundu');
+      return results;
+    } catch (e) {
+      debugPrint('❌ Sync edilmemiş barkodları getirme hatası: $e');
+      return [];
+    }
+  }
+
+  /// Başarıyla sync edilen barkodları sil
+  Future<int> deleteUnknownBarcodes(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+
+    final db = await database;
+
+    try {
+      final placeholders = List.filled(ids.length, '?').join(',');
+      final deletedCount = await db.delete(
+        'unknown_barcodes',
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+
+      debugPrint('🗑️  $deletedCount adet bilinmeyen barkod silindi');
+      return deletedCount;
+    } catch (e) {
+      debugPrint('❌ Bilinmeyen barkodları silme hatası: $e');
+      return 0;
+    }
+  }
+
+  /// Bilinmeyen barkodları sync edildi olarak işaretle (opsiyonel - silmek yerine)
+  Future<int> markUnknownBarcodesAsSynced(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+
+    final db = await database;
+
+    try {
+      final placeholders = List.filled(ids.length, '?').join(',');
+      final updatedCount = await db.update(
+        'unknown_barcodes',
+        {'synced': 1},
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+
+      debugPrint('✅ $updatedCount adet bilinmeyen barkod sync edildi olarak işaretlendi');
+      return updatedCount;
+    } catch (e) {
+      debugPrint('❌ Bilinmeyen barkodları işaretleme hatası: $e');
+      return 0;
+    }
+  }
+
+  // ==================== END UNKNOWN BARCODES METHODS ====================
 
   /// Farklı depo kullanıcısı giriş yaptığında warehouse'a özel verileri temizler
   /// Global veriler (ürünler, tedarikçiler, birimler, barkodlar) korunur

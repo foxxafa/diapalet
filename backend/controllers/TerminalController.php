@@ -2467,6 +2467,72 @@ class TerminalController extends Controller
         return ['status' => 'ok', 'timestamp' => date('c')];
     }
 
+    /**
+     * Bilinmeyen barkodları topla ve veritabanına kaydet
+     * POST /terminal/unknown-barcodes-upload
+     * Payload: { "unknown_barcodes": [ { "barcode": "...", "employee_id": 123, "warehouse_code": "...", "scanned_at": "..." } ] }
+     */
+    public function actionUnknownBarcodesUpload()
+    {
+        $payload = $this->getJsonBody();
+        $unknownBarcodes = $payload['unknown_barcodes'] ?? [];
+
+        if (empty($unknownBarcodes)) {
+            return ['success' => true, 'message' => 'Gönderilecek barkod yok.', 'saved_count' => 0];
+        }
+
+        $db = \Yii::$app->db;
+        $savedCount = 0;
+        $errors = [];
+
+        try {
+            foreach ($unknownBarcodes as $item) {
+                $barcode = $item['barcode'] ?? null;
+                $employeeId = $item['employee_id'] ?? null;
+                $warehouseCode = $item['warehouse_code'] ?? null;
+                $scannedAt = $item['scanned_at'] ?? null;
+
+                // Barcode zorunlu
+                if (!$barcode) {
+                    $errors[] = 'Barkod eksik';
+                    continue;
+                }
+
+                try {
+                    // wms_unknown_barcodes tablosuna kaydet
+                    $db->createCommand()->insert('wms_unknown_barcodes', [
+                        'barcode' => $barcode,
+                        'employee_id' => $employeeId,
+                        'warehouse_code' => $warehouseCode,
+                        'scanned_at' => $scannedAt ? $this->convertIso8601ToMysqlDatetime($scannedAt) : new \yii\db\Expression('NOW()'),
+                        'created_at' => new \yii\db\Expression('NOW()'),
+                    ])->execute();
+
+                    $savedCount++;
+                } catch (\Exception $e) {
+                    $errors[] = "Barkod kayıt hatası ($barcode): " . $e->getMessage();
+                    $this->logToFile("Unknown barcode save error: " . $e->getMessage(), 'ERROR');
+                }
+            }
+
+            $response = [
+                'success' => true,
+                'message' => "$savedCount barkod başarıyla kaydedildi.",
+                'saved_count' => $savedCount,
+            ];
+
+            if (!empty($errors)) {
+                $response['errors'] = $errors;
+            }
+
+            return $response;
+
+        } catch (\Exception $e) {
+            $this->logToFile("Unknown barcodes upload error: " . $e->getMessage(), 'ERROR');
+            return $this->errorResponse('Barkod kayıt işlemi başarısız: ' . $e->getMessage());
+        }
+    }
+
     // ########## PAGINATED QUERY METHODS ##########
 
     private function getPaginatedUrunler($serverSyncTimestamp, $offset, $limit)

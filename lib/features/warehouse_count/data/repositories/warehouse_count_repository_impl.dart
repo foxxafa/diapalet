@@ -373,35 +373,62 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
 
     debugPrint('🔍 Arama kelimeleri: $keywords');
 
-    // Tek kelime ve rakam ise barkod/stok kodu olabilir
-    final isSingleNumeric = keywords.length == 1 && RegExp(r'^\d+$').hasMatch(keywords.first);
+    // Tek kelime ise barkod/stok kodu/ürün adı olabilir
+    final isSingleKeyword = keywords.length == 1;
 
-    if (isSingleNumeric) {
-      // Önce barkod araması (çok hızlı - indexed)
-      final barkodQuery = '''
-        SELECT
-          b.barkod,
-          bi._key as birim_key,
-          bi.birimadi,
-          u.StokKodu,
-          u._key as urun_key,
-          u.UrunAdi,
-          u.UrunId
-        FROM barkodlar b
-        INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
-        INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
-        WHERE u.aktif = 1 AND b.barkod LIKE ?
-        LIMIT 20
-      ''';
+    if (isSingleKeyword) {
+      final searchTerm = keywords.first;
 
-      var searchResults = await db.rawQuery(barkodQuery, ['${keywords.first}%']);
+      // 🔥 YENİ YAKLAŞIM: Üç alanda da aynı anda ara (UNION ile)
+      // Barkod: Tamamen sayı (örn: 5382241, 203278)
+      // StokKodu: Harf + sayı karışık (örn: CC05782, A-3135)
+      // ÜrünAdı: Harf + sayı karışık (örn: HALLEY, *CTR UKF...)
 
-      debugPrint('⚡ Barkod araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
-
-      // Barkod bulunamadıysa StokKodu'nda ara
-      if (searchResults.isEmpty) {
-        final stokQuery = '''
+      // Priority based search with UNION ALL
+      // 1. Exact barcode match (highest priority)
+      // 2. Exact stock code match
+      // 3. Stock code starts with
+      // 4. Product name starts with
+      // 5. Product name contains (wildcard search)
+      final unifiedQuery = '''
+        SELECT * FROM (
+          -- 1. Exact barcode match (highest priority)
           SELECT
+            1 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM barkodlar b
+          INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+          INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
+          WHERE u.aktif = 1 AND b.barkod = ?
+
+          UNION ALL
+
+          -- 2. Barcode starts with
+          SELECT
+            2 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM barkodlar b
+          INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+          INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
+          WHERE u.aktif = 1 AND b.barkod LIKE ? AND b.barkod != ?
+
+          UNION ALL
+
+          -- 3. Exact stock code match
+          SELECT
+            3 as priority,
             b.barkod,
             bi._key as birim_key,
             bi.birimadi,
@@ -412,17 +439,84 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
           FROM urunler u
           INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
           LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
-          WHERE u.aktif = 1 AND u.StokKodu LIKE ?
-          ORDER BY u.StokKodu ASC
-          LIMIT 20
-        ''';
+          WHERE u.aktif = 1 AND u.StokKodu = ?
 
-        searchResults = await db.rawQuery(stokQuery, ['${keywords.first}%']);
-        debugPrint('⚡ StokKodu araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
-      }
+          UNION ALL
+
+          -- 4. Stock code starts with
+          SELECT
+            4 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.StokKodu LIKE ? AND u.StokKodu != ?
+
+          UNION ALL
+
+          -- 5. Product name starts with
+          SELECT
+            5 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.UrunAdi LIKE ?
+
+          UNION ALL
+
+          -- 6. Product name contains (wildcard)
+          SELECT
+            6 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.UrunAdi LIKE ?
+        )
+        GROUP BY urun_key, birim_key
+        ORDER BY priority ASC, UrunAdi ASC
+        LIMIT 20
+      ''';
+
+      final searchResults = await db.rawQuery(unifiedQuery, [
+        searchTerm,              // 1. Exact barcode
+        '$searchTerm%',          // 2. Barcode starts with
+        searchTerm,              // 2. Exclude exact match (already in #1)
+        searchTerm,              // 3. Exact stock code
+        '$searchTerm%',          // 4. Stock code starts with
+        searchTerm,              // 4. Exclude exact match (already in #3)
+        '$searchTerm%',          // 5. Product name starts with
+        '%$searchTerm%',         // 6. Product name contains
+      ]);
 
       stopwatch.stop();
-      debugPrint('🔍 Toplam: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint('🔍 Birleşik arama: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+      // Debug: İlk 3 sonucu göster
+      for (int i = 0; i < searchResults.length && i < 3; i++) {
+        final result = searchResults[i];
+        debugPrint('   ${i+1}. ${result['UrunAdi']} (StokKodu: ${result['StokKodu']}, Barkod: ${result['barkod']}, Priority: ${result['priority']})');
+      }
+
       return searchResults;
     }
 
