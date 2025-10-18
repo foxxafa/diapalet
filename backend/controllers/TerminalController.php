@@ -376,7 +376,19 @@ class TerminalController extends Controller
 
     public function actionSyncUpload()
     {
+        // Log raw body for debugging
+        $rawBody = Yii::$app->request->getRawBody();
+        $this->logToFile("actionSyncUpload - Raw body length: " . strlen($rawBody), 'DEBUG');
+        if (strlen($rawBody) < 5000) {
+            $this->logToFile("actionSyncUpload - Raw body: " . $rawBody, 'DEBUG');
+        } else {
+            $this->logToFile("actionSyncUpload - Raw body (first 2000 chars): " . substr($rawBody, 0, 2000), 'DEBUG');
+        }
+
         $payload = $this->getJsonBody();
+        $this->logToFile("actionSyncUpload - Payload keys: " . json_encode(array_keys($payload)), 'DEBUG');
+        $this->logToFile("actionSyncUpload - Operations count: " . count($payload['operations'] ?? []), 'DEBUG');
+
         $operations = $payload['operations'] ?? [];
         $db = Yii::$app->db;
         $results = [];
@@ -432,6 +444,14 @@ class TerminalController extends Controller
                     $result = $this->_forceCloseOrder($opData, $db);
                 } elseif ($opType === 'warehouseCount') {
                     $this->logToFile("Creating warehouse count for local_id: $localId", 'DEBUG');
+                    $this->logToFile("Warehouse count opData structure: " . json_encode($opData), 'DEBUG');
+                    $this->logToFile("Warehouse count opData keys: " . json_encode(array_keys($opData)), 'DEBUG');
+                    if (isset($opData['header'])) {
+                        $this->logToFile("Warehouse count header keys: " . json_encode(array_keys($opData['header'])), 'DEBUG');
+                    }
+                    if (isset($opData['items'])) {
+                        $this->logToFile("Warehouse count items count: " . count($opData['items']), 'DEBUG');
+                    }
                     $result = $this->_createWarehouseCount($opData, $db);
                     $this->logToFile("Warehouse count result: " . json_encode($result), 'DEBUG');
                 } elseif ($opType === 'inventoryStock') {
@@ -3062,12 +3082,16 @@ class TerminalController extends Controller
         $items = $data['items'] ?? [];
 
         if (empty($header) || empty($items)) {
-            return 'Geçersiz sayım verisi: Header veya items eksik.';
+            $errorMsg = 'Geçersiz sayım verisi: Header veya items eksik.';
+            $this->logToFile("Warehouse count validation failed: $errorMsg", 'WARNING');
+            return $errorMsg;
         }
 
         if (!isset($header['operation_unique_id'], $header['sheet_number'],
                    $header['employee_id'], $header['warehouse_code'])) {
-            return 'Geçersiz sayım header verisi.';
+            $errorMsg = 'Geçersiz sayım header verisi.';
+            $this->logToFile("Warehouse count validation failed: $errorMsg - Missing fields in header", 'WARNING');
+            return $errorMsg;
         }
 
         return null; // Valid
@@ -3133,22 +3157,55 @@ class TerminalController extends Controller
             }
 
             // Items ekle
-            foreach ($items as $item) {
-                $db->createCommand()->insert('wms_count_items', [
-                    'operation_unique_id' => $operationUniqueId,
-                    'item_uuid' => $item['item_uuid'],
-                    'birim_key' => $item['birim_key'] ?? null,
-                    'pallet_barcode' => $item['pallet_barcode'] ?? null,
-                    'quantity_counted' => $item['quantity_counted'],
-                    'barcode' => $item['barcode'] ?? null,
-                    'StokKodu' => $item['StokKodu'] ?? null,
-                    'shelf_code' => $item['shelf_code'] ?? null,
-                    'expiry_date' => $item['expiry_date'] ?? null,
-                    'is_damaged' => isset($item['is_damaged']) ? ($item['is_damaged'] ? 1 : 0) : 0,
-                    'created_at' => isset($item['created_at']) ? $this->convertIso8601ToMysqlDatetime($item['created_at']) : new \yii\db\Expression('NOW()'),
-                    'updated_at' => isset($item['updated_at']) ? $this->convertIso8601ToMysqlDatetime($item['updated_at']) : new \yii\db\Expression('NOW()'),
-                ])->execute();
+            $itemCount = count($items);
+            $this->logToFile("Warehouse count: Adding $itemCount items for operation $operationUniqueId", 'INFO');
+
+            $successCount = 0;
+            $errorCount = 0;
+            $skippedCount = 0;
+            $seenUuids = []; // Duplicate UUID detection
+
+            foreach ($items as $index => $item) {
+                try {
+                    $itemUuid = $item['item_uuid'] ?? 'NO_UUID';
+                    $stokKodu = $item['StokKodu'] ?? 'NO_STOK_KODU';
+                    $quantity = $item['quantity_counted'] ?? 0;
+
+                    $this->logToFile("Warehouse count item #$index: UUID=$itemUuid, StokKodu=$stokKodu, Qty=$quantity", 'DEBUG');
+
+                    // ✅ DUPLICATE UUID KONTROLÜ (Aynı request içinde)
+                    if (isset($seenUuids[$itemUuid])) {
+                        $skippedCount++;
+                        $this->logToFile("⚠️ DUPLICATE UUID in same request: $itemUuid (item #$index) - SKIPPED", 'WARNING');
+                        continue; // Bu item'ı atla, hataya düşme
+                    }
+                    $seenUuids[$itemUuid] = true;
+
+                    $db->createCommand()->insert('wms_count_items', [
+                        'operation_unique_id' => $operationUniqueId,
+                        'item_uuid' => $item['item_uuid'],
+                        'birim_key' => $item['birim_key'] ?? null,
+                        'pallet_barcode' => $item['pallet_barcode'] ?? null,
+                        'quantity_counted' => $item['quantity_counted'],
+                        'barcode' => $item['barcode'] ?? null,
+                        'StokKodu' => $item['StokKodu'] ?? null,
+                        'shelf_code' => $item['shelf_code'] ?? null,
+                        'expiry_date' => $item['expiry_date'] ?? null,
+                        'is_damaged' => isset($item['is_damaged']) ? ($item['is_damaged'] ? 1 : 0) : 0,
+                        'created_at' => isset($item['created_at']) ? $this->convertIso8601ToMysqlDatetime($item['created_at']) : new \yii\db\Expression('NOW()'),
+                        'updated_at' => isset($item['updated_at']) ? $this->convertIso8601ToMysqlDatetime($item['updated_at']) : new \yii\db\Expression('NOW()'),
+                    ])->execute();
+
+                    $successCount++;
+                } catch (\Exception $itemError) {
+                    $errorCount++;
+                    $errorMsg = "Warehouse count item insertion failed at index $index: " . $itemError->getMessage();
+                    $this->logToFile($errorMsg . " | Item data: " . json_encode($item), 'ERROR');
+                    throw new \Exception($errorMsg); // Re-throw to trigger main catch block
+                }
             }
+
+            $this->logToFile("Warehouse count items completed: $successCount success, $errorCount errors", 'INFO');
 
             return [
                 'status' => 'success',
@@ -3157,8 +3214,38 @@ class TerminalController extends Controller
             ];
 
         } catch (\Exception $e) {
-            $this->logToFile("Warehouse count error: " . $e->getMessage(), 'ERROR');
-            return ['status' => 'error', 'message' => 'Veritabanı hatası: ' . $e->getMessage()];
+            $errorMsg = $e->getMessage();
+            $this->logToFile("Warehouse count error: " . $errorMsg, 'ERROR');
+            $this->logToFile("Warehouse count error trace: " . $e->getTraceAsString(), 'ERROR');
+
+            // Telegram'a detaylı hata bildirimi gönder
+            try {
+                $employeeData = \Yii::$app->db->createCommand(
+                    'SELECT first_name, last_name FROM employees WHERE id = :id'
+                )->bindValue(':id', $header['employee_id'] ?? 0)->queryOne();
+
+                $employeeName = $employeeData
+                    ? trim($employeeData['first_name'] . ' ' . $employeeData['last_name'])
+                    : 'Bilinmeyen';
+
+                WMSTelegramNotification::sendNotification(
+                    '📊 DEPO SAYIM HATASI',
+                    "Çalışan <b>{$employeeName}</b> depo sayımı yaparken hata oluştu.",
+                    [
+                        'Hata' => $errorMsg,
+                        'Sheet Number' => $header['sheet_number'] ?? 'N/A',
+                        'Warehouse' => $header['warehouse_code'] ?? 'N/A',
+                        'Employee ID' => $header['employee_id'] ?? 'N/A',
+                        'Operation ID' => $operationUniqueId ?? 'N/A',
+                        'Items Count' => count($items),
+                        'Zaman' => date('Y-m-d H:i:s'),
+                    ]
+                );
+            } catch (\Exception $telegramError) {
+                $this->logToFile("Telegram notification failed: " . $telegramError->getMessage(), 'WARNING');
+            }
+
+            return ['status' => 'error', 'message' => 'Veritabanı hatası: ' . $errorMsg];
         }
     }
 }

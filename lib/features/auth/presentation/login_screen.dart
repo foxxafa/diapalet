@@ -4,6 +4,8 @@ import 'package:diapalet/core/widgets/sync_loading_screen.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/services/database_backup_service.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -39,6 +41,17 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (authData != null && mounted) {
+          // ✅ Veritabanını yedekle (giriş başarılı olduğunda)
+          try {
+            final backupService = DatabaseBackupService();
+            final dbHelper = DatabaseHelper.instance;
+            final dbPath = await dbHelper.getDatabasePath();
+            await backupService.backupDatabase(dbPath);
+          } catch (e) {
+            debugPrint('⚠️ Backup hatası (giriş devam edecek): $e');
+            // Backup hatası olsa bile giriş devam etsin
+          }
+
           final syncService = context.read<SyncService>();
           final networkInfo = context.read<NetworkInfo>();
 

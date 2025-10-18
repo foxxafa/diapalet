@@ -849,6 +849,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
       focusNode: _palletBarcodeFocusNode,
       labelText: 'warehouse_count.pallet_barcode'.tr(),
       showClearButton: true,
+      textInputAction: TextInputAction.done, // ✅ FIX: Prevent nextFocus() crash
       // onQrTap verilmediğinde QrTextField varsayılan davranışı kullanır:
       // QR scanner açar ve sonucu controller'a yazar (shelf gibi)
       validator: (value) {
@@ -873,6 +874,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
               ? '$_selectedProductName ($_selectedStokKodu)'
               : 'warehouse_count.search_product'.tr(),
           showClearButton: true,
+          textInputAction: TextInputAction.done, // ✅ FIX: Prevent nextFocus() crash
           onQrTap: _openQrScannerForProduct, // 🔥 YENİ: Product'a özel QR scanner
           onChanged: (value) {
             debugPrint('🟢 onChanged called: value=$value');
@@ -1268,6 +1270,7 @@ class _WarehouseCountScreenState extends State<WarehouseCountScreen> {
             labelText: 'warehouse_count.shelf'.tr(),
             isValid: _isShelfValid,
             textCapitalization: TextCapitalization.characters, // Otomatik büyük harf
+            textInputAction: TextInputAction.done, // ✅ FIX: Prevent nextFocus() crash
             validator: (val) {
               if (val == null || val.isEmpty) {
                 return 'warehouse_count.error.enter_shelf'.tr();

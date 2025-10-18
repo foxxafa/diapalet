@@ -145,13 +145,24 @@ class WarehouseCountRepositoryImpl implements WarehouseCountRepository {
   @override
   Future<CountItem> addCountItem(CountItem item) async {
     final db = await dbHelper.database;
-    final id = await db.insert(
-      'count_items',
-      item.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
 
-    return item.copyWith(id: id);
+    try {
+      final id = await db.insert(
+        'count_items',
+        item.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.abort, // Changed from replace to abort
+      );
+
+      return item.copyWith(id: id);
+    } catch (e) {
+      // If duplicate UUID error, log it and rethrow
+      if (e.toString().contains('UNIQUE constraint failed')) {
+        debugPrint('❌ DUPLICATE UUID ERROR: ${item.itemUuid} already exists!');
+        debugPrint('   Item details: StokKodu=${item.stokKodu}, Qty=${item.quantityCounted}');
+        rethrow;
+      }
+      rethrow;
+    }
   }
 
   @override

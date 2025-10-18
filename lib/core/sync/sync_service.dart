@@ -528,11 +528,65 @@ class SyncService with ChangeNotifier {
     debugPrint("${pendingOps.length} adet bekleyen işlem bulundu. Sunucuya gönderiliyor...");
 
     final operationsPayload = pendingOps.map((op) {
+      final decodedData = jsonDecode(op.data);
+
+      // Detaylı loglama - her işlem için
+      debugPrint("─────────────────────────────────────────────────");
+      debugPrint("📤 UPLOAD OPERATION:");
+      debugPrint("   Local ID: ${op.id}");
+      debugPrint("   Unique ID: ${op.uniqueId}");
+      debugPrint("   Type: ${op.type.name}");
+      debugPrint("   Status: ${op.status}");
+      debugPrint("   Created: ${op.createdAt}");
+
+      // Warehouse count için özel loglama
+      if (op.type == PendingOperationType.warehouseCount) {
+        debugPrint("   🔍 WAREHOUSE COUNT DETAILS:");
+        final header = decodedData['header'];
+        final items = decodedData['items'] as List?;
+
+        debugPrint("      Header:");
+        debugPrint("         - operation_unique_id: ${header?['operation_unique_id']}");
+        debugPrint("         - sheet_number: ${header?['sheet_number']}");
+        debugPrint("         - employee_id: ${header?['employee_id']}");
+        debugPrint("         - warehouse_code: ${header?['warehouse_code']}");
+        debugPrint("         - count_date: ${header?['count_date']}");
+        debugPrint("         - notes: ${header?['notes']}");
+        debugPrint("      Items: ${items?.length ?? 0} items");
+
+        if (items != null && items.isNotEmpty) {
+          debugPrint("      First 3 items:");
+          for (int i = 0; i < (items.length > 3 ? 3 : items.length); i++) {
+            final item = items[i];
+            debugPrint("         Item #$i:");
+            debugPrint("            - item_uuid: ${item['item_uuid']}");
+            debugPrint("            - StokKodu: ${item['StokKodu']}");
+            debugPrint("            - barcode: ${item['barcode']}");
+            debugPrint("            - quantity_counted: ${item['quantity_counted']}");
+            debugPrint("            - shelf_code: ${item['shelf_code']}");
+            debugPrint("            - is_damaged: ${item['is_damaged']}");
+          }
+        }
+
+        // Full data for debugging (truncated if too long)
+        final fullDataStr = jsonEncode(decodedData);
+        if (fullDataStr.length > 1000) {
+          debugPrint("   📋 Full Data (truncated): ${fullDataStr.substring(0, 1000)}...");
+        } else {
+          debugPrint("   📋 Full Data: $fullDataStr");
+        }
+      } else {
+        // Diğer işlem tipleri için basit loglama
+        debugPrint("   Data keys: ${decodedData.keys.toList()}");
+      }
+
+      debugPrint("─────────────────────────────────────────────────");
+
       return {
         'local_id': op.id,
         'idempotency_key': op.uniqueId,
         'type': op.type.name,
-        'data': jsonDecode(op.data)
+        'data': decodedData
       };
     }).toList();
 

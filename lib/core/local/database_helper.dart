@@ -39,6 +39,12 @@ class DatabaseHelper {
     );
   }
 
+  /// Veritabanı dosya yolunu döndürür (backup için)
+  Future<String> getDatabasePath() async {
+    Directory documentsDirectory = await getApplicationDocumentsDirectory();
+    return join(documentsDirectory.path, _databaseName);
+  }
+
   Future<void> _onCreate(Database db, int version) async {
     await _createAllTables(db);
   }

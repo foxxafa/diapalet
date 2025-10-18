@@ -191,7 +191,7 @@ class PendingOperation {
           identifier = 'stock';
           break;
         case PendingOperationType.warehouseCount:
-          identifier = dataMap['sheet']?['sheet_number']?.toString() ?? '';
+          identifier = dataMap['header']?['sheet_number']?.toString() ?? '';
           break;
       }
     } catch (e) {
