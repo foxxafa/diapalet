@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/sound_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
@@ -59,6 +60,15 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   String? _error;
   String? _successMessage;
   bool _navigateBack = false;
+
+  // 🔥 YENİ: Scanner detection variables
+  String _previousProductValue = '';
+  DateTime? _lastProductChangeTime;
+  DateTime? _productInputStartTime;
+  static const _scannerInputThreshold = Duration(milliseconds: 100);
+  static const _avgCharInputThreshold = 20; // Ortalama karakter başına max 20ms
+  static const _minBarcodeLength = 8;
+  bool _isProcessingBarcodeScanner = false; // Flag for external scanner button
 
   // Getters
   bool get isLoading => _isLoading;
@@ -523,22 +533,163 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Timer? _debounce;
+  SoundService? _soundService;
 
-  void onProductTextChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      if (query.isEmpty) {
-        _productSearchResults.clear();
-        _selectedProduct = null;
-        notifyListeners();
-        return;
+  // SoundService'i set et (screen tarafından inject edilecek)
+  void setSoundService(SoundService soundService) {
+    _soundService = soundService;
+  }
+
+  // 🔥 Scanner button basıldığında flag'i set et
+  void markAsBarcodeScanner() {
+    _isProcessingBarcodeScanner = true;
+    debugPrint('🔴 SCANNER BUTTON DETECTED - Flag set to true');
+  }
+
+  void onProductTextChanged(String value) {
+    debugPrint('🟢 onProductTextChanged called: value=$value');
+
+    // 🔥 YENİ: Hızlı girdi algılama (el terminali tespiti)
+    final now = DateTime.now();
+    bool isFromScanner = _isProcessingBarcodeScanner; // Check flag first
+
+    final previousLength = _previousProductValue.length;
+    final currentLength = value.length;
+    final addedChars = currentLength - previousLength;
+
+    debugPrint('   📊 Önceki uzunluk: $previousLength, Şimdiki uzunluk: $currentLength');
+    debugPrint('   📝 Eklenen karakter sayısı: $addedChars');
+    debugPrint('   🔍 _isProcessingBarcodeScanner: $_isProcessingBarcodeScanner');
+
+    // İlk karakter ise başlangıç zamanını kaydet
+    if (previousLength == 0 && currentLength > 0) {
+      _productInputStartTime = now;
+      debugPrint('   🏁 Giriş başladı: $_productInputStartTime');
+    }
+
+    // Eğer _lastProductChangeTime varsa, son değişiklikten beri geçen süreyi ölç
+    if (_lastProductChangeTime != null) {
+      final timeSinceLastChange = now.difference(_lastProductChangeTime!);
+      debugPrint('   ⏱️ Son değişiklikten beri geçen süre: ${timeSinceLastChange.inMilliseconds}ms');
+
+      // SCANNER KOŞULLARI:
+      // 1. Bir anda çok fazla karakter eklendiyse (>= 8)
+      // 2. Çok kısa sürede gerçekleştiyse (<= 100ms)
+      // 3. Toplam uzunluk minimum barkod uzunluğundan fazlaysa
+      if (addedChars >= _minBarcodeLength &&
+          timeSinceLastChange <= _scannerInputThreshold &&
+          currentLength >= _minBarcodeLength) {
+        isFromScanner = true;
+        debugPrint('   🔴 EL TERMİNALİ ALGILANDI! ($addedChars karakter ${timeSinceLastChange.inMilliseconds}ms içinde eklendi)');
       }
+    } else if (currentLength >= _minBarcodeLength && previousLength == 0) {
+      // İLK GİRİŞ ve UZUN: Muhtemelen scanner
+      isFromScanner = true;
+      debugPrint('   🔴 EL TERMİNALİ ALGILANDI! (Field boşken bir anda $currentLength karakter geldi)');
+    }
+
+    // Ortalama hız kontrolü (daha güvenilir)
+    if (!isFromScanner && currentLength >= _minBarcodeLength && _productInputStartTime != null) {
+      final totalInputTime = now.difference(_productInputStartTime!);
+      final avgTimePerChar = totalInputTime.inMilliseconds / currentLength;
+
+      debugPrint('   📈 Ortalama hız analizi:');
+      debugPrint('      - Toplam süre: ${totalInputTime.inMilliseconds}ms');
+      debugPrint('      - Karakter sayısı: $currentLength');
+      debugPrint('      - Ortalama karakter başına süre: ${avgTimePerChar.toStringAsFixed(1)}ms');
+
+      if (avgTimePerChar < _avgCharInputThreshold) {
+        isFromScanner = true;
+        debugPrint('   🔴 EL TERMİNALİ ALGILANDI (Ortalama Hız)! (${avgTimePerChar.toStringAsFixed(1)}ms/karakter < $_avgCharInputThreshold ms/karakter)');
+      }
+    }
+
+    // Değişkenleri güncelle
+    _previousProductValue = value;
+    _lastProductChangeTime = now;
+
+    // Kullanıcı yazmaya başlarsa seçimi temizle
+    if (value.isNotEmpty && _selectedProduct != null) {
+      _selectedProduct = null;
+      _availableUnitsForSelectedProduct = [];
+      notifyListeners();
+    }
+
+    // Debounce mekanizması
+    _debounce?.cancel();
+
+    // Boş değer ise sonuçları temizle
+    if (value.trim().isEmpty) {
+      _productSearchResults = [];
+      _selectedProduct = null;
+      _previousProductValue = '';
+      _lastProductChangeTime = null;
+      _productInputStartTime = null;
+      _isProcessingBarcodeScanner = false; // Reset flag
+      notifyListeners();
+      return;
+    }
+
+    // 🔥 CAPTURE isFromScanner state BEFORE debounce (closure)
+    final scannerFlagAtThisPoint = isFromScanner;
+
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      if (_isDisposed) return;
+      final currentValue = productController.text;
+      if (currentValue.trim().isEmpty) return;
 
       try {
-        _productSearchResults = await _repository.searchProducts(query, orderId: isOrderBased ? _selectedOrder?.id : null);
+        final searchResults = await _repository.searchProducts(currentValue.trim(), orderId: isOrderBased ? _selectedOrder?.id : null);
+
+        if (_isDisposed) return;
+
+        debugPrint('🔍 Search completed:');
+        debugPrint('   - Query: $currentValue');
+        debugPrint('   - isFromScanner: $scannerFlagAtThisPoint');
+        debugPrint('   - Results: ${searchResults.length}');
+
+        // 🔊 SES BİLDİRİMİ: El terminali ile arama yapıldıysa ses çal
+        if (scannerFlagAtThisPoint && _soundService != null) {
+          if (searchResults.isNotEmpty) {
+            // Ürün bulundu - başarı sesi
+            _soundService!.playSuccessSound();
+            debugPrint('🔊 Başarılı arama - boopk.mp3 çalınıyor');
+          } else {
+            // Ürün bulunamadı - hata sesi
+            _soundService!.playErrorSound();
+            debugPrint('🔊 Başarısız arama - wrongk.mp3 çalınıyor');
+
+            // Bilinmeyen barkodu kaydet
+            await _saveUnknownBarcode(currentValue.trim());
+
+            _error = 'No product found';
+            _isProcessingBarcodeScanner = false; // Reset flag
+            notifyListeners();
+            return;
+          }
+        }
+
+        // 🔥 TEK KAYIT KONTROLÜ: Sadece 1 sonuç varsa otomatik seç
+        if (searchResults.length == 1) {
+          debugPrint('✅ TEK KAYIT BULUNDU! Otomatik seçiliyor...');
+          _productSearchResults = []; // Dropdown'ı GÖSTERME
+          notifyListeners();
+          await selectProductFromSearch(searchResults.first, isAutoSelection: true); // Otomatik seçim
+          _isProcessingBarcodeScanner = false; // Reset flag after successful selection
+          return;
+        } else if (searchResults.isEmpty && scannerFlagAtThisPoint) {
+          // Barkod okuyucudan geldi ama sonuç yok - bilinmeyen barkod kaydet
+          debugPrint('⚠️ Bilinmeyen barkod: $currentValue');
+          await _saveUnknownBarcode(currentValue.trim());
+          _error = 'goods_receiving_screen.error_product_not_found'.tr();
+        }
+
+        _productSearchResults = searchResults;
+        _isProcessingBarcodeScanner = false; // Reset flag
       } catch (e) {
         _error = 'Failed to search products: $e';
         _productSearchResults = [];
+        _isProcessingBarcodeScanner = false; // Reset flag
       }
       notifyListeners();
     });
@@ -969,13 +1120,111 @@ class GoodsReceivingViewModel extends ChangeNotifier {
     );
   }
 
-  /// Birim değiştiğinde product text field'ını günceller
-  void updateProductFieldWithNewBarcode(String newBarcode) {
-    if (_selectedProduct != null) {
-      final stockCode = _selectedProduct!.stockCode;
-      final displayBarcode = newBarcode.isNotEmpty ? newBarcode : 'N/A';
-      productController.text = displayBarcode != 'N/A' ? '$displayBarcode ($stockCode)' : stockCode;
-      notifyListeners();
+
+  /// Arama sonuçlarından ürün seçimi (tek sonuç varsa otomatik)
+  Future<void> selectProductFromSearch(ProductInfo product, {bool isAutoSelection = false}) async {
+    // Önce ürünü seç
+    await selectProduct(product);
+
+    // 🔥 BOX OTOMATIK SEÇME: SADECE otomatik seçimde (tek ürün) çalışsın
+    if (isAutoSelection && _availableUnitsForSelectedProduct.isNotEmpty) {
+      debugPrint('✅ Otomatik seçim aktif - BOX birimi aranıyor...');
+
+      // Önce BOX birimi var mı kontrol et
+      final boxUnit = _availableUnitsForSelectedProduct.firstWhere(
+        (u) => (u['birimadi'] as String?)?.toUpperCase() == 'BOX',
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (boxUnit.isNotEmpty) {
+        // BOX birimi bulundu, otomatik seç
+        final boxBirimKey = boxUnit['birim_key'] as String?;
+        final boxBarcode = boxUnit['barkod'] as String?;
+
+        if (boxBirimKey != null && _selectedProduct != null) {
+          // 🔥 Okutulan barkodu ve stok kodunu kaydet (ProductInfo.fromDbMap'ten önce)
+          final currentStockCode = _selectedProduct!.stockCode;
+          final currentProductKey = _selectedProduct!.key;
+          final currentProductId = _selectedProduct!.id;
+          final currentProductName = _selectedProduct!.name;
+          final currentIsActive = _selectedProduct!.isActive;
+          final scannedBarcode = _selectedProduct!.productBarcode; // OKUTULAN BARKOD (UNIT'in)
+
+          debugPrint('🔍 BOX Update - Current Product Info:');
+          debugPrint('   - StockCode: $currentStockCode');
+          debugPrint('   - Product Key: $currentProductKey');
+          debugPrint('   - Scanned Barcode (from UNIT): $scannedBarcode');
+
+          // ProductInfo'yu BOX birimi ile güncelle
+          final updatedProduct = ProductInfo.fromDbMap({
+            ..._selectedProduct!.toJson(),
+            'birimadi': boxUnit['birimadi'],
+            'birimkod': boxUnit['birimkod'],
+            'barkod': boxBarcode ?? '', // BOX'ın barkodu (muhtemelen NULL)
+            'birim_key': boxBirimKey,
+            // Eksik field'ları manuel ekle
+            'StokKodu': currentStockCode,
+            '_key': currentProductKey,
+            'UrunId': currentProductId,
+            'UrunAdi': currentProductName,
+            'aktif': currentIsActive ? 1 : 0,
+          });
+
+          _selectedProduct = updatedProduct;
+
+          // 🔥 availableUnitsForSelectedProduct listesini güncelle
+          _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
+            if (unit['birim_key'] == boxBirimKey || unit['_key'] == boxBirimKey) {
+              return {...unit, 'selected': true};
+            }
+            return {...unit, 'selected': false};
+          }).toList();
+
+          // Product controller'ı güncelle - OKUTULAN BARKODU koru (warehouse_count gibi)
+          final stockCode = currentStockCode;
+
+          debugPrint('📝 BOX Text Format - StockCode: $stockCode, Scanned Barcode: $scannedBarcode');
+
+          // warehouse_count formatı: OKUTULAN BARKOD (STOKKODU)
+          // BOX'ın kendi barkodu değil, UNIT'in (okutulan) barkodunu kullan!
+          if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
+            productController.text = '$scannedBarcode ($stockCode)';
+          } else {
+            productController.text = stockCode;
+          }
+
+          debugPrint('📦 BOX birimi bulundu ve otomatik seçildi: $boxBirimKey');
+          debugPrint('   📝 Product field text: ${productController.text}');
+
+          // Kısa bildirim göster (optional - UI'da gösterilecek)
+          _successMessage = 'BOX unit auto-selected';
+
+          notifyListeners();
+        }
+      } else {
+        debugPrint('⚠️ BOX birimi bulunamadı');
+      }
+    }
+  }
+
+  /// Bilinmeyen barkodu kaydet
+  Future<void> _saveUnknownBarcode(String barcode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final employeeId = prefs.getInt('user_id');
+      final warehouseCode = prefs.getString('warehouse_code');
+
+      final dbHelper = DatabaseHelper.instance;
+      await dbHelper.saveUnknownBarcode(
+        barcode,
+        employeeId: employeeId,
+        warehouseCode: warehouseCode,
+      );
+
+      debugPrint('📝 Bilinmeyen barkod kaydedildi: $barcode');
+    } catch (e) {
+      debugPrint('❌ Bilinmeyen barkod kaydetme hatası: $e');
+      // Hata sessizce yutulur, kullanıcı deneyimini etkilemez
     }
   }
 }

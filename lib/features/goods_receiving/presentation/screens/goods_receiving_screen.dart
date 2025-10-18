@@ -1,5 +1,6 @@
 // lib/features/goods_receiving/presentation/screens/goods_receiving_screen.dart
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/sound_service.dart';
 import 'package:diapalet/features/goods_receiving/constants/goods_receiving_constants.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/local/database_helper.dart';
@@ -56,6 +57,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
     final repository = Provider.of<GoodsReceivingRepository>(context, listen: false);
     final syncService = Provider.of<SyncService>(context, listen: false);
     final barcodeService = Provider.of<BarcodeIntentService>(context, listen: false);
+    final soundService = Provider.of<SoundService>(context, listen: false);
 
     _barcodeService = barcodeService;
 
@@ -65,6 +67,9 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       barcodeService: barcodeService,
       initialOrder: widget.selectedOrder,
     );
+
+    // 🔥 YENİ: SoundService'i inject et
+    _viewModel.setSoundService(soundService);
 
     _viewModel.init();
     _viewModel.addListener(_onViewModelUpdate);
@@ -115,17 +120,27 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
             body: SafeArea(
               child: viewModel.isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : KeyboardListener(
-                          focusNode: FocusNode(),
-                          onKeyEvent: (KeyEvent event) {
-                            // F3 tuşu veya Ctrl+S kombinasyonu ile barkod okuma tetikle
+                  : Focus(
+                          onKeyEvent: (FocusNode node, KeyEvent event) {
                             if (event is KeyDownEvent) {
                               final isCtrl = HardwareKeyboard.instance.isControlPressed;
+
+                              // 🔥 YENİ: Scanner button detection (KEYCODE_SCANNER_RIGHT)
+                              // LogicalKeyboardKey.keyId için 311 (0x137) kontrol et
+                              if (event.logicalKey.keyId == 0x100000137) {
+                                debugPrint('🔴 SCANNER BUTTON PRESSED (keyId: ${event.logicalKey.keyId})');
+                                _viewModel.markAsBarcodeScanner();
+                                return KeyEventResult.handled;
+                              }
+
+                              // F3 tuşu veya Ctrl+S kombinasyonu ile barkod okuma tetikle
                               if (event.logicalKey == LogicalKeyboardKey.f3 ||
                                   (isCtrl && event.logicalKey == LogicalKeyboardKey.keyS)) {
                                 _triggerBarcodeScanning(viewModel);
+                                return KeyEventResult.handled;
                               }
                             }
+                            return KeyEventResult.ignored;
                           },
                       child: GestureDetector(
                       onTap: () => FocusScope.of(context).unfocus(),
@@ -278,7 +293,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                 : 'goods_receiving_screen.label_select_product'.tr())
             : '${viewModel.selectedProduct!.name} (${viewModel.selectedProduct!.stockCode})',
           onChanged: (value) {
-            // Auto-search and select product as user types
+            // 🔥 YENİ: Scanner detection ve otomatik arama
             viewModel.onProductTextChanged(value);
 
             // Focus expiry date field when product is selected
@@ -1360,10 +1375,13 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                                       if (confirmedProduct != null) {
                                         widget.viewModel.updateSelectedProduct(confirmedProduct);
 
+                                        // 🔥 Format: "BARKOD (STOKKODU)" veya "STOKKODU" (warehouse_count gibi)
                                         final confirmedBarcode = confirmedProduct.productBarcode ?? '';
-                                        widget.viewModel.productController.text = confirmedBarcode.isNotEmpty
-                                            ? '$confirmedBarcode (${confirmedProduct.stockCode})'
-                                            : confirmedProduct.stockCode;
+                                        if (confirmedBarcode.isNotEmpty) {
+                                          widget.viewModel.productController.text = '$confirmedBarcode (${confirmedProduct.stockCode})';
+                                        } else {
+                                          widget.viewModel.productController.text = confirmedProduct.stockCode;
+                                        }
                                       } else {
                                         setState(() {
                                           for (int i = 0; i < _availableUnits.length; i++) {
@@ -1377,9 +1395,12 @@ class _OrderStatusWidgetState extends State<_OrderStatusWidget> {
                                     } else {
                                       widget.viewModel.updateSelectedProduct(updatedProduct);
 
-                                      widget.viewModel.productController.text = barcode.isNotEmpty
-                                          ? '$barcode (${currentProduct.stockCode})'
-                                          : currentProduct.stockCode;
+                                      // 🔥 Format: "BARKOD (STOKKODU)" veya "STOKKODU" (warehouse_count gibi)
+                                      if (barcode.isNotEmpty) {
+                                        widget.viewModel.productController.text = '$barcode (${currentProduct.stockCode})';
+                                      } else {
+                                        widget.viewModel.productController.text = currentProduct.stockCode;
+                                      }
                                     }
                                   }
                                 }

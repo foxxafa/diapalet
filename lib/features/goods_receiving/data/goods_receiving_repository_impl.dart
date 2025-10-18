@@ -411,13 +411,229 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
   @override
   Future<List<ProductInfo>> searchProducts(String query, {int? orderId}) async {
-    // TEST: İlk aramada siparişteki tüm barkodları listele
-    if (orderId != null) {
-      await dbHelper.debugOrderBarcodes(orderId);
+    final db = await dbHelper.database;
+    final stopwatch = Stopwatch()..start();
+
+    final keywords = query
+        .trim()
+        .toUpperCase()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+
+    if (keywords.isEmpty) {
+      return [];
     }
-    
-    final results = await dbHelper.searchProductsByBarcode(query, orderId: orderId);
-    return results.map((map) => ProductInfo.fromDbMap(map)).toList();
+
+    debugPrint('🔍 Arama kelimeleri: $keywords');
+
+    // Tek kelime ise barkod/stok kodu/ürün adı olabilir
+    final isSingleKeyword = keywords.length == 1;
+
+    if (isSingleKeyword) {
+      final searchTerm = keywords.first;
+
+      // Priority based search with UNION ALL (warehouse_count mantığı)
+      final unifiedQuery = '''
+        SELECT * FROM (
+          -- 1. Exact barcode match (highest priority)
+          SELECT
+            1 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM barkodlar b
+          INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+          INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
+          WHERE u.aktif = 1 AND b.barkod = ?
+
+          UNION ALL
+
+          -- 2. Barcode starts with
+          SELECT
+            2 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM barkodlar b
+          INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
+          INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
+          WHERE u.aktif = 1 AND b.barkod LIKE ? AND b.barkod != ?
+
+          UNION ALL
+
+          -- 3. Exact stock code match
+          SELECT
+            3 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.StokKodu = ?
+
+          UNION ALL
+
+          -- 4. Stock code starts with
+          SELECT
+            4 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.StokKodu LIKE ? AND u.StokKodu != ?
+
+          UNION ALL
+
+          -- 5. Product name starts with
+          SELECT
+            5 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.UrunAdi LIKE ?
+
+          UNION ALL
+
+          -- 6. Product name contains (wildcard)
+          SELECT
+            6 as priority,
+            b.barkod,
+            bi._key as birim_key,
+            bi.birimadi,
+            u.StokKodu,
+            u._key as urun_key,
+            u.UrunAdi,
+            u.UrunId
+          FROM urunler u
+          INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+          LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+          WHERE u.aktif = 1 AND u.UrunAdi LIKE ?
+        )
+        GROUP BY urun_key, birim_key
+        ORDER BY priority ASC, UrunAdi ASC
+        LIMIT 20
+      ''';
+
+      final searchResults = await db.rawQuery(unifiedQuery, [
+        searchTerm,              // 1. Exact barcode
+        '$searchTerm%',          // 2. Barcode starts with
+        searchTerm,              // 2. Exclude exact match (already in #1)
+        searchTerm,              // 3. Exact stock code
+        '$searchTerm%',          // 4. Stock code starts with
+        searchTerm,              // 4. Exclude exact match (already in #3)
+        '$searchTerm%',          // 5. Product name starts with
+        '%$searchTerm%',         // 6. Product name contains
+      ]);
+
+      stopwatch.stop();
+      debugPrint('🔍 Birleşik arama: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+      // Debug: İlk 3 sonucu göster
+      for (int i = 0; i < searchResults.length && i < 3; i++) {
+        final result = searchResults[i];
+        debugPrint('   ${i+1}. ${result['UrunAdi']} (StokKodu: ${result['StokKodu']}, Barkod: ${result['barkod']}, Priority: ${result['priority']})');
+      }
+
+      return searchResults.map((map) => ProductInfo.fromDbMap(map)).toList();
+    }
+
+    // Çoklu kelime veya harf içeriyor - UrunAdi'nde ara
+    final List<String> conditions = [];
+    final List<String> params = [];
+
+    for (final keyword in keywords) {
+      conditions.add('u.UrunAdi LIKE ?');
+      params.add('$keyword%');
+    }
+
+    final whereClause = conditions.join(' AND ');
+
+    final simpleQuery = '''
+      SELECT
+        b.barkod,
+        bi._key as birim_key,
+        bi.birimadi,
+        u.StokKodu,
+        u._key as urun_key,
+        u.UrunAdi,
+        u.UrunId
+      FROM urunler u
+      INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+      LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+      WHERE u.aktif = 1 AND $whereClause
+      ORDER BY u.UrunAdi ASC
+      LIMIT 20
+    ''';
+
+    var searchResults = await db.rawQuery(simpleQuery, params);
+
+    debugPrint('⚡ UrunAdi araması: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+    // Yeterli sonuç yoksa genel arama
+    if (searchResults.length < 5) {
+      debugPrint('🔍 Genel arama yapılıyor...');
+
+      final List<String> generalCond = [];
+      final List<String> generalParams = [];
+
+      for (final keyword in keywords) {
+        generalCond.add('u.UrunAdi LIKE ?');
+        generalParams.add('%$keyword%');
+      }
+
+      final generalWhere = generalCond.join(' AND ');
+
+      final generalQuery = '''
+        SELECT
+          b.barkod,
+          bi._key as birim_key,
+          bi.birimadi,
+          u.StokKodu,
+          u._key as urun_key,
+          u.UrunAdi,
+          u.UrunId
+        FROM urunler u
+        INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
+        LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
+        WHERE u.aktif = 1 AND $generalWhere
+        ORDER BY u.UrunAdi ASC
+        LIMIT 20
+      ''';
+
+      searchResults = await db.rawQuery(generalQuery, generalParams);
+    }
+
+    stopwatch.stop();
+    debugPrint('🔍 Toplam: ${searchResults.length} sonuç, ${stopwatch.elapsedMilliseconds}ms');
+
+    return searchResults.map((map) => ProductInfo.fromDbMap(map)).toList();
   }
 
   @override

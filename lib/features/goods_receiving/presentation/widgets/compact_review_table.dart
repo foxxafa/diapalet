@@ -41,12 +41,17 @@ class CompactReviewTable extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: [
-        // Sipariş ürünleri
-        if (orderItems.isNotEmpty)
+        // Sipariş bazlı mal kabul - sipariş ürünleri
+        if (!isFreeReceiving && orderItems.isNotEmpty)
           ..._buildOrderItemRows(context),
-        
-        // Sipariş dışı ürünler - sadece serbest mal kabulde delivery note bazında gruplanmış
-        if (isFreeReceiving && (outOfOrderItems.isNotEmpty || viewModel.addedItems.any((item) => item.product.isOutOfOrder))) ...[
+
+        // Serbest mal kabul - TÜM eklenen ürünler (delivery note bazında gruplanmış)
+        if (isFreeReceiving && viewModel.addedItems.isNotEmpty) ...[
+          ..._buildFreeReceivingItems(context),
+        ],
+
+        // Sipariş bazlı mal kabul - sipariş dışı ürünler
+        if (!isFreeReceiving && (outOfOrderItems.isNotEmpty || viewModel.addedItems.any((item) => item.product.isOutOfOrder))) ...[
           ..._buildDeliveryNoteGroupedItems(context),
         ],
       ],
@@ -174,6 +179,77 @@ class CompactReviewTable extends StatelessWidget {
       }
     }
     
+    return widgets;
+  }
+
+  /// Serbest mal kabul - TÜM ürünleri delivery note bazında grupla
+  List<Widget> _buildFreeReceivingItems(BuildContext context) {
+    final widgets = <Widget>[];
+
+    // Tüm eklenen ürünler
+    final allItems = viewModel.addedItems.toList();
+
+    // Delivery note bazında gruplama
+    final Map<String?, List<ReceiptItemDraft>> deliveryNoteGroups = {};
+
+    for (final item in allItems) {
+      final itemDeliveryNote = item.deliveryNoteNumber ?? deliveryNoteNumber;
+      deliveryNoteGroups.putIfAbsent(itemDeliveryNote, () => []).add(item);
+    }
+
+    // Her delivery note grubu için widget oluştur
+    deliveryNoteGroups.forEach((deliveryNote, items) {
+      // 📄 Delivery Note Header
+      widgets.add(HeaderBuilderUtils.buildDeliveryNoteHeader(context, deliveryNote));
+
+      // Bu delivery note'daki ürünleri pallet bazında grupla
+      final Map<String?, List<ReceiptItemDraft>> palletGroups = {};
+      final List<ReceiptItemDraft> looseItems = [];
+
+      for (final item in items) {
+        if (item.palletBarcode != null && item.palletBarcode!.isNotEmpty) {
+          palletGroups.putIfAbsent(item.palletBarcode, () => []).add(item);
+        } else {
+          looseItems.add(item);
+        }
+      }
+
+      // 🚚 Her pallet için section
+      palletGroups.forEach((palletBarcode, palletItems) {
+        widgets.add(HeaderBuilderUtils.buildPalletHeader(context, palletBarcode!));
+        // Palet içindeki ürünler (indent)
+        for (final item in palletItems) {
+          widgets.add(Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: _buildProductCard(
+              context: context,
+              productName: item.product.name,
+              stockCode: item.product.stockCode,
+              items: [item],
+              isOutOfOrder: false,
+            ),
+          ));
+        }
+      });
+
+      // 📦 Loose Items
+      if (looseItems.isNotEmpty) {
+        widgets.add(HeaderBuilderUtils.buildLooseItemsHeader(context));
+        for (final item in looseItems) {
+          widgets.add(Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: _buildProductCard(
+              context: context,
+              productName: item.product.name,
+              stockCode: item.product.stockCode,
+              items: [item],
+              isOutOfOrder: false,
+            ),
+          ));
+        }
+      }
+    });
+
     return widgets;
   }
 
