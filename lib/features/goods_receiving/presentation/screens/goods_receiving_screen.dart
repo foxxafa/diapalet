@@ -998,37 +998,37 @@ class _FullscreenConfirmationPage extends StatelessWidget {
         border: Border.all(color: theme.colorScheme.primaryContainer),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center, // 🔥 Yatayda ortala
         children: [
-          Expanded(
-            child: Text(
-              '${'goods_receiving_screen.dialog_confirmation_title'.tr()}:',
-              style:
-                  theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.right,
-            ),
+          // "Review Items:" başlığı (küçük)
+          Text(
+            '${'goods_receiving_screen.dialog_confirmation_title'.tr()}:',
+            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 8),
+
+          // Badge (miktar)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: theme.colorScheme.primary,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               totalAcceptedItems.toString(),
-              style: theme.textTheme.labelLarge?.copyWith(
+              style: theme.textTheme.titleSmall?.copyWith(
                 color: theme.colorScheme.onPrimary,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'goods_receiving_screen.items_to_receive'.tr(),
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.left,
+
+          // "items to receive" açıklaması
+          Text(
+            'goods_receiving_screen.items_to_receive'.tr(),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

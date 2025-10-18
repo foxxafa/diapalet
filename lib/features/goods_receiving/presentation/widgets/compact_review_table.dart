@@ -378,23 +378,26 @@ class CompactReviewTable extends StatelessWidget {
         ),
       ),
       child: InkWell(
-        onTap: (!isOutOfOrder && !isFromDB && (items.isNotEmpty || orderItem != null)) ? () => _showDetailDialog(context, productName, stockCode, items, productInfo, orderItem) : null,
+        onTap: (!isFreeReceiving && !isOutOfOrder && !isFromDB && (items.isNotEmpty || orderItem != null))
+            ? () => _showDetailDialog(context, productName, stockCode, items, productInfo, orderItem)
+            : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Product info
+              // Product info - Expanded to take available space
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Üst satır: Ürün adı (küçük font)
                     Row(
                       children: [
                         Expanded(
                           child: Text(
                             productName,
-                            style: theme.textTheme.bodyLarge?.copyWith(
+                            style: theme.textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
@@ -403,73 +406,78 @@ class CompactReviewTable extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
+
+                    // Alt satır: Stock code + SKT badge (sol) | Miktar + Birim (sağ)
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          stockCode,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w500,
+                        // Sol taraf: Stock code + SKT badge
+                        Flexible(
+                          child: Row(
+                            children: [
+                              Text(
+                                stockCode,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (items.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                ..._buildProductExtraInfo(context, items, showPalletInfo: false, isOutOfOrder: isOutOfOrder),
+                              ],
+                            ],
                           ),
                         ),
-                        // SKT ve sipariş dışı badge'lerini göster - palet bilgisi header olarak gösterilecek
-                        if (items.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          ..._buildProductExtraInfo(context, items, showPalletInfo: false, isOutOfOrder: isOutOfOrder),
+
+                        const SizedBox(width: 8),
+
+                        // Sağ taraf: Miktar + Birim
+                        if (isFromDB && productInfo != null) ...[
+                          Text(
+                            '${(productInfo.quantityReceived ?? 0.0).toStringAsFixed(0)} $unit',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.secondary,
+                            ),
+                          ),
+                        ] else if (items.isNotEmpty) ...[
+                          Text(
+                            '${totalQuantity.toStringAsFixed(0)} $unit',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ] else if (orderItem != null) ...[
+                          Text(
+                            '0 $unit',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
                         ],
-                        
                       ],
                     ),
                   ],
                 ),
               ),
-              
-              const SizedBox(width: 16),
-              
-              // Quantity info
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (isFromDB && productInfo != null) ...[
-                    Text(
-                      '${(productInfo.quantityReceived ?? 0.0).toStringAsFixed(0)} $unit',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.secondary,
-                      ),
-                    ),
-                  ] else if (items.isNotEmpty) ...[
-                    Text(
-                      '${totalQuantity.toStringAsFixed(0)} $unit',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ] else if (orderItem != null) ...[
-                    Text(
-                      '0 $unit',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              
+
               const SizedBox(width: 8),
-              
-              // Action button
+
+              // Action button - sağda sabit
               if (!isFromDB && items.isNotEmpty) ...[
                 items.length == 1
                     ? IconButton(
                         icon: Icon(
                           Icons.delete_outline,
                           color: theme.colorScheme.error,
-                          size: 22,
+                          size: 20,
                         ),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(),
                         onPressed: () => onItemRemoved(items.first),
                         tooltip: 'common_labels.delete'.tr(),
                       )
@@ -477,8 +485,9 @@ class CompactReviewTable extends StatelessWidget {
                         icon: Icon(
                           Icons.delete_outline,
                           color: theme.colorScheme.error,
-                          size: 22,
+                          size: 20,
                         ),
+                        padding: const EdgeInsets.all(8),
                         itemBuilder: (context) => items.asMap().entries.map((entry) {
                           final index = entry.key;
                           final item = entry.value;
@@ -490,8 +499,8 @@ class CompactReviewTable extends StatelessWidget {
                         onSelected: (item) => onItemRemoved(item),
                         tooltip: 'common_labels.delete'.tr(),
                       ),
-              ] else ...[
-                const SizedBox(width: 48), // Boş alan - ikonları kaldır
+              ] else if (!isFromDB) ...[
+                const SizedBox(width: 40), // Boş alan - alignment için
               ],
             ],
           ),
