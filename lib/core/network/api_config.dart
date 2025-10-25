@@ -30,6 +30,7 @@ class ApiConfig {
   static String get syncDownload => _getEndpoint('sync-download');
   static String get syncCounts => _getEndpoint('sync-counts');
   static String get unknownBarcodesUpload => _getEndpoint('unknown-barcodes-upload');
+  static String get uploadDatabase => _getEndpoint('upload-database');
   static String get healthCheck => _getEndpoint('health-check');
 
   // Endpoint formatını ortama göre belirle
@@ -60,6 +61,19 @@ class ApiConfig {
       },
     ));
 
+    // API Key'i otomatik ekleyen Interceptor
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final prefs = await SharedPreferences.getInstance();
+        final apiKey = prefs.getString('api_key');
+        if (apiKey != null) {
+          options.headers['Authorization'] = 'Bearer $apiKey';
+        }
+
+        return handler.next(options);
+      },
+    ));
+
     // Loglama için Interceptor ekle (sadece debug modda çalışır)
     if (kDebugMode) {
       dio.interceptors.add(LogInterceptor(
@@ -72,18 +86,6 @@ class ApiConfig {
         logPrint: (obj) => debugPrint(obj.toString()),
       ));
     }
-
-    // API Key'i otomatik ekleyen Interceptor
-    dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        final prefs = await SharedPreferences.getInstance();
-        final apiKey = prefs.getString('api_key');
-        if (apiKey != null) {
-          options.headers['Authorization'] = 'Bearer $apiKey';
-        }
-        return handler.next(options);
-      },
-    ));
 
     return dio;
   }

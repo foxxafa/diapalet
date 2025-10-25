@@ -639,7 +639,7 @@ class ProductDetailDialog extends StatelessWidget {
       child: Container(
         constraints: BoxConstraints(
           maxHeight: mediaQuery.size.height * 0.8,
-          maxWidth: mediaQuery.size.width * 0.9,
+          maxWidth: 500, // 🔥 Sabit genişlik - daha geniş
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -662,9 +662,11 @@ class ProductDetailDialog extends StatelessWidget {
                       children: [
                         Text(
                           productName,
-                          style: theme.textTheme.titleLarge?.copyWith(
+                          style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -860,17 +862,24 @@ class ProductDetailDialog extends StatelessWidget {
 
   Widget _buildStatRow(BuildContext context, String label, String value, String unit, {Color? color}) {
     final theme = Theme.of(context);
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: theme.textTheme.bodyLarge,
+        // Label - Flexible to prevent overflow
+        Flexible(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        const SizedBox(width: 8),
+        // Value + Unit
         Text(
           '$value $unit',
-          style: theme.textTheme.titleMedium?.copyWith(
+          style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: color ?? theme.colorScheme.onSurface,
           ),

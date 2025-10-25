@@ -1095,47 +1095,37 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           return const SizedBox.shrink();
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SegmentedButton<AssignmentMode>(
-              segments: [
-                ButtonSegment(
-                    value: AssignmentMode.pallet,
-                    label: Text('inventory_transfer.mode_pallet'.tr()),
-                    icon: const Icon(Icons.pallet),
-                    enabled: _isPalletModeAvailable
-                ),
-                ButtonSegment(
-                    value: AssignmentMode.product,
-                    label: Text('inventory_transfer.mode_product'.tr()),
-                    icon: const Icon(Icons.inventory_2),
-                    enabled: _isBoxModeAvailable
-                ),
-              ],
-              selected: {_selectedMode},
-              onSelectionChanged: (newSelection) {
-                final newMode = newSelection.first;
-                if (_isModeAvailable(newMode)) {
-                  setState(() {
-                    _selectedMode = newMode;
-                    _isPalletOpening = false;
-                    _resetContainerAndProducts();
-
-                    // Reload containers with new mode
-                    if (_selectedSourceLocationName != null || widget.isFreePutAway || widget.selectedOrder != null) {
-                      _loadContainersForLocation();
-                    }
-                  });
-                }
-              },
-              style: SegmentedButton.styleFrom(
-                visualDensity: VisualDensity.comfortable,
-                selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-                selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-              ),
+        return SegmentedButton<AssignmentMode>(
+          segments: [
+            ButtonSegment(
+              value: AssignmentMode.product,
+              label: Text('inventory_transfer.mode_product'.tr()),
+              icon: const Icon(Icons.inventory_2),
+              enabled: _isBoxModeAvailable
+            ),
+            ButtonSegment(
+              value: AssignmentMode.pallet,
+              label: Text('inventory_transfer.mode_pallet'.tr()),
+              icon: const Icon(Icons.pallet),
+              enabled: _isPalletModeAvailable
             ),
           ],
+          selected: {_selectedMode},
+          onSelectionChanged: (newSelection) {
+            final newMode = newSelection.first;
+            if (_isModeAvailable(newMode)) {
+              setState(() {
+                _selectedMode = newMode;
+                _isPalletOpening = false;
+                _resetContainerAndProducts();
+
+                // Reload containers with new mode
+                if (_selectedSourceLocationName != null || widget.isFreePutAway || widget.selectedOrder != null) {
+                  _loadContainersForLocation();
+                }
+              });
+            }
+          },
         );
       },
     );

@@ -254,10 +254,10 @@ class AuthRepositoryImpl implements AuthRepository {
           await dbHelper.clearWarehouseSpecificData();
           debugPrint("✅ [OFFLINE] Eski warehouse operasyon verileri temizlendi.");
         } else if (previousUserId != null && previousUserId != newUserId) {
-          debugPrint("🔄 [OFFLINE] Farklı kullanıcı girişi tespit edildi! Önceki: $previousUserId → Yeni: $newUserId");
-          debugPrint("⚠️ [OFFLINE] Warehouse/branch bilgileri korunacak, sadece operasyon verileri temizlenecek");
-          await dbHelper.clearWarehouseSpecificData();
-          debugPrint("✅ [OFFLINE] Eski kullanıcı operasyon verileri temizlendi.");
+          debugPrint("👤 [OFFLINE] Aynı warehouse'da farklı kullanıcı girişi: Önceki: $previousUserId → Yeni: $newUserId");
+          debugPrint("✅ [OFFLINE] Aynı warehouse olduğu için veriler korunuyor, sync devam edecek.");
+          // KRITIK FIX: Online login ile tutarlılık için clearWarehouseSpecificData() ÇAĞRILMIYOR
+          // Aynı depoda farklı kullanıcı girişinde pending operations korunmalı
         } else if (previousWarehouseCode == null) {
           debugPrint("🆕 [OFFLINE] İlk giriş - warehouse code: $newWarehouseCode");
         } else {

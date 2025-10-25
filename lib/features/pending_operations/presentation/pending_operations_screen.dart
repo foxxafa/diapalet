@@ -1,14 +1,22 @@
 // lib/features/pending_operations/presentation/pending_operations_screen.dart
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/theme/app_theme.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/services/telegram_logger_service.dart';
+import 'package:diapalet/core/services/database_backup_service.dart';
+import 'package:diapalet/core/network/api_config.dart';
+import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:diapalet/core/services/pdf_service.dart';
 import 'package:diapalet/features/pending_operations/constants/pending_operations_constants.dart';
 
@@ -152,6 +160,261 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
     }
   }
 
+  void _showExportDatabaseDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('💾 Export Database'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('SQLite database will be saved to your device:'),
+            SizedBox(height: 16),
+            Text(
+              '• Saved to Documents/RowHub folder',
+              style: TextStyle(fontSize: 13),
+            ),
+            Text(
+              '• Uploaded to Telegram (optional backup)',
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _exportDatabaseAndUpload();
+            },
+            icon: const Icon(Icons.download),
+            label: const Text('Export'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportDatabaseAndUpload() async {
+    // Loading göster
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Exporting database...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final db = DatabaseHelper.instance;
+      final dbPath = await db.getDatabasePath();
+
+      // Database dosyasını oku
+      final dbFile = File(dbPath);
+      if (!await dbFile.exists()) {
+        throw Exception('Database file not found at: $dbPath');
+      }
+
+      final dbBytes = await dbFile.readAsBytes();
+      final prefs = await SharedPreferences.getInstance();
+      final employeeName = '${prefs.getString('first_name') ?? ''} ${prefs.getString('last_name') ?? ''}'.trim();
+      final warehouseCode = prefs.getString('warehouse_code') ?? 'Unknown';
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+
+      // 1. LOCAL SAVE (PRIORITY) - Save to RowHub folder
+      bool downloadSuccess = false;
+      String? savedPath;
+      try {
+        // Use RowHub folder like backup service does
+        final backupDir = await _getRowHubDirectory();
+        if (backupDir == null) {
+          throw Exception('RowHub folder could not be created');
+        }
+
+        final outputFile = File(path.join(backupDir.path, 'Diapallet_v2_${warehouseCode}_$timestamp.db'));
+        await outputFile.writeAsBytes(dbBytes);
+        downloadSuccess = true;
+        savedPath = outputFile.path;
+        debugPrint('✅ Database saved: $savedPath');
+      } catch (e) {
+        debugPrint('❌ Local save error: $e');
+        // If local save fails, throw error
+        throw Exception('Failed to save database to device: $e');
+      }
+
+      // 2. TELEGRAM UPLOAD (OPTIONAL)
+      bool telegramSuccess = false;
+      try {
+        telegramSuccess = await _uploadDatabaseToTelegram(
+          dbBytes,
+          employeeName.isEmpty ? 'Unknown Employee' : employeeName,
+          warehouseCode,
+        );
+        if (telegramSuccess) {
+          debugPrint('✅ Telegram upload successful');
+        } else {
+          debugPrint('⚠️ Telegram upload failed');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Telegram upload error (not critical): $e');
+        // Telegram error is not critical, continue
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // Loading'i kapat
+
+      // Result message - always green if local save successful
+      final message = telegramSuccess
+          ? '✅ Database exported and uploaded to Telegram'
+          : '✅ Database exported to RowHub folder';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+      Navigator.pop(context); // Loading'i kapat
+
+      debugPrint('❌ Database export error: $e');
+      debugPrint('Stack trace: $stackTrace');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  /// Get RowHub directory (same as DatabaseBackupService)
+  /// Android: /storage/emulated/0/Documents/RowHub
+  Future<Directory?> _getRowHubDirectory() async {
+    try {
+      Directory backupDir;
+
+      if (Platform.isAndroid) {
+        // Android: Public Documents/RowHub folder
+        // Path: /storage/emulated/0/Documents/RowHub
+
+        // Check storage permission
+        if (await _requestStoragePermission()) {
+          const publicDocumentsPath = '/storage/emulated/0/Documents/RowHub';
+          backupDir = Directory(publicDocumentsPath);
+          debugPrint('📂 Using RowHub folder: $publicDocumentsPath');
+        } else {
+          // No permission, use fallback
+          debugPrint('⚠️ No storage permission, using fallback');
+          // Fallback: Downloads folder
+          const fallbackPath = '/storage/emulated/0/Download/RowHub';
+          backupDir = Directory(fallbackPath);
+        }
+      } else {
+        // iOS: App documents folder (not applicable for this app)
+        const publicDocumentsPath = '/storage/emulated/0/Documents/RowHub';
+        backupDir = Directory(publicDocumentsPath);
+      }
+
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+        debugPrint('📁 RowHub folder created: ${backupDir.path}');
+      }
+
+      return backupDir;
+    } catch (e) {
+      debugPrint('❌ RowHub folder creation error: $e');
+      return null;
+    }
+  }
+
+  /// Request storage permission (Android 10+)
+  Future<bool> _requestStoragePermission() async {
+    try {
+      if (Platform.isAndroid) {
+        // Android 11+ için manageExternalStorage iznini dene
+        var status = await Permission.manageExternalStorage.status;
+
+        if (status.isGranted) {
+          debugPrint('✅ MANAGE_EXTERNAL_STORAGE permission granted');
+          return true;
+        }
+
+        // İzin yoksa iste
+        debugPrint('📋 Requesting MANAGE_EXTERNAL_STORAGE permission...');
+        status = await Permission.manageExternalStorage.request();
+
+        if (status.isGranted) {
+          debugPrint('✅ MANAGE_EXTERNAL_STORAGE permission granted after request');
+          return true;
+        } else {
+          debugPrint('⚠️ MANAGE_EXTERNAL_STORAGE permission denied, trying storage permission...');
+
+          // Fallback: Normal storage permission
+          var storageStatus = await Permission.storage.request();
+          if (storageStatus.isGranted) {
+            debugPrint('✅ Storage permission granted');
+            return true;
+          }
+
+          debugPrint('❌ All storage permissions denied');
+          return false;
+        }
+      }
+      return true; // iOS doesn't need permission
+    } catch (e) {
+      debugPrint('⚠️ Storage permission error: $e');
+      return false; // Use fallback on error
+    }
+  }
+
+  Future<bool> _uploadDatabaseToTelegram(
+    Uint8List dbBytes,
+    String employeeName,
+    String warehouseCode,
+  ) async {
+    try {
+      final dio = _syncService.dio;
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = 'Diapallet_v2_${warehouseCode}_$timestamp.db';
+
+      // Base64 encode et
+      final base64Db = base64Encode(dbBytes);
+
+      // Backend'e gönder - IIS request limit artırıldı (50MB)
+      final response = await dio.post(
+        ApiConfig.uploadDatabase,
+        data: {
+          'database_file': base64Db,
+          'filename': filename,
+          'employee_name': employeeName,
+          'warehouse_code': warehouseCode,
+        },
+      );
+
+      return response.statusCode == 200 && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('Telegram upload error: $e');
+      return false;
+    }
+  }
+
   Future<void> _loadData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -194,43 +457,67 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       appBar: SharedAppBar(
         title: 'pending_operations.title'.tr(),
         actions: [
-          // Log gönder butonu
+          // Üç nokta menüsü - Debug Options
           FutureBuilder<int>(
             future: DatabaseHelper.instance.getLogCount(),
             builder: (context, snapshot) {
               final logCount = snapshot.data ?? 0;
-              return Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.bug_report_outlined),
-                    tooltip: 'Send Logs',
-                    onPressed: () => _showSendLogsDialog(context),
-                  ),
-                  if (logCount > 0)
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        constraints: const BoxConstraints(
-                          minWidth: 14,
-                          minHeight: 14,
+              return PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'Debug Options',
+                iconColor: const Color(0xFF1A237E), // Navy blue color (AppBar color)
+                onSelected: (value) {
+                  if (value == 'send_logs') {
+                    _showSendLogsDialog(context);
+                  } else if (value == 'export_db') {
+                    _showExportDatabaseDialog(context);
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'send_logs',
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.bug_report_outlined,
+                          color: Color(0xFF1A237E), // Navy blue
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: Text(
-                          logCount > 99 ? '99+' : logCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
+                        const SizedBox(width: 12),
+                        const Text('Send Logs'),
+                        if (logCount > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              logCount > 99 ? '99+' : logCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
+                        ],
+                      ],
                     ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'export_db',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.storage_outlined,
+                          color: Color(0xFF1A237E), // Navy blue
+                        ),
+                        SizedBox(width: 12),
+                        Text('Export Database'),
+                      ],
+                    ),
+                  ),
                 ],
               );
             },

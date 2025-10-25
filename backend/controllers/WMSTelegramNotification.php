@@ -332,6 +332,73 @@ class WMSTelegramNotification
     }
 
     /**
+     * Database backup dosyası gönder (SQLite .db dosyası olarak)
+     * Flutter'dan gelen database backup'ını Telegram'a gönderir
+     */
+    public static function sendDatabaseFile($dbContent, $filename, $caption)
+    {
+        try {
+            $botToken = Yii::$app->params['telegramBotToken'] ?? self::TELEGRAM_BOT_TOKEN;
+            $chatId = Yii::$app->params['telegramChatId'] ?? self::TELEGRAM_CHAT_ID;
+
+            if (empty($botToken) || empty($chatId)) {
+                Yii::warning('Telegram bot token veya chat ID tanımlı değil', __METHOD__);
+                return false;
+            }
+
+            // Geçici dosya oluştur
+            $tempPath = sys_get_temp_dir() . '/' . $filename;
+            file_put_contents($tempPath, $dbContent);
+
+            Yii::info("Sending database file to Telegram: $filename (" . number_format(strlen($dbContent) / 1024 / 1024, 2) . " MB)", __METHOD__);
+
+            // Telegram API'ye sendDocument ile gönder
+            $url = "https://api.telegram.org/bot{$botToken}/sendDocument";
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, [
+                'chat_id' => $chatId,
+                'document' => new \CURLFile($tempPath, 'application/x-sqlite3', $filename),
+                'caption' => $caption,
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60); // Büyük dosyalar için uzun timeout
+
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            // Geçici dosyayı sil
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+
+            // Debug için detaylı log
+            Yii::info("Telegram sendDocument (DB) Response - HTTP: $httpCode", __METHOD__);
+
+            if ($httpCode !== 200) {
+                Yii::error("Telegram sendDocument (DB) hatası: HTTP $httpCode - $result - CURL Error: $curlError", __METHOD__);
+
+                // Response'u decode et ve hata mesajını al
+                $responseData = json_decode($result, true);
+                if (isset($responseData['description'])) {
+                    Yii::error("Telegram Error Description: " . $responseData['description'], __METHOD__);
+                }
+
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            Yii::error("Telegram database file gönderme hatası: " . $e->getMessage(), __METHOD__);
+            return false;
+        }
+    }
+
+    /**
      * Log dosyası için kısa caption oluştur
      */
     private static function formatLogCaption($title, $deviceInfo = [], $employeeName = null)

@@ -3074,6 +3074,98 @@ class TerminalController extends Controller
     }
 
     /**
+     * Upload database file to Telegram
+     * Receives database backup from mobile app and uploads to Telegram
+     */
+    public function actionUploadDatabase()
+    {
+        $this->logToFile("=== Upload Database Action Called ===", 'INFO');
+        $this->logToFile("PHP Memory Limit: " . ini_get('memory_limit'), 'INFO');
+        $this->logToFile("PHP Version: " . PHP_VERSION, 'INFO');
+
+        try {
+            // Request bilgilerini logla
+            $this->logToFile("REQUEST METHOD: " . $_SERVER['REQUEST_METHOD'], 'INFO');
+            $this->logToFile("Content-Type: " . ($_SERVER['CONTENT_TYPE'] ?? 'not set'), 'INFO');
+
+            // Raw input'u direkt oku (sendLogFile gibi)
+            $this->logToFile("About to read php://input...", 'INFO');
+            $rawInput = file_get_contents('php://input');
+            $this->logToFile("Raw input size: " . strlen($rawInput) . " bytes", 'INFO');
+            $this->logToFile("Memory usage after input: " . round(memory_get_usage() / 1024 / 1024, 2) . " MB", 'INFO');
+
+            // JSON olarak parse et
+            $data = json_decode($rawInput, true);
+
+            if (!$data) {
+                $this->logToFile("Failed to parse JSON from raw input", 'ERROR');
+                return $this->asJson([
+                    'success' => false,
+                    'message' => 'Invalid JSON data'
+                ]);
+            }
+
+            $this->logToFile("JSON parsed successfully. Keys: " . implode(', ', array_keys($data)), 'INFO');
+
+            // Base64'ten decode et
+            $dbContent = base64_decode($data['database_file'] ?? '');
+            $originalFileName = $data['filename'] ?? 'database.db';
+            $employeeName = $data['employee_name'] ?? 'Unknown Employee';
+            $warehouseCode = $data['warehouse_code'] ?? 'Unknown Warehouse';
+            $fileSize = strlen($dbContent);
+
+            $this->logToFile("After decode - fileSize: $fileSize, filename: $originalFileName", 'INFO');
+
+            if (empty($dbContent)) {
+                throw new \Exception('Database file content is empty');
+            }
+
+            $this->logToFile("Database upload request - Employee: $employeeName, Warehouse: $warehouseCode, File: $originalFileName, Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB", 'INFO');
+
+            // Telegram'a gönder
+            $caption = "💾 DATABASE BACKUP\n\n";
+            $caption .= "👤 Employee: $employeeName\n";
+            $caption .= "🏭 Warehouse: $warehouseCode\n";
+            $caption .= "📦 Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB\n";
+            $caption .= "📅 " . date('Y-m-d H:i:s');
+
+            $this->logToFile("Calling WMSTelegramNotification::sendDatabaseFile...", 'INFO');
+
+            $success = WMSTelegramNotification::sendDatabaseFile(
+                $dbContent,
+                $originalFileName,
+                $caption
+            );
+
+            if ($success) {
+                $this->logToFile("Database successfully uploaded to Telegram: $originalFileName", 'INFO');
+                return $this->asJson([
+                    'success' => true,
+                    'message' => 'Database backup successfully uploaded to Telegram'
+                ]);
+            } else {
+                $this->logToFile("Failed to upload database to Telegram: $originalFileName", 'ERROR');
+
+                \Yii::$app->response->statusCode = 500;
+                return $this->asJson([
+                    'success' => false,
+                    'message' => 'Failed to upload database to Telegram'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            $this->logToFile("Database upload error: " . $e->getMessage(), 'ERROR');
+            $this->logToFile("Stack trace: " . $e->getTraceAsString(), 'ERROR');
+
+            \Yii::$app->response->statusCode = 500;
+            return $this->asJson([
+                'success' => false,
+                'message' => 'Server error: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Warehouse count validation
      */
     private function validateWarehouseCountData($data)
@@ -3218,7 +3310,7 @@ class TerminalController extends Controller
             $this->logToFile("Warehouse count error: " . $errorMsg, 'ERROR');
             $this->logToFile("Warehouse count error trace: " . $e->getTraceAsString(), 'ERROR');
 
-            // Telegram'a detaylı hata bildirimi gönder
+            // Telegram'a detaylı hata log dosyası gönder
             try {
                 $employeeData = \Yii::$app->db->createCommand(
                     'SELECT first_name, last_name FROM employees WHERE id = :id'
@@ -3228,21 +3320,52 @@ class TerminalController extends Controller
                     ? trim($employeeData['first_name'] . ' ' . $employeeData['last_name'])
                     : 'Bilinmeyen';
 
-                WMSTelegramNotification::sendNotification(
+                // Detaylı log içeriği oluştur
+                $logContent = "=== WAREHOUSE COUNT ERROR ===\n\n";
+                $logContent .= "Timestamp: " . date('Y-m-d H:i:s') . "\n";
+                $logContent .= "Employee: {$employeeName}\n";
+                $logContent .= "Employee ID: " . ($header['employee_id'] ?? 'N/A') . "\n";
+                $logContent .= "Sheet Number: " . ($header['sheet_number'] ?? 'N/A') . "\n";
+                $logContent .= "Warehouse Code: " . ($header['warehouse_code'] ?? 'N/A') . "\n";
+                $logContent .= "Operation ID: " . ($operationUniqueId ?? 'N/A') . "\n";
+                $logContent .= "Items Count: " . count($items) . "\n\n";
+
+                $logContent .= "=== ERROR DETAILS ===\n";
+                $logContent .= "Error Message: {$errorMsg}\n\n";
+
+                $logContent .= "=== STACK TRACE ===\n";
+                $logContent .= $e->getTraceAsString() . "\n\n";
+
+                $logContent .= "=== HEADER DATA ===\n";
+                $logContent .= json_encode($header, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n\n";
+
+                if (!empty($items)) {
+                    $logContent .= "=== ITEMS DATA (First 5) ===\n";
+                    $itemsToLog = array_slice($items, 0, 5);
+                    $logContent .= json_encode($itemsToLog, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n\n";
+
+                    if (count($items) > 5) {
+                        $logContent .= "... and " . (count($items) - 5) . " more items\n\n";
+                    }
+                }
+
+                $logContent .= "=== SERVER INFO ===\n";
+                $logContent .= "Server: " . (gethostname() ?: 'Unknown') . "\n";
+                $logContent .= "PHP Version: " . PHP_VERSION . "\n";
+                $logContent .= "Database: vtrowhub\n";
+
+                // TXT dosyası olarak gönder
+                WMSTelegramNotification::sendLogFile(
                     '📊 DEPO SAYIM HATASI',
-                    "Çalışan <b>{$employeeName}</b> depo sayımı yaparken hata oluştu.",
+                    $logContent,
                     [
-                        'Hata' => $errorMsg,
-                        'Sheet Number' => $header['sheet_number'] ?? 'N/A',
-                        'Warehouse' => $header['warehouse_code'] ?? 'N/A',
-                        'Employee ID' => $header['employee_id'] ?? 'N/A',
-                        'Operation ID' => $operationUniqueId ?? 'N/A',
-                        'Items Count' => count($items),
-                        'Zaman' => date('Y-m-d H:i:s'),
-                    ]
+                        'Server' => gethostname() ?: 'Unknown',
+                        'Database' => 'vtrowhub'
+                    ],
+                    $employeeName
                 );
             } catch (\Exception $telegramError) {
-                $this->logToFile("Telegram notification failed: " . $telegramError->getMessage(), 'WARNING');
+                $this->logToFile("Telegram log file notification failed: " . $telegramError->getMessage(), 'WARNING');
             }
 
             return ['status' => 'error', 'message' => 'Veritabanı hatası: ' . $errorMsg];
