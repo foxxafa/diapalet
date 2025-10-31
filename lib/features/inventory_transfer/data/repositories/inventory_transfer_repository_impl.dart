@@ -35,28 +35,21 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<Map<String, int?>> getSourceLocations({bool includeReceivingArea = true}) async {
     final db = await dbHelper.database;
 
-    // Stoklu lokasyonları getir - iş mantığına özel kompleks sorgu
+    // DÜZELTME: Tüm aktif rafları getir - stok kontrolü container yükleme sırasında yapılacak
+    // Bu sayede kullanıcı tüm rafları görebilir, boş rafta container yoksa zaten transfer yapamaz
     final query = '''
-      SELECT DISTINCT s.${DbColumns.id}, s.${DbColumns.locationsName}
-      FROM ${DbTables.locations} s
-      INNER JOIN inventory_stock i ON s.${DbColumns.id} = i.${DbColumns.stockLocationId}
-      WHERE s.${DbColumns.isActive} = 1 AND i.${DbColumns.stockStatus} = '${InventoryTransferConstants.stockStatusAvailable}' AND i.${DbColumns.stockQuantity} > 0
-      ORDER BY s.${DbColumns.locationsName}
+      SELECT ${DbColumns.id}, ${DbColumns.locationsName}
+      FROM ${DbTables.locations}
+      WHERE ${DbColumns.isActive} = 1
+      ORDER BY ${DbColumns.locationsName}
     ''';
 
     final maps = await db.rawQuery(query);
     final result = <String, int?>{};
 
     if (includeReceivingArea) {
-      // Mal kabul alanında stok var mı kontrol et
-      final receivingStockQuery = await db.query(
-        DbTables.inventoryStock,
-        where: '${DbColumns.stockLocationId} IS NULL AND ${DbColumns.stockStatus} = ? AND ${DbColumns.stockQuantity} > 0',
-        whereArgs: [InventoryTransferConstants.stockStatusReceiving]
-      );
-      if (receivingStockQuery.isNotEmpty) {
-        result[InventoryTransferConstants.receivingAreaCode] = null; // Artık direkt null kullanıyoruz
-      }
+      // Mal kabul alanını ekle
+      result[InventoryTransferConstants.receivingAreaCode] = null;
     }
 
     for (var map in maps) {

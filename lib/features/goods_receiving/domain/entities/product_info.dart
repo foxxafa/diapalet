@@ -51,8 +51,9 @@ class ProductInfo extends Equatable {
         final displayBirimKod = map['birimkod'];
         // Ama birim_key için sipariş birimi mi kontrol et
         // final isOrderUnit = map['is_order_unit'] == 1;
-        final displayBirimKey = map['birim_key'].toString();
-            
+        final rawBirimKey = map['birim_key'];
+        final displayBirimKey = rawBirimKey?.toString();
+
         birimInfoMap = {
           'birimadi': displayBirimAdi,
           'birimkod': displayBirimKod,

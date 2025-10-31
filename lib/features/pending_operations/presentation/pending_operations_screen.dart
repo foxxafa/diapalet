@@ -227,15 +227,15 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
         throw Exception('Database file not found at: $dbPath');
       }
 
-      final dbBytes = await dbFile.readAsBytes();
+      // Gereksiz tabloları temizlenmiş versiyonunu oluştur (DatabaseBackupService kullan)
+      final backupService = DatabaseBackupService();
+      final dbBytes = await backupService.createCleanedDatabaseCopy(dbPath);
       final prefs = await SharedPreferences.getInstance();
       final employeeName = '${prefs.getString('first_name') ?? ''} ${prefs.getString('last_name') ?? ''}'.trim();
       final warehouseCode = prefs.getString('warehouse_code') ?? 'Unknown';
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
 
       // 1. LOCAL SAVE (PRIORITY) - Save to RowHub folder
-      bool downloadSuccess = false;
-      String? savedPath;
       try {
         // Use RowHub folder like backup service does
         final backupDir = await _getRowHubDirectory();
@@ -245,9 +245,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
 
         final outputFile = File(path.join(backupDir.path, 'Diapallet_v2_${warehouseCode}_$timestamp.db'));
         await outputFile.writeAsBytes(dbBytes);
-        downloadSuccess = true;
-        savedPath = outputFile.path;
-        debugPrint('✅ Database saved: $savedPath');
+        debugPrint('✅ Database saved: ${outputFile.path}');
       } catch (e) {
         debugPrint('❌ Local save error: $e');
         // If local save fails, throw error
@@ -398,6 +396,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       final base64Db = base64Encode(dbBytes);
 
       // Backend'e gönder - IIS request limit artırıldı (50MB)
+      // Timeout 3 dakika (database + Telegram upload için)
       final response = await dio.post(
         ApiConfig.uploadDatabase,
         data: {
@@ -406,6 +405,10 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
           'employee_name': employeeName,
           'warehouse_code': warehouseCode,
         },
+        options: Options(
+          receiveTimeout: const Duration(minutes: 3), // 180 saniye
+          sendTimeout: const Duration(minutes: 2), // 120 saniye (upload için)
+        ),
       );
 
       return response.statusCode == 200 && response.data['success'] == true;
@@ -414,6 +417,7 @@ class _PendingOperationsScreenState extends State<PendingOperationsScreen>
       return false;
     }
   }
+
 
   Future<void> _loadData() async {
     if (!mounted) return;

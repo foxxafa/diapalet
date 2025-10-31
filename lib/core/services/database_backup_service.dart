@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sqflite/sqflite.dart' as sqflite;
 
 /// Basit veritabanı yedekleme servisi
 /// Giriş yapıldığında veritabanını telefonun içine kaydeder
@@ -11,8 +12,9 @@ class DatabaseBackupService {
   static const String _backupFileName = 'rowhub_backup.db';
 
   /// Veritabanını yedekle (giriş yaparken çağrılır)
+  /// Gereksiz statik tabloları temizler ve optimize edilmiş yedek oluşturur
   /// Her zaman aynı dosyanın üstüne yazar
-  Future<bool> backupDatabase(String dbPath) async {
+  Future<bool> backupDatabase(String dbPath, {bool cleanStaticTables = true}) async {
     try {
       // Kaynak veritabanı dosyası
       final sourceFile = File(dbPath);
@@ -31,18 +33,91 @@ class DatabaseBackupService {
 
       // Yedek dosya yolu
       final backupPath = join(backupDir.path, _backupFileName);
-      final backupFile = File(backupPath);
 
-      // Dosyayı kopyala (üstüne yaz)
-      await sourceFile.copy(backupPath);
+      Uint8List dbBytes;
 
-      final fileSize = await backupFile.length();
+      if (cleanStaticTables) {
+        // Temizlenmiş veritabanı oluştur
+        dbBytes = await createCleanedDatabaseCopy(dbPath);
+      } else {
+        // Orijinal veritabanını kullan
+        dbBytes = await sourceFile.readAsBytes();
+      }
+
+      // Temizlenmiş/orijinal veritabanını yaz
+      await File(backupPath).writeAsBytes(dbBytes);
+
+      final fileSize = dbBytes.length;
       debugPrint('✅ Veritabanı yedeklendi: $backupPath (${_formatBytes(fileSize)})');
 
       return true;
     } catch (e) {
       debugPrint('❌ Veritabanı yedekleme hatası: $e');
       return false;
+    }
+  }
+
+  /// Gereksiz tabloları temizlenmiş database kopyası oluştur
+  /// Statik tablolar (urunler, barkodlar, etc.) export'a dahil edilmez
+  /// Bu tablolar backend'den her sync'te gelir, yedekte tutmaya gerek yok
+  Future<Uint8List> createCleanedDatabaseCopy(String originalDbPath) async {
+    final tempDir = await getTemporaryDirectory();
+    final tempDbPath = join(tempDir.path, 'backup_temp_${DateTime.now().millisecondsSinceEpoch}.db');
+
+    try {
+      // 1. Orijinal database'i geçici konuma kopyala
+      await File(originalDbPath).copy(tempDbPath);
+      debugPrint('📋 Temporary database created for backup');
+
+      // 2. Geçici database'i aç
+      final tempDb = await sqflite.openDatabase(tempDbPath);
+
+      // 3. Gereksiz statik tabloları temizle (backend'den sync edilen tablolar)
+      final tablesToClear = [
+        'urunler',      // Ürün listesi (backend'den gelir)
+        'barkodlar',    // Barkod listesi (backend'den gelir)
+        'birimler',     // Birim listesi (backend'den gelir)
+        'shelfs',       // Raf listesi (backend'den gelir)
+        'tedarikci',    // Tedarikçi listesi (backend'den gelir)
+      ];
+
+      for (final table in tablesToClear) {
+        try {
+          await tempDb.execute('DELETE FROM $table');
+          debugPrint('🗑️ Cleared table: $table');
+        } catch (e) {
+          debugPrint('⚠️ Could not clear table $table: $e');
+          // Tablo yoksa devam et
+        }
+      }
+
+      // 4. VACUUM - dosya boyutunu küçült
+      await tempDb.execute('VACUUM');
+      debugPrint('🔧 VACUUM completed');
+
+      // 5. Database'i kapat
+      await tempDb.close();
+
+      // 6. Temizlenmiş database'i oku
+      final cleanedBytes = await File(tempDbPath).readAsBytes();
+      final originalSize = await File(originalDbPath).length();
+      final cleanedSize = cleanedBytes.length;
+      final reduction = ((originalSize - cleanedSize) / originalSize * 100).toStringAsFixed(1);
+
+      debugPrint('📦 Database cleaned: ${_formatBytes(originalSize)} → ${_formatBytes(cleanedSize)} (-$reduction%)');
+
+      // 7. Geçici dosyayı sil
+      await File(tempDbPath).delete();
+
+      return Uint8List.fromList(cleanedBytes);
+    } catch (e) {
+      debugPrint('❌ Error creating cleaned database: $e');
+      // Hata durumunda geçici dosyayı sil
+      try {
+        await File(tempDbPath).delete();
+      } catch (_) {}
+      // Hata olursa orijinal database'i döndür
+      return await File(originalDbPath).readAsBytes();
     }
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
 import 'package:diapalet/core/services/sound_service.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/utils/gs1_parser.dart';
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
@@ -485,6 +486,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<bool> selectProduct(ProductInfo product, {VoidCallback? onProductSelected, BuildContext? context}) async {
+    debugPrint('🔍 selectProduct ÇAĞRILDI:');
+    debugPrint('   - product.key: ${product.key}');
+    debugPrint('   - product.productKey: ${product.productKey}');
+    debugPrint('   - product.id: ${product.id}');
+    debugPrint('   - product.birimKey: ${product.birimKey}');
+    debugPrint('   - product.stockCode: ${product.stockCode}');
+
     // Sipariş dışı ürün kontrolü - sadece sipariş bazlı mal kabulde modal aç
     if (product.isOutOfOrder && context != null && isOrderBased) {
       final selectedProductWithUnit = await showOutOfOrderProductModal(context, product);
@@ -494,8 +502,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // Seçilen birimle birlikte ürünü güncelle
       product = selectedProductWithUnit;
     }
-    
+
     _selectedProduct = product;
+
+    debugPrint('🔍 selectProduct - _selectedProduct ATANDI:');
+    debugPrint('   - _selectedProduct.key: ${_selectedProduct?.key}');
+    debugPrint('   - _selectedProduct.productKey: ${_selectedProduct?.productKey}');
+    debugPrint('   - _selectedProduct.birimKey: ${_selectedProduct?.birimKey}');
     
     // Ürünün tüm birimlerini getir
     try {
@@ -706,8 +719,18 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   /// Dropdown'dan birim seçildiğinde selected product'ı günceller
   void updateSelectedProduct(ProductInfo updatedProduct) {
-    
+    debugPrint('🔍 updateSelectedProduct ÇAĞRILDI:');
+    debugPrint('   - updatedProduct.key: ${updatedProduct.key}');
+    debugPrint('   - updatedProduct.productKey: ${updatedProduct.productKey}');
+    debugPrint('   - updatedProduct.id: ${updatedProduct.id}');
+    debugPrint('   - updatedProduct.birimKey: ${updatedProduct.birimKey}');
+    debugPrint('   - updatedProduct.stockCode: ${updatedProduct.stockCode}');
+
     _selectedProduct = updatedProduct;
+
+    debugPrint('🔍 updateSelectedProduct - _selectedProduct ATANDI:');
+    debugPrint('   - _selectedProduct.key: ${_selectedProduct?.key}');
+    debugPrint('   - _selectedProduct.productKey: ${_selectedProduct?.productKey}');
     
     // Ürünün tüm birimlerini güncelle
     _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {
@@ -725,6 +748,13 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<void> addItemToList(BuildContext context) async {
+    debugPrint('🔍 addItemToList BAŞLADI:');
+    debugPrint('   - _selectedProduct.key: ${_selectedProduct?.key}');
+    debugPrint('   - _selectedProduct.productKey: ${_selectedProduct?.productKey}');
+    debugPrint('   - _selectedProduct.id: ${_selectedProduct?.id}');
+    debugPrint('   - _selectedProduct.birimKey: ${_selectedProduct?.birimKey}');
+    debugPrint('   - _selectedProduct.stockCode: ${_selectedProduct?.stockCode}');
+
     final quantity = double.tryParse(quantityController.text);
     if (_selectedProduct == null || quantity == null || quantity <= 0) {
       _error = 'goods_receiving_screen.error_select_product_and_quantity'.tr();
@@ -745,7 +775,12 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      final orderItem = _orderItems.firstWhere((item) => item.productId == _selectedProduct!.key);
+
+      // 🔥 FIX: productKey (_key değeri) ile karşılaştır
+      // productKey null ise fallback olarak key kullan
+      final searchKey = _selectedProduct!.productKey ?? _selectedProduct!.key;
+
+      final orderItem = _orderItems.firstWhere((item) => item.productId.toString() == searchKey);
       final alreadyAddedInUI = _addedItems.where((item) => item.product.key == _selectedProduct!.key).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;
@@ -754,11 +789,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       if (quantity > remainingQuantity + 0.001) {
         final shouldProceed = await _showQuantityExceedsConfirmation(
           context,
-          quantity, 
-          remainingQuantity, 
+          quantity,
+          remainingQuantity,
           orderItem.unit ?? ''
         );
-        
+
         if (!shouldProceed) {
           return;
         }
@@ -822,6 +857,7 @@ class GoodsReceivingViewModel extends ChangeNotifier {
   }
 
   Future<bool> saveAndConfirm(ConfirmationAction action) async {
+    debugPrint('💾 saveAndConfirm BAŞLADI - Action: $action, Items: ${_addedItems.length}');
     _syncService.startUserOperation();
 
     _isSaving = true;
@@ -829,7 +865,11 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
     try {
       if (_addedItems.isNotEmpty) {
+        debugPrint('📤 _executeSave çağrılıyor...');
         await _executeSave();
+        debugPrint('✅ _executeSave tamamlandı');
+      } else {
+        debugPrint('⚠️ Kaydedilecek item yok');
       }
 
       switch (action) {
@@ -855,10 +895,44 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       _syncService.uploadPendingOperations().catchError((e) {
       });
 
+      debugPrint('✅ saveAndConfirm TAMAMLANDI - Başarılı');
       return true;
 
-    } catch (e) {
-      _error = 'goods_receiving_screen.error_saving'.tr(namedArgs: {'error': e.toString()});
+    } catch (e, stackTrace) {
+      debugPrint('❌ saveAndConfirm FAILED!');
+      debugPrint('   Error Type: ${e.runtimeType}');
+      debugPrint('   Error: $e');
+      debugPrint('   Stack Trace: $stackTrace');
+
+      // Log to database (ERROR level - saved to SQLite for manual review)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final employeeId = prefs.getInt('user_id');
+        final employeeName = prefs.getString('user_name');
+
+        await TelegramLoggerService.logError(
+          'Goods Receipt Save Failed (ViewModel)',
+          'Failed to complete saveAndConfirm: $e',
+          stackTrace: stackTrace,
+          context: {
+            'action': action.toString(),
+            'is_order_based': isOrderBased.toString(),
+            'order_id': _selectedOrder?.id,
+            'added_items_count': _addedItems.length,
+            'delivery_note': deliveryNoteController.text,
+          },
+          employeeId: employeeId,
+          employeeName: employeeName,
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
+      // Kullanıcıya gösterilecek hata mesajı
+      final errorMessage = e.toString();
+      _error = 'goods_receiving_screen.error_saving'.tr(namedArgs: {'error': errorMessage});
+
+      debugPrint('👤 Kullanıcıya gösterilen hata: $_error');
       return false;
     } finally {
       _isSaving = false;
@@ -869,6 +943,8 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   Future<void> _executeSave() async {
     if (_isDisposed) return;
+
+    debugPrint('📝 _executeSave BAŞLADI - ${_addedItems.length} item kaydedilecek');
 
     final prefs = await SharedPreferences.getInstance();
     final employeeId = prefs.getInt('user_id');
@@ -883,7 +959,14 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         employeeId: employeeId,
       ),
       items: _addedItems.map((draft) {
-        
+        // DEBUG: Her draft item için product bilgilerini logla
+        debugPrint('🔍 Draft Item Product Info:');
+        debugPrint('   - draft.product.key: ${draft.product.key}');
+        debugPrint('   - draft.product.productKey: ${draft.product.productKey}');
+        debugPrint('   - draft.product.id: ${draft.product.id}');
+        debugPrint('   - draft.product.birimKey: ${draft.product.birimKey}');
+        debugPrint('   - draft.product.stockCode: ${draft.product.stockCode}');
+
         return GoodsReceiptItemPayload(
           productId: draft.product.key, // _key değeri kullanılıyor
           birimKey: draft.product.birimKey, // Birim _key değeri eklendi
@@ -896,7 +979,48 @@ class GoodsReceivingViewModel extends ChangeNotifier {
         );
       }).toList(),
     );
-    await _repository.saveGoodsReceipt(payload);
+
+    debugPrint('📦 Payload oluşturuldu:');
+    debugPrint('   - Header: siparis_id=${payload.header.siparisId}, delivery_note=${payload.header.deliveryNoteNumber}');
+    debugPrint('   - Items count: ${payload.items.length}');
+    for (var i = 0; i < payload.items.length; i++) {
+      final item = payload.items[i];
+      debugPrint('   - Item $i: product_key=${item.productId}, birim_key=${item.birimKey}, qty=${item.quantity}, free=${item.isFree}');
+    }
+
+    try {
+      await _repository.saveGoodsReceipt(payload);
+      debugPrint('✅ _executeSave TAMAMLANDI - Kayıt başarılı');
+    } catch (e, stackTrace) {
+      debugPrint('❌ _executeSave FAILED!');
+      debugPrint('   Error: $e');
+      debugPrint('   Stack Trace: $stackTrace');
+
+      // Log to database (ERROR level - saved to SQLite for manual review)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final employeeId = prefs.getInt('user_id');
+        final employeeName = prefs.getString('user_name');
+
+        await TelegramLoggerService.logError(
+          'Goods Receipt Execute Save Failed',
+          'Failed in _executeSave: $e',
+          stackTrace: stackTrace,
+          context: {
+            'siparis_id': payload.header.siparisId,
+            'delivery_note': payload.header.deliveryNoteNumber,
+            'items_count': payload.items.length,
+            'employee_id': employeeId,
+          },
+          employeeId: employeeId,
+          employeeName: employeeName,
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
+      rethrow;
+    }
   }
 
   void _handleSuccessfulSave({required bool shouldNavigateBack}) {
@@ -1123,8 +1247,22 @@ class GoodsReceivingViewModel extends ChangeNotifier {
 
   /// Arama sonuçlarından ürün seçimi (tek sonuç varsa otomatik)
   Future<void> selectProductFromSearch(ProductInfo product, {bool isAutoSelection = false}) async {
+    // DEBUG: Product parametresini kontrol et
+    debugPrint('🔍 selectProductFromSearch BAŞLANGIÇ:');
+    debugPrint('   - Input product.key: ${product.key}');
+    debugPrint('   - Input product.id: ${product.id}');
+    debugPrint('   - Input product.productKey: ${product.productKey}');
+    debugPrint('   - Input product.birimKey: ${product.birimKey}');
+
     // Önce ürünü seç
     await selectProduct(product);
+
+    // DEBUG: selectProduct sonrası _selectedProduct'ı kontrol et
+    debugPrint('🔍 selectProductFromSearch - selectProduct SONRASI:');
+    debugPrint('   - _selectedProduct.key: ${_selectedProduct?.key}');
+    debugPrint('   - _selectedProduct.id: ${_selectedProduct?.id}');
+    debugPrint('   - _selectedProduct.productKey: ${_selectedProduct?.productKey}');
+    debugPrint('   - _selectedProduct.birimKey: ${_selectedProduct?.birimKey}');
 
     // 🔥 BOX OTOMATIK SEÇME: SADECE otomatik seçimde (tek ürün) çalışsın
     if (isAutoSelection && _availableUnitsForSelectedProduct.isNotEmpty) {
@@ -1156,21 +1294,55 @@ class GoodsReceivingViewModel extends ChangeNotifier {
           debugPrint('   - Scanned Barcode (from UNIT): $scannedBarcode');
 
           // ProductInfo'yu BOX birimi ile güncelle
-          final updatedProduct = ProductInfo.fromDbMap({
+          // FIX: birimInfo map'ini doğru oluştur
+          final updatedBirimInfo = {
+            'birimadi': boxUnit['birimadi'],
+            'birimkod': boxUnit['birimkod'],
+            'birim_key': boxBirimKey,  // ✅ BOX biriminin _key'i
+            'miktar': 0.0,  // Serbest mal kabulde miktar yok
+            'sipbirimi_adi': null,
+            'sipbirimi_kod': null,
+            'sipbirimkey': null,
+            'source_type': GoodsReceivingConstants.sourceTypeOutOfOrder,
+            'is_order_unit': 0,
+          };
+
+          // DEBUG: fromDbMap'e gönderilecek map'i logla
+          final mapForDbMap = {
             ..._selectedProduct!.toJson(),
             'birimadi': boxUnit['birimadi'],
             'birimkod': boxUnit['birimkod'],
             'barkod': boxBarcode ?? '', // BOX'ın barkodu (muhtemelen NULL)
             'birim_key': boxBirimKey,
+            'birim_info': updatedBirimInfo,  // ✅ BirimInfo map'ini ekle
             // Eksik field'ları manuel ekle
             'StokKodu': currentStockCode,
-            '_key': currentProductKey,
+            '_key': currentProductKey,  // ✅ Ürünün _key'i
             'UrunId': currentProductId,
             'UrunAdi': currentProductName,
             'aktif': currentIsActive ? 1 : 0,
-          });
+          };
+
+          debugPrint('🔍 BOX Update - Map for fromDbMap:');
+          debugPrint('   - _key: ${mapForDbMap['_key']}');
+          debugPrint('   - productKey: ${mapForDbMap['productKey']}');
+          debugPrint('   - birim_key: ${mapForDbMap['birim_key']}');
+          debugPrint('   - UrunId: ${mapForDbMap['UrunId']}');
+
+          final updatedProduct = ProductInfo.fromDbMap(mapForDbMap);
+
+          debugPrint('🔍 BOX Update - After fromDbMap:');
+          debugPrint('   - updatedProduct.key: ${updatedProduct.key}');
+          debugPrint('   - updatedProduct.productKey: ${updatedProduct.productKey}');
+          debugPrint('   - updatedProduct.birimKey: ${updatedProduct.birimKey}');
+          debugPrint('   - updatedProduct.id: ${updatedProduct.id}');
 
           _selectedProduct = updatedProduct;
+
+          debugPrint('🔍 BOX Update - After assignment to _selectedProduct:');
+          debugPrint('   - _selectedProduct.key: ${_selectedProduct?.key}');
+          debugPrint('   - _selectedProduct.productKey: ${_selectedProduct?.productKey}');
+          debugPrint('   - _selectedProduct.birimKey: ${_selectedProduct?.birimKey}');
 
           // 🔥 availableUnitsForSelectedProduct listesini güncelle
           _availableUnitsForSelectedProduct = _availableUnitsForSelectedProduct.map((unit) {

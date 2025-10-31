@@ -1125,9 +1125,14 @@ class DatabaseHelper {
 
     if (orderId != null) {
       // Sipariş bazlı arama: Önce siparişteki birimle eşleşen satırı ara, yoksa sipariş dışı olarak işaretle
+      // FIX: JOIN relationship - birimler._key_scf_stokkart = urunler._key kullan
       sql = '''
-        SELECT 
-          u.*,
+        SELECT
+          u.UrunId,
+          u.UrunAdi,
+          u.StokKodu,
+          u.aktif,
+          u._key,
           b.birimadi,
           b.birimkod,
           b._key as birim_key,
@@ -1142,8 +1147,8 @@ class DatabaseHelper {
           CASE WHEN sa.id IS NOT NULL THEN 'order' ELSE 'out_of_order' END as source_type
         FROM barkodlar bark
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN urunler u ON b.StokKodu = u.StokKodu
-        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu 
+        JOIN urunler u ON b._key_scf_stokkart = u._key
+        LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu
           AND CAST(sa.sipbirimkey AS TEXT) = b._key
           AND sa.siparisler_id = ?
           AND sa.turu = '1'
@@ -1154,9 +1159,15 @@ class DatabaseHelper {
       params = [orderId, barcode, barcode];
     } else {
       // Genel arama: Tüm aktif ürünler içinde barkod ara
+      // FIX: u.* yerine explicit kolonlar seç (birim_key çakışmasını önlemek için)
+      // FIX: JOIN relationship - birimler._key_scf_stokkart = urunler._key kullan
       sql = '''
-        SELECT 
-          u.*,
+        SELECT
+          u.UrunId,
+          u.UrunAdi,
+          u.StokKodu,
+          u.aktif,
+          u._key,
           b.birimadi,
           b.birimkod,
           b._key as birim_key,
@@ -1164,13 +1175,26 @@ class DatabaseHelper {
           bark._key as barkod_key
         FROM barkodlar bark
         JOIN birimler b ON bark._key_scf_stokkart_birimleri = b._key
-        JOIN urunler u ON b.StokKodu = u.StokKodu
+        JOIN urunler u ON b._key_scf_stokkart = u._key
         WHERE (bark.barkod = ? OR u.StokKodu = ?)
+          AND u.aktif = 1
       ''';
       params = [barcode, barcode];
     }
 
     final result = await db.rawQuery(sql, params);
+
+    // DEBUG: İlk sonucu logla
+    if (result.isNotEmpty) {
+      final first = result.first;
+      debugPrint('📊 getAllProductsByBarcode result:');
+      debugPrint('   barcode: $barcode, orderId: $orderId');
+      debugPrint('   u._key (product): ${first['_key']}');
+      debugPrint('   b._key (birim_key): ${first['birim_key']}');
+      debugPrint('   StokKodu: ${first['StokKodu']}');
+      debugPrint('   birimadi: ${first['birimadi']}');
+    }
+
     return result;
   }
 
@@ -1221,7 +1245,7 @@ class DatabaseHelper {
         CASE WHEN MIN(sa.id) IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
         CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
       FROM urunler u
-      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN birimler b ON b._key_scf_stokkart = u._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu
         ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
@@ -1271,7 +1295,7 @@ class DatabaseHelper {
         CASE WHEN MIN(sa.id) IS NOT NULL AND b._key = CAST(sa.sipbirimkey AS TEXT) THEN 'order' ELSE 'out_of_order' END as source_type,
         CASE WHEN b._key = CAST(sa.sipbirimkey AS TEXT) THEN 1 ELSE 0 END as is_order_unit
       FROM urunler u
-      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN birimler b ON b._key_scf_stokkart = u._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       LEFT JOIN siparis_ayrintili sa ON sa.kartkodu = u.StokKodu
         ${orderId != null ? 'AND sa.siparisler_id = ?' : ''}
@@ -1357,7 +1381,7 @@ class DatabaseHelper {
         b.birimadi
       FROM siparis_ayrintili sa
       JOIN urunler u ON u.StokKodu = sa.kartkodu
-      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN birimler b ON b._key_scf_stokkart = u._key
       JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ?
         AND sa.turu = '1'
@@ -1383,7 +1407,7 @@ class DatabaseHelper {
         bark._key as barkod_key
       FROM siparis_ayrintili sa
       JOIN urunler u ON u.StokKodu = sa.kartkodu
-      JOIN birimler b ON b.StokKodu = u.StokKodu
+      JOIN birimler b ON b._key_scf_stokkart = u._key
       JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
       WHERE sa.siparisler_id = ? 
         AND sa.turu = '1'

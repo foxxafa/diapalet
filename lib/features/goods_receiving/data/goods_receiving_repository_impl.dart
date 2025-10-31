@@ -4,6 +4,7 @@ import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/goods_receipt_entities.dart';
 import 'package:diapalet/features/goods_receiving/domain/repositories/goods_receiving_repository.dart';
 import 'package:dio/dio.dart';
@@ -15,6 +16,7 @@ import 'package:diapalet/features/goods_receiving/constants/goods_receiving_cons
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
   final DatabaseHelper dbHelper;
@@ -48,6 +50,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
 
     try {
+      debugPrint('💾 _saveGoodsReceiptLocally BAŞLADI - ${deliveryNoteGroups.length} delivery note grubu');
       await db.transaction((txn) async {
         // Her delivery note grubu için ayrı goods_receipt kaydı oluştur
         for (final entry in deliveryNoteGroups.entries) {
@@ -151,8 +154,40 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             };
 
             debugPrint('🔧 DEBUG: goods_receipt_item data: $itemData');
-            final itemId = await txn.insert(DbTables.goodsReceiptItems, itemData);
-            debugPrint('🔧 DEBUG: goods_receipt_item inserted with ID: $itemId');
+
+            try {
+              final itemId = await txn.insert(DbTables.goodsReceiptItems, itemData);
+              debugPrint('✅ DEBUG: goods_receipt_item inserted with ID: $itemId');
+            } catch (insertError, stackTrace) {
+              debugPrint('❌ CRITICAL ERROR: goods_receipt_item insert FAILED!');
+              debugPrint('   Error: $insertError');
+              debugPrint('   Item Data: $itemData');
+              debugPrint('   Stack Trace: $stackTrace');
+
+              // Log to database (ERROR level - saved to SQLite for manual review)
+              final prefs = await SharedPreferences.getInstance();
+              final employeeId = prefs.getInt('user_id');
+              final employeeName = prefs.getString('user_name');
+
+              await TelegramLoggerService.logError(
+                'Goods Receipt Item Insert Failed',
+                'Failed to insert goods_receipt_item to database: $insertError',
+                stackTrace: stackTrace,
+                context: {
+                  'operation_unique_id': operationUniqueId,
+                  'item_uuid': itemUuid,
+                  'receipt_id': receiptId,
+                  'product_id': item.productId,
+                  'birim_key': item.birimKey,
+                  'quantity': item.quantity,
+                  'item_data': itemData.toString(),
+                },
+                employeeId: employeeId,
+                employeeName: employeeName,
+              );
+
+              rethrow;
+            }
 
             // Stock management is now handled by backend only
           }
@@ -195,7 +230,36 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           await _checkAndUpdateOrderStatus(txn, payload.header.siparisId!);
         }
       });
-    } catch (e) {
+
+      debugPrint('✅ _saveGoodsReceiptLocally TAMAMLANDI - Başarıyla kaydedildi');
+    } catch (e, stackTrace) {
+      debugPrint('❌ CRITICAL ERROR: _saveGoodsReceiptLocally FAILED!');
+      debugPrint('   Error: $e');
+      debugPrint('   Stack Trace: $stackTrace');
+
+      // Log to database (ERROR level - saved to SQLite for manual review)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final employeeId = prefs.getInt('user_id');
+        final employeeName = prefs.getString('user_name');
+
+        await TelegramLoggerService.logError(
+          'Goods Receipt Save Failed',
+          'Failed to save goods receipt to local database: $e',
+          stackTrace: stackTrace,
+          context: {
+            'siparis_id': payload.header.siparisId,
+            'delivery_note': payload.header.deliveryNoteNumber,
+            'items_count': payload.items.length,
+            'delivery_note_groups': deliveryNoteGroups.length,
+          },
+          employeeId: employeeId,
+          employeeName: employeeName,
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
       throw Exception("Lokal veritabanına kaydederken bir hata oluştu: $e");
     }
   }
@@ -286,7 +350,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         u.UrunAdi,
         u.StokKodu,
         sa.kartkodu,
-        u._key as urun_key,
+        b._key as urun_key,
         b.birimadi,
         b._key as birim_key,
         sa.sipbirimi,
@@ -296,7 +360,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         MAX(sa.updated_at) as updated_at,
         sa.status,
         sa.turu,
-        bark.barkod
+        bark.barkod,
+        u.UrunId,
+        u.aktif,
+        b._key as _key
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
@@ -443,9 +510,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM barkodlar b
           INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
           INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
@@ -460,9 +528,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM barkodlar b
           INNER JOIN birimler bi ON b._key_scf_stokkart_birimleri = bi._key
           INNER JOIN urunler u ON bi._key_scf_stokkart = u._key
@@ -477,9 +546,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM urunler u
           INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
           LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
@@ -494,9 +564,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM urunler u
           INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
           LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
@@ -511,9 +582,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM urunler u
           INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
           LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
@@ -528,15 +600,16 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             bi._key as birim_key,
             bi.birimadi,
             u.StokKodu,
-            u._key as urun_key,
+            u._key as _key,
             u.UrunAdi,
-            u.UrunId
+            u.UrunId,
+            u.aktif
           FROM urunler u
           INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
           LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
           WHERE u.aktif = 1 AND u.UrunAdi LIKE ?
         )
-        GROUP BY urun_key, birim_key
+        GROUP BY _key, birim_key
         ORDER BY priority ASC, UrunAdi ASC
         LIMIT 20
       ''';
@@ -581,9 +654,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         bi._key as birim_key,
         bi.birimadi,
         u.StokKodu,
-        u._key as urun_key,
+        u._key as _key,
         u.UrunAdi,
-        u.UrunId
+        u.UrunId,
+        u.aktif
       FROM urunler u
       INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
       LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key
@@ -616,9 +690,10 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
           bi._key as birim_key,
           bi.birimadi,
           u.StokKodu,
-          u._key as urun_key,
+          u._key as _key,
           u.UrunAdi,
-          u.UrunId
+          u.UrunId,
+          u.aktif
         FROM urunler u
         INNER JOIN birimler bi ON bi._key_scf_stokkart = u._key
         LEFT JOIN barkodlar b ON b._key_scf_stokkart_birimleri = bi._key

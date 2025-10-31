@@ -112,9 +112,14 @@ class TerminalController extends Controller
         try {
             // Parse ISO8601 string (supports both Z and timezone formats)
             $dt = new \DateTime($iso8601String);
+
+            // KRITIK FIX: Always convert to UTC before storing in MySQL
+            // Mobile sends dates with timezone info (e.g., +03:00), we must normalize to UTC
+            $dt->setTimezone(new \DateTimeZone('UTC'));
+
             // Return MySQL datetime format (without microseconds)
             $mysqlFormat = $dt->format('Y-m-d H:i:s');
-            $this->logToFile("Date conversion: {$iso8601String} -> {$mysqlFormat}", 'DEBUG');
+            $this->logToFile("Date conversion: {$iso8601String} -> {$mysqlFormat} (UTC)", 'DEBUG');
             return $mysqlFormat;
         } catch (\Exception $e) {
             $this->logToFile("Date conversion error: {$iso8601String} - {$e->getMessage()}", 'WARNING');
@@ -397,34 +402,47 @@ class TerminalController extends Controller
             return ['success' => true, 'results' => []];
         }
 
+        // 🔧 YENİ YAKLŞIM: Her operasyon için AYRI transaction
+        // Bu sayede bir operasyonun hatası diğerlerini etkilemez
+        // İdempotency mekanizması düzgün çalışır (processed_requests kaydı korunur)
 
-        $transaction = $db->beginTransaction(Transaction::SERIALIZABLE);
+        foreach ($operations as $op) {
+            $localId = $op['local_id'] ?? null;
+            $idempotencyKey = $op['idempotency_key'] ?? null;
 
-        try {
-            // Transaction timeout ayarla (MySQL için)
-            $db->createCommand("SET SESSION innodb_lock_wait_timeout = 10")->execute();
+            if (!$localId || !$idempotencyKey) {
+                // Kritik hata - tüm batch'i reddet
+                $this->logToFile("Missing local_id or idempotency_key in operation", 'ERROR');
+                Yii::$app->response->setStatusCode(400);
+                return [
+                    'success' => false,
+                    'error' => "Tüm operasyonlar 'local_id' ve 'idempotency_key' içermelidir."
+                ];
+            }
 
-            foreach ($operations as $op) {
-                $localId = $op['local_id'] ?? null;
-                $idempotencyKey = $op['idempotency_key'] ?? null;
+            // 🔒 HER OPERASYON İÇİN AYRI TRANSACTION
+            $operationTransaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
-                if (!$localId || !$idempotencyKey) {
-                    throw new \Exception("Tüm operasyonlar 'local_id' ve 'idempotency_key' içermelidir.");
-                }
+            try {
+                // Transaction timeout ayarla (MySQL için)
+                $db->createCommand("SET SESSION innodb_lock_wait_timeout = 10")->execute();
 
-                // 1. IDEMPOTENCY KONTROLÜ
-                $existingRequest = (new Query())
-                    ->from('processed_requests')
-                    ->where(['idempotency_key' => $idempotencyKey])
-                    ->one($db);
+                // 1. IDEMPOTENCY KONTROLÜ (transaction içinde read)
+                $existingRequest = $db->createCommand(
+                    'SELECT * FROM processed_requests WHERE idempotency_key = :idempotency_key'
+                )->bindValue(':idempotency_key', $idempotencyKey)->queryOne();
 
                 if ($existingRequest) {
                     // 2. Bu işlem daha önce yapılmışsa, kayıtlı sonucu döndür.
+                    $this->logToFile("Cached result found for idempotency_key: $idempotencyKey", 'DEBUG');
                     $resultData = json_decode($existingRequest['response_body'], true);
                     $results[] = [
                         'local_id' => (int)$localId,
                         'result' => is_string($resultData) ? json_decode($resultData, true) : $resultData
                     ];
+
+                    // Transaction'ı commit et (sadece okuma yaptık ama iyi pratik)
+                    $operationTransaction->commit();
                     continue; // Sonraki operasyona geç
                 }
 
@@ -432,7 +450,6 @@ class TerminalController extends Controller
                 $opType = $op['type'] ?? 'unknown';
                 $opData = $op['data'] ?? [];
                 $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
-
 
                 if ($opType === 'goodsReceipt') {
                     $this->logToFile("Creating goods receipt for local_id: $localId", 'DEBUG');
@@ -479,7 +496,8 @@ class TerminalController extends Controller
 
                         $this->logToFile("Permanent error for operation $localId: " . $result['message'], 'WARNING');
 
-                        // Permanent error'da transaction'ı bozmayız, diğer işlemler devam etsin
+                        // ✅ COMMIT: Permanent error kaydedildi, bir sonraki operasyona geç
+                        $operationTransaction->commit();
                         continue;
                     }
                     // Başarılı işlem
@@ -491,36 +509,49 @@ class TerminalController extends Controller
                         ])->execute();
 
                         $results[] = ['local_id' => (int)$localId, 'idempotency_key' => $idempotencyKey, 'result' => $result];
+
+                        // ✅ COMMIT: Başarılı operasyon tamamlandı
+                        $operationTransaction->commit();
                     }
                     // Geçici hata - retry yapılabilir
                     else {
                         // Geçici hataları idempotency'e kaydetmiyoruz ki tekrar denenebilsin
                         $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
                         $this->logToFile($errorMsg, 'ERROR');
-                        throw new \Exception($errorMsg);
+
+                        // ❌ ROLLBACK: Geçici hata, tekrar denenebilir
+                        $operationTransaction->rollBack();
+
+                        // ⚠️ Bu operasyonu results'a ekleme - mobil tekrar gönderecek
+                        // Diğer operasyonlara devam et
+                        continue;
                     }
                 } else {
                     // Status yoksa genel hata
                     $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
-                    throw new \Exception($errorMsg);
+                    $this->logToFile($errorMsg, 'ERROR');
+
+                    // ❌ ROLLBACK: Geçersiz result format
+                    $operationTransaction->rollBack();
+                    continue;
                 }
+
+            } catch (\Exception $e) {
+                // ❌ ROLLBACK: Exception oluştu
+                $operationTransaction->rollBack();
+
+                $errorDetail = "Operation $localId ($opType) failed: {$e->getMessage()}";
+                $this->logToFile($errorDetail, 'ERROR');
+                $this->logToFile("Stack trace: " . $e->getTraceAsString(), 'ERROR');
+
+                // ⚠️ Bu operasyonu results'a ekleme - mobil tekrar gönderecek
+                // Diğer operasyonlara devam et
+                continue;
             }
-
-            $transaction->commit();
-            return ['success' => true, 'results' => $results];
-
-        } catch (\Exception $e) {
-            $transaction->rollBack();
-            $errorDetail = "SyncUpload Toplu İşlem Hatası: {$e->getMessage()}\nTrace: {$e->getTraceAsString()}";
-            $this->logToFile($errorDetail, 'ERROR');
-            Yii::$app->response->setStatusCode(500);
-            return [
-                'success' => false,
-                'error' => 'İşlem sırasında bir hata oluştu ve geri alındı.',
-                'details' => $e->getMessage(),
-                'processed_count' => count($results)
-            ];
         }
+
+        // 📊 Tüm operasyonlar işlendi (başarılı veya başarısız)
+        return ['success' => true, 'results' => $results];
     }
 
     /**
@@ -575,10 +606,9 @@ class TerminalController extends Controller
 
         // UUID bazlı duplicate kontrolü
         if ($operationUniqueId) {
-            $existingReceipt = (new Query())
-                ->from('goods_receipts')
-                ->where(['operation_unique_id' => $operationUniqueId])
-                ->one($db);
+            $existingReceipt = $db->createCommand(
+                'SELECT * FROM goods_receipts WHERE operation_unique_id = :operation_unique_id'
+            )->bindValue(':operation_unique_id', $operationUniqueId)->queryOne();
 
             if ($existingReceipt) {
                 $this->logToFile("Duplicate receipt detected with operation_unique_id: $operationUniqueId", 'WARNING');
@@ -601,11 +631,9 @@ class TerminalController extends Controller
 
         // KRITIK: Sipariş durumu kontrolü - kapanmış siparişe mal kabul yapılamaz
         if ($siparisId !== null) {
-            $orderStatus = (new Query())
-                ->select('status')
-                ->from('siparisler')
-                ->where(['id' => $siparisId])
-                ->scalar($db);
+            $orderStatus = $db->createCommand(
+                'SELECT status FROM siparisler WHERE id = :id'
+            )->bindValue(':id', $siparisId)->queryScalar();
 
             if ($orderStatus === false) {
                 return [
@@ -620,22 +648,18 @@ class TerminalController extends Controller
                 // Çalışan bilgisini al
                 $employeeName = 'Unknown';
                 if (isset($header['employee_id'])) {
-                    $employee = (new Query())
-                        ->select(['first_name', 'last_name'])
-                        ->from('employees')
-                        ->where(['id' => $header['employee_id']])
-                        ->one($db);
+                    $employee = $db->createCommand(
+                        'SELECT first_name, last_name FROM employees WHERE id = :id'
+                    )->bindValue(':id', $header['employee_id'])->queryOne();
                     if ($employee) {
                         $employeeName = trim($employee['first_name'] . ' ' . $employee['last_name']);
                     }
                 }
 
                 // Sipariş numarasını al (fisno)
-                $orderNumber = (new Query())
-                    ->select(['fisno'])
-                    ->from('siparisler')
-                    ->where(['id' => $siparisId])
-                    ->scalar($db);
+                $orderNumber = $db->createCommand(
+                    'SELECT fisno FROM siparisler WHERE id = :id'
+                )->bindValue(':id', $siparisId)->queryScalar();
 
                 $errorMessage = "Sipariş #$orderNumber manuel olarak kapatılmış durumda. Bu siparişe mal kabul yapılamaz.";
 
@@ -666,12 +690,12 @@ class TerminalController extends Controller
         $employeeId = $header['employee_id'];
         
         // DEBUG: Employee warehouse mapping'i kontrol et
-        $employeeInfo = (new Query())
-            ->select(['e.id', 'e.warehouse_code', 'w.id', 'w.warehouse_code as w_warehouse_code'])
-            ->from(['e' => 'employees'])
-            ->leftJoin(['w' => 'warehouses'], 'e.warehouse_code = w.warehouse_code')
-            ->where(['e.id' => $employeeId])
-            ->one($db);
+        $employeeInfo = $db->createCommand(
+            'SELECT e.id, e.warehouse_code, w.id, w.warehouse_code as w_warehouse_code
+             FROM employees e
+             LEFT JOIN warehouses w ON e.warehouse_code = w.warehouse_code
+             WHERE e.id = :employee_id'
+        )->bindValue(':employee_id', $employeeId)->queryOne();
             
         Yii::info("DEBUG createGoodsReceipt - employee_id: $employeeId", __METHOD__);
         Yii::info("DEBUG employee info: " . json_encode($employeeInfo), __METHOD__);
@@ -685,11 +709,9 @@ class TerminalController extends Controller
         // Sipariş fisno bilgisini al
         $sipFisno = null;
         if ($siparisId) {
-            $sipFisno = (new Query())
-                ->select(['fisno'])
-                ->from('siparisler')
-                ->where(['id' => $siparisId])
-                ->scalar($db);
+            $sipFisno = $db->createCommand(
+                'SELECT fisno FROM siparisler WHERE id = :id'
+            )->bindValue(':id', $siparisId)->queryScalar();
         }
 
         $db->createCommand()->insert('goods_receipts', [
@@ -709,11 +731,10 @@ class TerminalController extends Controller
             $urunKey = $item['urun_key']; // _key değeri
             
             // _key'in gerçekten var olduğunu kontrol et
-            $exists = (new Query())
-                ->from('urunler')
-                ->where(['_key' => $urunKey])
-                ->exists($db);
-            
+            $exists = $db->createCommand(
+                'SELECT 1 FROM urunler WHERE _key = :key LIMIT 1'
+            )->bindValue(':key', $urunKey)->queryScalar();
+
             if (!$exists) {
                 return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
@@ -732,39 +753,38 @@ class TerminalController extends Controller
                 
                 // Siparişte bu ürün ve birim kombinasyonu var mı kontrol et
                 if ($birimKey) {
-                    $isInOrder = (new Query())
-                        ->from('siparis_ayrintili')
-                        ->where([
-                            'siparisler_id' => $siparisId,
-                            'kartkodu' => $stokKodu,
-                            'sipbirimkey' => $birimKey,
-                            'turu' => '1'
-                        ])
-                        ->exists($db);
+                    $isInOrder = $db->createCommand(
+                        'SELECT 1 FROM siparis_ayrintili
+                         WHERE siparisler_id = :siparis_id AND kartkodu = :kartkodu
+                           AND sipbirimkey = :birimkey AND turu = \'1\'
+                         LIMIT 1'
+                    )->bindValue(':siparis_id', $siparisId)
+                     ->bindValue(':kartkodu', $stokKodu)
+                     ->bindValue(':birimkey', $birimKey)
+                     ->queryScalar();
                     
                     // Eğer siparişteki ürün ve birimle eşleşiyorsa free=0
                     if ($isInOrder) {
                         $isFree = 0;
                         
                         // siparis_ayrintili tablosundan _key değerini bul
-                        $siparisKey = (new Query())
-                            ->select('_key')
-                            ->from('siparis_ayrintili')
-                            ->where([
-                                'siparisler_id' => $siparisId, 
-                                'kartkodu' => $stokKodu,
-                                'sipbirimkey' => $birimKey,
-                                'turu' => '1'
-                            ])
-                            ->scalar($db);
+                        $siparisKey = $db->createCommand(
+                            'SELECT _key FROM siparis_ayrintili
+                             WHERE siparisler_id = :siparis_id AND kartkodu = :kartkodu
+                               AND sipbirimkey = :birimkey AND turu = \'1\''
+                        )->bindValue(':siparis_id', $siparisId)
+                         ->bindValue(':kartkodu', $stokKodu)
+                         ->bindValue(':birimkey', $birimKey)
+                         ->queryScalar();
                     }
                 } else {
                     // Birim bilgisi yoksa sadece ürün kontrolü yap (geriye uyumluluk için)
-                    $siparisKey = (new Query())
-                        ->select('_key')
-                        ->from('siparis_ayrintili')
-                        ->where(['siparisler_id' => $siparisId, 'kartkodu' => $stokKodu, 'turu' => '1'])
-                        ->scalar($db);
+                    $siparisKey = $db->createCommand(
+                        'SELECT _key FROM siparis_ayrintili
+                         WHERE siparisler_id = :siparis_id AND kartkodu = :kartkodu AND turu = \'1\''
+                    )->bindValue(':siparis_id', $siparisId)
+                     ->bindValue(':kartkodu', $stokKodu)
+                     ->queryScalar();
                     
                     if ($siparisKey) {
                         $isFree = 0; // Siparişteki ürün bulundu
@@ -881,11 +901,9 @@ class TerminalController extends Controller
         $items = $data['items'];
 
         // Employee warehouse_code bilgisini al
-        $employeeInfo = (new Query())
-            ->select(['warehouse_code'])
-            ->from('employees')
-            ->where(['id' => $header['employee_id']])
-            ->one($db);
+        $employeeInfo = $db->createCommand(
+            'SELECT warehouse_code FROM employees WHERE id = :id'
+        )->bindValue(':id', $header['employee_id'])->queryOne();
 
         $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
         $targetLocationId = $header['target_location_id'];
@@ -904,20 +922,16 @@ class TerminalController extends Controller
             $birimKey = $item['birim_key'] ?? null; // Birim _key değeri
             
             // _key'in gerçekten var olduğunu kontrol et ve detaylı hata mesajı ver
-            $productInfo = (new Query())
-                ->select(['_key', 'StokKodu', 'UrunAdi'])
-                ->from('urunler')
-                ->where(['_key' => $urunKey])
-                ->one($db);
+            $productInfo = $db->createCommand(
+                'SELECT _key, StokKodu, UrunAdi FROM urunler WHERE _key = :key'
+            )->bindValue(':key', $urunKey)->queryOne();
             
             if (!$productInfo) {
                 // Alternative: Try to find by UrunId if _key is actually a numeric value
                 if (is_numeric($urunKey)) {
-                    $productInfo = (new Query())
-                        ->select(['_key', 'StokKodu', 'UrunAdi'])
-                        ->from('urunler')
-                        ->where(['UrunId' => (int)$urunKey])
-                        ->one($db);
+                    $productInfo = $db->createCommand(
+                        'SELECT _key, StokKodu, UrunAdi FROM urunler WHERE UrunId = :id'
+                    )->bindValue(':id', (int)$urunKey)->queryOne();
                     
                     if ($productInfo) {
                         // Use the correct _key from database
@@ -932,11 +946,9 @@ class TerminalController extends Controller
                     // Çalışan bilgisini al
                     $employeeName = 'Bilinmeyen';
                     if (isset($header['employee_id'])) {
-                        $employeeData = (new Query())
-                            ->select(['name'])
-                            ->from('employees')
-                            ->where(['id' => $header['employee_id']])
-                            ->one($db);
+                        $employeeData = $db->createCommand(
+                            'SELECT name FROM employees WHERE id = :id'
+                        )->bindValue(':id', $header['employee_id'])->queryOne();
                         if ($employeeData) {
                             $employeeName = $employeeData['name'];
                         }
@@ -981,11 +993,9 @@ class TerminalController extends Controller
                     $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
                 } elseif ($deliveryNoteNumber) {
                     // Serbest mal kabul için irsaliye numarası üzerinden fiş ID'sini bul
-                    $actualGoodsReceiptId = (new Query())
-                        ->select('goods_receipt_id')
-                        ->from('goods_receipts')
-                        ->where(['delivery_note_number' => $deliveryNoteNumber])
-                        ->scalar($db);
+                    $actualGoodsReceiptId = $db->createCommand(
+                        'SELECT goods_receipt_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
+                    )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
                     if ($actualGoodsReceiptId) {
                         $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $actualGoodsReceiptId);
                         // hata bağlamı ve sonraki işlemler için mal kabul ID'sini güncelle
@@ -1007,11 +1017,9 @@ class TerminalController extends Controller
                 // Çalışan bilgisini al
                 $employeeName = 'Bilinmeyen';
                 if (isset($header['employee_id'])) {
-                    $employeeData = (new Query())
-                        ->select(['name'])
-                        ->from('employees')
-                        ->where(['id' => $header['employee_id']])
-                        ->one($db);
+                    $employeeData = $db->createCommand(
+                        'SELECT name FROM employees WHERE id = :id'
+                    )->bindValue(':id', $header['employee_id'])->queryOne();
                     if ($employeeData) {
                         $employeeName = $employeeData['name'];
                     }
@@ -1067,11 +1075,9 @@ class TerminalController extends Controller
             // 3. Veritabanı işlemlerini çalıştır (Kaynağı azalt)
             if (!empty($vtIslemleri['delete'])) {
                 // TOMBSTONE: Silinecek stokların UUID'lerini log tablosuna kaydet (YENİ UUID TABANLI YAKLAŞIM)
-                $stockUuids = (new Query())
-                    ->select(['stock_uuid'])
-                    ->from('inventory_stock')
-                    ->where(['in', 'id', $vtIslemleri['delete']])
-                    ->column($db);
+                $stockUuids = $db->createCommand(
+                    'SELECT stock_uuid FROM inventory_stock WHERE id IN (' . implode(',', array_map('intval', $vtIslemleri['delete'])) . ')'
+                )->queryColumn();
 
                 // UUID'leri tombstone tablosuna toplu olarak ekle
                 if (!empty($stockUuids)) {
@@ -1135,24 +1141,18 @@ class TerminalController extends Controller
                 $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
                     
                 // Shelf code'ları al
-                $fromShelfCode = $sourceLocationId ? (new Query())
-                    ->select('code')
-                    ->from('shelfs')
-                    ->where(['id' => $sourceLocationId])
-                    ->scalar($db) : null;
-                    
-                $toShelfCode = $targetLocationId ? (new Query())
-                    ->select('code')
-                    ->from('shelfs')
-                    ->where(['id' => $targetLocationId])
-                    ->scalar($db) : null;
-                    
+                $fromShelfCode = $sourceLocationId ? $db->createCommand(
+                    'SELECT code FROM shelfs WHERE id = :id'
+                )->bindValue(':id', $sourceLocationId)->queryScalar() : null;
+
+                $toShelfCode = $targetLocationId ? $db->createCommand(
+                    'SELECT code FROM shelfs WHERE id = :id'
+                )->bindValue(':id', $targetLocationId)->queryScalar() : null;
+
                 // Sipariş fisno'sunu al
-                $sipFisno = $siparisId ? (new Query())
-                    ->select('fisno')
-                    ->from('siparisler')
-                    ->where(['id' => $siparisId])
-                    ->scalar($db) : null;
+                $sipFisno = $siparisId ? $db->createCommand(
+                    'SELECT fisno FROM siparisler WHERE id = :id'
+                )->bindValue(':id', $siparisId)->queryScalar() : null;
                 
                 $transferData = [
                     'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
@@ -1228,7 +1228,7 @@ class TerminalController extends Controller
                 }
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
 
-                $stock = $query->one($db);
+                $stock = $query->createCommand($db)->queryOne();
 
                 if (!$stock) {
                     throw new \Exception("Stok düşürme sırasında tutarsızlık tespit edildi. Kalan: {$toDecrement}");
@@ -1271,7 +1271,7 @@ class TerminalController extends Controller
             }
             // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
 
-            $stock = $query->one($db);
+            $stock = $query->createCommand($db)->queryOne();
 
             if ($stock) {
                 // DEBUG: Stok birleştirme kontrolü
@@ -1290,10 +1290,9 @@ class TerminalController extends Controller
                 }
             } elseif ($qtyChange > 0) {
                 // Verify urun_key exists before inserting
-                $productExists = (new Query())
-                    ->from('urunler')
-                    ->where(['_key' => $urunKey])
-                    ->exists($db);
+                $productExists = $db->createCommand(
+                    'SELECT 1 FROM urunler WHERE _key = :key LIMIT 1'
+                )->bindValue(':key', $urunKey)->queryScalar();
                     
                 if (!$productExists) {
                     $this->logToFile("CRITICAL ERROR: urun_key '{$urunKey}' does not exist in urunler table", 'ERROR');
@@ -1304,18 +1303,14 @@ class TerminalController extends Controller
                 
                 // Yeni sütunlar için veri al
                 $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
-                    
-                $shelfCode = $locationId ? (new Query())
-                    ->select('code')
-                    ->from('shelfs')
-                    ->where(['id' => $locationId])
-                    ->scalar($db) : null;
-                    
-                $sipFisno = $siparisId ? (new Query())
-                    ->select('fisno')
-                    ->from('siparisler')
-                    ->where(['id' => $siparisId])
-                    ->scalar($db) : null;
+
+                $shelfCode = $locationId ? $db->createCommand(
+                    'SELECT code FROM shelfs WHERE id = :id'
+                )->bindValue(':id', $locationId)->queryScalar() : null;
+
+                $sipFisno = $siparisId ? $db->createCommand(
+                    'SELECT fisno FROM siparisler WHERE id = :id'
+                )->bindValue(':id', $siparisId)->queryScalar() : null;
                 
                 // DEBUG: Yeni stok kaydı oluşturma
                 Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);
@@ -1397,7 +1392,9 @@ class TerminalController extends Controller
         }
 
         if ($newStatus !== null) {
-            $currentStatus = (new Query())->select('status')->from('siparisler')->where(['id' => $siparisId])->scalar($db);
+            $currentStatus = $db->createCommand(
+                'SELECT status FROM siparisler WHERE id = :id'
+            )->bindValue(':id', $siparisId)->queryScalar();
             if ($currentStatus != $newStatus) {
                 $db->createCommand()->update('siparisler', [
                     'status' => $newStatus,
@@ -1415,11 +1412,9 @@ class TerminalController extends Controller
         }
 
         // Önce siparişin mevcut durumunu kontrol et
-        $currentStatus = (new Query())
-            ->select('status')
-            ->from('siparisler')
-            ->where(['id' => $siparisId])
-            ->scalar($db);
+        $currentStatus = $db->createCommand(
+            'SELECT status FROM siparisler WHERE id = :id'
+        )->bindValue(':id', $siparisId)->queryScalar();
 
         if ($currentStatus === false) {
             return ['status' => 'not_found', 'message' => "Order #$siparisId not found."];
@@ -1430,11 +1425,9 @@ class TerminalController extends Controller
             // Çalışan bilgisini al
             $employeeName = 'Bilinmeyen';
             if (isset($data['employee_id'])) {
-                $employeeData = (new Query())
-                    ->select(['name'])
-                    ->from('employees')
-                    ->where(['id' => $data['employee_id']])
-                    ->one($db);
+                $employeeData = $db->createCommand(
+                    'SELECT name FROM employees WHERE id = :id'
+                )->bindValue(':id', $data['employee_id'])->queryOne();
                 if ($employeeData) {
                     $employeeName = $employeeData['name'];
                 }
@@ -1471,11 +1464,9 @@ class TerminalController extends Controller
             // Kapama başarısız olduysa bildirim gönder
             $employeeName = 'Bilinmeyen';
             if (isset($data['employee_id'])) {
-                $employeeData = (new Query())
-                    ->select(['name'])
-                    ->from('employees')
-                    ->where(['id' => $data['employee_id']])
-                    ->one($db);
+                $employeeData = $db->createCommand(
+                    'SELECT name FROM employees WHERE id = :id'
+                )->bindValue(':id', $data['employee_id'])->queryOne();
                 if ($employeeData) {
                     $employeeName = $employeeData['name'];
                 }
@@ -3079,8 +3070,16 @@ class TerminalController extends Controller
      */
     public function actionUploadDatabase()
     {
-        $this->logToFile("=== Upload Database Action Called ===", 'INFO');
+        // EN BAŞTA output buffering başlat - tüm output'u kontrol et
+        ob_start();
+
+        // Timeout'ları artır (18MB database + Telegram upload için)
+        set_time_limit(300); // 5 dakika
+        ini_set('max_execution_time', '300');
+
+        $this->logToFile("=== Upload Database Action Called - CODE VERSION 7 ===", 'INFO');
         $this->logToFile("PHP Memory Limit: " . ini_get('memory_limit'), 'INFO');
+        $this->logToFile("PHP Max Execution Time: " . ini_get('max_execution_time'), 'INFO');
         $this->logToFile("PHP Version: " . PHP_VERSION, 'INFO');
 
         try {
@@ -3131,20 +3130,59 @@ class TerminalController extends Controller
 
             $this->logToFile("Calling WMSTelegramNotification::sendDatabaseFile...", 'INFO');
 
-            $success = WMSTelegramNotification::sendDatabaseFile(
-                $dbContent,
-                $originalFileName,
-                $caption
-            );
+            // Output buffering başlat (WMSTelegramNotification içindeki log'lar headers göndermesin)
+            ob_start();
+
+            try {
+                $success = WMSTelegramNotification::sendDatabaseFile(
+                    $dbContent,
+                    $originalFileName,
+                    $caption
+                );
+                $this->logToFile("Telegram upload completed, success = " . ($success ? 'true' : 'false'), 'INFO');
+            } catch (\Exception $telegramEx) {
+                $this->logToFile("Telegram upload exception: " . $telegramEx->getMessage(), 'ERROR');
+                $success = false;
+            }
+
+            // Tüm output'u yakala ve at
+            $telegramOutput = ob_get_clean();
+            $this->logToFile("Output buffer cleaned, captured " . strlen($telegramOutput) . " bytes", 'INFO');
 
             if ($success) {
                 $this->logToFile("Database successfully uploaded to Telegram: $originalFileName", 'INFO');
-                return $this->asJson([
+                $this->logToFile("ABOUT TO RETURN SUCCESS - CODE VERSION 7", 'INFO');
+
+                // Tüm buffer'ları temizle (hatalı output'ları at)
+                while (ob_get_level() > 1) { // En dıştaki buffer'ı bırak
+                    ob_end_clean();
+                }
+
+                // En dıştaki buffer'ı temizle ama bitirme
+                ob_clean();
+
+                // Şimdi headers gönder (buffer temiz olduğu için çalışmalı)
+                if (!headers_sent()) {
+                    header('Content-Type: application/json; charset=UTF-8');
+                    http_response_code(200);
+                } else {
+                    $this->logToFile("WARNING: Headers already sent, cannot set Content-Type", 'WARN');
+                }
+
+                // JSON response gönder
+                echo json_encode([
                     'success' => true,
                     'message' => 'Database backup successfully uploaded to Telegram'
-                ]);
+                ], JSON_UNESCAPED_UNICODE);
+
+                $this->logToFile("Response echoed - CODE VERSION 7", 'INFO');
+
+                // Buffer'ı flush et ve kapat
+                ob_end_flush();
+                exit(0);
             } else {
                 $this->logToFile("Failed to upload database to Telegram: $originalFileName", 'ERROR');
+                $this->logToFile("ABOUT TO RETURN FAILURE - CODE VERSION 2", 'ERROR');
 
                 \Yii::$app->response->statusCode = 500;
                 return $this->asJson([
@@ -3156,6 +3194,7 @@ class TerminalController extends Controller
         } catch (\Exception $e) {
             $this->logToFile("Database upload error: " . $e->getMessage(), 'ERROR');
             $this->logToFile("Stack trace: " . $e->getTraceAsString(), 'ERROR');
+            $this->logToFile("ABOUT TO RETURN EXCEPTION - CODE VERSION 2", 'ERROR');
 
             \Yii::$app->response->statusCode = 500;
             return $this->asJson([
@@ -3203,12 +3242,14 @@ class TerminalController extends Controller
         $items = $data['items'] ?? [];
         $operationUniqueId = $header['operation_unique_id'];
 
+        // ℹ️ NOT: Bu fonksiyon zaten bir transaction içinden çağrılıyor (_actionSyncUpload'daki $operationTransaction)
+        // Bu yüzden burada ayrı transaction başlatmıyoruz (nested transaction sorunlarını önlemek için)
+
         try {
             // Aynı operation_unique_id var mı kontrol et
-            $existingSheet = (new Query())
-                ->from('wms_count_sheets')
-                ->where(['operation_unique_id' => $operationUniqueId])
-                ->one($db);
+            $existingSheet = $db->createCommand(
+                'SELECT * FROM wms_count_sheets WHERE operation_unique_id = :operation_unique_id'
+            )->bindValue(':operation_unique_id', $operationUniqueId)->queryOne();
 
             if ($existingSheet) {
                 // GÜNCELLEME (SAVE & CONTINUE durumu)
@@ -3229,6 +3270,19 @@ class TerminalController extends Controller
             } else {
                 // YENİ KAYIT
                 $this->logToFile("Header data: " . json_encode($header), 'DEBUG');
+
+                // 🧹 ORPHAN TEMİZLEME: Sheet yok ama item'lar varsa, önce sil
+                $orphanCount = $db->createCommand(
+                    'SELECT COUNT(*) FROM wms_count_items WHERE operation_unique_id = :operation_unique_id'
+                )->bindValue(':operation_unique_id', $operationUniqueId)->queryScalar();
+
+                if ($orphanCount > 0) {
+                    $this->logToFile("🧹 ORPHAN CLEANUP: Found $orphanCount orphan items for $operationUniqueId, deleting...", 'WARNING');
+                    $db->createCommand()->delete('wms_count_items',
+                        ['operation_unique_id' => $operationUniqueId]
+                    )->execute();
+                    $this->logToFile("🧹 ORPHAN CLEANUP: Deleted $orphanCount orphan items", 'WARNING');
+                }
 
                 $db->createCommand()->insert('wms_count_sheets', [
                     'operation_unique_id' => $operationUniqueId,
@@ -3299,6 +3353,9 @@ class TerminalController extends Controller
 
             $this->logToFile("Warehouse count items completed: $successCount success, $errorCount errors", 'INFO');
 
+            // ✅ Başarılı - Outer transaction (actionSyncUpload) commit edecek
+            $this->logToFile("✅ Warehouse count operation completed successfully for $operationUniqueId", 'INFO');
+
             return [
                 'status' => 'success',
                 'count_sheet_id' => $sheetId,
@@ -3306,13 +3363,14 @@ class TerminalController extends Controller
             ];
 
         } catch (\Exception $e) {
+            // 🔄 Exception throw ediliyor - Outer transaction (actionSyncUpload) rollback edecek
             $errorMsg = $e->getMessage();
-            $this->logToFile("Warehouse count error: " . $errorMsg, 'ERROR');
+            $this->logToFile("🔄 Transaction rolled back due to error: " . $errorMsg, 'ERROR');
             $this->logToFile("Warehouse count error trace: " . $e->getTraceAsString(), 'ERROR');
 
             // Telegram'a detaylı hata log dosyası gönder
             try {
-                $employeeData = \Yii::$app->db->createCommand(
+                $employeeData = $db->createCommand(
                     'SELECT first_name, last_name FROM employees WHERE id = :id'
                 )->bindValue(':id', $header['employee_id'] ?? 0)->queryOne();
 
