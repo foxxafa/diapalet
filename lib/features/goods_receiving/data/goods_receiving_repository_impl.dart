@@ -189,7 +189,107 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               rethrow;
             }
 
-            // Stock management is now handled by backend only
+            // KRITIK FIX: Offline çalışabilmek için mobilde de inventory_stock oluştur
+            // Backend ile aynı UPSERT mantığı: Aynı ürün/birim/palet/SKT için AYNI KAYDI GÜNCELLE (3+4=7)
+            try {
+
+              // Mevcut stok kaydını bul (Backend ile aynı çift strateji)
+              // KRITIK FIX: İki farklı strateji
+              // 1. Sipariş bazlı mal kabul (siparis_id dolu): siparis_id ile grupla, goods_receipt_id KULLANMA
+              // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id ile grupla, siparis_id KULLANMA
+              final String consolidationCondition;
+              if (payload.header.siparisId != null) {
+                // Sipariş bazlı: siparis_id kontrolü yap, goods_receipt_id'ye bakma
+                consolidationCondition = 'AND siparis_id = ?';
+              } else {
+                // Serbest mal kabul: goods_receipt_id kontrolü yap
+                consolidationCondition = 'AND goods_receipt_id = ?';
+              }
+
+              final existingStockQuery = '''
+                SELECT id, quantity FROM ${DbTables.inventoryStock}
+                WHERE urun_key = ?
+                  AND stock_status = 'receiving'
+                  ${item.birimKey != null ? 'AND birim_key = ?' : 'AND birim_key IS NULL'}
+                  ${item.palletBarcode != null ? 'AND pallet_barcode = ?' : 'AND pallet_barcode IS NULL'}
+                  ${item.expiryDate != null ? 'AND expiry_date = ?' : 'AND expiry_date IS NULL'}
+                  $consolidationCondition
+                LIMIT 1
+              ''';
+
+              final queryArgs = <dynamic>[item.productId];
+              if (item.birimKey != null) queryArgs.add(item.birimKey);
+              if (item.palletBarcode != null) queryArgs.add(item.palletBarcode);
+              if (item.expiryDate != null) queryArgs.add(item.expiryDate?.toIso8601String());
+              // Strateji: siparis_id varsa onu ekle, yoksa goods_receipt_id ekle
+              if (payload.header.siparisId != null) {
+                queryArgs.add(payload.header.siparisId);
+              } else {
+                queryArgs.add(receiptId);
+              }
+
+              final existingStock = await txn.query(
+                DbTables.inventoryStock,
+                where: '''
+                  urun_key = ?
+                  AND stock_status = 'receiving'
+                  ${item.birimKey != null ? 'AND birim_key = ?' : 'AND birim_key IS NULL'}
+                  ${item.palletBarcode != null ? 'AND pallet_barcode = ?' : 'AND pallet_barcode IS NULL'}
+                  ${item.expiryDate != null ? 'AND expiry_date = ?' : 'AND expiry_date IS NULL'}
+                  $consolidationCondition
+                ''',
+                whereArgs: queryArgs,
+                limit: 1,
+              );
+
+              if (existingStock.isNotEmpty) {
+                // MEVCUT KAYIT VAR - UPSERT (3+4=7)
+                final existingId = existingStock.first['id'] as int;
+                final existingQty = (existingStock.first['quantity'] as num).toDouble();
+                final newQty = existingQty + item.quantity;
+
+                await txn.update(
+                  DbTables.inventoryStock,
+                  {
+                    'quantity': newQty,
+                    'updated_at': DateTime.now().toUtc().toIso8601String(),
+                  },
+                  where: 'id = ?',
+                  whereArgs: [existingId],
+                );
+
+                debugPrint('✅ DEBUG: inventory_stock UPDATED - ID: $existingId, Old: $existingQty, New: $newQty (stock_uuid: $stockUuid)');
+              } else {
+                // YENİ KAYIT OLUŞTUR
+                // NOT: warehouse_code kolonu mobil database'de yok - backend sync sırasında eklenecek
+                final inventoryStockData = <String, dynamic>{
+                  'stock_uuid': stockUuid,
+                  'urun_key': item.productId,
+                  'birim_key': item.birimKey,
+                  'location_id': null,
+                  'siparis_id': payload.header.siparisId, // Sipariş bazlı mal kabullerde dolu, serbest mal kabullerde NULL
+                  'quantity': item.quantity,
+                  'pallet_barcode': item.palletBarcode,
+                  'stock_status': 'receiving',
+                  'expiry_date': item.expiryDate?.toIso8601String(),
+                  // KRITIK FIX: İki strateji
+                  // 1. Sipariş bazlı mal kabul (siparis_id dolu): goods_receipt_id NULL -> Aynı sipariş için farklı irsaliyeler BİRLEŞİR (3+4=7)
+                  // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id dolu -> Farklı irsaliyeler AYRI KALIR (3, 4 ayrı satırlar)
+                  // 3. Transfer sonrası (her ikisi NULL): Tam konsolidasyon
+                  'goods_receipt_id': payload.header.siparisId == null ? receiptId : null,
+                  'created_at': DateTime.now().toUtc().toIso8601String(),
+                  'updated_at': DateTime.now().toUtc().toIso8601String(),
+                };
+
+                await txn.insert(DbTables.inventoryStock, inventoryStockData);
+                debugPrint('✅ DEBUG: inventory_stock CREATED - quantity: ${item.quantity} (stock_uuid: $stockUuid)');
+              }
+            } catch (stockError, stackTrace) {
+              debugPrint('❌ ERROR: inventory_stock operation failed: $stockError');
+              debugPrint('   Stack Trace: $stackTrace');
+              // Inventory_stock oluşturulamazsa da mal kabul işlemi devam eder
+              // Backend senkronizasyonu sırasında düzeltilecek
+            }
           }
 
           // 4. ADIM: Bu grup için enriched data oluştur ve pending operation ekle
@@ -350,7 +450,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         u.UrunAdi,
         u.StokKodu,
         sa.kartkodu,
-        b._key as urun_key,
+        u._key as urun_key,
         b.birimadi,
         b._key as birim_key,
         sa.sipbirimi,
@@ -363,7 +463,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         bark.barkod,
         u.UrunId,
         u.aktif,
-        b._key as _key
+        u._key as _key
       FROM siparis_ayrintili sa
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key

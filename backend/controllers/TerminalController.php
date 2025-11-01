@@ -1262,14 +1262,21 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
             
-            // KRITIK FIX: 'receiving' durumunda siparis_id'yi dahil et - farklı siparişler ayrı tutulmalı
-            // Serbest mal kabul (siparis_id=NULL) ve sipariş bazlı mal kabul ayrı kayıtlarda tutulmalı
+            // KRITIK FIX: 'receiving' durumunda iki farklı strateji
             if ($stockStatus === 'receiving') {
-                $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
-                // KRITIK FIX: Farklı delivery note'lar için ayrı stock tutmalıyız
-                $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
+                if ($siparisId !== null) {
+                    // SİPARİŞ BAZLI MAL KABUL: siparis_id ile grupla, goods_receipt_id KULLANMA
+                    // Aynı sipariş için farklı irsaliyeler BİRLEŞİR (3+4=7)
+                    $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                    // goods_receipt_id kontrolü YOK - farklı delivery note'lar birleşir
+                } else {
+                    // SERBEST MAL KABUL: goods_receipt_id ile grupla, siparis_id KULLANMA
+                    // Farklı irsaliyeler AYRI KALIR (3, 4 ayrı satırlar)
+                    $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
+                    // siparis_id kontrolü YOK (zaten NULL)
+                }
             }
-            // 'available' durumunda siparis_id kontrolü YOK - konsolidasyon için
+            // 'available' durumunda HER İKİSİ DE YOK - tam konsolidasyon
 
             $stock = $query->createCommand($db)->queryOne();
 
@@ -1328,15 +1335,19 @@ class TerminalController extends Controller
                 
                 $db->createCommand()->insert('inventory_stock', [
                     'stock_uuid' => $finalStockUuid, // UUID eklendi
-                    'urun_key' => $urunKey, 
+                    'urun_key' => $urunKey,
                     'birim_key' => $birimKey, // Birim _key değeri
-                    'location_id' => $locationId, 
-                    'siparis_id' => $siparisId,
-                    'quantity' => (float)$qtyChange, 
+                    'location_id' => $locationId,
+                    'siparis_id' => $siparisId, // Sipariş bazlı mal kabullerde dolu, serbest mal kabullerde NULL
+                    'quantity' => (float)$qtyChange,
                     'pallet_barcode' => $palletBarcode,
-                    'stock_status' => $stockStatus, 
+                    'stock_status' => $stockStatus,
                     'expiry_date' => $expiryDate,
-                    'goods_receipt_id' => $goodsReceiptId, // DÜZELTME: goods_receipt_id eklendi
+                    // KRITIK FIX: İki strateji
+                    // 1. Sipariş bazlı mal kabul (siparis_id dolu): goods_receipt_id NULL -> Aynı sipariş için farklı irsaliyeler BİRLEŞİR (3+4=7)
+                    // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id dolu -> Farklı irsaliyeler AYRI KALIR (3, 4 ayrı satırlar)
+                    // 3. Transfer sonrası (her ikisi NULL): Tam konsolidasyon
+                    'goods_receipt_id' => ($siparisId === null) ? $goodsReceiptId : null,
                     'StokKodu' => $stokKodu,
                     'shelf_code' => $shelfCode,
                     'sip_fisno' => $sipFisno,
@@ -2956,6 +2967,28 @@ class TerminalController extends Controller
             return ['success' => false, 'message' => 'Çalışanın depo bilgisi bulunamadı.'];
         }
 
+        // DEBUG: Log warehouse and employee info
+        $this->logToFile("GetFreeReceiptsForPutaway - warehouse_id: $warehouseId, warehouse_code: {$employeeInfo['warehouse_code']}, employee_id: $employeeId", 'DEBUG');
+
+        // DEBUG: Check inventory_stock records
+        $debugStock = (new Query())
+            ->select(['ist.id', 'ist.goods_receipt_id', 'ist.siparis_id', 'ist.stock_status', 'ist.quantity', 'ist.urun_key'])
+            ->from(['ist' => 'inventory_stock'])
+            ->where(['ist.stock_status' => 'receiving'])
+            ->andWhere(['is not', 'ist.goods_receipt_id', null])
+            ->limit(10)
+            ->all();
+        $this->logToFile("DEBUG inventory_stock with goods_receipt_id (receiving status): " . json_encode($debugStock), 'DEBUG');
+
+        // DEBUG: Check goods_receipts records
+        $debugReceipts = (new Query())
+            ->select(['gr.goods_receipt_id', 'gr.siparis_id', 'gr.delivery_note_number', 'gr.employee_id'])
+            ->from(['gr' => 'goods_receipts'])
+            ->where(['gr.siparis_id' => null])
+            ->limit(10)
+            ->all();
+        $this->logToFile("DEBUG goods_receipts (free receipts): " . json_encode($debugReceipts), 'DEBUG');
+
         $query = new Query();
         $receipts = $query->select([
                 'gr.goods_receipt_id as goods_receipt_id',
@@ -2974,6 +3007,8 @@ class TerminalController extends Controller
             ->groupBy(['gr.goods_receipt_id', 'gr.delivery_note_number', 'gr.receipt_date', 'e.first_name', 'e.last_name'])
             ->orderBy(['gr.receipt_date' => SORT_DESC])
             ->all();
+
+        $this->logToFile("GetFreeReceiptsForPutaway - Result count: " . count($receipts) . ", Data: " . json_encode($receipts), 'DEBUG');
 
         return ['success' => true, 'data' => $receipts];
     }
@@ -3427,6 +3462,6 @@ class TerminalController extends Controller
             }
 
             return ['status' => 'error', 'message' => 'Veritabanı hatası: ' . $errorMsg];
-        }
+    }
     }
 }

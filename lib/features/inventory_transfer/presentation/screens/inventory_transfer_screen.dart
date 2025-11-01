@@ -30,13 +30,15 @@ import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
   final bool isFreePutAway;
-  final String? selectedDeliveryNote;
+  final String? selectedDeliveryNote; // goods_receipt_id (for queries)
+  final String? deliveryNoteDisplayName; // Gerçek irsaliye numarası (ekranda gösterim için)
 
   const InventoryTransferScreen({
     super.key,
     this.selectedOrder,
     this.isFreePutAway = false,
     this.selectedDeliveryNote,
+    this.deliveryNoteDisplayName,
   });
 
   @override
@@ -193,8 +195,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         _sourceLocationController.text = InventoryTransferConstants.receivingAreaCode;
         _isSourceLocationValid = true; // Mark as valid for order/free putaway
         if (widget.isFreePutAway && widget.selectedDeliveryNote != null) {
-          // FIX: Fetch the goods_receipt_id for the free receipt to use in the transfer payload.
-          _goodsReceiptId = await _repo.getGoodsReceiptIdByDeliveryNote(widget.selectedDeliveryNote!);
+          // KRITIK FIX: selectedDeliveryNote artık goods_receipt_id değerini tutuyor (string olarak)
+          final parsedId = int.tryParse(widget.selectedDeliveryNote!);
+          if (parsedId != null) {
+            // Numeric ise direkt goods_receipt_id olarak kullan
+            _goodsReceiptId = parsedId;
+          } else {
+            // String ise gerçek delivery note number, ID'yi bul
+            _goodsReceiptId = await _repo.getGoodsReceiptIdByDeliveryNote(widget.selectedDeliveryNote!);
+          }
+          debugPrint('✅ FREE RECEIPT INIT: goods_receipt_id = $_goodsReceiptId');
         }
       }
 
@@ -237,15 +247,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Future<void> _checkAvailableModesForFreeReceipt() async {
     if (!widget.isFreePutAway || widget.selectedDeliveryNote == null) return;
-    
+
     // Check for pallets and products in the specific delivery note
     await _updateModeAvailability(
       palletCheck: () async {
         final pallets = await _repo.getPalletIdsAtLocation(
-          null, 
-          stockStatuses: [InventoryTransferConstants.stockStatusReceiving], 
+          null,
+          stockStatuses: [InventoryTransferConstants.stockStatusReceiving],
           deliveryNoteNumber: widget.selectedDeliveryNote
         );
+        debugPrint('🔧 MODE CHECK: Palet sayısı = ${pallets.length}');
         return pallets.isNotEmpty;
       },
       boxCheck: () async {
@@ -254,6 +265,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           null,
           deliveryNoteNumber: widget.selectedDeliveryNote,
         );
+        debugPrint('🔧 MODE CHECK: Container sayısı = ${containers.length}');
+        final nonPalletCount = containers.where((c) => !c.isPallet).length;
+        debugPrint('🔧 MODE CHECK: Paletsiz container sayısı = $nonPalletCount');
         // Check if there are any non-pallet containers
         return containers.any((container) => !container.isPallet);
       },
@@ -720,6 +734,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           : InventoryTransferConstants.stockStatusAvailable;
 
       if (_selectedMode == AssignmentMode.pallet && container is String) {
+        debugPrint('🔍 PALET İÇERİĞİ YÜKLEME: container=$container, locationId=$locationId, stockStatus=$stockStatus, deliveryNoteNumber=${widget.selectedDeliveryNote}');
         contents = await _repo.getPalletContents(
           container,
           locationId == 0 ? null : locationId,
@@ -727,6 +742,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           siparisId: widget.selectedOrder?.id,
           deliveryNoteNumber: widget.isFreePutAway ? widget.selectedDeliveryNote : null,
         );
+        debugPrint('🔍 PALET İÇERİĞİ SONUÇ: ${contents.length} ürün bulundu');
       } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
         contents = container.items.map((transferableItem) => ProductItem(
           productKey: transferableItem.product.key,
@@ -1022,7 +1038,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       ),
       padding: const EdgeInsets.all(InventoryTransferConstants.standardGap),
       child: Text(
-        widget.selectedDeliveryNote ?? 'common_labels.not_available'.tr(),
+        widget.deliveryNoteDisplayName ?? widget.selectedDeliveryNote ?? 'common_labels.not_available'.tr(),
         style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onPrimaryContainer,

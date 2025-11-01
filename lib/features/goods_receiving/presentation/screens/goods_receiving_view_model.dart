@@ -780,7 +780,22 @@ class GoodsReceivingViewModel extends ChangeNotifier {
       // productKey null ise fallback olarak key kullan
       final searchKey = _selectedProduct!.productKey ?? _selectedProduct!.key;
 
-      final orderItem = _orderItems.firstWhere((item) => item.productId.toString() == searchKey);
+      debugPrint('🔍 Order item search:');
+      debugPrint('   - searchKey: $searchKey');
+      debugPrint('   - _orderItems count: ${_orderItems.length}');
+
+      final orderItem = _orderItems.firstWhere(
+        (item) => item.productId.toString() == searchKey,
+        orElse: () {
+          debugPrint('❌ Order item NOT FOUND for searchKey: $searchKey');
+          debugPrint('   Available order items:');
+          for (var item in _orderItems) {
+            debugPrint('     - productId: ${item.productId}, name: ${item.product?.name ?? "N/A"}');
+          }
+          throw Exception('Seçilen ürün bu siparişte bulunamadı. Ürün: ${_selectedProduct!.name} (Key: $searchKey)');
+        },
+      );
+
       final alreadyAddedInUI = _addedItems.where((item) => item.product.key == _selectedProduct!.key).map((item) => item.quantity).fold(0.0, (prev, qty) => prev + qty);
       final totalPreviouslyReceived = orderItem.receivedQuantity;
       final remainingQuantity = orderItem.expectedQuantity - totalPreviouslyReceived - alreadyAddedInUI;

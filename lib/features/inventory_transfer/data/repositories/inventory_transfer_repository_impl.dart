@@ -1,6 +1,7 @@
 ﻿// lib/features/inventory_transfer/data/repositories/inventory_transfer_repository_impl.dart
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/sync/pending_operation.dart';
@@ -96,21 +97,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
-    // DÜZELTME: Eğer deliveryNoteNumber varsa, goods_receipts tablosuyla INNER JOIN yapmak daha güvenilirdir.
-    // Bu, stok kaydının kesinlikle geçerli bir mal kabule bağlı olmasını sağlar.
-    final joinClause = deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty
-        ? 'INNER JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id'
-        : '';
-
+    // KRITIK FIX: goods_receipts tablosu sync sonrası silindiği için doğrudan goods_receipt_id kullanıyoruz
+    // deliveryNoteNumber parametresi artık goods_receipt_id değerini tutuyor (string olarak)
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
-      whereClauses.add('gr.delivery_note_number = ?');
-      whereArgs.add(deliveryNoteNumber);
+      whereClauses.add('s.goods_receipt_id = ?');
+      whereArgs.add(int.parse(deliveryNoteNumber)); // String'den int'e çevir
     }
 
     final query = '''
       SELECT DISTINCT s.pallet_barcode
       FROM inventory_stock s
-      $joinClause
       WHERE s.pallet_barcode IS NOT NULL AND ${whereClauses.join(' AND ')}
     ''';
 
@@ -152,11 +148,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
-    String joinClause = '';
+    // KRITIK FIX: goods_receipts tablosu sync sonrası silindiği için doğrudan goods_receipt_id kullanıyoruz
+    // deliveryNoteNumber parametresi artık goods_receipt_id değerini tutuyor (string olarak)
     if (deliveryNoteNumber != null) {
-      joinClause = 'JOIN goods_receipts gr ON s.goods_receipt_id = gr.goods_receipt_id';
-      whereClauses.add('gr.delivery_note_number = ?');
-      whereArgs.add(deliveryNoteNumber);
+      whereClauses.add('s.goods_receipt_id = ?');
+      whereArgs.add(int.parse(deliveryNoteNumber)); // String'den int'e çevir
     }
 
     final query = '''
@@ -169,7 +165,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         SUM(s.quantity) as quantity
       FROM inventory_stock s
       JOIN urunler u ON s.urun_key = u._key
-      $joinClause
       WHERE ${whereClauses.join(' AND ')} AND s.pallet_barcode IS NULL
       GROUP BY u._key, u.UrunAdi, u.StokKodu, s.birim_key
     ''';
@@ -211,14 +206,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     // Free receipt için delivery note kontrolü
+    // KRITIK FIX: deliveryNoteNumber parametresi artık goods_receipt_id değerini tutuyor (string olarak)
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
-      final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
-      if (goodsReceiptId != null) {
+      // Önce numeric ID olup olmadığını kontrol et
+      final parsedId = int.tryParse(deliveryNoteNumber);
+      if (parsedId != null) {
+        // Numeric ise direkt goods_receipt_id olarak kullan
         whereParts.add('s.goods_receipt_id = ?');
-        whereArgs.add(goodsReceiptId);
+        whereArgs.add(parsedId);
       } else {
-        // Delivery note bulunamazsa boş liste döndür
-        return [];
+        // String ise gerçek delivery note number, ID'yi bul
+        final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
+        if (goodsReceiptId != null) {
+          whereParts.add('s.goods_receipt_id = ?');
+          whereArgs.add(goodsReceiptId);
+        } else {
+          // Delivery note bulunamazsa boş liste döndür
+          return [];
+        }
       }
     }
 
@@ -463,21 +468,27 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       sourceWhereArgs.add(item.palletId);
     }
     
-    // Add order filter for putaway operations
+    // Add order/goods_receipt filter for putaway operations
     if (sourceLocationId == null || sourceLocationId == 0) {
       if (header.siparisId != null) {
         sourceWhereClause += ' AND siparis_id = ?';
         sourceWhereArgs.add(header.siparisId);
+      } else if (header.goodsReceiptId != null) {
+        // KRITIK FIX: Free receipt için goods_receipt_id filtresi ekle
+        sourceWhereClause += ' AND goods_receipt_id = ?';
+        sourceWhereArgs.add(header.goodsReceiptId);
       }
     }
     
     // Get source stock info
+    debugPrint('🔄 TRANSFER SOURCE QUERY: WHERE $sourceWhereClause, ARGS: $sourceWhereArgs');
     final sourceStockQuery = await txn.query(
       'inventory_stock',
       where: sourceWhereClause,
       whereArgs: sourceWhereArgs,
       limit: 1,
     );
+    debugPrint('🔄 TRANSFER SOURCE RESULT: ${sourceStockQuery.length} kayıt bulundu');
 
     int? sourceSiparisId;
     int? sourceGoodsReceiptId;
@@ -485,6 +496,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (sourceStockQuery.isNotEmpty) {
       sourceSiparisId = sourceStockQuery.first['siparis_id'] as int?;
       sourceGoodsReceiptId = sourceStockQuery.first['goods_receipt_id'] as int?;
+      debugPrint('🔄 TRANSFER SOURCE INFO: id=${sourceStockQuery.first['id']}, siparis_id=$sourceSiparisId, goods_receipt_id=$sourceGoodsReceiptId, pallet=${sourceStockQuery.first['pallet_barcode']}, qty=${sourceStockQuery.first['quantity']}');
     }
 
     // Decrement source stock
@@ -549,12 +561,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         t.tedarikci_adi as supplierName
       FROM siparisler o
       LEFT JOIN inventory_stock i ON i.siparis_id = o.id AND i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}' AND i.quantity > 0
-      LEFT JOIN goods_receipts gr ON gr.siparis_id = o.id
-      LEFT JOIN goods_receipt_items gri ON gri.operation_unique_id = gr.operation_unique_id AND gri.quantity_received > 0
       LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
       LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.status = 2
-        AND (i.id IS NOT NULL OR gri.id IS NOT NULL)
+        AND i.id IS NOT NULL
       GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.created_at DESC
     ''', [warehouseName ?? 'N/A']);
@@ -591,7 +601,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         ''', [orderId]);
       } else if (deliveryNoteNumber != null) {
         // Free receipt putaway - find stocks by delivery note
-        final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
+        // KRITIK FIX: deliveryNoteNumber artık goods_receipt_id değerini tutuyor (string olarak)
+        final parsedId = int.tryParse(deliveryNoteNumber);
+        final int? goodsReceiptId;
+
+        if (parsedId != null) {
+          // Numeric ise direkt goods_receipt_id olarak kullan
+          goodsReceiptId = parsedId;
+        } else {
+          // String ise gerçek delivery note number, ID'yi bul
+          goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
+        }
+
         if (goodsReceiptId == null) {
           return [];
         }
@@ -922,16 +943,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     
     // Include order-related filters if requested
     if (includeOrderFilters) {
-      // KRITIK FIX: Receiving durumunda siparis_id ile match et
-      if (status == 'receiving' && siparisIdForAddition != null) {
-        whereClause += ' AND siparis_id = ?';
-        whereArgs.add(siparisIdForAddition);
-      }
-      
-      // KRITIK FIX: Receiving durumunda goods_receipt_id ile match et
-      if (status == 'receiving' && goodsReceiptIdForAddition != null) {
-        whereClause += ' AND goods_receipt_id = ?';
-        whereArgs.add(goodsReceiptIdForAddition);
+      // KRITIK FIX: İki farklı strateji (Backend ile uyumlu)
+      // 1. Sipariş bazlı mal kabul (siparis_id dolu): siparis_id ile filtrele
+      // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id ile filtrele
+      if (status == 'receiving') {
+        if (siparisIdForAddition != null) {
+          // Sipariş bazlı: Sadece siparis_id ile filtrele
+          whereClause += ' AND siparis_id = ?';
+          whereArgs.add(siparisIdForAddition);
+        } else if (goodsReceiptIdForAddition != null) {
+          // Serbest mal kabul: Sadece goods_receipt_id ile filtrele
+          whereClause += ' AND goods_receipt_id = ?';
+          whereArgs.add(goodsReceiptIdForAddition);
+        }
       }
     }
 
@@ -1126,20 +1150,23 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         existingWhereArgs.add(goodsReceiptIdForAddition);
       }
     } else if (status == 'receiving') {
-      // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et - farklı siparişler ayrı tutulmalı
-      if (siparisIdForAddition == null) {
-        existingWhereClause += ' AND siparis_id IS NULL';
-      } else {
+      // KRITIK FIX: İki farklı strateji (Backend ile uyumlu)
+      // 1. Sipariş bazlı mal kabul (siparis_id dolu): siparis_id ile grupla, goods_receipt_id KULLANMA
+      // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id ile grupla
+      if (siparisIdForAddition != null) {
+        // Sipariş bazlı: Sadece siparis_id kontrolü yap
         existingWhereClause += ' AND siparis_id = ?';
         existingWhereArgs.add(siparisIdForAddition);
-      }
-      
-      // Receiving durumunda goods_receipt_id kontrolü de yapılmalı
-      if (goodsReceiptIdForAddition == null) {
-        existingWhereClause += ' AND goods_receipt_id IS NULL';
+        // goods_receipt_id kontrolü YOK - farklı delivery note'lar birleşir
       } else {
-        existingWhereClause += ' AND goods_receipt_id = ?';
-        existingWhereArgs.add(goodsReceiptIdForAddition);
+        // Serbest mal kabul: Sadece goods_receipt_id kontrolü yap
+        if (goodsReceiptIdForAddition == null) {
+          existingWhereClause += ' AND goods_receipt_id IS NULL';
+        } else {
+          existingWhereClause += ' AND goods_receipt_id = ?';
+          existingWhereArgs.add(goodsReceiptIdForAddition);
+        }
+        // siparis_id kontrolü YOK (zaten NULL)
       }
     }
 
@@ -1156,16 +1183,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<List<String>> getFreeReceiptDeliveryNotes() async {
     final db = await dbHelper.database;
 
+    // KRITIK FIX: goods_receipts tablosu sync sonrası silindiği için doğrudan inventory_stock'tan alalım
+    // Artık goods_receipt_id döndürüyoruz (string olarak)
     const query = '''
-      SELECT DISTINCT gr.delivery_note_number
-      FROM goods_receipts gr
-      JOIN inventory_stock s ON gr.goods_receipt_id = s.goods_receipt_id
-      WHERE gr.siparis_id IS NULL
-        AND gr.delivery_note_number IS NOT NULL
-        AND gr.delivery_note_number != ''
+      SELECT DISTINCT CAST(s.goods_receipt_id AS TEXT) as delivery_note_number
+      FROM inventory_stock s
+      WHERE s.siparis_id IS NULL
+        AND s.goods_receipt_id IS NOT NULL
         AND s.stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
         AND s.quantity > 0
-      ORDER BY gr.receipt_date DESC
+      ORDER BY s.goods_receipt_id DESC
     ''';
 
     final maps = await db.rawQuery(query);
@@ -1257,9 +1284,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereClauses.add('s.siparis_id = ?');
       whereArgs.add(orderId);
     } else if (deliveryNoteNumber != null) {
-      // Search products from specific delivery note
-      whereClauses.add('gr.delivery_note_number = ?');
-      whereArgs.add(deliveryNoteNumber);
+      // KRITIK FIX: deliveryNoteNumber artık goods_receipt_id değerini tutuyor
+      whereClauses.add('s.goods_receipt_id = ?');
+      whereArgs.add(int.parse(deliveryNoteNumber));
     } else if (locationId != null) {
       // Search products at specific location
       whereClauses.add('s.location_id = ?');
@@ -1267,13 +1294,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     } else {
       // Search all available products (no additional filter)
     }
-    
+
     // Add search parameters for barcode and StokKodu
     whereArgs.insert(0, '%$query%');  // For StokKodu search
     whereArgs.insert(0, '%$query%');  // For barcode search
-    
+
     final whereClause = whereClauses.isNotEmpty ? ' AND ' + whereClauses.join(' AND ') : '';
-    
+
     final sql = '''
       SELECT
         u._key,
@@ -1284,7 +1311,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_key = u._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = s.birim_key
-      ${deliveryNoteNumber != null ? 'INNER JOIN goods_receipts gr ON gr.goods_receipt_id = s.goods_receipt_id' : ''}
       WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?) $whereClause AND s.quantity > 0
       GROUP BY u._key, u.UrunAdi, u.StokKodu, u.aktif, bark.barkod
       ORDER BY u.UrunAdi ASC

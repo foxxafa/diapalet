@@ -121,6 +121,7 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                     itemBuilder: (context, index) {
                       final deliveryNote = _filteredDeliveryNotes[index];
                       final deliveryNoteNumber = deliveryNote['delivery_note_number'] as String? ?? '';
+                      final goodsReceiptId = deliveryNote['goods_receipt_id']; // KRITIK FIX: goods_receipt_id'yi alıyoruz
                       final receiptDate = deliveryNote['receipt_date'] as String?;
 
                       String formattedDate = '';
@@ -144,7 +145,8 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                               MaterialPageRoute(
                                 builder: (_) => InventoryTransferScreen(
                                   isFreePutAway: true,
-                                  selectedDeliveryNote: deliveryNoteNumber,
+                                  selectedDeliveryNote: goodsReceiptId?.toString(), // KRITIK FIX: goods_receipt_id'yi string olarak gönderiyoruz (sorgu için)
+                                  deliveryNoteDisplayName: deliveryNoteNumber, // KRITIK FIX: Gerçek irsaliye numarasını gösterim için gönderiyoruz
                                 ),
                               ),
                             );

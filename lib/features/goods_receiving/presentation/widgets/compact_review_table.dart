@@ -320,8 +320,9 @@ class CompactReviewTable extends StatelessWidget {
       }
     });
     
-    // DB'deki ürünleri ekle (sadece sipariş bazlı mal kabul modunda)
-    if (outOfOrderItems.isNotEmpty && !isFreeReceiving) {
+    // DB'deki ürünleri ekle (sadece SERBEST mal kabul modunda - sipariş bazlı modda gösterme!)
+    // NOT: Sipariş bazlı mal kabulde "Önceki Kabuller" bölümü ASLA gösterilmemeli!
+    if (outOfOrderItems.isNotEmpty && isFreeReceiving) {
       widgets.add(HeaderBuilderUtils.buildDeliveryNoteHeader(context, "Önceki Kabuller"));
       for (final productInfo in outOfOrderItems) {
         widgets.add(Padding(

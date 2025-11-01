@@ -566,28 +566,86 @@ class DatabaseHelper {
           }
         }
 
-        // Goods receipts incremental sync - All server data should sync
+        // Goods receipts incremental sync - UUID bazlı smart merge
         if (data.containsKey('goods_receipts')) {
           final goodsReceiptsData = List<Map<String, dynamic>>.from(data['goods_receipts']);
           for (final receipt in goodsReceiptsData) {
-            // Server'dan gelen tüm goods_receipts verileri senkronize edilmeli
-            // Multi-device safe kontrolü burada uygulanmamalı çünkü bunlar zaten sunucuda kaydedilmiş veriler
-            final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
-            batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            // KRITIK FIX: operation_unique_id bazlı kontrol - mobilde zaten varsa skip et
+            final operationUniqueId = receipt['operation_unique_id'] as String?;
+            bool shouldSkip = false;
+
+            if (operationUniqueId != null) {
+              final existingLocal = await txn.query(
+                'goods_receipts',
+                where: 'operation_unique_id = ?',
+                whereArgs: [operationUniqueId],
+                limit: 1
+              );
+
+              if (existingLocal.isNotEmpty) {
+                // Bu operation_unique_id zaten mobilde var - sunucu ID'si ile güncelle
+                final localId = existingLocal.first['goods_receipt_id'];
+                final serverId = receipt['id'];
+                debugPrint('🔄 goods_receipts update: operation_unique_id=$operationUniqueId, local_id=$localId -> server_id=$serverId');
+
+                // Sadece server ID'sini güncelle, diğer verileri koru
+                await txn.update(
+                  'goods_receipts',
+                  {'goods_receipt_id': serverId},
+                  where: 'operation_unique_id = ?',
+                  whereArgs: [operationUniqueId],
+                );
+                shouldSkip = true;
+              }
+            }
+
+            if (!shouldSkip) {
+              final sanitizedRecord = _sanitizeRecord('goods_receipts', receipt);
+              batch.insert('goods_receipts', sanitizedRecord, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
 
             processedItems++;
             updateProgress('goods_receipts');
           }
         }
 
-        // Goods receipt items incremental sync - All server data should sync
+        // Goods receipt items incremental sync - UUID bazlı smart merge
         if (data.containsKey('goods_receipt_items')) {
           final goodsReceiptItemsData = List<Map<String, dynamic>>.from(data['goods_receipt_items']);
           for (final item in goodsReceiptItemsData) {
-            // Server'dan gelen tüm goods_receipt_items verileri senkronize edilmeli
-            // Multi-device safe kontrolü burada uygulanmamalı çünkü parent receipt'ler de senkronize ediliyor
-            final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
-            batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
+            // KRITIK FIX: item_uuid bazlı kontrol - mobilde zaten varsa skip et
+            final itemUuid = item['item_uuid'] as String?;
+            bool shouldSkip = false;
+
+            if (itemUuid != null) {
+              final existingLocal = await txn.query(
+                'goods_receipt_items',
+                where: 'item_uuid = ?',
+                whereArgs: [itemUuid],
+                limit: 1
+              );
+
+              if (existingLocal.isNotEmpty) {
+                // Bu item_uuid zaten mobilde var - sunucu ID'si ile güncelle
+                final localId = existingLocal.first['id'];
+                final serverId = item['id'];
+                debugPrint('🔄 goods_receipt_items update: item_uuid=$itemUuid, local_id=$localId -> server_id=$serverId');
+
+                // Sadece server ID'sini güncelle, diğer verileri koru
+                await txn.update(
+                  'goods_receipt_items',
+                  {'id': serverId},
+                  where: 'item_uuid = ?',
+                  whereArgs: [itemUuid],
+                );
+                shouldSkip = true;
+              }
+            }
+
+            if (!shouldSkip) {
+              final sanitizedItem = _sanitizeRecord('goods_receipt_items', item);
+              batch.insert('goods_receipt_items', sanitizedItem, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
 
             processedItems++;
             updateProgress('goods_receipt_items');
@@ -2518,28 +2576,76 @@ class DatabaseHelper {
       debugPrint("✅ Duplicate cleanup completed!");
     }
 
-    // Temizlenmiş verilerle sorgula
-    const sql = '''
-      SELECT 
+    // DEBUG: Check all free receipts
+    final debugFreeReceipts = await db.rawQuery('''
+      SELECT gr.goods_receipt_id, gr.siparis_id, gr.delivery_note_number
+      FROM goods_receipts gr
+      WHERE gr.siparis_id IS NULL
+      ORDER BY gr.goods_receipt_id DESC
+      LIMIT 5
+    ''');
+    debugPrint("🔍 DEBUG: Free receipts in goods_receipts table:");
+    for (final row in debugFreeReceipts) {
+      debugPrint("  - receipt_id: ${row['goods_receipt_id']}, delivery_note: ${row['delivery_note_number']}");
+    }
+
+    // DEBUG: Check inventory_stock with goods_receipt_id
+    final debugStock = await db.rawQuery('''
+      SELECT ist.id, ist.goods_receipt_id, ist.siparis_id, ist.stock_status, ist.quantity
+      FROM inventory_stock ist
+      WHERE ist.goods_receipt_id IS NOT NULL AND ist.stock_status = 'receiving'
+      ORDER BY ist.id DESC
+      LIMIT 5
+    ''');
+    debugPrint("🔍 DEBUG: Inventory stock with goods_receipt_id (receiving):");
+    for (final row in debugStock) {
+      debugPrint("  - stock_id: ${row['id']}, goods_receipt_id: ${row['goods_receipt_id']}, siparis_id: ${row['siparis_id']}, qty: ${row['quantity']}");
+    }
+
+    // DEBUG: Test JOIN
+    final debugJoin = await db.rawQuery('''
+      SELECT
         gr.goods_receipt_id,
         gr.delivery_note_number,
-        gr.receipt_date,
-        gr.employee_id,
-        e.first_name || ' ' || e.last_name as employee_name,
-        COUNT(DISTINCT ist.urun_key) as item_count,
-        SUM(ist.quantity) as total_quantity
+        ist.id as stock_id,
+        ist.quantity
       FROM goods_receipts gr
-      LEFT JOIN employees e ON e.id = gr.employee_id
       LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id AND ist.stock_status = 'receiving'
       WHERE gr.siparis_id IS NULL
-        AND ist.id IS NOT NULL
-      GROUP BY gr.delivery_note_number, gr.goods_receipt_id, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
-      HAVING gr.goods_receipt_id = MIN(gr.goods_receipt_id)  -- Keep only the first receipt for each delivery note
-      ORDER BY gr.receipt_date DESC
+      ORDER BY gr.goods_receipt_id DESC
+      LIMIT 5
+    ''');
+    debugPrint("🔍 DEBUG: JOIN test result:");
+    for (final row in debugJoin) {
+      debugPrint("  - receipt_id: ${row['goods_receipt_id']}, delivery_note: ${row['delivery_note_number']}, stock_id: ${row['stock_id']}, qty: ${row['quantity']}");
+    }
+
+    // KRITIK FIX: goods_receipts tablosu artık UUID bazlı smart merge ile korunuyor
+    // Gerçek delivery_note_number'ı goods_receipts tablosundan alıyoruz
+    // Serbest mal kabuller: siparis_id NULL, goods_receipt_id DOLU, stock_status = 'receiving'
+    const sql = '''
+      SELECT
+        ist.goods_receipt_id,
+        COALESCE(gr.delivery_note_number, 'FREE-' || ist.goods_receipt_id) as delivery_note_number,
+        COALESCE(gr.receipt_date, MIN(ist.created_at)) as receipt_date,
+        gr.employee_id,
+        COALESCE(e.first_name || ' ' || e.last_name, 'Unknown') as employee_name,
+        COUNT(DISTINCT ist.urun_key) as item_count,
+        SUM(ist.quantity) as total_quantity
+      FROM inventory_stock ist
+      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
+      LEFT JOIN employees e ON e.id = gr.employee_id
+      WHERE ist.siparis_id IS NULL
+        AND ist.goods_receipt_id IS NOT NULL
+        AND ist.stock_status = 'receiving'
+        AND ist.quantity > 0
+      GROUP BY ist.goods_receipt_id, gr.delivery_note_number, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
+      ORDER BY COALESCE(gr.receipt_date, MIN(ist.created_at)) DESC
     ''';
 
     final result = await db.rawQuery(sql);
-    debugPrint("📋 Free receipts for putaway: ${result.length} kayıt (duplicates cleaned)");
+    debugPrint("📋 Free receipts for putaway: ${result.length} kayıt (from inventory_stock directly)");
+    debugPrint("📋 Result details: ${result.map((r) => 'receipt_id: ${r['goods_receipt_id']}, items: ${r['item_count']}, qty: ${r['total_quantity']}').join(', ')}");
     return result;
   }
 
@@ -2934,10 +3040,11 @@ class DatabaseHelper {
       
       // Warehouse'a özel tabloları temizle (dependency order'da)
       // wms_putaway_status tablosu kaldırıldı
-      batch.delete('goods_receipt_items');          // goods_receipts'e bağlı
+      // KRITIK: goods_receipts ve goods_receipt_items WMS tarihçesi için KORUNUYOR - Sadece warehouse switch'te temizleniyor
+      batch.delete('goods_receipt_items');          // goods_receipts'e bağlı (tarihçe için korunuyor, sadece warehouse switch'te sil)
       batch.delete('inventory_transfers');          // location'lara bağlı
-      batch.delete('inventory_stock');              // location'lara bağlı  
-      batch.delete('goods_receipts');               // warehouse'a bağlı
+      batch.delete('inventory_stock');              // location'lara bağlı
+      batch.delete('goods_receipts');               // warehouse'a bağlı (tarihçe için korunuyor, sadece warehouse switch'te sil)
       batch.delete('siparis_ayrintili');            // siparisler'e bağlı
       batch.delete('siparisler');                   // warehouse'a bağlı
       batch.delete('shelfs');                       // warehouse'a bağlı
