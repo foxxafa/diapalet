@@ -728,10 +728,26 @@ class SyncService with ChangeNotifier {
         // Goods receipt'ler için receipt_id ile lokal kayıtları güncelle
         if (operationType == 'goodsReceipt' && resultData['receipt_id'] != null && idempotencyKey != null) {
           final receiptId = int.parse(resultData['receipt_id'].toString());
+
+          // KRITIK FIX: Extract item_id_mapping from response
+          Map<String, int>? itemIdMapping;
+          if (resultData['item_id_mapping'] != null) {
+            itemIdMapping = Map<String, int>.from(
+              (resultData['item_id_mapping'] as Map).map(
+                (key, value) => MapEntry(key.toString(), int.parse(value.toString()))
+              )
+            );
+            debugPrint("🔄 SYNC UPDATE: item_id_mapping alındı - ${itemIdMapping.length} item");
+          }
+
           debugPrint("🔄 SYNC UPDATE: receipt_id ($receiptId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
-          
+
           try {
-            await dbHelper.updateLocalGoodsReceiptWithServerId(idempotencyKey, receiptId);
+            await dbHelper.updateLocalGoodsReceiptWithServerId(
+              idempotencyKey,
+              receiptId,
+              itemIdMapping: itemIdMapping,
+            );
             debugPrint("✅ SYNC UPDATE: Lokal kayıt başarıyla güncellendi");
           } catch (e, s) {
             debugPrint("❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e");

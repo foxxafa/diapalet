@@ -616,15 +616,19 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         if (goodsReceiptId == null) {
           return [];
         }
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [goodsReceiptId, InventoryTransferConstants.stockStatusReceiving]);
+        // KRITIK FIX: Serbest mal kabul için siparis_id IS NULL olmalı
+        // Sadece goods_receipt_id dolu VE siparis_id NULL olan receiving stoklarını göster
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'goods_receipt_id = ? AND siparis_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: [goodsReceiptId, InventoryTransferConstants.stockStatusReceiving]);
       } else {
         stockMaps = [];
       }
     } else {
+      // KRITIK FIX: Serbest transfer için sipariş bazlı stokları hariç tut
+      // Sadece siparis_id = NULL olan stokları göster (serbest stoklar)
       if (locationId == null) {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: [InventoryTransferConstants.stockStatusAvailable]);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id IS NULL AND siparis_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: [InventoryTransferConstants.stockStatusAvailable]);
       } else {
-        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND stock_status = ? AND quantity > 0', whereArgs: [locationId, InventoryTransferConstants.stockStatusAvailable]);
+        stockMaps = await db.query(DbTables.inventoryStock, where: 'location_id = ? AND siparis_id IS NULL AND stock_status = ? AND quantity > 0', whereArgs: [locationId, InventoryTransferConstants.stockStatusAvailable]);
       }
     }
 
@@ -1018,14 +1022,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     );
 
     if (existingStock.isNotEmpty) {
-      // Update existing stock
+      // Update existing stock - KRITIK FIX: UUID bazlı güncelleme
       final currentQty = (existingStock.first['quantity'] as num).toDouble();
       final newQty = currentQty + quantityChange;
+      final stockUuid = existingStock.first['stock_uuid'] as String;
       await txn.update(
         'inventory_stock',
         {'quantity': newQty, 'updated_at': DateTime.now().toUtc().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [existingStock.first['id']],
+        where: 'stock_uuid = ?',
+        whereArgs: [stockUuid],
       );
     } else {
       // Create new stock record
@@ -1087,28 +1092,27 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     for (final stock in stockEntries) {
-      final stockId = stock['id'] as int;
+      final stockUuid = stock['stock_uuid'] as String;
       final currentQty = (stock['quantity'] as num).toDouble();
 
       if (currentQty >= remainingToDecrement) {
         final newQty = currentQty - remainingToDecrement;
         if (newQty > 0.001) {
+          // KRITIK FIX: UUID bazlı güncelleme
           await txn.update(DbTables.inventoryStock, {
-            'quantity': newQty, 
+            'quantity': newQty,
             'updated_at': DateTime.now().toUtc().toIso8601String()
-          }, where: 'id = ?', whereArgs: [stockId]);
+          }, where: 'stock_uuid = ?', whereArgs: [stockUuid]);
         } else {
-          // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için
-          // final stockUuid = stock['stock_uuid'] as String?;
-          await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
+          // KRITIK FIX: UUID bazlı silme
+          await txn.delete(DbTables.inventoryStock, where: 'stock_uuid = ?', whereArgs: [stockUuid]);
         }
         remainingToDecrement = 0;
         break;
       } else {
         remainingToDecrement -= currentQty;
-        // KRITIK FIX: Silinen stock'ın UUID'sini kaydet - tombstone için  
-        // final stockUuid = stock['stock_uuid'] as String?;
-        await txn.delete(DbTables.inventoryStock, where: 'id = ?', whereArgs: [stockId]);
+        // KRITIK FIX: UUID bazlı silme
+        await txn.delete(DbTables.inventoryStock, where: 'stock_uuid = ?', whereArgs: [stockUuid]);
       }
     }
 
@@ -1296,8 +1300,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
 
     // Add search parameters for barcode and StokKodu
-    whereArgs.insert(0, '%$query%');  // For StokKodu search
-    whereArgs.insert(0, '%$query%');  // For barcode search
+    // KRITIK FIX: Türkçe karakter ve büyük/küçük harf duyarsız arama için LOWER() kullan
+    final searchPattern = '%${query.toLowerCase()}%';
+    whereArgs.insert(0, searchPattern);  // For StokKodu search
+    whereArgs.insert(0, searchPattern);  // For barcode search
 
     final whereClause = whereClauses.isNotEmpty ? ' AND ' + whereClauses.join(' AND ') : '';
 
@@ -1311,7 +1317,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       FROM urunler u
       INNER JOIN inventory_stock s ON s.urun_key = u._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = s.birim_key
-      WHERE (bark.barkod LIKE ? OR u.StokKodu LIKE ?) $whereClause AND s.quantity > 0
+      WHERE (LOWER(bark.barkod) LIKE ? OR LOWER(u.StokKodu) LIKE ?) $whereClause AND s.quantity > 0
       GROUP BY u._key, u.UrunAdi, u.StokKodu, u.aktif, bark.barkod
       ORDER BY u.UrunAdi ASC
     ''';

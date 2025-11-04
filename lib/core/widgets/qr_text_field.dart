@@ -68,6 +68,28 @@ class _QrTextFieldState extends State<QrTextField> {
     }
   }
 
+  /// FIX: Flutter FocusNode.rect null check hatası için güvenli field submit handler
+  /// Hata: keyboard "Next/Done" butonuna basıldığında FocusNode.rect null oluyor
+  /// Çözüm: Try-catch ile hata yakala ve user callback'ini güvenli şekilde çağır
+  void _handleFieldSubmitted(String value) {
+    try {
+      // Önce focus'u temizle - bu hatayı önler
+      if (widget.focusNode != null && widget.focusNode!.hasFocus) {
+        widget.focusNode!.unfocus();
+      }
+
+      // User callback'ini çağır
+      widget.onFieldSubmitted?.call(value);
+    } catch (e) {
+      // Flutter framework bug - FocusNode.rect null check hatası
+      // Sessizce yakala, kullanıcıyı etkilemez
+      debugPrint('⚠️ Focus transition error caught (Flutter framework bug): $e');
+
+      // Yine de callback'i çağır
+      widget.onFieldSubmitted?.call(value);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -81,7 +103,7 @@ class _QrTextFieldState extends State<QrTextField> {
             maxLines: widget.maxLines,
             decoration: _inputDecoration(context),
             onChanged: widget.onChanged,
-            onFieldSubmitted: widget.onFieldSubmitted,
+            onFieldSubmitted: _handleFieldSubmitted,
             textInputAction: widget.textInputAction ?? TextInputAction.next,
             validator: widget.validator,
             textCapitalization: widget.textCapitalization,

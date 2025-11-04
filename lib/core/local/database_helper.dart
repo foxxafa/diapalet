@@ -700,12 +700,15 @@ class DatabaseHelper {
                   await txn.update(
                     'inventory_stock',
                     {
-                      'quantity': serverQuantity, 
+                      'quantity': serverQuantity,
                       'updated_at': serverUpdatedAt,
                       'birim_key': stock['birim_key'], // birim_key'i de güncelle
                       'location_id': stock['location_id'], // location_id'yi de güncelle
                       'stock_status': stock['stock_status'], // stock_status'u da güncelle
                       'expiry_date': stock['expiry_date'], // expiry_date'i de güncelle
+                      'siparis_id': stock['siparis_id'], // KRITIK FIX: siparis_id'yi de güncelle
+                      'goods_receipt_id': stock['goods_receipt_id'], // KRITIK FIX: goods_receipt_id'yi de güncelle
+                      'pallet_barcode': stock['pallet_barcode'], // KRITIK FIX: pallet_barcode'u da güncelle
                     },
                     where: 'stock_uuid = ?',
                     whereArgs: [stockUuid]
@@ -814,14 +817,14 @@ class DatabaseHelper {
                     'birim_key': sanitizedStock['birim_key'], // birim_key'i de güncelle
                     'updated_at': DateTime.now().toUtc().toIso8601String()
                   },
-                  where: 'id = ?',
-                  whereArgs: [existingId]
+                  where: 'stock_uuid = ?',
+                  whereArgs: [existingUuid]
                 );
                 debugPrint('🔄 TOMBSTONE FIX: UUID güncellendi $existingUuid → $serverUuid, quantity: $newQuantity');
               } else {
-                // Miktar 0 veya negatifse kaydı sil
-                await txn.delete('inventory_stock', where: 'id = ?', whereArgs: [existingId]);
-                debugPrint('SYNC INFO: Deleted inventory stock due to zero quantity');
+                // KRITIK FIX: Miktar 0 veya negatifse kaydı UUID ile sil
+                await txn.delete('inventory_stock', where: 'stock_uuid = ?', whereArgs: [existingUuid]);
+                debugPrint('SYNC INFO: Deleted inventory stock due to zero quantity (UUID: $existingUuid)');
               }
             } else {
               // Yeni stok kaydı oluştur
@@ -3137,95 +3140,144 @@ class DatabaseHelper {
   // }
   
   /// Sync sonrası local goods receipt'i server ID'si ile günceller
-  Future<void> updateLocalGoodsReceiptWithServerId(String pendingOpUniqueId, int serverId) async {
+  Future<void> updateLocalGoodsReceiptWithServerId(
+    String pendingOpUniqueId,
+    int serverId, {
+    Map<String, int>? itemIdMapping,
+  }) async {
     final db = await database;
-    
+
     try {
-      // 1. Pending operation'ı bul
-      final pendingOp = await db.query(
-        'pending_operation',
-        where: 'unique_id = ? AND type = ? AND status = ?',
-        whereArgs: [pendingOpUniqueId, 'goodsReceipt', 'synced'],
-        limit: 1
-      );
-      
-      if (pendingOp.isEmpty) {
-        debugPrint('⚠️  Pending operation bulunamadı: $pendingOpUniqueId');
-        return;
-      }
-      
-      // 2. Data'dan sipariş bilgilerini çıkar
-      final data = jsonDecode(pendingOp.first['data'] as String);
-      final header = data['header'] as Map<String, dynamic>?;
-      final siparisId = header?['siparis_id'] as int?;
-      
-      if (siparisId == null) {
-        debugPrint('⚠️  Sipariş ID bulunamadı pending operation data\'sında');
-        return;
-      }
-      
-      // 3. Pending operation'dan receipt_date'i al
-      final receiptDate = header?['receipt_date'] as String?;
-      
-      if (receiptDate == null) {
-        debugPrint('⚠️  Receipt date bulunamadı pending operation data\'sında');
-        return;
-      }
-      
-      // 4. Aynı sipariş ve tarihle eşleşen local kaydı bul (server ID'si olmayan)
+      // KRITIK FIX: operation_unique_id ile eşleşme yap (siparis_id yerine)
+      // Bu sayede hem sipariş bazlı hem de serbest mal kabullerde çalışır
+
+      // 1. operation_unique_id ile local kaydı bul
       final localReceipts = await db.query(
         'goods_receipts',
-        where: 'siparis_id = ? AND goods_receipt_id != ? AND receipt_date = ?',
-        whereArgs: [siparisId, serverId, receiptDate]
+        where: 'operation_unique_id = ?',
+        whereArgs: [pendingOpUniqueId],
+        limit: 1
       );
-      
-      debugPrint('🔄 SYNC UPDATE: Sipariş $siparisId, tarih $receiptDate için ${localReceipts.length} lokal kayıt bulundu');
-      
-      // Exact match bulunmalı
-      if (localReceipts.isNotEmpty) {
-        final localReceipt = localReceipts.first; // Should be only one with exact date match
-        final localId = localReceipt['goods_receipt_id'] as int;
-        
-        debugPrint('🔄 SYNC UPDATE: Local ID $localId → Server ID $serverId değişimi yapılıyor');
-        
-        // 5. Foreign key constraint'i geçici olarak devre dışı bırak (transaction dışında)
-        await db.execute('PRAGMA foreign_keys = OFF');
-        
-        try {
-          await db.transaction((txn) async {
-            // 6. Child kayıtları önce güncelle
-            await txn.update(
-              'goods_receipt_items',
-              {'receipt_id': serverId},
-              where: 'receipt_id = ?',
-              whereArgs: [localId]
-            );
-            
-            await txn.update(
-              'inventory_stock',
-              {'goods_receipt_id': serverId},
-              where: 'goods_receipt_id = ?',
-              whereArgs: [localId]
-            );
-            
-            // 7. Ana kaydı en son güncelle
-            await txn.update(
-              'goods_receipts',
-              {'goods_receipt_id': serverId},
-              where: 'goods_receipt_id = ?',
-              whereArgs: [localId]
-            );
-          });
-        } finally {
-          // 8. Foreign key constraint'i yeniden aktif et
-          await db.execute('PRAGMA foreign_keys = ON');
-        }
-        
-        debugPrint('✅ SYNC UPDATE: Goods receipt başarıyla güncellendi (Local: $localId → Server: $serverId)');
+
+      if (localReceipts.isEmpty) {
+        debugPrint('⚠️  Local goods receipt bulunamadı: $pendingOpUniqueId');
+        return;
       }
+
+      final localReceipt = localReceipts.first;
+      final localId = localReceipt['goods_receipt_id'] as int;
+
+      // Server ID zaten aynıysa güncelleme yapma
+      if (localId == serverId) {
+        debugPrint('ℹ️  Goods receipt ID zaten güncel: $localId');
+        return;
+      }
+
+      debugPrint('🔄 SYNC UPDATE: operation_unique_id=$pendingOpUniqueId için Local ID $localId → Server ID $serverId değişimi yapılıyor');
+
+      // 2. Foreign key constraint'i geçici olarak devre dışı bırak (transaction dışında)
+      await db.execute('PRAGMA foreign_keys = OFF');
+
+      try {
+        await db.transaction((txn) async {
+          // 3. Child kayıtları önce güncelle
+          final itemsUpdated = await txn.update(
+            'goods_receipt_items',
+            {'receipt_id': serverId},
+            where: 'receipt_id = ?',
+            whereArgs: [localId]
+          );
+          debugPrint('   📦 goods_receipt_items receipt_id: $itemsUpdated kayıt güncellendi');
+
+          // KRITIK FIX: goods_receipt_items.id'leri de güncelle
+          if (itemIdMapping != null && itemIdMapping.isNotEmpty) {
+            debugPrint('   🔑 goods_receipt_items.id güncellemesi başlıyor: ${itemIdMapping.length} item');
+
+            for (final entry in itemIdMapping.entries) {
+              final itemUuid = entry.key;
+              final serverItemId = entry.value;
+
+              // item_uuid ile local item'ı bul
+              final localItems = await txn.query(
+                'goods_receipt_items',
+                columns: ['id'],
+                where: 'item_uuid = ?',
+                whereArgs: [itemUuid],
+                limit: 1,
+              );
+
+              if (localItems.isEmpty) {
+                debugPrint('      ⚠️  Local item bulunamadı: $itemUuid');
+                continue;
+              }
+
+              final localItemId = localItems.first['id'] as int;
+
+              // Eğer ID zaten aynıysa atla
+              if (localItemId == serverItemId) {
+                debugPrint('      ℹ️  Item ID zaten güncel: $localItemId (UUID: $itemUuid)');
+                continue;
+              }
+
+              debugPrint('      🔄 Item ID güncelleme: Local $localItemId → Server $serverItemId (UUID: $itemUuid)');
+
+              // STRATEJI: DELETE + INSERT kullan (UNIQUE constraint'i bypass etmek için)
+              // Önce eski kaydı oku
+              final oldItem = await txn.query(
+                'goods_receipt_items',
+                where: 'id = ?',
+                whereArgs: [localItemId],
+                limit: 1,
+              );
+
+              if (oldItem.isNotEmpty) {
+                final itemData = Map<String, dynamic>.from(oldItem.first);
+
+                // Eski kaydı sil
+                await txn.delete(
+                  'goods_receipt_items',
+                  where: 'id = ?',
+                  whereArgs: [localItemId],
+                );
+
+                // Yeni ID ile kaydet
+                itemData['id'] = serverItemId;
+                await txn.insert('goods_receipt_items', itemData);
+
+                debugPrint('      ✅ Item ID başarıyla güncellendi: $localItemId → $serverItemId');
+              }
+            }
+
+            debugPrint('   ✅ goods_receipt_items.id güncellemesi tamamlandı');
+          }
+
+          final stockUpdated = await txn.update(
+            'inventory_stock',
+            {'goods_receipt_id': serverId},
+            where: 'goods_receipt_id = ?',
+            whereArgs: [localId]
+          );
+          debugPrint('   📊 inventory_stock: $stockUpdated kayıt güncellendi');
+
+          // 4. Ana kaydı en son güncelle
+          await txn.update(
+            'goods_receipts',
+            {'goods_receipt_id': serverId},
+            where: 'goods_receipt_id = ?',
+            whereArgs: [localId]
+          );
+          debugPrint('   📋 goods_receipts: Ana kayıt güncellendi');
+        });
+      } finally {
+        // 5. Foreign key constraint'i yeniden aktif et
+        await db.execute('PRAGMA foreign_keys = ON');
+      }
+
+      debugPrint('✅ SYNC UPDATE: Goods receipt başarıyla güncellendi (Local: $localId → Server: $serverId)');
     } catch (e, s) {
       debugPrint('❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e');
       debugPrint('Stack trace: $s');
+      rethrow;
     }
   }
   

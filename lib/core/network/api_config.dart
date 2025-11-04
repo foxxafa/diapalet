@@ -65,7 +65,7 @@ class ApiConfig {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final prefs = await SharedPreferences.getInstance();
-        final apiKey = prefs.getString('api_key');
+        final apiKey = prefs.getString('apikey');
         if (apiKey != null) {
           options.headers['Authorization'] = 'Bearer $apiKey';
         }

@@ -726,6 +726,9 @@ class TerminalController extends Controller
         ])->execute();
         $receiptId = $db->getLastInsertID();
 
+        // KRITIK FIX: Item ID mapping'i için array oluştur
+        $itemIdMapping = []; // ['item_uuid' => server_item_id]
+
         foreach ($items as $item) {
             // Mobile'dan urun_key (_key değeri) geliyor, direkt yazılıyor
             $urunKey = $item['urun_key']; // _key değeri
@@ -797,12 +800,12 @@ class TerminalController extends Controller
             $this->logToFile("Raw item data: " . json_encode($item), 'DEBUG');
             
             $db->createCommand()->insert('goods_receipt_items', [
-                'receipt_id' => $receiptId, 
+                'receipt_id' => $receiptId,
                 'operation_unique_id' => $data['operation_unique_id'] ?? null, // Parent receipt'in operation_unique_id'si
                 'item_uuid' => $item['item_uuid'] ?? null, // Item'ın kendi UUID'si
                 'urun_key' => $urunKey, // _key değeri direkt yazılıyor
                 'birim_key' => $item['birim_key'] ?? null, // Birim _key değeri
-                'quantity_received' => $item['quantity'], 
+                'quantity_received' => $item['quantity'],
                 'pallet_barcode' => $item['pallet_barcode'] ?? null,
                 'barcode' => $item['barcode'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
@@ -810,6 +813,13 @@ class TerminalController extends Controller
                 'StokKodu' => $stokKodu,
                 'free' => $isFree, // Siparişteki ürün+birim ise 0, değilse 1
             ])->execute();
+
+            // KRITIK FIX: Sunucu tarafında oluşturulan item_id'yi map'e ekle
+            $itemId = $db->getLastInsertID();
+            $itemUuid = $item['item_uuid'] ?? null;
+            if ($itemUuid) {
+                $itemIdMapping[$itemUuid] = $itemId;
+            }
 
             // Backend'de inventory_stock oluştur veya güncelle - upsertStock kullanarak birleştir
             $stockStatus = 'receiving'; // Mal kabul aşamasında receiving status
@@ -888,7 +898,12 @@ class TerminalController extends Controller
             $this->checkAndFinalizeReceiptStatus($db, $siparisId);
         }
 
-        return ['status' => 'success', 'receipt_id' => $receiptId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
+        return [
+            'status' => 'success',
+            'receipt_id' => $receiptId,
+            'operation_unique_id' => $data['operation_unique_id'] ?? null,
+            'item_id_mapping' => $itemIdMapping  // KRITIK FIX: Mobile tarafında goods_receipt_items.id güncellemesi için
+        ];
     }
 
     private function _createInventoryTransfer($data, $db) {
@@ -976,7 +991,7 @@ class TerminalController extends Controller
             
             $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
-            $stockUuid = $item['stock_uuid'] ?? null; // KRITIK FIX: Phone-generated UUID
+            $targetStockUuidFromPhone = $item['stock_uuid'] ?? null; // KRITIK FIX: Phone-generated UUID for TARGET stock
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
             // 1. İlk giren ilk çıkar mantığı ile kaynak stokları bul
@@ -1048,12 +1063,13 @@ class TerminalController extends Controller
             // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
             $quantityLeft = $totalQuantityToTransfer;
             $portionsToTransfer = []; // {miktar, son_kullanma_tarihi, siparis_id, mal_kabul_id}
-            $vtIslemleri = ['delete' => [], 'update' => []]; // {id: yeni_miktar}
+            // KRITIK FIX: UUID bazlı operasyonlar için stock_uuid kullan
+            $vtIslemleri = ['delete' => [], 'update' => []]; // {stock_uuid: yeni_miktar}
 
             foreach ($sourceStocks as $stock) {
                 if ($quantityLeft <= 0.001) break;
 
-                $stockId = $stock['id'];
+                $stockUuid = $stock['stock_uuid']; // KRITIK FIX: ID yerine UUID kullan
                 $stockQty = (float)$stock['quantity'];
                 $qtyThisCycle = min($stockQty, $quantityLeft);
 
@@ -1065,55 +1081,44 @@ class TerminalController extends Controller
                 ];
 
                 if ($stockQty - $qtyThisCycle > 0.001) {
-                    $vtIslemleri['update'][$stockId] = $stockQty - $qtyThisCycle;
+                    $vtIslemleri['update'][$stockUuid] = $stockQty - $qtyThisCycle;
                 } else {
-                    $vtIslemleri['delete'][] = $stockId;
+                    $vtIslemleri['delete'][] = $stockUuid;
                 }
                 $quantityLeft -= $qtyThisCycle;
             }
 
             // 3. Veritabanı işlemlerini çalıştır (Kaynağı azalt)
             if (!empty($vtIslemleri['delete'])) {
-                // TOMBSTONE: Silinecek stokların UUID'lerini log tablosuna kaydet (YENİ UUID TABANLI YAKLAŞIM)
-                $stockUuids = $db->createCommand(
-                    'SELECT stock_uuid FROM inventory_stock WHERE id IN (' . implode(',', array_map('intval', $vtIslemleri['delete'])) . ')'
-                )->queryColumn();
+                // KRITIK FIX: UUID bazlı tombstone kayıt - array zaten UUID içeriyor
+                $stockUuidsToDelete = $vtIslemleri['delete'];
 
                 // UUID'leri tombstone tablosuna toplu olarak ekle
-                if (!empty($stockUuids)) {
-                    $recordsToLog = [];
-                    foreach ($stockUuids as $uuid) {
-                        $recordsToLog[] = [
-                            'stock_uuid' => $uuid,
-                            'warehouse_code' => $employeeInfo['warehouse_code'] ?? null,
-                            'deleted_at' => new \yii\db\Expression('NOW()')
-                        ];
-                    }
-                    
-                    // Convert to wms_tombstones format
+                if (!empty($stockUuidsToDelete)) {
                     $tombstoneRecords = [];
-                    foreach ($stockUuids as $uuid) {
+                    foreach ($stockUuidsToDelete as $uuid) {
                         $tombstoneRecords[] = [
                             $uuid,
                             $employeeInfo['warehouse_code'] ?? null,
                             new \yii\db\Expression('NOW()')
                         ];
                     }
-                    
+
                     $db->createCommand()->batchInsert(
                         'wms_tombstones',
                         ['stock_uuid', 'warehouse_code', 'deleted_at'],
                         $tombstoneRecords
                     )->execute();
-                    
-                    Yii::info("TOMBSTONE: Logged " . count($stockUuids) . " deleted inventory_stock UUIDs", __METHOD__);
+
+                    Yii::info("TOMBSTONE: Logged " . count($stockUuidsToDelete) . " deleted inventory_stock UUIDs", __METHOD__);
                 }
-                
-                // Ana tablodan fiziksel olarak sil
-                $db->createCommand()->delete('inventory_stock', ['in', 'id', $vtIslemleri['delete']])->execute();
+
+                // KRITIK FIX: Ana tablodan fiziksel olarak sil - UUID kullan
+                $db->createCommand()->delete('inventory_stock', ['in', 'stock_uuid', $stockUuidsToDelete])->execute();
             }
-            foreach ($vtIslemleri['update'] as $id => $newQty) {
-                $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $id])->execute();
+            // KRITIK FIX: UUID bazlı güncelleme
+            foreach ($vtIslemleri['update'] as $stockUuid => $newQty) {
+                $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['stock_uuid' => $stockUuid])->execute();
             }
 
             // 4. Kısımları hedefe ekle (son kullanma tarihleri ve kaynak ID'leri korunarak)
@@ -1131,7 +1136,7 @@ class TerminalController extends Controller
                     $portion['expiry'],
                     null, // KRITIK FIX: goods_receipt_id NULL - consolidation için
                     $employeeInfo['warehouse_code'] ?? null, // warehouse_code eklendi
-                    $stockUuid // KRITIK FIX: Phone-generated UUID
+                    $targetStockUuidFromPhone // KRITIK FIX: Phone-generated UUID for TARGET stock (not source!)
                 );
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
@@ -1234,18 +1239,21 @@ class TerminalController extends Controller
                     throw new \Exception("Stok düşürme sırasında tutarsızlık tespit edildi. Kalan: {$toDecrement}");
                 }
 
-                $stockId = $stock['id'];
+                // KRITIK FIX: UUID kullan
+                $stockUuid = $stock['stock_uuid'];
                 $currentQty = (float)$stock['quantity'];
 
                 if ($currentQty > $toDecrement) {
                     $newQty = $currentQty - $toDecrement;
-                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stockId])->execute();
+                    // KRITIK FIX: UUID bazlı güncelleme
+                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['stock_uuid' => $stockUuid])->execute();
                     $toDecrement = 0;
                 } else {
                     // TOMBSTONE: UUID'yi log tablosuna kaydet
-                    $this->logSingleDeletion($db, $stockId);
-                    
-                    $db->createCommand()->delete('inventory_stock', ['id' => $stockId])->execute();
+                    $this->logSingleDeletion($db, $stock['id']);
+
+                    // KRITIK FIX: UUID bazlı silme
+                    $db->createCommand()->delete('inventory_stock', ['stock_uuid' => $stockUuid])->execute();
                     $toDecrement -= $currentQty;
                 }
             }
@@ -1281,18 +1289,23 @@ class TerminalController extends Controller
             $stock = $query->createCommand($db)->queryOne();
 
             if ($stock) {
+                // KRITIK FIX: UUID kullan
+                $stockUuid = $stock['stock_uuid'];
+
                 // DEBUG: Stok birleştirme kontrolü
-                Yii::info("DEBUG stock merge - Found existing stock ID: {$stock['id']}, current: {$stock['quantity']}, adding: $qtyChange", __METHOD__);
-                
+                Yii::info("DEBUG stock merge - Found existing stock ID: {$stock['id']}, UUID: {$stockUuid}, current: {$stock['quantity']}, adding: $qtyChange", __METHOD__);
+
                 $newQty = (float)($stock['quantity']) + (float)$qtyChange;
                 if ($newQty > 0.001) {
-                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['id' => $stock['id']])->execute();
+                    // KRITIK FIX: UUID bazlı güncelleme
+                    $db->createCommand()->update('inventory_stock', ['quantity' => $newQty], ['stock_uuid' => $stockUuid])->execute();
                     Yii::info("DEBUG stock merge - Updated quantity to: $newQty", __METHOD__);
                 } else {
                     // TOMBSTONE: UUID'yi log tablosuna kaydet
                     $this->logSingleDeletion($db, $stock['id']);
-                    
-                    $db->createCommand()->delete('inventory_stock', ['id' => $stock['id']])->execute();
+
+                    // KRITIK FIX: UUID bazlı silme
+                    $db->createCommand()->delete('inventory_stock', ['stock_uuid' => $stockUuid])->execute();
                     Yii::info("DEBUG stock merge - Deleted zero quantity stock", __METHOD__);
                 }
             } elseif ($qtyChange > 0) {

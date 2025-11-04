@@ -40,6 +40,17 @@ void main() async {
 
   // Flutter framework hataları (widget hataları vb.)
   FlutterError.onError = (FlutterErrorDetails details) {
+    // FIX: Flutter'ın bilinen FocusNode.rect null hatası - kullanıcıyı etkilemez, loglama
+    final exceptionStr = details.exception.toString();
+    final stackStr = details.stack?.toString() ?? '';
+
+    // Bu hata Flutter framework bug'ı - sadece debug log, Telegram'a gönderme
+    if (exceptionStr.contains('Null check operator used on a null value') &&
+        stackStr.contains('FocusNode.rect')) {
+      debugPrint('⚠️ Known Flutter bug (FocusNode.rect null) - safely ignored');
+      return; // Telegram'a gönderme, sadece ignore et
+    }
+
     FlutterError.presentError(details); // Console'a yaz
 
     // Telegram'a gönder
