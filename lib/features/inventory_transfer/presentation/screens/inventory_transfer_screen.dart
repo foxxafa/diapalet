@@ -1,5 +1,6 @@
 // lib/features/inventory_transfer/presentation/screens/inventory_transfer_screen.dart
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
+import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/qr_scanner_screen.dart';
 import 'package:diapalet/core/widgets/qr_text_field.dart';
@@ -247,6 +248,120 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
   Future<void> _checkAvailableModesForFreeReceipt() async {
     if (!widget.isFreePutAway || widget.selectedDeliveryNote == null) return;
+
+    debugPrint('');
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('🔍 FREE RECEIPT DEBUG - Delivery Note: ${widget.selectedDeliveryNote}');
+    debugPrint('═══════════════════════════════════════════════════════════');
+
+    // Get goods receipt details
+    try {
+      final dbHelper = DatabaseHelper.instance;
+      final db = await dbHelper.database;
+
+      // 1. Goods receipt bilgileri
+      debugPrint('🔎 Looking for delivery note: ${widget.selectedDeliveryNote}');
+
+      final receiptQuery = await db.rawQuery('''
+        SELECT
+          gr.goods_receipt_id,
+          gr.operation_unique_id,
+          gr.delivery_note_number,
+          gr.siparis_id,
+          gr.receipt_date
+        FROM goods_receipts gr
+        WHERE CAST(gr.goods_receipt_id AS TEXT) = ?
+           OR gr.delivery_note_number = ?
+           OR gr.delivery_note_number IS NULL
+        ORDER BY gr.goods_receipt_id DESC
+        LIMIT 1
+      ''', [widget.selectedDeliveryNote, widget.selectedDeliveryNote]);
+
+      if (receiptQuery.isNotEmpty) {
+        final receipt = receiptQuery.first;
+        debugPrint('📋 GOODS RECEIPT:');
+        debugPrint('   - ID: ${receipt['goods_receipt_id']}');
+        debugPrint('   - UUID: ${receipt['operation_unique_id']}');
+        debugPrint('   - Delivery Note: ${receipt['delivery_note_number']}');
+        debugPrint('   - Sipariş ID: ${receipt['siparis_id']}');
+        debugPrint('   - Tarih: ${receipt['receipt_date']}');
+
+        final operationUuid = receipt['operation_unique_id'] as String?;
+
+        if (operationUuid != null) {
+          // 2. Goods receipt items (mal kabul kalemleri)
+          final itemsQuery = await db.rawQuery('''
+            SELECT
+              gri.id,
+              gri.item_uuid,
+              gri.urun_key,
+              gri.quantity_received,
+              gri.pallet_barcode,
+              gri.expiry_date,
+              u.StokKodu,
+              u.UrunAdi
+            FROM goods_receipt_items gri
+            LEFT JOIN urunler u ON u._key = gri.urun_key
+            WHERE gri.operation_unique_id = ?
+            ORDER BY gri.id
+          ''', [operationUuid]);
+
+          debugPrint('');
+          debugPrint('📦 GOODS RECEIPT ITEMS (${itemsQuery.length} kalem):');
+          for (var item in itemsQuery) {
+            debugPrint('   ─────────────────────────────────────────────');
+            debugPrint('   Item ID: ${item['id']}');
+            debugPrint('   Item UUID: ${item['item_uuid']}');
+            debugPrint('   Ürün: ${item['StokKodu']} - ${item['UrunAdi']}');
+            debugPrint('   Miktar: ${item['quantity_received']}');
+            debugPrint('   Palet: ${item['pallet_barcode'] ?? 'YOK'}');
+            debugPrint('   SKT: ${item['expiry_date'] ?? 'YOK'}');
+          }
+
+          // 3. Inventory stock (stok kayıtları)
+          final stockQuery = await db.rawQuery('''
+            SELECT
+              ist.id,
+              ist.stock_uuid,
+              ist.urun_key,
+              ist.quantity,
+              ist.pallet_barcode,
+              ist.expiry_date,
+              ist.stock_status,
+              ist.location_id,
+              u.StokKodu,
+              u.UrunAdi,
+              l.name as location_name
+            FROM inventory_stock ist
+            LEFT JOIN urunler u ON u._key = ist.urun_key
+            LEFT JOIN shelfs l ON l.id = ist.location_id
+            WHERE ist.receipt_operation_uuid = ?
+            ORDER BY ist.id
+          ''', [operationUuid]);
+
+          debugPrint('');
+          debugPrint('📊 INVENTORY STOCK (${stockQuery.length} kayıt):');
+          for (var stock in stockQuery) {
+            debugPrint('   ─────────────────────────────────────────────');
+            debugPrint('   Stock ID: ${stock['id']}');
+            debugPrint('   Stock UUID: ${stock['stock_uuid']}');
+            debugPrint('   Ürün: ${stock['StokKodu']} - ${stock['UrunAdi']}');
+            debugPrint('   Miktar: ${stock['quantity']}');
+            debugPrint('   Palet: ${stock['pallet_barcode'] ?? 'YOK'}');
+            debugPrint('   SKT: ${stock['expiry_date'] ?? 'YOK'}');
+            debugPrint('   Durum: ${stock['stock_status']}');
+            debugPrint('   Lokasyon: ${stock['location_name'] ?? 'MAL KABUL ALANI'}');
+          }
+        }
+      } else {
+        debugPrint('⚠️  Goods receipt bulunamadı!');
+      }
+
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('');
+    } catch (e) {
+      debugPrint('❌ DEBUG hatası: $e');
+    }
 
     // Check for pallets and products in the specific delivery note
     await _updateModeAvailability(
@@ -637,7 +752,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   // DÜZELTME: Bu fonksiyon artık setState içermiyor, sadece veri getiriyor.
-  Future<void> _loadContainersForLocation() async {
+  Future<void> _loadContainersForLocation({bool preserveSelection = false}) async {
     // Serbest mal kabul modu ise konum ID'si null olarak ayarlanır, aksi halde seçilen kaynaktan alınır
     int? locationId;
     if (widget.isFreePutAway) {
@@ -650,7 +765,10 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     setState(() {
       _isLoadingContainerContents = true;
-      _resetContainerAndProducts();
+      // Only reset if not preserving selection (i.e., not reloading after transfer)
+      if (!preserveSelection) {
+        _resetContainerAndProducts();
+      }
     });
     try {
       final repo = _repo;
@@ -780,6 +898,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       return;
     }
 
+    // Validate target location is selected
+    if (_selectedTargetLocationName == null) {
+      _showErrorSnackBar('Please select a target location');
+      return;
+    }
+
+    // Validate source location is selected (except for free put away mode)
+    if (!widget.isFreePutAway && _selectedSourceLocationName == null) {
+      _showErrorSnackBar('Please select a source location');
+      return;
+    }
+
     final List<TransferItemDetail> itemsToTransfer = [];
 
     for (var product in _productsInContainer) {
@@ -849,10 +979,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ),
         );
 
-        // If it was a free put away, pop with a result to refresh the previous screen
-        if(widget.isFreePutAway){
-          Navigator.of(context).pop(true);
+        // Check if there are still items to transfer before closing the screen
+        if(widget.isFreePutAway || widget.selectedOrder != null){
+          // Reload containers to check if there are more items to transfer
+          // Use preserveSelection: true to avoid clearing the container list during reload
+          await _loadContainersForLocation(preserveSelection: true);
+
+          // Only pop if there are no more containers available
+          if (_availableContainers.isEmpty) {
+            // For order-based or free putaway, go back when done
+            Navigator.of(context).pop(true);
+          } else {
+            // Reset form (selection only - containers already reloaded)
+            _resetForm(resetAll: true, preserveContainers: true);
+          }
         } else {
+          // For shelf-to-shelf transfers, just reset the form
           _resetForm(resetAll: true);
         }
       }
@@ -863,7 +1005,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
-  void _resetContainerAndProducts() {
+  void _resetContainerAndProducts({bool preserveContainers = false}) {
     _scannedContainerIdController.clear();
     _productSearchController.clear();
     _productSearchResults = [];
@@ -873,12 +1015,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     _selectedContainer = null;
     _dynamicProductLabel = null; // Label'ı da temizle
     _clearProductControllers();
-    _availableContainers = [];
+
+    // Only clear containers if not preserving them
+    if (!preserveContainers) {
+      _availableContainers = [];
+    }
   }
 
-  void _resetForm({bool resetAll = false}) {
+  void _resetForm({bool resetAll = false, bool preserveContainers = false}) {
     setState(() {
-      _resetContainerAndProducts();
+      _resetContainerAndProducts(preserveContainers: preserveContainers);
       _selectedTargetLocationName = null;
       _targetLocationController.clear();
       _isTargetLocationValid = false;

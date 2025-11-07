@@ -242,7 +242,7 @@ class TerminalController extends Controller
                 $this->castNumericValues($data, ['id', 'warehouse_id', 'is_active']);
                 break;
             case 'inventory_stock':
-                $this->castNumericValues($data, ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+                $this->castNumericValues($data, ['id', 'location_id'], ['quantity']);
                 break;
             case 'goods_receipts':
                 $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id']);
@@ -406,13 +406,17 @@ class TerminalController extends Controller
         // Bu sayede bir operasyonun hatası diğerlerini etkilemez
         // İdempotency mekanizması düzgün çalışır (processed_requests kaydı korunur)
 
-        foreach ($operations as $op) {
+        foreach ($operations as $opIndex => $op) {
             $localId = $op['local_id'] ?? null;
             $idempotencyKey = $op['idempotency_key'] ?? null;
+            $opType = $op['type'] ?? 'unknown';
+
+            $this->logToFile("========================================", 'INFO');
+            $this->logToFile("Processing operation #" . ($opIndex + 1) . ": local_id=$localId, type=$opType, idempotency_key=$idempotencyKey", 'INFO');
 
             if (!$localId || !$idempotencyKey) {
                 // Kritik hata - tüm batch'i reddet
-                $this->logToFile("Missing local_id or idempotency_key in operation", 'ERROR');
+                $this->logToFile("❌ CRITICAL: Missing local_id or idempotency_key in operation #" . ($opIndex + 1), 'ERROR');
                 Yii::$app->response->setStatusCode(400);
                 return [
                     'success' => false,
@@ -421,6 +425,7 @@ class TerminalController extends Controller
             }
 
             // 🔒 HER OPERASYON İÇİN AYRI TRANSACTION
+            $this->logToFile("🔒 Starting transaction for operation $localId", 'INFO');
             $operationTransaction = $db->beginTransaction(Transaction::SERIALIZABLE);
 
             try {
@@ -428,13 +433,14 @@ class TerminalController extends Controller
                 $db->createCommand("SET SESSION innodb_lock_wait_timeout = 10")->execute();
 
                 // 1. IDEMPOTENCY KONTROLÜ (transaction içinde read)
+                $this->logToFile("🔍 Checking idempotency for key: $idempotencyKey", 'INFO');
                 $existingRequest = $db->createCommand(
                     'SELECT * FROM processed_requests WHERE idempotency_key = :idempotency_key'
                 )->bindValue(':idempotency_key', $idempotencyKey)->queryOne();
 
                 if ($existingRequest) {
                     // 2. Bu işlem daha önce yapılmışsa, kayıtlı sonucu döndür.
-                    $this->logToFile("Cached result found for idempotency_key: $idempotencyKey", 'DEBUG');
+                    $this->logToFile("✅ IDEMPOTENCY HIT: Cached result found for $idempotencyKey (response_code: {$existingRequest['response_code']})", 'INFO');
                     $resultData = json_decode($existingRequest['response_body'], true);
                     $results[] = [
                         'local_id' => (int)$localId,
@@ -443,43 +449,51 @@ class TerminalController extends Controller
 
                     // Transaction'ı commit et (sadece okuma yaptık ama iyi pratik)
                     $operationTransaction->commit();
+                    $this->logToFile("✅ Operation $localId completed (from cache), added to results", 'INFO');
                     continue; // Sonraki operasyona geç
                 }
 
+                $this->logToFile("🆕 NEW OPERATION: No cached result, processing operation $localId", 'INFO');
+
                 // 3. Yeni işlem ise, operasyonu işle.
-                $opType = $op['type'] ?? 'unknown';
                 $opData = $op['data'] ?? [];
                 $result = ['status' => 'error', 'message' => "Bilinmeyen operasyon tipi: {$opType}"];
 
                 if ($opType === 'goodsReceipt') {
-                    $this->logToFile("Creating goods receipt for local_id: $localId", 'DEBUG');
+                    $this->logToFile("📦 Creating goods receipt for local_id: $localId", 'INFO');
                     $result = $this->_createGoodsReceipt($opData, $db);
-                    $this->logToFile("Goods receipt result: " . json_encode($result), 'DEBUG');
+                    $this->logToFile("📦 Goods receipt result for $localId: status={$result['status']}, message=" . ($result['message'] ?? 'N/A'), 'INFO');
                 } elseif ($opType === 'inventoryTransfer') {
+                    $this->logToFile("🔄 Creating inventory transfer for local_id: $localId", 'INFO');
                     $result = $this->_createInventoryTransfer($opData, $db);
+                    $this->logToFile("🔄 Inventory transfer result for $localId: status={$result['status']}, message=" . ($result['message'] ?? 'N/A'), 'INFO');
                 } elseif ($opType === 'forceCloseOrder') {
+                    $this->logToFile("🔒 Force closing order for local_id: $localId", 'INFO');
                     $result = $this->_forceCloseOrder($opData, $db);
+                    $this->logToFile("🔒 Force close result for $localId: status={$result['status']}, message=" . ($result['message'] ?? 'N/A'), 'INFO');
                 } elseif ($opType === 'warehouseCount') {
-                    $this->logToFile("Creating warehouse count for local_id: $localId", 'DEBUG');
-                    $this->logToFile("Warehouse count opData structure: " . json_encode($opData), 'DEBUG');
-                    $this->logToFile("Warehouse count opData keys: " . json_encode(array_keys($opData)), 'DEBUG');
-                    if (isset($opData['header'])) {
-                        $this->logToFile("Warehouse count header keys: " . json_encode(array_keys($opData['header'])), 'DEBUG');
-                    }
-                    if (isset($opData['items'])) {
-                        $this->logToFile("Warehouse count items count: " . count($opData['items']), 'DEBUG');
-                    }
+                    $this->logToFile("📊 Creating warehouse count for local_id: $localId", 'INFO');
+                    $this->logToFile("📊 Warehouse count header: " . json_encode($opData['header'] ?? []), 'DEBUG');
+                    $this->logToFile("📊 Warehouse count items count: " . count($opData['items'] ?? []), 'INFO');
                     $result = $this->_createWarehouseCount($opData, $db);
-                    $this->logToFile("Warehouse count result: " . json_encode($result), 'DEBUG');
+                    $this->logToFile("📊 Warehouse count result for $localId: status={$result['status']}, message=" . ($result['message'] ?? 'N/A'), 'INFO');
                 } elseif ($opType === 'inventoryStock') {
                     // Inventory stock sync removed - use normal table sync instead
+                    $this->logToFile("⚠️ inventoryStock operation attempted for local_id: $localId (no longer supported)", 'WARNING');
                     $result = ['status' => 'error', 'message' => 'Inventory stock sync operations are no longer supported via pending operations'];
+                } else {
+                    $this->logToFile("❌ Unknown operation type: $opType for local_id: $localId", 'ERROR');
                 }
 
                 // 4. Sonucu kontrol et
+                $this->logToFile("📝 Evaluating operation result for $localId: " . json_encode($result), 'DEBUG');
+
                 if (isset($result['status'])) {
                     // Permanent error durumu - bu hatalar tekrar denenmemeli
                     if ($result['status'] === 'permanent_error') {
+                        $this->logToFile("⚠️ PERMANENT ERROR for operation $localId: {$result['message']}", 'WARNING');
+                        $this->logToFile("💾 Saving permanent error to idempotency table with key: $idempotencyKey", 'INFO');
+
                         // Permanent error'u idempotency tablosuna kaydet
                         $db->createCommand()->insert('processed_requests', [
                             'idempotency_key' => $idempotencyKey,
@@ -494,14 +508,19 @@ class TerminalController extends Controller
                             'result' => $result
                         ];
 
-                        $this->logToFile("Permanent error for operation $localId: " . $result['message'], 'WARNING');
+                        $this->logToFile("✅ COMMIT: Permanent error recorded for operation $localId, added to results array", 'INFO');
 
                         // ✅ COMMIT: Permanent error kaydedildi, bir sonraki operasyona geç
                         $operationTransaction->commit();
+                        $this->logToFile("🔓 Transaction committed for operation $localId", 'INFO');
                         continue;
                     }
                     // Başarılı işlem
                     elseif ($result['status'] === 'success') {
+                        $isDuplicate = $result['duplicate'] ?? false;
+                        $this->logToFile("✅ SUCCESS for operation $localId" . ($isDuplicate ? " (duplicate detected)" : ""), 'INFO');
+                        $this->logToFile("💾 Saving success to idempotency table with key: $idempotencyKey", 'INFO');
+
                         $db->createCommand()->insert('processed_requests', [
                             'idempotency_key' => $idempotencyKey,
                             'response_code' => 200,
@@ -510,17 +529,22 @@ class TerminalController extends Controller
 
                         $results[] = ['local_id' => (int)$localId, 'idempotency_key' => $idempotencyKey, 'result' => $result];
 
+                        $this->logToFile("✅ COMMIT: Success recorded for operation $localId, added to results array", 'INFO');
+
                         // ✅ COMMIT: Başarılı operasyon tamamlandı
                         $operationTransaction->commit();
+                        $this->logToFile("🔓 Transaction committed for operation $localId", 'INFO');
                     }
                     // Geçici hata - retry yapılabilir
                     else {
                         // Geçici hataları idempotency'e kaydetmiyoruz ki tekrar denenebilsin
                         $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
-                        $this->logToFile($errorMsg, 'ERROR');
+                        $this->logToFile("❌ TEMPORARY ERROR for operation $localId: " . ($result['message'] ?? 'Unknown'), 'ERROR');
+                        $this->logToFile("🔄 ROLLBACK: Temporary error, operation will be retried by mobile", 'WARNING');
 
                         // ❌ ROLLBACK: Geçici hata, tekrar denenebilir
                         $operationTransaction->rollBack();
+                        $this->logToFile("🔙 Transaction rolled back for operation $localId (NOT added to results)", 'WARNING');
 
                         // ⚠️ Bu operasyonu results'a ekleme - mobil tekrar gönderecek
                         // Diğer operasyonlara devam et
@@ -529,22 +553,34 @@ class TerminalController extends Controller
                 } else {
                     // Status yoksa genel hata
                     $errorMsg = "İşlem (ID: {$localId}, Tip: {$opType}) başarısız: " . ($result['message'] ?? 'Bilinmeyen hata');
-                    $this->logToFile($errorMsg, 'ERROR');
+                    $this->logToFile("❌ INVALID RESULT FORMAT for operation $localId: No 'status' field", 'ERROR');
+                    $this->logToFile("🔄 ROLLBACK: Invalid result format", 'WARNING');
 
                     // ❌ ROLLBACK: Geçersiz result format
                     $operationTransaction->rollBack();
+                    $this->logToFile("🔙 Transaction rolled back for operation $localId (NOT added to results)", 'WARNING');
                     continue;
                 }
 
             } catch (\Exception $e) {
                 // ❌ ROLLBACK: Exception oluştu
+                $this->logToFile("❌ EXCEPTION CAUGHT for operation $localId: {$e->getMessage()}", 'ERROR');
+                $this->logToFile("🔄 ROLLBACK: Exception occurred, rolling back transaction", 'WARNING');
+
                 $operationTransaction->rollBack();
+                $this->logToFile("🔙 Transaction rolled back for operation $localId due to exception", 'WARNING');
 
                 $errorDetail = "Operation $localId ($opType) failed: {$e->getMessage()}";
                 $this->logToFile($errorDetail, 'ERROR');
                 $this->logToFile("Stack trace: " . $e->getTraceAsString(), 'ERROR');
 
+                // KRITIK FIX: Exception durumunda da telefona hata dönmeliyiz
+                // Aksi halde telefon hiç response almaz ve işlemi tekrar gönderir
+                // Duplicate UUID kontrolü idempotency mantığı olarak çalışır
+                $this->logToFile("⚠️ NOT adding to results - operation will be retried by mobile (idempotency will handle it)", 'WARNING');
+
                 // ⚠️ Bu operasyonu results'a ekleme - mobil tekrar gönderecek
+                // Ama stock UUID idempotency kontrolü sayesinde duplicate hata almayacak
                 // Diğer operasyonlara devam et
                 continue;
             }
@@ -595,23 +631,31 @@ class TerminalController extends Controller
     }
 
     private function _createGoodsReceipt($data, $db) {
+        $this->logToFile("========== _createGoodsReceipt START ==========", 'INFO');
+        $this->logToFile("📥 Validating goods receipt data", 'INFO');
+
         $validationError = $this->validateGoodsReceiptData($data);
         if ($validationError) {
+            $this->logToFile("❌ Validation failed: $validationError", 'ERROR');
             return ['status' => 'error', 'message' => $validationError];
         }
+        $this->logToFile("✅ Validation passed", 'INFO');
 
         $header = $data['header'];
         $items = $data['items'];
         $operationUniqueId = $data['operation_unique_id'] ?? null;
 
+        $this->logToFile("📦 Receipt info - operation_unique_id: $operationUniqueId, item_count: " . count($items), 'INFO');
+
         // UUID bazlı duplicate kontrolü
         if ($operationUniqueId) {
+            $this->logToFile("🔍 Checking for duplicate receipt with operation_unique_id: $operationUniqueId", 'INFO');
             $existingReceipt = $db->createCommand(
                 'SELECT * FROM goods_receipts WHERE operation_unique_id = :operation_unique_id'
             )->bindValue(':operation_unique_id', $operationUniqueId)->queryOne();
 
             if ($existingReceipt) {
-                $this->logToFile("Duplicate receipt detected with operation_unique_id: $operationUniqueId", 'WARNING');
+                $this->logToFile("⚠️ DUPLICATE DETECTED: Receipt already exists with operation_unique_id: $operationUniqueId (receipt_id: {$existingReceipt['goods_receipt_id']})", 'WARNING');
                 return [
                     'status' => 'success',
                     'message' => 'Receipt already exists',
@@ -619,23 +663,29 @@ class TerminalController extends Controller
                     'duplicate' => true
                 ];
             }
+            $this->logToFile("✅ No duplicate found, proceeding with new receipt", 'INFO');
         }
 
         $siparisId = $header['siparis_id'] ?? null;
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
 
+        $this->logToFile("📋 Receipt type - siparis_id: " . ($siparisId ?? 'NULL (free receipt)') . ", delivery_note: " . ($deliveryNoteNumber ?? 'NULL'), 'INFO');
+
         // Serbest mal kabulde fiş numarası zorunludur.
         if ($siparisId === null && empty($deliveryNoteNumber)) {
+            $this->logToFile("❌ Free receipt missing delivery_note_number", 'ERROR');
             return ['status' => 'error', 'message' => 'Serbest mal kabul için irsaliye numarası (delivery_note_number) zorunludur.'];
         }
 
         // KRITIK: Sipariş durumu kontrolü - kapanmış siparişe mal kabul yapılamaz
         if ($siparisId !== null) {
+            $this->logToFile("🔍 Checking order status for siparis_id: $siparisId", 'INFO');
             $orderStatus = $db->createCommand(
                 'SELECT status FROM siparisler WHERE id = :id'
             )->bindValue(':id', $siparisId)->queryScalar();
 
             if ($orderStatus === false) {
+                $this->logToFile("❌ Order not found: siparis_id=$siparisId", 'ERROR');
                 return [
                     'status' => 'permanent_error',
                     'error_code' => 'ORDER_NOT_FOUND',
@@ -643,8 +693,12 @@ class TerminalController extends Controller
                 ];
             }
 
+            $this->logToFile("📊 Order status: $orderStatus (0=Open, 1=Partial, 2=Closed)", 'INFO');
+
             // Status: 0=Açık, 1=Kısmi Teslim, 2=Manuel Kapatıldı
             if ($orderStatus == 2) {
+                $this->logToFile("🚫 Order is CLOSED (status=2), cannot receive goods", 'WARNING');
+
                 // Çalışan bilgisini al
                 $employeeName = 'Unknown';
                 if (isset($header['employee_id'])) {
@@ -663,6 +717,7 @@ class TerminalController extends Controller
 
                 $errorMessage = "Sipariş #$orderNumber manuel olarak kapatılmış durumda. Bu siparişe mal kabul yapılamaz.";
 
+                $this->logToFile("📧 Sending Telegram notification to managers about closed order attempt", 'INFO');
                 // Yöneticilere bildirim gönder
                 try {
                     WMSTelegramNotification::notifyGoodsReceiptError(
@@ -674,7 +729,9 @@ class TerminalController extends Controller
                             'İrsaliye No' => $deliveryNoteNumber ?? 'N/A'
                         ]
                     );
+                    $this->logToFile("✅ Telegram notification sent successfully", 'INFO');
                 } catch (\Exception $e) {
+                    $this->logToFile("⚠️ Telegram notification failed: " . $e->getMessage(), 'WARNING');
                     Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
                 }
 
@@ -684,27 +741,32 @@ class TerminalController extends Controller
                     'message' => $errorMessage
                 ];
             }
+            $this->logToFile("✅ Order status check passed, order is open/partial", 'INFO');
         }
 
         // Çalışanın depo ID'sini al - Rowhub formatında
         $employeeId = $header['employee_id'];
-        
-        // DEBUG: Employee warehouse mapping'i kontrol et
+        $this->logToFile("👤 Getting warehouse info for employee_id: $employeeId", 'INFO');
+
+        // FIXED: Ambiguous column names - use explicit aliases
         $employeeInfo = $db->createCommand(
-            'SELECT e.id, e.warehouse_code, w.id, w.warehouse_code as w_warehouse_code
+            'SELECT e.id as employee_id, w.id as warehouse_id, e.warehouse_code
              FROM employees e
              LEFT JOIN warehouses w ON e.warehouse_code = w.warehouse_code
              WHERE e.id = :employee_id'
         )->bindValue(':employee_id', $employeeId)->queryOne();
-            
+
+        $this->logToFile("📍 Employee info: " . json_encode($employeeInfo), 'DEBUG');
         Yii::info("DEBUG createGoodsReceipt - employee_id: $employeeId", __METHOD__);
         Yii::info("DEBUG employee info: " . json_encode($employeeInfo), __METHOD__);
-        
-        $warehouseId = $employeeInfo['id'] ?? null;
+
+        $warehouseId = $employeeInfo['warehouse_id'] ?? null;
 
         if (!$warehouseId) {
-            return ['status' => 'error', 'message' => 'Çalışanın warehouse bilgisi bulunamadı. Employee warehouse_code: ' . ($employeeInfo['warehouse_code'] ?? 'null')];
+            $this->logToFile("❌ Warehouse ID not found for employee, warehouse_code: " . ($employeeInfo['warehouse_code'] ?? 'null'), 'ERROR');
+            return ['status' => 'error', 'message' => 'Çalışana bağlı depo bilgisi (warehouse_id) bulunamadı. Employee warehouse_code: ' . ($employeeInfo['warehouse_code'] ?? 'null')];
         }
+        $this->logToFile("✅ Warehouse found - warehouse_id: $warehouseId, warehouse_code: " . ($employeeInfo['warehouse_code'] ?? 'null'), 'INFO');
 
         // Sipariş fisno bilgisini al
         $sipFisno = null;
@@ -712,8 +774,10 @@ class TerminalController extends Controller
             $sipFisno = $db->createCommand(
                 'SELECT fisno FROM siparisler WHERE id = :id'
             )->bindValue(':id', $siparisId)->queryScalar();
+            $this->logToFile("📋 Order fisno retrieved: " . ($sipFisno ?? 'NULL'), 'DEBUG');
         }
 
+        $this->logToFile("💾 Creating goods_receipt header record", 'INFO');
         $db->createCommand()->insert('goods_receipts', [
             'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
             'receipt_date' => $header['receipt_date'] ?? new \yii\db\Expression('NOW()'),
@@ -725,37 +789,49 @@ class TerminalController extends Controller
             'sip_fisno' => $sipFisno,
         ])->execute();
         $receiptId = $db->getLastInsertID();
+        $this->logToFile("✅ Goods receipt header created with receipt_id: $receiptId", 'INFO');
 
-        // KRITIK FIX: Item ID mapping'i için array oluştur
-        $itemIdMapping = []; // ['item_uuid' => server_item_id]
+        // REMOVED: Item ID mapping no longer needed - mobile uses only UUIDs
+        // $itemIdMapping = [];
 
-        foreach ($items as $item) {
+        $this->logToFile("🔄 Processing " . count($items) . " receipt items", 'INFO');
+
+        foreach ($items as $itemIndex => $item) {
+            $this->logToFile("--- Processing item #" . ($itemIndex + 1) . " ---", 'INFO');
+
             // Mobile'dan urun_key (_key değeri) geliyor, direkt yazılıyor
             $urunKey = $item['urun_key']; // _key değeri
-            
+            $this->logToFile("🔍 Item product lookup - urun_key: $urunKey", 'DEBUG');
+
             // _key'in gerçekten var olduğunu kontrol et
             $exists = $db->createCommand(
                 'SELECT 1 FROM urunler WHERE _key = :key LIMIT 1'
             )->bindValue(':key', $urunKey)->queryScalar();
 
             if (!$exists) {
+                $this->logToFile("❌ Product not found in database: urun_key=$urunKey", 'ERROR');
                 return ['status' => 'error', 'message' => 'Ürün bulunamadı: ' . $urunKey];
             }
+            $this->logToFile("✅ Product found in database", 'DEBUG');
             
             // Sipariş bazlı mal kabulde siparis_key'i bul ve free kontrolü yap
             $siparisKey = null;
             $stokKodu = null;
             $isFree = 1; // Varsayılan olarak free (sipariş dışı)
-            
+
             // Ürünün StokKodu'nu al
             $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
-            
+            $this->logToFile("📊 Product StokKodu: " . ($stokKodu ?? 'NULL'), 'DEBUG');
+
             if ($siparisId && $stokKodu) {
+                $this->logToFile("🔍 Checking if item is in order (siparis_id: $siparisId)", 'DEBUG');
+
                 // Gelen ürünün birim bilgisini al (item'dan geliyor olmalı)
                 $birimKey = $item['birim_key'] ?? null;
-                
+
                 // Siparişte bu ürün ve birim kombinasyonu var mı kontrol et
                 if ($birimKey) {
+                    $this->logToFile("🔍 Checking order item with product+unit (StokKodu: $stokKodu, birim_key: $birimKey)", 'DEBUG');
                     $isInOrder = $db->createCommand(
                         'SELECT 1 FROM siparis_ayrintili
                          WHERE siparisler_id = :siparis_id AND kartkodu = :kartkodu
@@ -765,11 +841,12 @@ class TerminalController extends Controller
                      ->bindValue(':kartkodu', $stokKodu)
                      ->bindValue(':birimkey', $birimKey)
                      ->queryScalar();
-                    
+
                     // Eğer siparişteki ürün ve birimle eşleşiyorsa free=0
                     if ($isInOrder) {
                         $isFree = 0;
-                        
+                        $this->logToFile("✅ Item found in order (with unit match), setting free=0", 'DEBUG');
+
                         // siparis_ayrintili tablosundan _key değerini bul
                         $siparisKey = $db->createCommand(
                             'SELECT _key FROM siparis_ayrintili
@@ -779,8 +856,12 @@ class TerminalController extends Controller
                          ->bindValue(':kartkodu', $stokKodu)
                          ->bindValue(':birimkey', $birimKey)
                          ->queryScalar();
+                        $this->logToFile("📋 Order line siparis_key: $siparisKey", 'DEBUG');
+                    } else {
+                        $this->logToFile("⚠️ Item NOT in order (or unit mismatch), setting free=1", 'DEBUG');
                     }
                 } else {
+                    $this->logToFile("🔍 Checking order item without unit (backward compatibility)", 'DEBUG');
                     // Birim bilgisi yoksa sadece ürün kontrolü yap (geriye uyumluluk için)
                     $siparisKey = $db->createCommand(
                         'SELECT _key FROM siparis_ayrintili
@@ -788,17 +869,20 @@ class TerminalController extends Controller
                     )->bindValue(':siparis_id', $siparisId)
                      ->bindValue(':kartkodu', $stokKodu)
                      ->queryScalar();
-                    
+
                     if ($siparisKey) {
                         $isFree = 0; // Siparişteki ürün bulundu
+                        $this->logToFile("✅ Item found in order (no unit check), setting free=0, siparis_key: $siparisKey", 'DEBUG');
+                    } else {
+                        $this->logToFile("⚠️ Item NOT in order, setting free=1", 'DEBUG');
                     }
                 }
             }
-            
+
             // KRITIK DEBUG: birim_key değerini kontrol et
-            $this->logToFile("Inserting goods_receipt_item - urun_key: $urunKey, birim_key: " . ($item['birim_key'] ?? 'NULL'), 'DEBUG');
-            $this->logToFile("Raw item data: " . json_encode($item), 'DEBUG');
-            
+            $this->logToFile("💾 Inserting goods_receipt_item - urun_key: $urunKey, birim_key: " . ($item['birim_key'] ?? 'NULL') . ", free: $isFree", 'DEBUG');
+            $this->logToFile("📦 Item data: qty={$item['quantity']}, pallet=" . ($item['pallet_barcode'] ?? 'NULL') . ", expiry=" . ($item['expiry_date'] ?? 'NULL'), 'DEBUG');
+
             $db->createCommand()->insert('goods_receipt_items', [
                 'receipt_id' => $receiptId,
                 'operation_unique_id' => $data['operation_unique_id'] ?? null, // Parent receipt'in operation_unique_id'si
@@ -814,23 +898,21 @@ class TerminalController extends Controller
                 'free' => $isFree, // Siparişteki ürün+birim ise 0, değilse 1
             ])->execute();
 
-            // KRITIK FIX: Sunucu tarafında oluşturulan item_id'yi map'e ekle
+            // Item created - mobile uses UUID, no need to map server ID
             $itemId = $db->getLastInsertID();
-            $itemUuid = $item['item_uuid'] ?? null;
-            if ($itemUuid) {
-                $itemIdMapping[$itemUuid] = $itemId;
-            }
+            $this->logToFile("✅ Receipt item created with item_id: $itemId (UUID: " . ($item['item_uuid'] ?? 'none') . ")", 'INFO');
 
             // Backend'de inventory_stock oluştur veya güncelle - upsertStock kullanarak birleştir
             $stockStatus = 'receiving'; // Mal kabul aşamasında receiving status
-            
-            // DEBUG: Birim key kontrolü için log ekle
-            Yii::info("DEBUG upsertStock call - urunKey: $urunKey, birimKey: " . ($item['birim_key'] ?? 'NULL') . ", quantity: " . $item['quantity'], __METHOD__);
-            
+
             // KRITIK FIX: Telefondan gelen stock_uuid'yi kullan
             $stockUuid = isset($item['stock_uuid']) ? $item['stock_uuid'] : null;
+            $this->logToFile("📦 Creating/updating inventory stock - stock_uuid: " . ($stockUuid ?? 'NULL (will be generated)'), 'INFO');
+            $this->logToFile("📦 Stock params - urunKey: $urunKey, birimKey: " . ($item['birim_key'] ?? 'NULL') . ", qty: {$item['quantity']}, status: $stockStatus", 'DEBUG');
+
+            Yii::info("DEBUG upsertStock call - urunKey: $urunKey, birimKey: " . ($item['birim_key'] ?? 'NULL') . ", quantity: " . $item['quantity'], __METHOD__);
             Yii::info("DEBUG stock_uuid from phone: " . ($stockUuid ?? 'NULL'), __METHOD__);
-            
+
             $this->upsertStock(
                 $db,
                 $urunKey,
@@ -839,44 +921,53 @@ class TerminalController extends Controller
                 $item['quantity'], // quantity
                 $item['pallet_barcode'] ?? null, // pallet_barcode
                 $stockStatus, // stock_status
-                $siparisId, // siparis_id
+                $data['operation_unique_id'] ?? null, // YENİ: receipt_operation_uuid (goods_receipts.operation_unique_id)
                 $item['expiry_date'] ?? null, // expiry_date
-                $receiptId, // DÜZELTME: goods_receipt_id mal kabulde kaydedilmeli
                 $employeeInfo['warehouse_code'] ?? null, // warehouse_code eklendi
                 $stockUuid // KRITIK: Telefondan gelen UUID'yi geçir
             );
+            $this->logToFile("✅ Stock upsert completed for item #" . ($itemIndex + 1), 'INFO');
         }
+        $this->logToFile("✅ All receipt items processed successfully", 'INFO');
 
 
         // DIA entegrasyonu - Mal kabul işlemi DIA'ya gönderilir
+        $this->logToFile("🔌 Starting DIA integration for receipt_id: $receiptId", 'INFO');
          try {
             $goodsReceipt = GoodsReceipts::find()
                 ->where(['goods_receipt_id' => $receiptId])
                 ->with(['warehouse', 'warehouse.branch'])
                 ->one();
             $goodsReceiptItems = GoodsReceiptItems::find()->where(['receipt_id' => $receiptId])->all();
-            
+
+            $this->logToFile("🔌 DIA integration - Receipt: " . ($goodsReceipt ? 'found' : 'NULL') . ", Items: " . count($goodsReceiptItems ?? []), 'INFO');
             Yii::info("DIA entegrasyonu başlatılıyor - Receipt ID: $receiptId, Item sayısı: " . count($goodsReceiptItems), __METHOD__);
-            
+
             if ($goodsReceipt && !empty($goodsReceiptItems)) {
+                $this->logToFile("🔌 Calling Dia::goodReceiptIrsaliyeEkle()", 'INFO');
                 $result = Dia::goodReceiptIrsaliyeEkle($goodsReceipt, $goodsReceiptItems);
                 // DIA işlem sonucunu log'a kaydet
+                $this->logToFile("🔌 DIA result: " . json_encode($result), 'DEBUG');
                 Yii::info("DIA goodReceiptIrsaliyeEkle result for receipt $receiptId: " . json_encode($result), __METHOD__);
-                
+
                 // Sonucu response'a ekle
                 if($result && isset($result['code'])) {
                     if($result['code'] == '200') {
+                        $this->logToFile("✅ DIA integration SUCCESS - DIA Key: " . ($result['key'] ?? 'N/A'), 'INFO');
                         Yii::info("✓ DIA İrsaliye başarıyla oluşturuldu. DIA Key: " . ($result['key'] ?? 'N/A'), __METHOD__);
                     } else {
+                        $this->logToFile("⚠️ DIA integration FAILED - code: {$result['code']}, msg: " . ($result['msg'] ?? 'Unknown'), 'WARNING');
                         Yii::warning("✗ DIA İrsaliye oluşturulamadı: " . ($result['msg'] ?? 'Bilinmeyen hata'), __METHOD__);
                     }
                 }
             } else {
+                $this->logToFile("⚠️ DIA integration SKIPPED - receipt or items not found", 'WARNING');
                 Yii::warning("DIA entegrasyonu atlandı - Mal kabul veya kalemler bulunamadı", __METHOD__);
             }
         } catch (\Exception $e) {
             // DIA entegrasyonu başarısız olsa bile mal kabul işlemi devam eder
-            $this->logToFile("DIA entegrasyonu hatası (Receipt ID: $receiptId): " . $e->getMessage(), 'ERROR');
+            $this->logToFile("❌ DIA integration ERROR (Receipt ID: $receiptId): " . $e->getMessage(), 'ERROR');
+            $this->logToFile("📧 Sending DIA error notification to Telegram", 'INFO');
 
             // DIA entegrasyon hatası bildirimi
             try {
@@ -889,87 +980,172 @@ class TerminalController extends Controller
                         'İrsaliye No' => $deliveryNoteNumber ?? 'N/A'
                     ]
                 );
+                $this->logToFile("✅ DIA error Telegram notification sent", 'INFO');
             } catch (\Exception $notifE) {
+                $this->logToFile("⚠️ DIA error Telegram notification failed: " . $notifE->getMessage(), 'WARNING');
                 Yii::warning("DIA error Telegram notification gönderilemedi: " . $notifE->getMessage(), __METHOD__);
             }
         }
 
         if ($siparisId) {
+            $this->logToFile("🔍 Checking order finalization status for siparis_id: $siparisId", 'INFO');
             $this->checkAndFinalizeReceiptStatus($db, $siparisId);
         }
 
+        $this->logToFile("========== _createGoodsReceipt SUCCESS - receipt_id: $receiptId ==========", 'INFO');
         return [
             'status' => 'success',
             'receipt_id' => $receiptId,
             'operation_unique_id' => $data['operation_unique_id'] ?? null,
-            'item_id_mapping' => $itemIdMapping  // KRITIK FIX: Mobile tarafında goods_receipt_items.id güncellemesi için
+            // REMOVED: item_id_mapping - mobile uses only UUIDs, no ID synchronization needed
         ];
     }
 
     private function _createInventoryTransfer($data, $db) {
+        $this->logToFile("========== _createInventoryTransfer START ==========", 'INFO');
+        $this->logToFile("🔄 Validating inventory transfer data", 'INFO');
+
         $validationError = $this->validateInventoryTransferData($data);
         if ($validationError) {
+            $this->logToFile("❌ Validation failed: $validationError", 'ERROR');
             return ['status' => 'error', 'message' => $validationError];
         }
-        
+        $this->logToFile("✅ Validation passed", 'INFO');
+
         $header = $data['header'];
         $items = $data['items'];
+        $operationUniqueId = $data['operation_unique_id'] ?? null;
+
+        $this->logToFile("🔄 Transfer info - operation_unique_id: $operationUniqueId, item_count: " . count($items), 'INFO');
+
+        // UUID bazlı duplicate kontrolü
+        if ($operationUniqueId) {
+            $this->logToFile("🔍 Checking for duplicate transfer with operation_unique_id: $operationUniqueId", 'INFO');
+            $existingTransfer = $db->createCommand(
+                'SELECT * FROM inventory_transfers WHERE operation_unique_id = :operation_unique_id'
+            )->bindValue(':operation_unique_id', $operationUniqueId)->queryOne();
+
+            if ($existingTransfer) {
+                $this->logToFile("⚠️ DUPLICATE DETECTED: Transfer already exists with operation_unique_id: $operationUniqueId (transfer_id: {$existingTransfer['id']})", 'WARNING');
+                return [
+                    'status' => 'success',
+                    'message' => 'Transfer already exists',
+                    'transfer_id' => $existingTransfer['id'],
+                    'duplicate' => true
+                ];
+            }
+            $this->logToFile("✅ No duplicate found, proceeding with new transfer", 'INFO');
+        }
 
         // Employee warehouse_code bilgisini al
+        $this->logToFile("👤 Getting employee warehouse info for employee_id: {$header['employee_id']}", 'INFO');
         $employeeInfo = $db->createCommand(
             'SELECT warehouse_code FROM employees WHERE id = :id'
         )->bindValue(':id', $header['employee_id'])->queryOne();
+        $this->logToFile("📍 Employee warehouse_code: " . ($employeeInfo['warehouse_code'] ?? 'NULL'), 'DEBUG');
 
         $sourceLocationId = ($header['source_location_id'] == 0) ? null : $header['source_location_id'];
         $targetLocationId = $header['target_location_id'];
         $operationType = $header['operation_type'] ?? 'product_transfer';
-        $siparisId = $header['siparis_id'] ?? null;
-        $goodsReceiptId = $header['goods_receipt_id'] ?? null;
+        $receiptOperationUuid = $header['receipt_operation_uuid'] ?? null; // YENİ: Transfer hangi mal kabule ait (putaway için)
         $deliveryNoteNumber = $header['delivery_note_number'] ?? null;
+
+        $this->logToFile("📦 Transfer params - source_location: " . ($sourceLocationId ?? 'NULL (receiving area)') . ", target_location: $targetLocationId, operation_type: $operationType", 'INFO');
+        $this->logToFile("📋 Transfer context - receipt_operation_uuid: " . ($receiptOperationUuid ?? 'NULL') . ", delivery_note: " . ($deliveryNoteNumber ?? 'NULL'), 'DEBUG');
 
         // Rafa yerleştirme işlemi sanal mal kabul alanından (kaynak_lokasyon_id NULL) yapılan herhangi bir transferdir
         $isPutawayOperation = ($sourceLocationId === null);
         $sourceStatus = $isPutawayOperation ? 'receiving' : 'available';
+        $this->logToFile("🔄 Operation type - is_putaway: " . ($isPutawayOperation ? 'YES' : 'NO') . ", source_status: $sourceStatus", 'INFO');
 
-        foreach ($items as $item) {
+        // PERFORMANCE FIX: Pre-fetch all required data to avoid N+1 queries
+        $this->logToFile("⚡ Pre-fetching data to avoid N+1 queries", 'DEBUG');
+
+        // 1. Collect all unique urun_keys from items
+        $allUrunKeys = array_unique(array_column($items, 'urun_key'));
+        $this->logToFile("📊 Unique products to fetch: " . count($allUrunKeys), 'DEBUG');
+
+        // 2. Fetch all product info at once (single query instead of N queries)
+        $urunlerMap = (new Query())
+            ->select(['_key', 'StokKodu', 'UrunAdi'])
+            ->from('urunler')
+            ->where(['_key' => $allUrunKeys])
+            ->indexBy('_key')
+            ->all($db);
+        $this->logToFile("✅ Fetched " . count($urunlerMap) . " products from database", 'DEBUG');
+
+        // 3. Collect all unique location IDs
+        $allLocationIds = array_filter(array_unique([$sourceLocationId, $targetLocationId]));
+        $this->logToFile("📍 Unique locations to fetch: " . count($allLocationIds), 'DEBUG');
+
+        // 4. Fetch all shelf codes at once (single query instead of 2N queries)
+        $shelfsMap = [];
+        if (!empty($allLocationIds)) {
+            $shelfsMap = (new Query())
+                ->select(['id', 'code'])
+                ->from('shelfs')
+                ->where(['id' => $allLocationIds])
+                ->indexBy('id')
+                ->all($db);
+            $this->logToFile("✅ Fetched " . count($shelfsMap) . " shelf codes from database", 'DEBUG');
+        }
+
+        // 5. Pre-fetch siparis fisno if needed (single query)
+        $sipFisno = null;
+        if ($siparisId) {
+            $sipFisno = $db->createCommand(
+                'SELECT fisno FROM siparisler WHERE id = :id'
+            )->bindValue(':id', $siparisId)->queryScalar();
+            $this->logToFile("📋 Order fisno retrieved: " . ($sipFisno ?? 'NULL'), 'DEBUG');
+        }
+
+        $this->logToFile("🔄 Starting item processing loop for " . count($items) . " items", 'INFO');
+
+        foreach ($items as $itemIndex => $item) {
+            $this->logToFile("--- Processing transfer item #" . ($itemIndex + 1) . " ---", 'INFO');
+
             // Mobile'dan _key değeri geliyor, direkt kullanılıyor
             $urunKey = $item['urun_key']; // _key değeri
             $birimKey = $item['birim_key'] ?? null; // Birim _key değeri
-            
-            // _key'in gerçekten var olduğunu kontrol et ve detaylı hata mesajı ver
-            $productInfo = $db->createCommand(
-                'SELECT _key, StokKodu, UrunAdi FROM urunler WHERE _key = :key'
-            )->bindValue(':key', $urunKey)->queryOne();
-            
+            $this->logToFile("🔍 Item product lookup - urun_key: $urunKey, birim_key: " . ($birimKey ?? 'NULL'), 'DEBUG');
+
+            // PERFORMANCE FIX: Use pre-fetched product info from map instead of query
+            $productInfo = $urunlerMap[$urunKey] ?? null;
+
             if (!$productInfo) {
+                $this->logToFile("⚠️ Product not found in pre-fetched map, trying alternative lookup", 'WARNING');
                 // Alternative: Try to find by UrunId if _key is actually a numeric value
                 if (is_numeric($urunKey)) {
+                    $this->logToFile("🔍 Trying to find product by UrunId: $urunKey", 'DEBUG');
                     $productInfo = $db->createCommand(
                         'SELECT _key, StokKodu, UrunAdi FROM urunler WHERE UrunId = :id'
                     )->bindValue(':id', (int)$urunKey)->queryOne();
-                    
+
                     if ($productInfo) {
                         // Use the correct _key from database
                         $urunKey = $productInfo['_key'];
+                        $this->logToFile("✅ Converted UrunId {$item['urun_key']} to _key $urunKey", 'WARNING');
                         Yii::warning("Transfer: Converted UrunId {$item['urun_key']} to _key {$urunKey}", __METHOD__);
                     }
                 }
-                
+
                 if (!$productInfo) {
                     $errorMessage = "Ürün bulunamadı: {$item['urun_key']} (tip: " . gettype($item['urun_key']) . ")";
+                    $this->logToFile("❌ PRODUCT NOT FOUND: $errorMessage", 'ERROR');
 
                     // Çalışan bilgisini al
                     $employeeName = 'Bilinmeyen';
                     if (isset($header['employee_id'])) {
                         $employeeData = $db->createCommand(
-                            'SELECT name FROM employees WHERE id = :id'
+                            'SELECT first_name, last_name FROM employees WHERE id = :id'
                         )->bindValue(':id', $header['employee_id'])->queryOne();
                         if ($employeeData) {
-                            $employeeName = $employeeData['name'];
+                            $employeeName = trim($employeeData['first_name'] . ' ' . $employeeData['last_name']);
                         }
                     }
 
                     // Telegram bildirimi gönder
+                    $this->logToFile("📧 Sending transfer error notification to Telegram", 'INFO');
                     try {
                         WMSTelegramNotification::notifyTransferError(
                             $employeeName,
@@ -981,16 +1157,20 @@ class TerminalController extends Controller
                                 'Hedef Lokasyon' => $targetLocationId ?? 'Unknown'
                             ]
                         );
+                        $this->logToFile("✅ Telegram notification sent", 'INFO');
                     } catch (\Exception $e) {
+                        $this->logToFile("⚠️ Telegram notification failed: " . $e->getMessage(), 'WARNING');
                         Yii::warning("Telegram notification gönderilemedi: " . $e->getMessage(), __METHOD__);
                     }
 
                     return ['status' => 'error', 'message' => $errorMessage];
                 }
             }
-            
+            $this->logToFile("✅ Product found - StokKodu: {$productInfo['StokKodu']}, UrunAdi: {$productInfo['UrunAdi']}", 'DEBUG');
+
             $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
+            $this->logToFile("📦 Transfer quantity: $totalQuantityToTransfer, source_pallet: " . ($sourcePallet ?? 'NULL'), 'DEBUG');
             $targetStockUuidFromPhone = $item['stock_uuid'] ?? null; // KRITIK FIX: Phone-generated UUID for TARGET stock
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
@@ -1002,22 +1182,17 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
-            // Rafa yerleştirme işlemleri için, belirli sipariş veya fişe göre filtrelememiz gerekir
-            if ($isPutawayOperation) {
-                if ($siparisId) {
-                    $this->addNullSafeWhere($sourceStocksQuery, 'siparis_id', $siparisId);
-                } elseif ($deliveryNoteNumber) {
-                    // Serbest mal kabul için irsaliye numarası üzerinden fiş ID'sini bul
-                    $actualGoodsReceiptId = $db->createCommand(
-                        'SELECT goods_receipt_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
-                    )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
-                    if ($actualGoodsReceiptId) {
-                        $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $actualGoodsReceiptId);
-                        // hata bağlamı ve sonraki işlemler için mal kabul ID'sini güncelle
-                        $goodsReceiptId = $actualGoodsReceiptId;
-                    }
-                } elseif ($goodsReceiptId) {
-                    $this->addNullSafeWhere($sourceStocksQuery, 'goods_receipt_id', $goodsReceiptId);
+            // YENİ YAKLŞIM: Rafa yerleştirme işlemleri için receipt_operation_uuid ile filtrele
+            if ($isPutawayOperation && $receiptOperationUuid) {
+                $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $receiptOperationUuid);
+            } elseif ($isPutawayOperation && $deliveryNoteNumber) {
+                // Fallback: delivery_note_number üzerinden operation_unique_id bul
+                $foundReceiptUuid = $db->createCommand(
+                    'SELECT operation_unique_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
+                )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
+                if ($foundReceiptUuid) {
+                    $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $foundReceiptUuid);
+                    $receiptOperationUuid = $foundReceiptUuid; // Güncelle (transfer kaydı için)
                 }
             }
 
@@ -1033,10 +1208,10 @@ class TerminalController extends Controller
                 $employeeName = 'Bilinmeyen';
                 if (isset($header['employee_id'])) {
                     $employeeData = $db->createCommand(
-                        'SELECT name FROM employees WHERE id = :id'
+                        'SELECT first_name, last_name FROM employees WHERE id = :id'
                     )->bindValue(':id', $header['employee_id'])->queryOne();
                     if ($employeeData) {
-                        $employeeName = $employeeData['name'];
+                        $employeeName = trim($employeeData['first_name'] . ' ' . $employeeData['last_name']);
                     }
                 }
 
@@ -1062,7 +1237,7 @@ class TerminalController extends Controller
 
             // 2. Transfer edilecek kısımları ve gerekli veritabanı işlemlerini belirle
             $quantityLeft = $totalQuantityToTransfer;
-            $portionsToTransfer = []; // {miktar, son_kullanma_tarihi, siparis_id, mal_kabul_id}
+            $portionsToTransfer = []; // {miktar, son_kullanma_tarihi, receipt_operation_uuid}
             // KRITIK FIX: UUID bazlı operasyonlar için stock_uuid kullan
             $vtIslemleri = ['delete' => [], 'update' => []]; // {stock_uuid: yeni_miktar}
 
@@ -1076,8 +1251,7 @@ class TerminalController extends Controller
                 $portionsToTransfer[] = [
                     'qty' => $qtyThisCycle,
                     'expiry' => $stock['expiry_date'],
-                    'siparis_id' => $stock['siparis_id'],
-                    'goods_receipt_id' => $stock['goods_receipt_id']
+                    'receipt_operation_uuid' => $stock['receipt_operation_uuid']
                 ];
 
                 if ($stockQty - $qtyThisCycle > 0.001) {
@@ -1141,46 +1315,39 @@ class TerminalController extends Controller
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
                 // _key urun_key olarak kullanılıyor
-                
-                // StokKodu'nu urun_key'den al
-                $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
-                    
-                // Shelf code'ları al
-                $fromShelfCode = $sourceLocationId ? $db->createCommand(
-                    'SELECT code FROM shelfs WHERE id = :id'
-                )->bindValue(':id', $sourceLocationId)->queryScalar() : null;
 
-                $toShelfCode = $targetLocationId ? $db->createCommand(
-                    'SELECT code FROM shelfs WHERE id = :id'
-                )->bindValue(':id', $targetLocationId)->queryScalar() : null;
+                // PERFORMANCE FIX: Use pre-fetched data instead of queries
+                $stokKodu = $productInfo['StokKodu'] ?? null;
 
-                // Sipariş fisno'sunu al
-                $sipFisno = $siparisId ? $db->createCommand(
-                    'SELECT fisno FROM siparisler WHERE id = :id'
-                )->bindValue(':id', $siparisId)->queryScalar() : null;
+                // PERFORMANCE FIX: Use pre-fetched shelf codes from map
+                $fromShelfCode = $sourceLocationId && isset($shelfsMap[$sourceLocationId])
+                    ? $shelfsMap[$sourceLocationId]['code']
+                    : null;
+
+                $toShelfCode = $targetLocationId && isset($shelfsMap[$targetLocationId])
+                    ? $shelfsMap[$targetLocationId]['code']
+                    : null;
+
+                // PERFORMANCE FIX: Use pre-fetched sipFisno (already fetched at line 963-967)
                 
                 $transferData = [
-                    'operation_unique_id' => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
-                    'urun_key'            => $urunKey, // _key yazılıyor
-                    'birim_key'           => $birimKey, // DÜZELTME: $birimKey değişkenini kullan
-                    'from_location_id'    => $sourceLocationId,
-                    'to_location_id'      => $targetLocationId,
-                    'quantity'            => $portion['qty'],
-                    'from_pallet_barcode' => $sourcePallet,
-                    'pallet_barcode'      => $targetPallet,
-                    'goods_receipt_id'    => $goodsReceiptId,
-                    'delivery_note_number' => $deliveryNoteNumber,
-                    'employee_id'         => $header['employee_id'],
-                    'transfer_date'       => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
-                    'StokKodu'            => $stokKodu,
-                    'from_shelf'          => $fromShelfCode,
-                    'to_shelf'            => $toShelfCode,
-                    'sip_fisno'           => $sipFisno,
+                    'operation_unique_id'     => $data['operation_unique_id'] ?? null, // Tag and Replace reconciliation için
+                    'urun_key'                => $urunKey, // _key yazılıyor
+                    'birim_key'               => $birimKey, // DÜZELTME: $birimKey değişkenini kullan
+                    'from_location_id'        => $sourceLocationId,
+                    'to_location_id'          => $targetLocationId,
+                    'quantity'                => $portion['qty'],
+                    'from_pallet_barcode'     => $sourcePallet,
+                    'pallet_barcode'          => $targetPallet,
+                    'receipt_operation_uuid'  => $receiptOperationUuid, // YENİ: Transfer hangi mal kabule ait (putaway için)
+                    'delivery_note_number'    => $deliveryNoteNumber,
+                    'employee_id'             => $header['employee_id'],
+                    'transfer_date'           => $header['transfer_date'] ?? new \yii\db\Expression('NOW()'),
+                    'StokKodu'                => $stokKodu,
+                    'from_shelf'              => $fromShelfCode,
+                    'to_shelf'                => $toShelfCode,
+                    'sip_fisno'               => $sipFisno,
                 ];
-
-                if ($siparisId) {
-                    $transferData['siparis_id'] = $siparisId;
-                }
 
                 $db->createCommand()->insert('inventory_transfers', $transferData)->execute();
             }
@@ -1192,12 +1359,15 @@ class TerminalController extends Controller
 
         // Son eklenen transfer kaydının ID'sini al
         $lastTransferId = $db->getLastInsertID();
-        
+
+        $this->logToFile("✅ All transfer items processed successfully", 'INFO');
+        $this->logToFile("========== _createInventoryTransfer SUCCESS - transfer_id: $lastTransferId ==========", 'INFO');
+
         // RETURN İFADESİNİ GÜNCELLE
         return ['status' => 'success', 'transfer_id' => $lastTransferId, 'operation_unique_id' => $data['operation_unique_id'] ?? null];
     }
 
-    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $siparisId = null, $expiryDate = null, $goodsReceiptId = null, $warehouseCode = null, $stockUuid = null) {
+    private function upsertStock($db, $urunKey, $birimKey, $locationId, $qtyChange, $palletBarcode, $stockStatus, $receiptOperationUuid = null, $expiryDate = null, $warehouseCode = null, $stockUuid = null) {
         $isDecrement = (float)$qtyChange < 0;
 
         if ($isDecrement) {
@@ -1211,9 +1381,9 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($availabilityQuery, 'birim_key', $birimKey);
             $this->addNullSafeWhere($availabilityQuery, 'location_id', $locationId);
             $this->addNullSafeWhere($availabilityQuery, 'pallet_barcode', $palletBarcode);
-            // KRITIK FIX: Receiving durumunda siparis_id ile match et
-            if ($stockStatus === 'receiving' && $siparisId !== null) {
-                $this->addNullSafeWhere($availabilityQuery, 'siparis_id', $siparisId);
+            // YENİ YAKLŞIM: Receiving durumunda receipt_operation_uuid ile match et
+            if ($stockStatus === 'receiving' && $receiptOperationUuid !== null) {
+                $this->addNullSafeWhere($availabilityQuery, 'receipt_operation_uuid', $receiptOperationUuid);
             }
             $totalAvailable = (float)$availabilityQuery->sum('quantity', $db);
 
@@ -1227,9 +1397,9 @@ class TerminalController extends Controller
                 $this->addNullSafeWhere($query, 'birim_key', $birimKey);
                 $this->addNullSafeWhere($query, 'location_id', $locationId);
                 $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
-                // KRITIK FIX: Receiving durumunda siparis_id ile match et
-                if ($stockStatus === 'receiving' && $siparisId !== null) {
-                    $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
+                // YENİ YAKLŞIM: Receiving durumunda receipt_operation_uuid ile match et
+                if ($stockStatus === 'receiving' && $receiptOperationUuid !== null) {
+                    $this->addNullSafeWhere($query, 'receipt_operation_uuid', $receiptOperationUuid);
                 }
                 $query->orderBy(['expiry_date' => SORT_ASC])->limit(1);
 
@@ -1269,22 +1439,15 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'location_id', $locationId);
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
-            
-            // KRITIK FIX: 'receiving' durumunda iki farklı strateji
-            if ($stockStatus === 'receiving') {
-                if ($siparisId !== null) {
-                    // SİPARİŞ BAZLI MAL KABUL: siparis_id ile grupla, goods_receipt_id KULLANMA
-                    // Aynı sipariş için farklı irsaliyeler BİRLEŞİR (3+4=7)
-                    $this->addNullSafeWhere($query, 'siparis_id', $siparisId);
-                    // goods_receipt_id kontrolü YOK - farklı delivery note'lar birleşir
-                } else {
-                    // SERBEST MAL KABUL: goods_receipt_id ile grupla, siparis_id KULLANMA
-                    // Farklı irsaliyeler AYRI KALIR (3, 4 ayrı satırlar)
-                    $this->addNullSafeWhere($query, 'goods_receipt_id', $goodsReceiptId);
-                    // siparis_id kontrolü YOK (zaten NULL)
-                }
+
+            // YENİ YAKLŞIM: 'receiving' durumunda receipt_operation_uuid ile grupla
+            // 'available' durumunda receipt_operation_uuid YOK - tam konsolidasyon
+            if ($stockStatus === 'receiving' && $receiptOperationUuid !== null) {
+                // RECEIVING: receipt_operation_uuid ile grupla
+                // Aynı mal kabulden gelen ürünler birleşir
+                $this->addNullSafeWhere($query, 'receipt_operation_uuid', $receiptOperationUuid);
             }
-            // 'available' durumunda HER İKİSİ DE YOK - tam konsolidasyon
+            // 'available' durumunda receipt_operation_uuid kontrolü YOK - tam konsolidasyon
 
             $stock = $query->createCommand($db)->queryOne();
 
@@ -1334,33 +1497,67 @@ class TerminalController extends Controller
                 
                 // DEBUG: Yeni stok kaydı oluşturma
                 Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);
-                
+
+                // ============================================================================
+                // KRITIK FIX: STOCK UUID IDEMPOTENCY KONTROLÜ
+                // ============================================================================
+                // Bu kontrol, aynı transfer işleminin tekrar sunucuya gelmesi durumunda
+                // duplicate UUID hatası almamak için eklendi.
+                //
+                // Senaryo:
+                // 1. Transfer işlemi başarıyla yapılır, stock kaydı oluşturulur (UUID ile)
+                // 2. Ancak operation_unique_id idempotency tablosuna yazılamadan transaction rollback olur
+                // 3. Mobil uygulama aynı işlemi tekrar gönderir (aynı UUID ile)
+                // 4. Bu kontrol sayesinde duplicate hata almak yerine, mevcut stock güncellenir
+                // ============================================================================
+                if ($stockUuid) {
+                    $this->logToFile("🔍 Checking if phone-generated stock UUID already exists: $stockUuid", 'DEBUG');
+                    $existingStockByUuid = $db->createCommand(
+                        'SELECT * FROM inventory_stock WHERE stock_uuid = :uuid'
+                    )->bindValue(':uuid', $stockUuid)->queryOne();
+
+                    if ($existingStockByUuid) {
+                        $this->logToFile("⚠️ DUPLICATE STOCK UUID DETECTED (IDEMPOTENCY): $stockUuid (stock_id: {$existingStockByUuid['id']})", 'WARNING');
+                        $this->logToFile("📦 Existing stock - urun_key: {$existingStockByUuid['urun_key']}, location: {$existingStockByUuid['location_id']}, qty: {$existingStockByUuid['quantity']}, status: {$existingStockByUuid['stock_status']}", 'WARNING');
+                        $this->logToFile("🔄 This is likely a retry after a failed transaction. Updating existing stock instead of creating duplicate.", 'INFO');
+
+                        // Mevcut stok kaydını quantity ile güncelle (idempotency için)
+                        $newQty = (float)($existingStockByUuid['quantity']) + (float)$qtyChange;
+                        $this->logToFile("✅ IDEMPOTENCY: Updating existing stock UUID $stockUuid - old_qty: {$existingStockByUuid['quantity']}, adding: $qtyChange, new_qty: $newQty", 'INFO');
+
+                        $db->createCommand()->update('inventory_stock',
+                            ['quantity' => $newQty],
+                            ['stock_uuid' => $stockUuid]
+                        )->execute();
+
+                        Yii::info("UUID IDEMPOTENCY: Stock UUID $stockUuid already existed, updated quantity from {$existingStockByUuid['quantity']} to $newQty", __METHOD__);
+                        $this->logToFile("✅ Stock update completed successfully via idempotency path", 'INFO');
+                        return; // İşlem tamamlandı, yeni insert yapma
+                    }
+                    $this->logToFile("✅ Stock UUID is unique, proceeding with new insert", 'DEBUG');
+                }
+
                 // UUID: Telefondan gelen UUID'yi kullan, yoksa yeni üret
                 $finalStockUuid = $stockUuid ?? $this->generateUuid();
                 Yii::info("DEBUG stock UUID: $finalStockUuid (from phone: " . ($stockUuid ? 'yes' : 'no') . ")", __METHOD__);
-                
+
                 // Kapsamlı UUID takip logging'i
                 if ($stockUuid) {
                     Yii::info("UUID FLOW: Phone-generated UUID $stockUuid being stored for urun_key=$urunKey, birim_key=$birimKey", __METHOD__);
                 } else {
                     Yii::info("UUID FLOW: Server-generated UUID $finalStockUuid created for urun_key=$urunKey, birim_key=$birimKey", __METHOD__);
                 }
-                
+
                 $db->createCommand()->insert('inventory_stock', [
                     'stock_uuid' => $finalStockUuid, // UUID eklendi
                     'urun_key' => $urunKey,
                     'birim_key' => $birimKey, // Birim _key değeri
                     'location_id' => $locationId,
-                    'siparis_id' => $siparisId, // Sipariş bazlı mal kabullerde dolu, serbest mal kabullerde NULL
+                    'receipt_operation_uuid' => $receiptOperationUuid, // YENİ: goods_receipts.operation_unique_id ile ilişki
                     'quantity' => (float)$qtyChange,
                     'pallet_barcode' => $palletBarcode,
                     'stock_status' => $stockStatus,
                     'expiry_date' => $expiryDate,
-                    // KRITIK FIX: İki strateji
-                    // 1. Sipariş bazlı mal kabul (siparis_id dolu): goods_receipt_id NULL -> Aynı sipariş için farklı irsaliyeler BİRLEŞİR (3+4=7)
-                    // 2. Serbest mal kabul (siparis_id NULL): goods_receipt_id dolu -> Farklı irsaliyeler AYRI KALIR (3, 4 ayrı satırlar)
-                    // 3. Transfer sonrası (her ikisi NULL): Tam konsolidasyon
-                    'goods_receipt_id' => ($siparisId === null) ? $goodsReceiptId : null,
                     'StokKodu' => $stokKodu,
                     'shelf_code' => $shelfCode,
                     'sip_fisno' => $sipFisno,
@@ -1388,7 +1585,7 @@ class TerminalController extends Controller
                 u._key,
                 (SELECT COALESCE(SUM(gri.quantity_received), 0)
                  FROM goods_receipt_items gri
-                 JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+                 JOIN goods_receipts gr ON gri.operation_unique_id COLLATE utf8mb4_0900_ai_ci = gr.operation_unique_id COLLATE utf8mb4_0900_ai_ci
                  WHERE gr.siparis_id = :siparis_id AND gri.urun_key = u._key
                 ) as received_quantity
             FROM siparis_ayrintili s
@@ -1450,10 +1647,10 @@ class TerminalController extends Controller
             $employeeName = 'Bilinmeyen';
             if (isset($data['employee_id'])) {
                 $employeeData = $db->createCommand(
-                    'SELECT name FROM employees WHERE id = :id'
+                    'SELECT first_name, last_name FROM employees WHERE id = :id'
                 )->bindValue(':id', $data['employee_id'])->queryOne();
                 if ($employeeData) {
-                    $employeeName = $employeeData['name'];
+                    $employeeName = trim($employeeData['first_name'] . ' ' . $employeeData['last_name']);
                 }
             }
 
@@ -1879,7 +2076,7 @@ class TerminalController extends Controller
 
         $query = (new Query())
             ->from('goods_receipt_items')
-            ->innerJoin('goods_receipts', 'goods_receipts.goods_receipt_id = goods_receipt_items.receipt_id')
+            ->innerJoin('goods_receipts', 'goods_receipt_items.operation_unique_id COLLATE utf8mb4_0900_ai_ci = goods_receipts.operation_unique_id COLLATE utf8mb4_0900_ai_ci')
             ->where(['goods_receipts.employee_id' => $employeeIds]);
 
         if ($timestamp) {
@@ -2301,7 +2498,7 @@ class TerminalController extends Controller
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
         $stockQuery = (new Query())
-            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock');
         $stockConditions = ['or'];
 
@@ -2311,17 +2508,17 @@ class TerminalController extends Controller
 
         // Use employee-based filtering instead of direct warehouse_id
         $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
-        $allReceiptIdsForWarehouse = (new Query())
-            ->select('goods_receipt_id')
+        $allReceiptUuidsForWarehouse = (new Query())
+            ->select('operation_unique_id')
             ->from('goods_receipts')
             ->where(['employee_id' => $employeeIds])
             ->column();
 
-        if (!empty($allReceiptIdsForWarehouse)) {
+        if (!empty($allReceiptUuidsForWarehouse)) {
             $stockConditions[] = [
                 'and',
                 ['is', 'location_id', new \yii\db\Expression('NULL')],
-                ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse]
+                ['in', 'receipt_operation_uuid', $allReceiptUuidsForWarehouse]
             ];
         }
 
@@ -2340,7 +2537,7 @@ class TerminalController extends Controller
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers');
         $transferConditions = ['or'];
 
@@ -2351,8 +2548,8 @@ class TerminalController extends Controller
         }
 
         // Warehouse'a ait goods_receipt'lerle ilgili transferler
-        if (!empty($allReceiptIdsForWarehouse)) {
-            $transferConditions[] = ['in', 'goods_receipt_id', $allReceiptIdsForWarehouse];
+        if (!empty($allReceiptUuidsForWarehouse)) {
+            $transferConditions[] = ['in', 'receipt_operation_uuid', $allReceiptUuidsForWarehouse];
         }
 
         if (count($transferConditions) > 1) {
@@ -2366,7 +2563,7 @@ class TerminalController extends Controller
         }
 
         $data['inventory_transfers'] = $transferQuery->all();
-        $this->castNumericValues($data['inventory_transfers'], ['id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data['inventory_transfers'], ['id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
 
         // ########## TOMBSTONE RECORDS - Silinmiş inventory_stock kayıtları (UUID TABANLI) ##########
         $tombstoneUuids = [];
@@ -2856,7 +3053,7 @@ class TerminalController extends Controller
             return [];
         }
         $query = (new Query())
-            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'siparis_id', 'goods_receipt_id', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
             ->where(['warehouse_code' => $warehouseCode]);
         if ($serverSyncTimestamp) {
@@ -2864,7 +3061,7 @@ class TerminalController extends Controller
         }
         $query->offset($offset)->limit($limit);
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'location_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data, ['id', 'location_id'], ['quantity']);
         return $data;
     }
 
@@ -2885,8 +3082,18 @@ class TerminalController extends Controller
             $transferConditions[] = ['in', 'to_location_id', $locationIds];
         }
 
+        // UUID-based filtering için receipt UUID'lerini al
+        $allReceiptUuids = [];
         if (!empty($allReceiptIds)) {
-            $transferConditions[] = ['in', 'goods_receipt_id', $allReceiptIds];
+            $allReceiptUuids = (new Query())
+                ->select('operation_unique_id')
+                ->from('goods_receipts')
+                ->where(['in', 'goods_receipt_id', $allReceiptIds])
+                ->column();
+        }
+
+        if (!empty($allReceiptUuids)) {
+            $transferConditions[] = ['in', 'receipt_operation_uuid', $allReceiptUuids];
         }
 
         if (count($transferConditions) <= 1) {
@@ -2894,7 +3101,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'siparis_id', 'goods_receipt_id', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers')
             ->where($transferConditions);
 
@@ -2905,7 +3112,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'from_location_id', 'to_location_id', 'employee_id', 'siparis_id', 'goods_receipt_id'], ['quantity']);
+        $this->castNumericValues($data, ['id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
         return $data;
     }
 
@@ -2983,15 +3190,15 @@ class TerminalController extends Controller
         // DEBUG: Log warehouse and employee info
         $this->logToFile("GetFreeReceiptsForPutaway - warehouse_id: $warehouseId, warehouse_code: {$employeeInfo['warehouse_code']}, employee_id: $employeeId", 'DEBUG');
 
-        // DEBUG: Check inventory_stock records
+        // DEBUG: Check inventory_stock records (UUID-based)
         $debugStock = (new Query())
-            ->select(['ist.id', 'ist.goods_receipt_id', 'ist.siparis_id', 'ist.stock_status', 'ist.quantity', 'ist.urun_key'])
+            ->select(['ist.id', 'ist.receipt_operation_uuid', 'ist.stock_status', 'ist.quantity', 'ist.urun_key'])
             ->from(['ist' => 'inventory_stock'])
             ->where(['ist.stock_status' => 'receiving'])
-            ->andWhere(['is not', 'ist.goods_receipt_id', null])
+            ->andWhere(['is not', 'ist.receipt_operation_uuid', null])
             ->limit(10)
             ->all();
-        $this->logToFile("DEBUG inventory_stock with goods_receipt_id (receiving status): " . json_encode($debugStock), 'DEBUG');
+        $this->logToFile("DEBUG inventory_stock with receipt_operation_uuid (receiving status): " . json_encode($debugStock), 'DEBUG');
 
         // DEBUG: Check goods_receipts records
         $debugReceipts = (new Query())
@@ -3012,7 +3219,7 @@ class TerminalController extends Controller
                 'COUNT(DISTINCT ist.urun_key) as item_count'
             ])
             ->from('goods_receipts gr')
-            ->innerJoin('inventory_stock ist', 'ist.goods_receipt_id = gr.goods_receipt_id')
+            ->innerJoin('inventory_stock ist', 'ist.receipt_operation_uuid COLLATE utf8mb4_0900_ai_ci = gr.operation_unique_id COLLATE utf8mb4_0900_ai_ci')
             ->innerJoin('employees e', 'e.id = gr.employee_id')
             ->where(['gr.siparis_id' => null])
             ->andWhere(['ist.stock_status' => 'receiving'])
@@ -3169,12 +3376,27 @@ class TerminalController extends Controller
 
             $this->logToFile("Database upload request - Employee: $employeeName, Warehouse: $warehouseCode, File: $originalFileName, Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB", 'INFO');
 
+            // Login error bilgisini al (varsa)
+            $loginError = $data['login_error'] ?? null;
+            $isAutoSent = $data['auto_sent_on_login_failure'] ?? false;
+
             // Telegram'a gönder
-            $caption = "💾 DATABASE BACKUP\n\n";
-            $caption .= "👤 Employee: $employeeName\n";
-            $caption .= "🏭 Warehouse: $warehouseCode\n";
-            $caption .= "📦 Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB\n";
-            $caption .= "📅 " . date('Y-m-d H:i:s');
+            if ($isAutoSent && $loginError) {
+                // Login hatası durumunda özel caption
+                $caption = "🔴 LOGIN FAILED - AUTO BACKUP\n\n";
+                $caption .= "❌ Login Error: " . substr($loginError, 0, 100) . "\n\n";
+                $caption .= "👤 Username: $employeeName\n";
+                $caption .= "🏭 Warehouse: $warehouseCode\n";
+                $caption .= "📦 DB Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB\n";
+                $caption .= "📅 " . date('Y-m-d H:i:s');
+            } else {
+                // Normal backup caption
+                $caption = "💾 DATABASE BACKUP\n\n";
+                $caption .= "👤 Employee: $employeeName\n";
+                $caption .= "🏭 Warehouse: $warehouseCode\n";
+                $caption .= "📦 Size: " . number_format($fileSize / 1024 / 1024, 2) . " MB\n";
+                $caption .= "📅 " . date('Y-m-d H:i:s');
+            }
 
             $this->logToFile("Calling WMSTelegramNotification::sendDatabaseFile...", 'INFO');
 
@@ -3375,6 +3597,32 @@ class TerminalController extends Controller
                     }
                     $seenUuids[$itemUuid] = true;
 
+                    // ⚠️ EXPIRY DATE FORMAT FIX: Support multiple date formats
+                    $expiryDate = $item['expiry_date'] ?? null;
+                    if ($expiryDate && !empty($expiryDate)) {
+                        $originalDate = $expiryDate; // Keep for logging
+
+                        // 1. ISO 8601 format (from goods_receiving): 2025-11-07T00:00:00.000Z
+                        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})T/', $expiryDate, $matches)) {
+                            $expiryDate = $matches[1] . '-' . $matches[2] . '-' . $matches[3];
+                            $this->logToFile("Expiry date converted from ISO 8601: $originalDate → $expiryDate", 'DEBUG');
+                        }
+                        // 2. dd/MM/yyyy format (from warehouse_count old): 07/11/2025
+                        elseif (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $expiryDate, $matches)) {
+                            $expiryDate = $matches[3] . '-' . $matches[2] . '-' . $matches[1];
+                            $this->logToFile("Expiry date converted from dd/MM/yyyy: $originalDate → $expiryDate", 'DEBUG');
+                        }
+                        // 3. yyyy-MM-dd format (correct format): 2025-11-07
+                        elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $expiryDate)) {
+                            $this->logToFile("Expiry date already in correct format: $expiryDate", 'DEBUG');
+                        }
+                        // 4. FALLBACK: Unrecognized format
+                        else {
+                            $this->logToFile("⚠️ FALLBACK: Invalid expiry date format '$originalDate' - setting to NULL", 'WARNING');
+                            $expiryDate = null;
+                        }
+                    }
+
                     $db->createCommand()->insert('wms_count_items', [
                         'operation_unique_id' => $operationUniqueId,
                         'item_uuid' => $item['item_uuid'],
@@ -3384,7 +3632,7 @@ class TerminalController extends Controller
                         'barcode' => $item['barcode'] ?? null,
                         'StokKodu' => $item['StokKodu'] ?? null,
                         'shelf_code' => $item['shelf_code'] ?? null,
-                        'expiry_date' => $item['expiry_date'] ?? null,
+                        'expiry_date' => $expiryDate,
                         'is_damaged' => isset($item['is_damaged']) ? ($item['is_damaged'] ? 1 : 0) : 0,
                         'created_at' => isset($item['created_at']) ? $this->convertIso8601ToMysqlDatetime($item['created_at']) : new \yii\db\Expression('NOW()'),
                         'updated_at' => isset($item['updated_at']) ? $this->convertIso8601ToMysqlDatetime($item['updated_at']) : new \yii\db\Expression('NOW()'),

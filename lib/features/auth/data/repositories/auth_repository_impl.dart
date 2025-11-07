@@ -4,6 +4,7 @@ import 'package:diapalet/core/local/database_helper.dart';
 import 'package:diapalet/core/local/database_constants.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/network/network_info.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -199,10 +200,44 @@ class AuthRepositoryImpl implements AuthRepository {
       } else {
         throw Exception('login.error.invalid_credentials');
       }
-    } on DioException catch (_) {
+    } on DioException catch (e, stackTrace) {
+      // Log to database (ERROR level)
+      try {
+        await TelegramLoggerService.logError(
+          'Login Failed (Online - DioException)',
+          'Failed to login online due to network/server error: ${e.message}',
+          stackTrace: stackTrace,
+          context: {
+            'username': username,
+            'error_type': e.type.toString(),
+            'status_code': e.response?.statusCode,
+            'response_data': e.response?.data?.toString(),
+            'is_production': ApiConfig.isProduction.toString(),
+          },
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
       // Güvenlik için tüm hatalar (403, 401, 400 vs.) aynı mesajı göstersin
       throw Exception('login.error.invalid_credentials');
-    } catch (_) {
+    } catch (e, stackTrace) {
+      // Log to database (ERROR level)
+      try {
+        await TelegramLoggerService.logError(
+          'Login Failed (Online - Generic)',
+          'Failed to login online due to unexpected error: $e',
+          stackTrace: stackTrace,
+          context: {
+            'username': username,
+            'error_type': e.runtimeType.toString(),
+            'is_production': ApiConfig.isProduction.toString(),
+          },
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
       rethrow;
     }
   }
@@ -335,7 +370,29 @@ class AuthRepositoryImpl implements AuthRepository {
         // Güvenlik için kullanıcı bulunamadığında da aynı mesajı göster
         throw Exception('login.error.invalid_credentials');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Log to database (ERROR level)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final warehouseCode = prefs.getString('warehouse_code');
+        final warehouseName = prefs.getString('warehouse_name');
+
+        await TelegramLoggerService.logError(
+          'Login Failed (Offline)',
+          'Failed to login offline: $e',
+          stackTrace: stackTrace,
+          context: {
+            'username': username,
+            'warehouse_code': warehouseCode,
+            'warehouse_name': warehouseName,
+            'error_type': e.runtimeType.toString(),
+            'error_message': e.toString(),
+          },
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
       rethrow;
     }
   }

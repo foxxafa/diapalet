@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:diapalet/core/constants/warehouse_receiving_mode.dart';
 import 'package:diapalet/core/services/barcode_intent_service.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/purchase_order.dart';
 import 'package:diapalet/features/goods_receiving/domain/entities/product_info.dart';
@@ -205,7 +206,33 @@ class InventoryTransferViewModel extends ChangeNotifier {
       _successMessage = 'inventory_transfer.success_transfer_saved'.tr();
       _navigateBack = true;
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Log to database (ERROR level - saved to SQLite for manual review)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final employeeId = prefs.getInt('user_id');
+        final employeeName = prefs.getString('user_name');
+
+        await TelegramLoggerService.logError(
+          'Inventory Transfer Save Failed (ViewModel)',
+          'Failed to save inventory transfer: $e',
+          stackTrace: stackTrace,
+          context: {
+            'operation_type': finalOperationMode.toString(),
+            'source_location': _selectedSourceLocationName,
+            'target_location': _selectedTargetLocationName,
+            'items_count': getTransferItems().length,
+            'is_putaway': isPutawayMode.toString(),
+            'order_id': _selectedOrder?.id,
+            'delivery_note': _deliveryNoteNumber,
+          },
+          employeeId: employeeId,
+          employeeName: employeeName,
+        );
+      } catch (logError) {
+        debugPrint('⚠️ Failed to log error: $logError');
+      }
+
       _setError('inventory_transfer.error_saving', e);
       return false;
     } finally {

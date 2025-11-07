@@ -1,14 +1,20 @@
 // lib/features/auth/presentation/login_screen.dart
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/sync_loading_screen.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
 import 'package:diapalet/features/home/presentation/home_screen.dart';
 import 'package:diapalet/core/network/network_info.dart';
 import 'package:diapalet/core/services/database_backup_service.dart';
+import 'package:diapalet/core/services/telegram_logger_service.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/network/api_config.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -105,6 +111,9 @@ class _LoginScreenState extends State<LoginScreen> {
               _errorMessage = errorText;
             }
           });
+
+          // 🔴 Login başarısız olduğunda veritabanını otomatik olarak Telegram'a gönder
+          _sendDatabaseOnLoginFailure(e.toString());
         }
       } finally {
         if (mounted) {
@@ -113,6 +122,115 @@ class _LoginScreenState extends State<LoginScreen> {
           });
         }
       }
+    }
+  }
+
+  /// Login başarısız olduğunda database ve logları otomatik olarak Telegram'a gönder
+  Future<void> _sendDatabaseOnLoginFailure(String errorMessage) async {
+    try {
+      debugPrint('🔴 Login failed, sending database and logs to Telegram...');
+
+      final db = DatabaseHelper.instance;
+      final prefs = await SharedPreferences.getInstance();
+      final username = _usernameController.text.trim();
+      final warehouseCode = prefs.getString('warehouse_code') ?? 'Unknown';
+
+      // 1️⃣ LOGLAR - Önce logları gönder (TelegramLoggerService kullanarak)
+      bool logsSent = false;
+      try {
+        final logCount = await db.getLogCount();
+        if (logCount > 0) {
+          debugPrint('📝 Sending $logCount logs to Telegram...');
+          logsSent = await TelegramLoggerService.sendAllLogs(hours: 168); // Son 7 gün
+          if (logsSent) {
+            debugPrint('✅ Logs sent to Telegram successfully');
+          }
+        } else {
+          debugPrint('ℹ️ No logs to send');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to send logs: $e');
+        // Log gönderimi başarısız olsa bile database gönderelim
+      }
+
+      // 2️⃣ DATABASE - Sonra database'i gönder
+      bool dbSent = false;
+      try {
+        final dbPath = await db.getDatabasePath();
+
+        // Temizlenmiş database kopyası oluştur
+        final backupService = DatabaseBackupService();
+        final dbBytes = await backupService.createCleanedDatabaseCopy(dbPath);
+
+        // Telegram'a gönder
+        dbSent = await _uploadDatabaseToTelegram(
+          dbBytes,
+          username,
+          warehouseCode,
+          errorMessage,
+        );
+
+        if (dbSent) {
+          debugPrint('✅ Database sent to Telegram on login failure');
+        } else {
+          debugPrint('⚠️ Failed to send database to Telegram');
+        }
+      } catch (e) {
+        debugPrint('❌ Error sending database: $e');
+      }
+
+      // Özet log
+      if (logsSent && dbSent) {
+        debugPrint('🎉 Both logs and database sent successfully');
+      } else if (logsSent) {
+        debugPrint('⚠️ Only logs sent (database failed)');
+      } else if (dbSent) {
+        debugPrint('⚠️ Only database sent (no logs or logs failed)');
+      } else {
+        debugPrint('❌ Failed to send both logs and database');
+      }
+    } catch (e) {
+      debugPrint('❌ Error in login failure handler: $e');
+      // Sessizce yut - login hatası daha önemli
+    }
+  }
+
+  /// Veritabanını Telegram'a yükle
+  Future<bool> _uploadDatabaseToTelegram(
+    Uint8List dbBytes,
+    String username,
+    String warehouseCode,
+    String loginError,
+  ) async {
+    try {
+      final dio = ApiConfig.dio;
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = 'LoginFailed_${username}_${warehouseCode}_$timestamp.db';
+
+      // Base64 encode et
+      final base64Db = base64Encode(dbBytes);
+
+      // Backend'e gönder
+      final response = await dio.post(
+        ApiConfig.uploadDatabase,
+        data: {
+          'database_file': base64Db,
+          'filename': filename,
+          'employee_name': username,
+          'warehouse_code': warehouseCode,
+          'login_error': loginError,
+          'auto_sent_on_login_failure': true,
+        },
+        options: Options(
+          receiveTimeout: const Duration(minutes: 3),
+          sendTimeout: const Duration(minutes: 2),
+        ),
+      );
+
+      return response.statusCode == 200 && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('Telegram upload error: $e');
+      return false;
     }
   }
 

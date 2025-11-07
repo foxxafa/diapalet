@@ -77,8 +77,7 @@ class DbColumns {
   // Inventory stock table
   static const String stockProductId = 'urun_key';
   static const String stockLocationId = 'location_id';
-  static const String stockOrderId = 'siparis_id';
-  static const String stockGoodsReceiptId = 'goods_receipt_id';
+  static const String stockReceiptOperationUuid = 'receipt_operation_uuid';
   static const String stockQuantity = 'quantity';
   static const String stockPalletBarcode = 'pallet_barcode';
   static const String stockExpiryDate = 'expiry_date';
@@ -160,7 +159,7 @@ class DbQueries {
             AND s2.${DbColumns.orderLinesQuantity} > COALESCE((
               SELECT SUM(gri.quantity_received)
               FROM ${DbTables.goodsReceiptItems} gri
-              JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
+              JOIN ${DbTables.goodsReceipts} gr ON gri.operation_unique_id = gr.operation_unique_id
               WHERE gr.siparis_id = o.${DbColumns.id} AND gri.${DbColumns.orderLinesProductId} = s2.${DbColumns.orderLinesProductId}
             ), 0) + 0.001
         )
@@ -179,7 +178,7 @@ class DbQueries {
         u.${DbColumns.productsActive},
         COALESCE((SELECT SUM(gri.quantity_received)
                    FROM ${DbTables.goodsReceiptItems} gri
-                   JOIN ${DbTables.goodsReceipts} gr ON gr.goods_receipt_id = gri.receipt_id
+                   JOIN ${DbTables.goodsReceipts} gr ON gri.operation_unique_id = gr.operation_unique_id
                    WHERE gr.siparis_id = s.${DbColumns.orderLinesOrderId} AND gri.${DbColumns.orderLinesProductId} = s.${DbColumns.orderLinesProductId}), 0) as receivedQuantity,
         0 as transferredQuantity
       FROM ${DbTables.orderLines} s

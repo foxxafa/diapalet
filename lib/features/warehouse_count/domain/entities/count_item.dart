@@ -79,6 +79,26 @@ class CountItem {
 
   /// Convert to JSON for API sync
   Map<String, dynamic> toJson() {
+    // Convert expiry date from dd/MM/yyyy to yyyy-MM-dd for MySQL
+    String? mysqlExpiryDate;
+    if (expiryDate != null && expiryDate!.isNotEmpty) {
+      try {
+        // Parse dd/MM/yyyy format
+        final parts = expiryDate!.split('/');
+        if (parts.length == 3) {
+          final day = parts[0].padLeft(2, '0');
+          final month = parts[1].padLeft(2, '0');
+          final year = parts[2];
+          // Convert to yyyy-MM-dd
+          mysqlExpiryDate = '$year-$month-$day';
+        } else {
+          mysqlExpiryDate = expiryDate; // Fallback to original if parsing fails
+        }
+      } catch (e) {
+        mysqlExpiryDate = expiryDate; // Fallback to original if parsing fails
+      }
+    }
+
     return {
       if (id != null) 'id': id,
       'operation_unique_id': operationUniqueId,
@@ -90,7 +110,7 @@ class CountItem {
       'barcode': barcode, // Always send, even if null (barkodu olmayan ürünler için)
       'StokKodu': stokKodu, // Always send, even if null
       'shelf_code': shelfCode, // Always send, even if null
-      'expiry_date': expiryDate, // Always send, even if null
+      'expiry_date': mysqlExpiryDate, // Converted to yyyy-MM-dd format for MySQL
       'is_damaged': isDamaged ? 1 : 0, // Always send
       if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),

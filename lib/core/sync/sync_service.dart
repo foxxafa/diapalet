@@ -205,8 +205,8 @@ class SyncService with ChangeNotifier {
       await dbHelper.addSyncLog('sync_status', 'error', 'Genel Hata: $e');
       _updateStatus(SyncStatus.error);
 
-      // Telegram'a hata logla
-      await TelegramLoggerService.logError(
+      // Telegram'a CRITICAL hata logla (anında bildirim)
+      await TelegramLoggerService.logCritical(
         'Sync Failed: performFullSync',
         e.toString(),
         stackTrace: s,
@@ -606,8 +606,9 @@ class SyncService with ChangeNotifier {
     } catch (e, s) {
       await dbHelper.addSyncLog('upload', 'error', "Upload hatası: $e");
 
-      // Telegram'a hata logla
-      await TelegramLoggerService.logError(
+      // Telegram'a CRITICAL hata logla (anında bildirim)
+      // Kullanıcı operasyonları (mal kabul, transfer) backend'e gidemiyorsa kritik!
+      await TelegramLoggerService.logCritical(
         'Upload Failed: uploadPendingOperations',
         e.toString(),
         stackTrace: s,
@@ -721,51 +722,10 @@ class SyncService with ChangeNotifier {
         debugPrint("İşlem $id başarılı, synced olarak işaretleniyor");
         await dbHelper.markOperationAsSynced(id);
         
-        // Operation tipini bul
-        final pendingOp = await dbHelper.getPendingOperationById(id);
-        final operationType = pendingOp?.type.apiName;
-        
-        // Goods receipt'ler için receipt_id ile lokal kayıtları güncelle
-        if (operationType == 'goodsReceipt' && resultData['receipt_id'] != null && idempotencyKey != null) {
-          final receiptId = int.parse(resultData['receipt_id'].toString());
+        // UUID-based system: No need to update local IDs with server IDs
+        // Mobile uses only UUIDs for relationships, server IDs are ignored
+        debugPrint("✅ SYNC: Operation successful - UUID-based, no ID mapping needed");
 
-          // KRITIK FIX: Extract item_id_mapping from response
-          Map<String, int>? itemIdMapping;
-          if (resultData['item_id_mapping'] != null) {
-            itemIdMapping = Map<String, int>.from(
-              (resultData['item_id_mapping'] as Map).map(
-                (key, value) => MapEntry(key.toString(), int.parse(value.toString()))
-              )
-            );
-            debugPrint("🔄 SYNC UPDATE: item_id_mapping alındı - ${itemIdMapping.length} item");
-          }
-
-          debugPrint("🔄 SYNC UPDATE: receipt_id ($receiptId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
-
-          try {
-            await dbHelper.updateLocalGoodsReceiptWithServerId(
-              idempotencyKey,
-              receiptId,
-              itemIdMapping: itemIdMapping,
-            );
-            debugPrint("✅ SYNC UPDATE: Lokal kayıt başarıyla güncellendi");
-          } catch (e, s) {
-            debugPrint("❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e");
-            debugPrint("Stack trace: $s");
-          }
-        } else if (operationType == 'inventoryTransfer' && resultData['transfer_id'] != null && idempotencyKey != null) {
-          final transferId = int.parse(resultData['transfer_id'].toString());
-          debugPrint("🔄 TRANSFER SYNC UPDATE: transfer_id ($transferId) ile lokal kayıt güncellenecek - uniqueId: $idempotencyKey");
-          
-          try {
-            await dbHelper.updateLocalInventoryTransferWithServerId(idempotencyKey, transferId);
-            debugPrint("✅ TRANSFER SYNC UPDATE: Lokal transfer kaydı başarıyla güncellendi");
-          } catch (e, s) {
-            debugPrint("❌ TRANSFER SYNC UPDATE: updateLocalInventoryTransferWithServerId hatası: $e");
-            debugPrint("Stack trace: $s");
-          }
-        }
-        
         dataChanged = true;
       } else if (id != null) {
         // Geçici hata - retry yapılabilir

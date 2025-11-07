@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 75; // added unknown_barcodes table to collect unrecognized barcodes from scanners
+  static const _databaseVersion = 1; // Reset to version 1 for fresh install
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -208,7 +208,7 @@ class DatabaseHelper {
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipts (
-          goods_receipt_id INTEGER PRIMARY KEY,
+          goods_receipt_id INTEGER PRIMARY KEY AUTOINCREMENT,
           operation_unique_id TEXT,
           siparis_id INTEGER,
           invoice_number TEXT,
@@ -223,7 +223,7 @@ class DatabaseHelper {
 
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipt_items (
-          id INTEGER PRIMARY KEY,
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
           receipt_id INTEGER,
           operation_unique_id TEXT,
           item_uuid TEXT UNIQUE,
@@ -244,6 +244,8 @@ class DatabaseHelper {
       ''');
 
       // Inventory stock table with receiving/available status support
+      // KRITIK DEĞIŞIKLIK: siparis_id ve goods_receipt_id kaldırıldı
+      // receipt_operation_uuid eklendi (goods_receipts.operation_unique_id ile ilişki)
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_stock (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -251,8 +253,7 @@ class DatabaseHelper {
           urun_key TEXT NOT NULL,
           birim_key TEXT,
           location_id INTEGER,
-          siparis_id INTEGER,
-          goods_receipt_id INTEGER,
+          receipt_operation_uuid TEXT,
           quantity REAL NOT NULL,
           pallet_barcode TEXT,
           expiry_date TEXT,
@@ -264,15 +265,13 @@ class DatabaseHelper {
           updated_at TEXT,
           UNIQUE(urun_key, birim_key, location_id, pallet_barcode, stock_status, expiry_date),
           FOREIGN KEY(urun_key) REFERENCES urunler(_key),
-          FOREIGN KEY(location_id) REFERENCES shelfs(id),
-          FOREIGN KEY(siparis_id) REFERENCES siparisler(id),
-          FOREIGN KEY(goods_receipt_id) REFERENCES goods_receipts(goods_receipt_id)
+          FOREIGN KEY(location_id) REFERENCES shelfs(id)
         )
       ''');
 
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_location ON inventory_stock(location_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_status ON inventory_stock(stock_status)');
-      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_siparis ON inventory_stock(siparis_id)');
+      batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_receipt_uuid ON inventory_stock(receipt_operation_uuid)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_uuid ON inventory_stock(stock_uuid)');
 
       batch.execute('CREATE INDEX IF NOT EXISTS idx_shelfs_warehouse ON shelfs(warehouse_id)');
@@ -280,6 +279,8 @@ class DatabaseHelper {
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_siparis ON siparis_ayrintili(siparisler_id)');
       batch.execute('CREATE INDEX IF NOT EXISTS idx_order_lines_urun ON siparis_ayrintili(urun_key)');
       
+      // KRITIK DEĞIŞIKLIK: siparis_id ve goods_receipt_id kaldırıldı
+      // receipt_operation_uuid eklendi (transfer hangi mal kabule ait, putaway için)
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           id INTEGER PRIMARY KEY,
@@ -291,8 +292,7 @@ class DatabaseHelper {
           quantity REAL,
           from_pallet_barcode TEXT,
           pallet_barcode TEXT,
-          siparis_id INTEGER,
-          goods_receipt_id INTEGER,
+          receipt_operation_uuid TEXT,
           delivery_note_number TEXT,
           employee_id INTEGER,
           transfer_date TEXT,
@@ -583,18 +583,8 @@ class DatabaseHelper {
               );
 
               if (existingLocal.isNotEmpty) {
-                // Bu operation_unique_id zaten mobilde var - sunucu ID'si ile güncelle
-                final localId = existingLocal.first['goods_receipt_id'];
-                final serverId = receipt['id'];
-                debugPrint('🔄 goods_receipts update: operation_unique_id=$operationUniqueId, local_id=$localId -> server_id=$serverId');
-
-                // Sadece server ID'sini güncelle, diğer verileri koru
-                await txn.update(
-                  'goods_receipts',
-                  {'goods_receipt_id': serverId},
-                  where: 'operation_unique_id = ?',
-                  whereArgs: [operationUniqueId],
-                );
+                // Bu operation_unique_id zaten mobilde var - UUID-based system, ID güncelleme gereksiz
+                debugPrint('✅ goods_receipts: UUID already exists locally, skipping (UUID: $operationUniqueId)');
                 shouldSkip = true;
               }
             }
@@ -626,18 +616,8 @@ class DatabaseHelper {
               );
 
               if (existingLocal.isNotEmpty) {
-                // Bu item_uuid zaten mobilde var - sunucu ID'si ile güncelle
-                final localId = existingLocal.first['id'];
-                final serverId = item['id'];
-                debugPrint('🔄 goods_receipt_items update: item_uuid=$itemUuid, local_id=$localId -> server_id=$serverId');
-
-                // Sadece server ID'sini güncelle, diğer verileri koru
-                await txn.update(
-                  'goods_receipt_items',
-                  {'id': serverId},
-                  where: 'item_uuid = ?',
-                  whereArgs: [itemUuid],
-                );
+                // Bu item_uuid zaten mobilde var - UUID-based system, ID güncelleme gereksiz
+                debugPrint('✅ goods_receipt_items: UUID already exists locally, skipping (UUID: $itemUuid)');
                 shouldSkip = true;
               }
             }
@@ -706,8 +686,7 @@ class DatabaseHelper {
                       'location_id': stock['location_id'], // location_id'yi de güncelle
                       'stock_status': stock['stock_status'], // stock_status'u da güncelle
                       'expiry_date': stock['expiry_date'], // expiry_date'i de güncelle
-                      'siparis_id': stock['siparis_id'], // KRITIK FIX: siparis_id'yi de güncelle
-                      'goods_receipt_id': stock['goods_receipt_id'], // KRITIK FIX: goods_receipt_id'yi de güncelle
+                      'receipt_operation_uuid': stock['receipt_operation_uuid'], // UUID-based relationship
                       'pallet_barcode': stock['pallet_barcode'], // KRITIK FIX: pallet_barcode'u da güncelle
                     },
                     where: 'stock_uuid = ?',
@@ -720,23 +699,23 @@ class DatabaseHelper {
               }
             }
             
-            // Goods receipt ID'ye göre de kontrol et (eski mantık, UUID yoksa)
-            if (stock['goods_receipt_id'] != null) {
-              final receiptId = stock['goods_receipt_id'];
+            // YENI YAKLŞIM: receipt_operation_uuid ile kontrol et
+            if (stock['receipt_operation_uuid'] != null) {
+              final receiptOperationUuid = stock['receipt_operation_uuid'];
               final receipts = await txn.query(
                 'goods_receipts',
-                where: 'goods_receipt_id = ?',
-                whereArgs: [receiptId],
+                where: 'operation_unique_id = ?',
+                whereArgs: [receiptOperationUuid],
                 limit: 1
               );
-              
+
               if (receipts.isNotEmpty) {
                 isOwnStockRecord = await isOwnOperation(txn, 'goodsReceipt', receipts.first);
               }
             }
-            
+
             if (isOwnStockRecord && stockUuid == null) {
-              // Sadece UUID olmayan eski kayıtlar için goods_receipt kontrolü yap
+              // Sadece UUID olmayan eski kayıtlar için receipt kontrolü yap
               debugPrint('🔄 Kendi inventory_stock tespit edildi (UUID yok), skip: ${stock['id']}');
               continue;
             }
@@ -784,15 +763,8 @@ class DatabaseHelper {
               queryArgs.add(sanitizedStock['expiry_date']);
             }
             
-            // KRITIK FIX: 'receiving' durumunda siparis_id'yi de kontrol et
-            // 'available' durumunda siparis_id'yi ignore et (konsolidasyon için)
-            final stockStatus = sanitizedStock['stock_status'] as String?;
-            if (stockStatus == 'receiving' && sanitizedStock['siparis_id'] != null) {
-              existingStockQuery.write(' AND siparis_id = ?');
-              queryArgs.add(sanitizedStock['siparis_id']);
-            }
-            
-            // KRITIK FIX: goods_receipt_id'yi IGNORE et - sadece core alanlarla birleştir
+            // NOT: receipt_operation_uuid artık unique constraint'e dahil DEĞİL
+            // Bu sayede 'receiving' → 'available' konsolidasyonu sorunsuz çalışır
             
             final existingStock = await txn.query(
               'inventory_stock',
@@ -1092,7 +1064,16 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
-        
+
+        // YENİ: receipt_operation_uuid field handling
+        if (newRecord.containsKey('receipt_operation_uuid') && newRecord['receipt_operation_uuid'] != null) {
+          newRecord['receipt_operation_uuid'] = newRecord['receipt_operation_uuid'].toString();
+        }
+
+        // ESKİ ALANLAR: Geriye dönük uyumluluk için kaldır (artık kullanılmıyor)
+        newRecord.remove('siparis_id');
+        newRecord.remove('goods_receipt_id');
+
         // KRITIK FIX: birim_key alanını sunucudan gelen veriyle güncelle
         // Eğer sunucudan gelen kayıtta birim_key varsa, onu kullan
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
@@ -1144,6 +1125,16 @@ class DatabaseHelper {
           newRecord['urun_key'] = newRecord['urun_id']?.toString();
           newRecord.remove('urun_id');
         }
+
+        // YENİ: receipt_operation_uuid field handling (putaway için)
+        if (newRecord.containsKey('receipt_operation_uuid') && newRecord['receipt_operation_uuid'] != null) {
+          newRecord['receipt_operation_uuid'] = newRecord['receipt_operation_uuid'].toString();
+        }
+
+        // ESKİ ALANLAR: Geriye dönük uyumluluk için kaldır
+        newRecord.remove('siparis_id');
+        newRecord.remove('goods_receipt_id');
+
         // KRITIK FIX: birim_key'i de koru
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
           newRecord['birim_key'] = newRecord['birim_key'].toString();
@@ -1421,7 +1412,7 @@ class DatabaseHelper {
     final result = await db.rawQuery('''
       SELECT gri.*, gr.siparis_id
       FROM goods_receipt_items gri
-      JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
       WHERE gr.siparis_id = ? AND gri.urun_key = ?
     ''', [orderId, urunKey]);
     
@@ -1656,7 +1647,7 @@ class DatabaseHelper {
           gri.urun_key,
           SUM(gri.quantity_received) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+        JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
         WHERE gr.siparis_id = ?
         GROUP BY gri.urun_key
       ) received ON received.urun_key = COALESCE(sa.urun_key, sa._key_kalemturu)
@@ -1694,14 +1685,14 @@ class DatabaseHelper {
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
-      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      LEFT JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
       LEFT JOIN (
         SELECT
           gri2.urun_key,
           SUM(gri2.quantity_received) as previous_received
         FROM goods_receipt_items gri2
-        JOIN goods_receipts gr2 ON gr2.goods_receipt_id = gri2.receipt_id
+        JOIN goods_receipts gr2 ON gri2.operation_unique_id = gr2.operation_unique_id
         WHERE gr2.siparis_id = ?
           AND gr2.goods_receipt_id < ?
         GROUP BY gri2.urun_key
@@ -1759,6 +1750,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getInventoryStockForOrder(int siparisId) async {
     final db = await database;
 
+    // YENİ YAKLŞIM: goods_receipts.operation_unique_id ile JOIN
     const sql = '''
       SELECT
         ints.*,
@@ -1769,7 +1761,8 @@ class DatabaseHelper {
       FROM inventory_stock ints
       LEFT JOIN urunler u ON u._key = ints.urun_key
       LEFT JOIN shelfs loc ON loc.id = ints.location_id
-      WHERE ints.siparis_id = ? AND ints.stock_status = 'receiving'
+      LEFT JOIN goods_receipts gr ON ints.receipt_operation_uuid = gr.operation_unique_id
+      WHERE gr.siparis_id = ? AND ints.stock_status = 'receiving'
       ORDER BY ints.urun_key
     ''';
 
@@ -1817,7 +1810,7 @@ class DatabaseHelper {
         0 as putaway_quantity
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
-      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+      LEFT JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
       WHERE gri.receipt_id = ?
       ORDER BY gri.id
@@ -2241,7 +2234,7 @@ class DatabaseHelper {
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+        JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
         WHERE ${conditions.join(' AND ')}
       ''';
 
@@ -2256,7 +2249,7 @@ class DatabaseHelper {
       sql = '''
         SELECT COALESCE(SUM(gri.quantity_received), 0) as total_received
         FROM goods_receipt_items gri
-        JOIN goods_receipts gr ON gr.goods_receipt_id = gri.receipt_id
+        JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
         WHERE gr.siparis_id = ? AND gri.urun_key = ?
       ''';
       params = [siparisId, productId];
@@ -2462,11 +2455,11 @@ class DatabaseHelper {
 
     // DEBUG: Check all recent receipts and their inventory_stock
     final debugReceipt = await db.rawQuery('''
-      SELECT gr.goods_receipt_id, gr.delivery_note_number, gr.siparis_id, 
+      SELECT gr.goods_receipt_id, gr.delivery_note_number, gr.siparis_id, gr.operation_unique_id,
              ist.id as stock_id, ist.stock_status, ist.urun_key, ist.quantity
       FROM goods_receipts gr
-      LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id
-      WHERE gr.delivery_note_number IN ('5432154321', 'test123test1') 
+      LEFT JOIN inventory_stock ist ON ist.receipt_operation_uuid = gr.operation_unique_id
+      WHERE gr.delivery_note_number IN ('5432154321', 'test123test1')
          OR gr.goods_receipt_id IN (66, 71, 72)
       ORDER BY gr.goods_receipt_id DESC
     ''');
@@ -2478,20 +2471,40 @@ class DatabaseHelper {
         debugPrint("    stock_id: ${row['stock_id']}, status: ${row['stock_status']}, urun_key: ${row['urun_key']}, qty: ${row['quantity']}");
       }
       
-      // Inventory_stock tablosunu direkt kontrol et
-      final allStock = await db.query('inventory_stock', 
-        where: 'goods_receipt_id IN (66, 67, 72)',
-        orderBy: 'goods_receipt_id DESC'
-      );
+      // Inventory_stock tablosunu direkt kontrol et (UUID-based)
+      final receiptUuids = await db.rawQuery('''
+        SELECT operation_unique_id FROM goods_receipts WHERE goods_receipt_id IN (66, 67, 72)
+      ''');
+      final uuidList = receiptUuids.map((r) => r['operation_unique_id'] as String).toList();
+
+      final allStock = await db.rawQuery('''
+        SELECT ist.*, gr.goods_receipt_id
+        FROM inventory_stock ist
+        JOIN goods_receipts gr ON ist.receipt_operation_uuid = gr.operation_unique_id
+        WHERE gr.goods_receipt_id IN (66, 67, 72)
+        ORDER BY gr.goods_receipt_id DESC
+      ''');
       debugPrint("🏪 STOCK TABLE - Direct check:");
       for (final stock in allStock) {
-        debugPrint("  - stock_id: ${stock['id']}, goods_receipt_id: ${stock['goods_receipt_id']}, urun_key: ${stock['urun_key']}, qty: ${stock['quantity']}, status: ${stock['stock_status']}");
+        debugPrint("  - stock_id: ${stock['id']}, receipt_uuid: ${stock['receipt_operation_uuid']}, urun_key: ${stock['urun_key']}, qty: ${stock['quantity']}, status: ${stock['stock_status']}");
       }
-      
-      // Eksik inventory_stock kayıtlarını oluştur
+
+      // Eksik inventory_stock kayıtlarını oluştur (UUID-based)
       final receiptsWithoutStock = [66, 67];
       for (final receiptId in receiptsWithoutStock) {
-        final existingStock = await db.query('inventory_stock', where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
+        // UUID'yi al
+        final receiptInfo = await db.query('goods_receipts',
+          columns: ['operation_unique_id'],
+          where: 'goods_receipt_id = ?',
+          whereArgs: [receiptId]
+        );
+        if (receiptInfo.isEmpty) continue;
+
+        final receiptUuid = receiptInfo.first['operation_unique_id'] as String;
+        final existingStock = await db.query('inventory_stock',
+          where: 'receipt_operation_uuid = ?',
+          whereArgs: [receiptUuid]
+        );
         if (existingStock.isEmpty) {
           // Bu receipt için goods_receipt_items'dan bilgi al
           final items = await db.query('goods_receipt_items', where: 'receipt_id = ?', whereArgs: [receiptId]);
@@ -2506,13 +2519,12 @@ class DatabaseHelper {
               'stock_uuid': stockUuid,
               'urun_key': item['urun_key'],
               'location_id': null,
-              'siparis_id': null,
-              'goods_receipt_id': receiptId,
+              'receipt_operation_uuid': receiptUuid, // UUID-based
               'quantity': item['quantity_received'],
               'pallet_barcode': item['pallet_barcode'],
               'stock_status': 'receiving',
               'expiry_date': item['expiry_date'],
-              'birim_key': item['birim_key'], // KRITIK FIX: birim_key alanı eklendi
+              'birim_key': item['birim_key'],
               'created_at': DateTime.now().toUtc().toIso8601String(),
               'updated_at': DateTime.now().toUtc().toIso8601String(),
             });
@@ -2552,25 +2564,27 @@ class DatabaseHelper {
           
           if (duplicateReceipts.length > 1) {
             // İlk kaydı koru, diğerlerini sil
-            final receiptIdsToDelete = duplicateReceipts
-                .skip(1)
-                .map((r) => r['goods_receipt_id'])
-                .toList();
-                
-            for (final receiptId in receiptIdsToDelete) {
-              // İlişkili goods_receipt_items'ları da sil
-              await txn.delete('goods_receipt_items', 
+            final receiptsToDelete = duplicateReceipts.skip(1).toList();
+
+            for (final receipt in receiptsToDelete) {
+              final receiptId = receipt['goods_receipt_id'];
+              final operationUuid = receipt['operation_unique_id'] as String?;
+
+              // İlişkili goods_receipt_items'ları da sil (receipt_id ile)
+              await txn.delete('goods_receipt_items',
                 where: 'receipt_id = ?', whereArgs: [receiptId]);
-              
-              // İlişkili inventory_stock kayıtlarını da sil
-              await txn.delete('inventory_stock', 
+
+              // İlişkili inventory_stock kayıtlarını da sil (UUID ile!)
+              if (operationUuid != null) {
+                await txn.delete('inventory_stock',
+                  where: 'receipt_operation_uuid = ?', whereArgs: [operationUuid]);
+              }
+
+              // goods_receipt'i sil
+              await txn.delete('goods_receipts',
                 where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
-                
-              // goods_receipt'i sil  
-              await txn.delete('goods_receipts', 
-                where: 'goods_receipt_id = ?', whereArgs: [receiptId]);
-                
-              debugPrint("    ✅ Deleted duplicate receipt ID: $receiptId");
+
+              debugPrint("    ✅ Deleted duplicate receipt ID: $receiptId (UUID: $operationUuid)");
             }
           }
         }
@@ -2592,20 +2606,22 @@ class DatabaseHelper {
       debugPrint("  - receipt_id: ${row['goods_receipt_id']}, delivery_note: ${row['delivery_note_number']}");
     }
 
-    // DEBUG: Check inventory_stock with goods_receipt_id
+    // DEBUG: Check inventory_stock with receipt_operation_uuid (UUID-based)
     final debugStock = await db.rawQuery('''
-      SELECT ist.id, ist.goods_receipt_id, ist.siparis_id, ist.stock_status, ist.quantity
+      SELECT ist.id, ist.receipt_operation_uuid, ist.stock_status, ist.quantity,
+             gr.goods_receipt_id, gr.siparis_id
       FROM inventory_stock ist
-      WHERE ist.goods_receipt_id IS NOT NULL AND ist.stock_status = 'receiving'
+      JOIN goods_receipts gr ON ist.receipt_operation_uuid = gr.operation_unique_id
+      WHERE ist.receipt_operation_uuid IS NOT NULL AND ist.stock_status = 'receiving'
       ORDER BY ist.id DESC
       LIMIT 5
     ''');
-    debugPrint("🔍 DEBUG: Inventory stock with goods_receipt_id (receiving):");
+    debugPrint("🔍 DEBUG: Inventory stock with receipt_operation_uuid (receiving):");
     for (final row in debugStock) {
-      debugPrint("  - stock_id: ${row['id']}, goods_receipt_id: ${row['goods_receipt_id']}, siparis_id: ${row['siparis_id']}, qty: ${row['quantity']}");
+      debugPrint("  - stock_id: ${row['id']}, receipt_uuid: ${row['receipt_operation_uuid']}, goods_receipt_id: ${row['goods_receipt_id']}, siparis_id: ${row['siparis_id']}, qty: ${row['quantity']}");
     }
 
-    // DEBUG: Test JOIN
+    // DEBUG: Test JOIN (UUID-based)
     final debugJoin = await db.rawQuery('''
       SELECT
         gr.goods_receipt_id,
@@ -2613,7 +2629,7 @@ class DatabaseHelper {
         ist.id as stock_id,
         ist.quantity
       FROM goods_receipts gr
-      LEFT JOIN inventory_stock ist ON ist.goods_receipt_id = gr.goods_receipt_id AND ist.stock_status = 'receiving'
+      LEFT JOIN inventory_stock ist ON ist.receipt_operation_uuid = gr.operation_unique_id AND ist.stock_status = 'receiving'
       WHERE gr.siparis_id IS NULL
       ORDER BY gr.goods_receipt_id DESC
       LIMIT 5
@@ -2625,30 +2641,52 @@ class DatabaseHelper {
 
     // KRITIK FIX: goods_receipts tablosu artık UUID bazlı smart merge ile korunuyor
     // Gerçek delivery_note_number'ı goods_receipts tablosundan alıyoruz
-    // Serbest mal kabuller: siparis_id NULL, goods_receipt_id DOLU, stock_status = 'receiving'
+    // Serbest mal kabuller: goods_receipts.siparis_id NULL, inventory_stock.receipt_operation_uuid DOLU, stock_status = 'receiving'
     const sql = '''
       SELECT
-        ist.goods_receipt_id,
-        COALESCE(gr.delivery_note_number, 'FREE-' || ist.goods_receipt_id) as delivery_note_number,
+        gr.goods_receipt_id,
+        COALESCE(gr.delivery_note_number, 'FREE-' || gr.goods_receipt_id) as delivery_note_number,
         COALESCE(gr.receipt_date, MIN(ist.created_at)) as receipt_date,
         gr.employee_id,
         COALESCE(e.first_name || ' ' || e.last_name, 'Unknown') as employee_name,
         COUNT(DISTINCT ist.urun_key) as item_count,
         SUM(ist.quantity) as total_quantity
       FROM inventory_stock ist
-      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
+      INNER JOIN goods_receipts gr ON ist.receipt_operation_uuid = gr.operation_unique_id
       LEFT JOIN employees e ON e.id = gr.employee_id
-      WHERE ist.siparis_id IS NULL
-        AND ist.goods_receipt_id IS NOT NULL
+      WHERE gr.siparis_id IS NULL
+        AND ist.receipt_operation_uuid IS NOT NULL
         AND ist.stock_status = 'receiving'
         AND ist.quantity > 0
-      GROUP BY ist.goods_receipt_id, gr.delivery_note_number, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
+      GROUP BY gr.goods_receipt_id, gr.delivery_note_number, gr.receipt_date, gr.employee_id, e.first_name, e.last_name
       ORDER BY COALESCE(gr.receipt_date, MIN(ist.created_at)) DESC
     ''';
 
     final result = await db.rawQuery(sql);
     debugPrint("📋 Free receipts for putaway: ${result.length} kayıt (from inventory_stock directly)");
-    debugPrint("📋 Result details: ${result.map((r) => 'receipt_id: ${r['goods_receipt_id']}, items: ${r['item_count']}, qty: ${r['total_quantity']}').join(', ')}");
+    debugPrint("📋 Result details: ${result.map((r) => 'receipt_id: ${r['goods_receipt_id']}, delivery_note: ${r['delivery_note_number']}, items: ${r['item_count']}, qty: ${r['total_quantity']}').join(', ')}");
+
+    // DEBUG: Orphaned inventory_stock (goods_receipts'te UUID'si olmayan)
+    final orphaned = await db.rawQuery('''
+      SELECT
+        ist.id,
+        ist.receipt_operation_uuid,
+        ist.pallet_barcode,
+        ist.quantity
+      FROM inventory_stock ist
+      LEFT JOIN goods_receipts gr ON ist.receipt_operation_uuid = gr.operation_unique_id
+      WHERE ist.stock_status = 'receiving'
+        AND ist.receipt_operation_uuid IS NOT NULL
+        AND gr.goods_receipt_id IS NULL
+      LIMIT 10
+    ''');
+    if (orphaned.isNotEmpty) {
+      debugPrint("⚠️  ORPHANED INVENTORY_STOCK (${orphaned.length} kayıt):");
+      for (final row in orphaned) {
+        debugPrint("  - stock_id: ${row['id']}, uuid: ${row['receipt_operation_uuid']}, pallet: ${row['pallet_barcode']}, qty: ${row['quantity']}");
+      }
+    }
+
     return result;
   }
 
@@ -2666,7 +2704,7 @@ class DatabaseHelper {
         u.StokKodu as product_code,
       FROM inventory_stock ist
       LEFT JOIN urunler u ON u._key = ist.urun_key
-      LEFT JOIN goods_receipts gr ON gr.goods_receipt_id = ist.goods_receipt_id
+      LEFT JOIN goods_receipts gr ON ist.receipt_operation_uuid = gr.operation_unique_id
       WHERE gr.delivery_note_number = ?
         AND ist.stock_status = 'receiving'
         AND gr.siparis_id IS NULL
@@ -2859,10 +2897,10 @@ class DatabaseHelper {
 
         // Doğru silme sırası: Child tabloları önce sil
 
-        // 1. inventory_stock (goods_receipts'e bağlı olan kayıtları sil)
+        // 1. inventory_stock (UUID bazlı - goods_receipts'e bağlı olan kayıtları sil)
         await txn.delete(
           'inventory_stock',
-          where: 'goods_receipt_id IN (SELECT goods_receipt_id FROM goods_receipts WHERE siparis_id = ?)',
+          where: 'receipt_operation_uuid IN (SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ?)',
           whereArgs: [orderId]
         );
 
@@ -3139,208 +3177,8 @@ class DatabaseHelper {
   //   }
   // }
   
-  /// Sync sonrası local goods receipt'i server ID'si ile günceller
-  Future<void> updateLocalGoodsReceiptWithServerId(
-    String pendingOpUniqueId,
-    int serverId, {
-    Map<String, int>? itemIdMapping,
-  }) async {
-    final db = await database;
-
-    try {
-      // KRITIK FIX: operation_unique_id ile eşleşme yap (siparis_id yerine)
-      // Bu sayede hem sipariş bazlı hem de serbest mal kabullerde çalışır
-
-      // 1. operation_unique_id ile local kaydı bul
-      final localReceipts = await db.query(
-        'goods_receipts',
-        where: 'operation_unique_id = ?',
-        whereArgs: [pendingOpUniqueId],
-        limit: 1
-      );
-
-      if (localReceipts.isEmpty) {
-        debugPrint('⚠️  Local goods receipt bulunamadı: $pendingOpUniqueId');
-        return;
-      }
-
-      final localReceipt = localReceipts.first;
-      final localId = localReceipt['goods_receipt_id'] as int;
-
-      // Server ID zaten aynıysa güncelleme yapma
-      if (localId == serverId) {
-        debugPrint('ℹ️  Goods receipt ID zaten güncel: $localId');
-        return;
-      }
-
-      debugPrint('🔄 SYNC UPDATE: operation_unique_id=$pendingOpUniqueId için Local ID $localId → Server ID $serverId değişimi yapılıyor');
-
-      // 2. Foreign key constraint'i geçici olarak devre dışı bırak (transaction dışında)
-      await db.execute('PRAGMA foreign_keys = OFF');
-
-      try {
-        await db.transaction((txn) async {
-          // 3. Child kayıtları önce güncelle
-          final itemsUpdated = await txn.update(
-            'goods_receipt_items',
-            {'receipt_id': serverId},
-            where: 'receipt_id = ?',
-            whereArgs: [localId]
-          );
-          debugPrint('   📦 goods_receipt_items receipt_id: $itemsUpdated kayıt güncellendi');
-
-          // KRITIK FIX: goods_receipt_items.id'leri de güncelle
-          if (itemIdMapping != null && itemIdMapping.isNotEmpty) {
-            debugPrint('   🔑 goods_receipt_items.id güncellemesi başlıyor: ${itemIdMapping.length} item');
-
-            for (final entry in itemIdMapping.entries) {
-              final itemUuid = entry.key;
-              final serverItemId = entry.value;
-
-              // item_uuid ile local item'ı bul
-              final localItems = await txn.query(
-                'goods_receipt_items',
-                columns: ['id'],
-                where: 'item_uuid = ?',
-                whereArgs: [itemUuid],
-                limit: 1,
-              );
-
-              if (localItems.isEmpty) {
-                debugPrint('      ⚠️  Local item bulunamadı: $itemUuid');
-                continue;
-              }
-
-              final localItemId = localItems.first['id'] as int;
-
-              // Eğer ID zaten aynıysa atla
-              if (localItemId == serverItemId) {
-                debugPrint('      ℹ️  Item ID zaten güncel: $localItemId (UUID: $itemUuid)');
-                continue;
-              }
-
-              debugPrint('      🔄 Item ID güncelleme: Local $localItemId → Server $serverItemId (UUID: $itemUuid)');
-
-              // STRATEJI: DELETE + INSERT kullan (UNIQUE constraint'i bypass etmek için)
-              // Önce eski kaydı oku
-              final oldItem = await txn.query(
-                'goods_receipt_items',
-                where: 'id = ?',
-                whereArgs: [localItemId],
-                limit: 1,
-              );
-
-              if (oldItem.isNotEmpty) {
-                final itemData = Map<String, dynamic>.from(oldItem.first);
-
-                // Eski kaydı sil
-                await txn.delete(
-                  'goods_receipt_items',
-                  where: 'id = ?',
-                  whereArgs: [localItemId],
-                );
-
-                // Yeni ID ile kaydet
-                itemData['id'] = serverItemId;
-                await txn.insert('goods_receipt_items', itemData);
-
-                debugPrint('      ✅ Item ID başarıyla güncellendi: $localItemId → $serverItemId');
-              }
-            }
-
-            debugPrint('   ✅ goods_receipt_items.id güncellemesi tamamlandı');
-          }
-
-          final stockUpdated = await txn.update(
-            'inventory_stock',
-            {'goods_receipt_id': serverId},
-            where: 'goods_receipt_id = ?',
-            whereArgs: [localId]
-          );
-          debugPrint('   📊 inventory_stock: $stockUpdated kayıt güncellendi');
-
-          // 4. Ana kaydı en son güncelle
-          await txn.update(
-            'goods_receipts',
-            {'goods_receipt_id': serverId},
-            where: 'goods_receipt_id = ?',
-            whereArgs: [localId]
-          );
-          debugPrint('   📋 goods_receipts: Ana kayıt güncellendi');
-        });
-      } finally {
-        // 5. Foreign key constraint'i yeniden aktif et
-        await db.execute('PRAGMA foreign_keys = ON');
-      }
-
-      debugPrint('✅ SYNC UPDATE: Goods receipt başarıyla güncellendi (Local: $localId → Server: $serverId)');
-    } catch (e, s) {
-      debugPrint('❌ SYNC UPDATE: updateLocalGoodsReceiptWithServerId hatası: $e');
-      debugPrint('Stack trace: $s');
-      rethrow;
-    }
-  }
-  
-  /// Sync sonrası local inventory transfer'i server ID'si ile günceller
-  Future<void> updateLocalInventoryTransferWithServerId(String pendingOpUniqueId, int serverId) async {
-    final db = await database;
-    
-    try {
-      // 1. Pending operation'ı bul
-      final pendingOp = await db.query(
-        'pending_operation',
-        where: 'unique_id = ? AND type = ? AND status = ?',
-        whereArgs: [pendingOpUniqueId, 'inventoryTransfer', 'synced'],
-        limit: 1
-      );
-      
-      if (pendingOp.isEmpty) {
-        debugPrint('⚠️  Transfer pending operation bulunamadı: $pendingOpUniqueId');
-        return;
-      }
-      
-      // 2. Data'dan transfer bilgilerini çıkar
-      final data = jsonDecode(pendingOp.first['data'] as String);
-      final header = data['header'] as Map<String, dynamic>?;
-      final employeeId = header?['employee_id'] as int?;
-      final transferDate = header?['transfer_date'] as String?;
-      
-      if (employeeId == null || transferDate == null) {
-        debugPrint('⚠️  Transfer bilgileri bulunamadı pending operation data\'sında');
-        return;
-      }
-      
-      // 3. Aynı employee ve tarihle eşleşen local transfer kaydı bul
-      final localTransfers = await db.query(
-        'inventory_transfers',
-        where: 'employee_id = ? AND id != ? AND transfer_date = ?',
-        whereArgs: [employeeId, serverId, transferDate]
-      );
-      
-      debugPrint('🔄 TRANSFER SYNC UPDATE: Employee $employeeId, tarih $transferDate için ${localTransfers.length} lokal transfer bulundu');
-      
-      // Exact match bulunmalı
-      if (localTransfers.isNotEmpty) {
-        final localTransfer = localTransfers.first;
-        final localId = localTransfer['id'] as int;
-        
-        debugPrint('🔄 TRANSFER SYNC UPDATE: Local Transfer ID $localId → Server ID $serverId değişimi yapılıyor');
-        
-        // 4. Transfer ID'sini güncelle
-        await db.update(
-          'inventory_transfers',
-          {'id': serverId},
-          where: 'id = ?',
-          whereArgs: [localId]
-        );
-        
-        debugPrint('✅ TRANSFER SYNC UPDATE: Transfer başarıyla güncellendi (Local: $localId → Server: $serverId)');
-      }
-    } catch (e, s) {
-      debugPrint('❌ TRANSFER SYNC UPDATE: updateLocalInventoryTransferWithServerId hatası: $e');
-      debugPrint('Stack trace: $s');
-    }
-  }
+  // REMOVED: ID update functions no longer needed with UUID-based system
+  // Mobile uses only UUIDs for relationships, server IDs are not synchronized back to mobile
 
   // ==================== LOG ENTRIES ====================
 

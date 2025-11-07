@@ -120,9 +120,12 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                     itemCount: _filteredDeliveryNotes.length,
                     itemBuilder: (context, index) {
                       final deliveryNote = _filteredDeliveryNotes[index];
-                      final deliveryNoteNumber = deliveryNote['delivery_note_number'] as String? ?? '';
+                      final deliveryNoteNumber = deliveryNote['delivery_note_number'] as String?;
                       final goodsReceiptId = deliveryNote['goods_receipt_id']; // KRITIK FIX: goods_receipt_id'yi alıyoruz
                       final receiptDate = deliveryNote['receipt_date'] as String?;
+
+                      // NULL ise "FREE-{id}" göster
+                      final displayName = deliveryNoteNumber ?? 'FREE-$goodsReceiptId';
 
                       String formattedDate = '';
                       if (receiptDate != null) {
@@ -137,7 +140,7 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                         child: ListTile(
-                          title: Text(deliveryNoteNumber),
+                          title: Text(displayName, style: deliveryNoteNumber == null ? TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic) : null),
                           subtitle: Text(formattedDate.isNotEmpty ? formattedDate : 'delivery_note_selection.no_date'.tr()),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
@@ -146,7 +149,7 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                                 builder: (_) => InventoryTransferScreen(
                                   isFreePutAway: true,
                                   selectedDeliveryNote: goodsReceiptId?.toString(), // KRITIK FIX: goods_receipt_id'yi string olarak gönderiyoruz (sorgu için)
-                                  deliveryNoteDisplayName: deliveryNoteNumber, // KRITIK FIX: Gerçek irsaliye numarasını gösterim için gönderiyoruz
+                                  deliveryNoteDisplayName: displayName, // NULL ise FREE-{id} göster
                                 ),
                               ),
                             );
