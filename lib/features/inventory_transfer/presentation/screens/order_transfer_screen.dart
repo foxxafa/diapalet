@@ -628,16 +628,16 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
         SegmentedButton<AssignmentMode>(
           segments: [
             ButtonSegment(
-              value: AssignmentMode.pallet,
-              label: Text('order_transfer.mode_pallet'.tr()),
-              icon: const Icon(Icons.pallet),
-              enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
-            ),
-            ButtonSegment(
               value: AssignmentMode.product,
               label: Text('order_transfer.mode_box'.tr()),
               icon: const Icon(Icons.inventory_2),
               enabled: _hasBoxContainers, // GÜNCELLEME: Dinamik enable/disable
+            ),
+            ButtonSegment(
+              value: AssignmentMode.pallet,
+              label: Text('order_transfer.mode_pallet'.tr()),
+              icon: const Icon(Icons.pallet),
+              enabled: _hasPalletContainers, // GÜNCELLEME: Dinamik enable/disable
             ),
           ],
           selected: {_selectedMode},
@@ -652,11 +652,6 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
               });
             }
           },
-          style: SegmentedButton.styleFrom(
-            visualDensity: VisualDensity.comfortable,
-            selectedBackgroundColor: Theme.of(context).colorScheme.primary,
-            selectedForegroundColor: Theme.of(context).colorScheme.onPrimary,
-          ),
         ),
       ],
     );

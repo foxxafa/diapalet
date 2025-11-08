@@ -11,6 +11,7 @@ class TransferOperationHeader {
   final int? siparisId;
   final int? goodsReceiptId;
   final String? deliveryNoteNumber;
+  final String? receiptOperationUuid; // UUID of source goods receipt for putaway operations
 
   const TransferOperationHeader({
     required this.employeeId,
@@ -22,6 +23,7 @@ class TransferOperationHeader {
     this.siparisId,
     this.goodsReceiptId,
     this.deliveryNoteNumber,
+    this.receiptOperationUuid,
   });
 
   Map<String, dynamic> toApiJson(int sourceLocationId, int targetLocationId) {
@@ -44,6 +46,10 @@ class TransferOperationHeader {
     }
     if (deliveryNoteNumber != null) {
       jsonMap['delivery_note_number'] = deliveryNoteNumber;
+    }
+    // UUID-based putaway: receipt_operation_uuid gönder
+    if (receiptOperationUuid != null) {
+      jsonMap['receipt_operation_uuid'] = receiptOperationUuid;
     }
 
     return jsonMap;

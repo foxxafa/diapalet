@@ -13,40 +13,41 @@ class GoodsReceivingOptionsScreen extends StatelessWidget {
     return Scaffold(
       appBar: SharedAppBar(title: 'home.goods_receiving'.tr()),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 40), // Top spacing
-              _OptionButton(
-                icon: Icons.receipt_long_outlined,
-                label: 'options.receive_by_order'.tr(),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PurchaseOrderListScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              _OptionButton(
-                icon: Icons.inventory_2_outlined,
-                label: 'options.free_receive'.tr(),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      // Sipariş olmadan GoodsReceivingScreen'e git
-                      builder: (context) => const GoodsReceivingScreen(selectedOrder: null),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 40), // Bottom spacing
-            ],
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _OptionButton(
+                  icon: Icons.receipt_long_outlined,
+                  label: 'options.receive_by_order'.tr(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PurchaseOrderListScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                _OptionButton(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'options.free_receive'.tr(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        // Sipariş olmadan GoodsReceivingScreen'e git
+                        builder: (context) => const GoodsReceivingScreen(selectedOrder: null),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),

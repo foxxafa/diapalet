@@ -1090,13 +1090,49 @@ class TerminalController extends Controller
             $this->logToFile("✅ Fetched " . count($shelfsMap) . " shelf codes from database", 'DEBUG');
         }
 
-        // 5. Pre-fetch siparis fisno if needed (single query)
+        // 5. Pre-fetch siparis_id and fisno if this is a putaway for an order-based receipt
+        // BACKWARD COMPATIBILITY FIX: If mobile sends NULL receipt_operation_uuid but has pallet_barcode,
+        // try to resolve UUID from server's inventory_stock (for old mobile app versions)
+        if (!$receiptOperationUuid && $isPutawayOperation && !empty($items)) {
+            $this->logToFile("⚠️ receipt_operation_uuid is NULL, trying to resolve from pallet barcode", 'WARNING');
+
+            // Try to get UUID from first item's pallet
+            $firstItemPallet = $items[0]['pallet_id'] ?? null;
+            if ($firstItemPallet) {
+                $resolvedUuid = $db->createCommand(
+                    'SELECT receipt_operation_uuid FROM inventory_stock
+                     WHERE pallet_barcode = :pallet AND stock_status = :status
+                     AND receipt_operation_uuid IS NOT NULL
+                     LIMIT 1'
+                )->bindValue(':pallet', $firstItemPallet)
+                  ->bindValue(':status', 'receiving')
+                  ->queryScalar();
+
+                if ($resolvedUuid) {
+                    $receiptOperationUuid = $resolvedUuid;
+                    $this->logToFile("✅ RESOLVED receipt_operation_uuid from pallet '{$firstItemPallet}': {$resolvedUuid}", 'INFO');
+                } else {
+                    $this->logToFile("❌ Could not resolve receipt_operation_uuid from pallet '{$firstItemPallet}'", 'WARNING');
+                }
+            }
+        }
+
+        $siparisId = null;
         $sipFisno = null;
-        if ($siparisId) {
-            $sipFisno = $db->createCommand(
-                'SELECT fisno FROM siparisler WHERE id = :id'
-            )->bindValue(':id', $siparisId)->queryScalar();
-            $this->logToFile("📋 Order fisno retrieved: " . ($sipFisno ?? 'NULL'), 'DEBUG');
+        if ($receiptOperationUuid) {
+            $receiptInfo = $db->createCommand(
+                'SELECT siparis_id FROM goods_receipts WHERE operation_unique_id = :uuid'
+            )->bindValue(':uuid', $receiptOperationUuid)->queryOne();
+
+            if ($receiptInfo && $receiptInfo['siparis_id']) {
+                $siparisId = $receiptInfo['siparis_id'];
+                $sipFisno = $db->createCommand(
+                    'SELECT fisno FROM siparisler WHERE id = :id'
+                )->bindValue(':id', $siparisId)->queryScalar();
+                $this->logToFile("📋 Order-based putaway - siparis_id: $siparisId, fisno: " . ($sipFisno ?? 'NULL'), 'DEBUG');
+            } else {
+                $this->logToFile("📋 Free receipt putaway (no siparis_id)", 'DEBUG');
+            }
         }
 
         $this->logToFile("🔄 Starting item processing loop for " . count($items) . " items", 'INFO');
@@ -1182,18 +1218,27 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
-            // YENİ YAKLŞIM: Rafa yerleştirme işlemleri için receipt_operation_uuid ile filtrele
-            if ($isPutawayOperation && $receiptOperationUuid) {
+            // KRITIK FIX: Paletsiz ürünlerde receipt_operation_uuid filtresi YAPMA
+            // Çünkü aynı üründen birden fazla goods_receipt olabiliyor (farklı zamanlarda kabul)
+            // SADECE PALET TRANSFER'de UUID filtresi kullan
+            // Paletsiz ürünlerde FIFO mantığıyla TÜM kayıtlardan çeker
+            if ($isPutawayOperation && $sourcePallet && $receiptOperationUuid) {
+                // PALET TRANSFER: UUID filtresi kullan
                 $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $receiptOperationUuid);
-            } elseif ($isPutawayOperation && $deliveryNoteNumber) {
-                // Fallback: delivery_note_number üzerinden operation_unique_id bul
+                $this->logToFile("🔍 PALLET TRANSFER: Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
+            } elseif ($isPutawayOperation && $sourcePallet && $deliveryNoteNumber) {
+                // PALLET TRANSFER + Fallback: delivery_note_number üzerinden operation_unique_id bul
                 $foundReceiptUuid = $db->createCommand(
                     'SELECT operation_unique_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
                 )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
                 if ($foundReceiptUuid) {
                     $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $foundReceiptUuid);
                     $receiptOperationUuid = $foundReceiptUuid; // Güncelle (transfer kaydı için)
+                    $this->logToFile("🔍 PALLET TRANSFER (fallback): Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
                 }
+            } elseif ($isPutawayOperation && !$sourcePallet) {
+                // PALETSIZ TRANSFER: UUID filtresi YAPMA - FIFO ile tüm kayıtlardan çeker
+                $this->logToFile("🔍 PALLETLESS TRANSFER: NO UUID filter - FIFO from ALL receipts", 'DEBUG');
             }
 
             $sourceStocksQuery->orderBy(['expiry_date' => SORT_ASC]);
@@ -1296,6 +1341,9 @@ class TerminalController extends Controller
             }
 
             // 4. Kısımları hedefe ekle (son kullanma tarihleri ve kaynak ID'leri korunarak)
+            // KRITIK FIX: İlk portion için telefon UUID'sini kullan, sonrakiler için NULL
+            // Böylece aynı expiry_date'li portionlar konsolide olur
+            $isFirstPortion = true;
             foreach($portionsToTransfer as $portion) {
                 $this->upsertStock(
                     $db,
@@ -1305,13 +1353,12 @@ class TerminalController extends Controller
                     $portion['qty'],
                     $targetPallet,
                     'available',
-                    // KRITIK FIX: 'available' durumunda siparis_id = null - konsolidasyon için
-                    null,
-                    $portion['expiry'],
-                    null, // KRITIK FIX: goods_receipt_id NULL - consolidation için
-                    $employeeInfo['warehouse_code'] ?? null, // warehouse_code eklendi
-                    $targetStockUuidFromPhone // KRITIK FIX: Phone-generated UUID for TARGET stock (not source!)
+                    null, // receiptOperationUuid: 'available' durumunda NULL - konsolidasyon için
+                    $portion['expiry'], // expiryDate
+                    $employeeInfo['warehouse_code'] ?? null, // warehouseCode
+                    $isFirstPortion ? $targetStockUuidFromPhone : null // İlk portion: telefon UUID, sonrakiler: NULL (konsolidasyon)
                 );
+                $isFirstPortion = false;
 
                 // 5. Her kısım için ayrı transfer kaydı oluştur
                 // _key urun_key olarak kullanılıyor
@@ -1483,7 +1530,7 @@ class TerminalController extends Controller
                 }
                 
                 // _key urun_key olarak kullanılıyor
-                
+
                 // Yeni sütunlar için veri al
                 $stokKodu = $this->getStokKoduByUrunKey($urunKey, $db);
 
@@ -1491,9 +1538,21 @@ class TerminalController extends Controller
                     'SELECT code FROM shelfs WHERE id = :id'
                 )->bindValue(':id', $locationId)->queryScalar() : null;
 
-                $sipFisno = $siparisId ? $db->createCommand(
-                    'SELECT fisno FROM siparisler WHERE id = :id'
-                )->bindValue(':id', $siparisId)->queryScalar() : null;
+                // Get siparis_id from receipt_operation_uuid if available
+                $siparisId = null;
+                $sipFisno = null;
+                if ($receiptOperationUuid) {
+                    $receiptInfo = $db->createCommand(
+                        'SELECT siparis_id FROM goods_receipts WHERE operation_unique_id = :uuid'
+                    )->bindValue(':uuid', $receiptOperationUuid)->queryOne();
+
+                    if ($receiptInfo && $receiptInfo['siparis_id']) {
+                        $siparisId = $receiptInfo['siparis_id'];
+                        $sipFisno = $db->createCommand(
+                            'SELECT fisno FROM siparisler WHERE id = :id'
+                        )->bindValue(':id', $siparisId)->queryScalar();
+                    }
+                }
                 
                 // DEBUG: Yeni stok kaydı oluşturma
                 Yii::info("DEBUG creating new stock - urunKey: $urunKey, birimKey: $birimKey, quantity: $qtyChange", __METHOD__);

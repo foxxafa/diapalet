@@ -333,9 +333,9 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       createdAt: DateTime.now().toUtc(),
     );
     final String operationUniqueId = pendingOp.uniqueId;
-    
-    // Process all transfer items
-    final itemsForJson = await _processTransferItems(
+
+    // Process all transfer items and get receipt UUID from first item
+    final (itemsForJson, sourceReceiptUuid) = await _processTransferItems(
       txn,
       items,
       header,
@@ -359,8 +359,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       }
     }
 
+    // Update header with receipt UUID if not already set
+    final updatedHeader = sourceReceiptUuid != null && header.receiptOperationUuid == null
+        ? TransferOperationHeader(
+            employeeId: header.employeeId,
+            transferDate: header.transferDate,
+            operationType: header.operationType,
+            sourceLocationName: header.sourceLocationName,
+            targetLocationName: header.targetLocationName,
+            containerId: header.containerId,
+            siparisId: header.siparisId,
+            goodsReceiptId: header.goodsReceiptId,
+            deliveryNoteNumber: header.deliveryNoteNumber,
+            receiptOperationUuid: sourceReceiptUuid,
+          )
+        : header;
+
     // Prepare header JSON
-    final headerJson = header.toApiJson(sourceLocationId ?? 0, targetLocationId);
+    final headerJson = updatedHeader.toApiJson(sourceLocationId ?? 0, targetLocationId);
     if (poId != null) {
       headerJson['fisno'] = poId;
     }
@@ -386,8 +402,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   /// Processes all transfer items by updating stock and creating transfer records.
-  /// Returns a list of processed items for API synchronization.
-  Future<List<Map<String, dynamic>>> _processTransferItems(
+  /// Returns a tuple of (items for JSON, receipt operation UUID from first item).
+  Future<(List<Map<String, dynamic>>, String?)> _processTransferItems(
     DatabaseExecutor txn,
     List<TransferItemDetail> items,
     TransferOperationHeader header,
@@ -396,11 +412,24 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     String operationUniqueId,
   ) async {
     final List<Map<String, dynamic>> itemsForJson = [];
+    String? firstItemReceiptUuid;
 
-    for (final item in items) {
+    for (int i = 0; i < items.length; i++) {
+      final item = items[i];
       // Generate UUID for new stock record
       const uuid = Uuid();
       final transferStockUuid = uuid.v4();
+
+      // Get source receipt UUID (capture from first item for header)
+      String? itemReceiptUuid = await _getSourceReceiptUuid(
+        txn,
+        item,
+        header,
+        sourceLocationId,
+      );
+      if (i == 0) {
+        firstItemReceiptUuid = itemReceiptUuid;
+      }
 
       // Update stock for this transfer item
       await _updateStockForTransfer(
@@ -454,7 +483,57 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       itemsForJson.add(itemWithUuid.toApiJson());
     }
 
-    return itemsForJson;
+    return (itemsForJson, firstItemReceiptUuid);
+  }
+
+  /// Gets the receipt operation UUID from source stock for putaway operations
+  /// KRITIK: Paletsiz ürünlerde NULL döner (FIFO mantığı için)
+  Future<String?> _getSourceReceiptUuid(
+    DatabaseExecutor txn,
+    TransferItemDetail item,
+    TransferOperationHeader header,
+    int? sourceLocationId,
+  ) async {
+    // Only for putaway operations (source = receiving area)
+    if (sourceLocationId != null) return null;
+
+    // KRITIK FIX: Paletsiz ürünlerde NULL döndür
+    // Çünkü aynı üründen birden fazla goods_receipt olabiliyor
+    // Backend'e NULL gönderip FIFO mantığıyla tüm kayıtlardan çekmesini sağla
+    if (item.palletId == null) {
+      return null; // Paletsiz ürünlerde UUID filtresi yok
+    }
+
+    // SADECE PALET TRANSFERDE UUID döndür
+    String sourceWhereClause = 'urun_key = ? AND stock_status = ? AND birim_key = ?';
+    List<dynamic> sourceWhereArgs = [
+      item.productKey,
+      InventoryTransferConstants.stockStatusReceiving,
+      item.birimKey,
+    ];
+
+    sourceWhereClause += ' AND location_id IS NULL';
+    sourceWhereClause += ' AND pallet_barcode = ?';
+    sourceWhereArgs.add(item.palletId);
+
+    // Palet transferde: header'daki UUID varsa kullan
+    if (header.receiptOperationUuid != null) {
+      sourceWhereClause += ' AND receipt_operation_uuid = ?';
+      sourceWhereArgs.add(header.receiptOperationUuid);
+    }
+
+    final sourceStockQuery = await txn.query(
+      'inventory_stock',
+      columns: ['receipt_operation_uuid'],
+      where: sourceWhereClause,
+      whereArgs: sourceWhereArgs,
+      limit: 1,
+    );
+
+    if (sourceStockQuery.isNotEmpty) {
+      return sourceStockQuery.first['receipt_operation_uuid'] as String?;
+    }
+    return null;
   }
 
   /// Updates stock for a single transfer item by decrementing source and incrementing target.
@@ -501,31 +580,39 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
     
     // Add order/goods_receipt filter for putaway operations (UUID-based)
+    // KRITIK FIX: Paletsiz ürünlerde receipt_operation_uuid filtresi YAPMA
+    // Çünkü aynı üründen birden fazla goods_receipt olabiliyor (farklı zamanlarda kabul)
+    // FIFO mantığıyla TÜM kayıtlardan çekmeli
     String? sourceReceiptUuid;
     if (sourceLocationId == null || sourceLocationId == 0) {
-      if (header.siparisId != null) {
-        // Sipariş bazlı: goods_receipts'ten UUID al
-        final goodsReceiptQuery = await txn.rawQuery(
-          'SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ? LIMIT 1',
-          [header.siparisId]
-        );
-        if (goodsReceiptQuery.isNotEmpty) {
-          sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
-          sourceWhereClause += ' AND receipt_operation_uuid = ?';
-          sourceWhereArgs.add(sourceReceiptUuid);
-        }
-      } else if (header.goodsReceiptId != null) {
-        // Free receipt: goods_receipts'ten UUID al
-        final goodsReceiptQuery = await txn.rawQuery(
-          'SELECT operation_unique_id FROM goods_receipts WHERE goods_receipt_id = ? LIMIT 1',
-          [header.goodsReceiptId]
-        );
-        if (goodsReceiptQuery.isNotEmpty) {
-          sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
-          sourceWhereClause += ' AND receipt_operation_uuid = ?';
-          sourceWhereArgs.add(sourceReceiptUuid);
+      // SADECE PALLET TRANSFER'de UUID filtresi kullan
+      // Paletsiz ürünlerde UUID filtresi YOK - tüm receipt UUID'lerinden FIFO ile çeker
+      if (item.palletId != null) {
+        if (header.siparisId != null) {
+          // Sipariş bazlı + PALET: goods_receipts'ten UUID al
+          final goodsReceiptQuery = await txn.rawQuery(
+            'SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ? LIMIT 1',
+            [header.siparisId]
+          );
+          if (goodsReceiptQuery.isNotEmpty) {
+            sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
+            sourceWhereClause += ' AND receipt_operation_uuid = ?';
+            sourceWhereArgs.add(sourceReceiptUuid);
+          }
+        } else if (header.goodsReceiptId != null) {
+          // Free receipt + PALET: goods_receipts'ten UUID al
+          final goodsReceiptQuery = await txn.rawQuery(
+            'SELECT operation_unique_id FROM goods_receipts WHERE goods_receipt_id = ? LIMIT 1',
+            [header.goodsReceiptId]
+          );
+          if (goodsReceiptQuery.isNotEmpty) {
+            sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
+            sourceWhereClause += ' AND receipt_operation_uuid = ?';
+            sourceWhereArgs.add(sourceReceiptUuid);
+          }
         }
       }
+      // Paletsiz ürünler için UUID filtresi YOK - FIFO ile tüm kayıtlardan çeker
     }
 
     // Get source stock info
@@ -543,6 +630,13 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (sourceStockQuery.isNotEmpty) {
       sourceReceiptOperationUuid = sourceStockQuery.first['receipt_operation_uuid'] as String?;
       debugPrint('🔄 TRANSFER SOURCE INFO: id=${sourceStockQuery.first['id']}, receipt_operation_uuid=$sourceReceiptOperationUuid, pallet=${sourceStockQuery.first['pallet_barcode']}, qty=${sourceStockQuery.first['quantity']}');
+    }
+
+    // KRITIK FIX: Paletsiz transferde receipt_operation_uuid NULL olmalı
+    // Çünkü FIFO ile TÜM kayıtlardan çekmeli (birden fazla goods_receipt olabilir)
+    if (item.palletId == null && sourceLocationId == null) {
+      sourceReceiptOperationUuid = null;
+      debugPrint('🔍 PALLETLESS TRANSFER: Setting sourceReceiptOperationUuid to NULL for FIFO');
     }
 
     // Decrement source stock
