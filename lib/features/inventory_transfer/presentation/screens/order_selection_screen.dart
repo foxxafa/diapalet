@@ -89,8 +89,9 @@ class _OrderSelectionScreenState extends State<OrderSelectionScreen> {
     setState(() {
       _filteredOrders = _allOrders.where((order) {
         final name = order.supplierName?.toLowerCase() ?? '';
-        // Sadece sipariş adı (supplierName) ile arama
-        return name.contains(query);
+        final poId = order.poId?.toLowerCase() ?? '';
+        // Hem sipariş numarası (poId) hem de tedarikçi adı (supplierName) ile arama
+        return poId.contains(query) || name.contains(query);
       }).toList();
     });
   }

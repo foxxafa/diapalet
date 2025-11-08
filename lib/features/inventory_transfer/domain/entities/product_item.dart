@@ -21,8 +21,13 @@ class ProductItem {
     this.expiryDate,
   });
 
-  /// Ürün anahtarı
-  String get key => productKey;
+  /// Unique key: productKey + birimKey + expiryDate kombinasyonu
+  /// Farklı birim veya farklı SKT'ler ayrı item olarak değerlendirilir
+  String get key {
+    final birimPart = birimKey ?? 'no_unit';
+    final expiryPart = expiryDate?.toIso8601String().split('T')[0] ?? 'no_expiry';
+    return '${productKey}_${birimPart}_${expiryPart}';
+  }
 
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {

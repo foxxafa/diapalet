@@ -1206,7 +1206,8 @@ class TerminalController extends Controller
 
             $totalQuantityToTransfer = (float)$item['quantity'];
             $sourcePallet = $item['pallet_id'] ?? null;
-            $this->logToFile("📦 Transfer quantity: $totalQuantityToTransfer, source_pallet: " . ($sourcePallet ?? 'NULL'), 'DEBUG');
+            $itemExpiryDate = $item['expiry_date'] ?? null; // KRITIK FIX: Item'ın SKT'si
+            $this->logToFile("📦 Transfer quantity: $totalQuantityToTransfer, source_pallet: " . ($sourcePallet ?? 'NULL') . ", expiry_date: " . ($itemExpiryDate ?? 'NULL'), 'DEBUG');
             $targetStockUuidFromPhone = $item['stock_uuid'] ?? null; // KRITIK FIX: Phone-generated UUID for TARGET stock
             $targetPallet = ($operationType === 'pallet_transfer') ? $sourcePallet : null;
 
@@ -1217,6 +1218,16 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($sourceStocksQuery, 'birim_key', $birimKey);
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
+
+            // KRITIK FIX: Item'ın expiry_date'i ile eşleşen stoklardan çek
+            if ($itemExpiryDate !== null) {
+                // Normalize date format (YYYY-MM-DD)
+                if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $itemExpiryDate, $matches)) {
+                    $normalizedDate = $matches[1] . '-' . $matches[2] . '-' . $matches[3];
+                    $this->addNullSafeWhere($sourceStocksQuery, 'expiry_date', $normalizedDate);
+                    $this->logToFile("🔍 EXPIRY DATE FILTER: $normalizedDate", 'DEBUG');
+                }
+            }
 
             // KRITIK FIX: Paletsiz ürünlerde receipt_operation_uuid filtresi YAPMA
             // Çünkü aynı üründen birden fazla goods_receipt olabiliyor (farklı zamanlarda kabul)

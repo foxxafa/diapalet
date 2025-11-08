@@ -863,7 +863,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         debugPrint('🔍 PALET İÇERİĞİ SONUÇ: ${contents.length} ürün bulundu');
       } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
         contents = container.items.map((transferableItem) => ProductItem(
-          productKey: transferableItem.product.key,
+          productKey: transferableItem.product.productKey ?? transferableItem.product.id.toString(),
           birimKey: transferableItem.product.birimKey, // KRITIK FIX: birimKey eklendi
           name: transferableItem.product.name,
           productCode: transferableItem.product.stockCode,
@@ -917,7 +917,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         itemsToTransfer.add(TransferItemDetail(
-          productKey: product.key, // _key değeri kullanılıyor
+          productKey: product.productKey, // KRITIK FIX: Sadece urun_key, composite key değil!
           birimKey: product.birimKey, // KRITIK FIX: birimKey eklendi
           productName: product.name,
           productCode: product.productCode,

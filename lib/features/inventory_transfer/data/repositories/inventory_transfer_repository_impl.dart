@@ -842,24 +842,29 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       final pallet = stock['pallet_barcode'] as String?;
       final expiryDate = stock['expiry_date'] != null ? DateTime.tryParse(stock['expiry_date'].toString()) : null;
+      final birimKey = stock['birim_key']?.toString() ?? 'no_unit';
       final containerId = pallet ?? 'box_${productInfo.stockCode}';
 
-      // KRITIK FIX: Paletin içindeki ve serbest ürünleri ayırmak için containerId kullan
-      // Normal transfer için de container bazında grupla (pallet var mı yok mu diye)
-      final groupingKey = containerId;
+      // KRITIK FIX: İki seviyeli gruplama:
+      // 1. Seviye: containerId (palet veya box) - aynı container'daki itemler
+      // 2. Seviye: productId + birimKey + expiryDate - farklı birim/SKT'ler ayrı item
+      aggregatedItems.putIfAbsent(containerId, () => {});
 
-      aggregatedItems.putIfAbsent(groupingKey, () => {});
+      final expiryDateKey = expiryDate?.toIso8601String().split('T')[0] ?? 'no_expiry';
+      final itemKey = '${productId}_${birimKey}_${expiryDateKey}';
 
-      if (aggregatedItems[groupingKey]!.containsKey(productId)) {
-        final existingItem = aggregatedItems[groupingKey]![productId]!;
-        aggregatedItems[groupingKey]![productId] = TransferableItem(
+      if (aggregatedItems[containerId]!.containsKey(itemKey)) {
+        // Aynı ürün + aynı birim + aynı SKT varsa miktarları topla
+        final existingItem = aggregatedItems[containerId]![itemKey]!;
+        aggregatedItems[containerId]![itemKey] = TransferableItem(
           product: existingItem.product,
           quantity: existingItem.quantity + (stock['quantity'] as num).toDouble(),
           sourcePalletBarcode: pallet,
           expiryDate: existingItem.expiryDate,
         );
       } else {
-        aggregatedItems[groupingKey]![productId] = TransferableItem(
+        // Yeni ürün veya farklı birim/SKT: yeni item ekle
+        aggregatedItems[containerId]![itemKey] = TransferableItem(
           product: productInfo,
           quantity: (stock['quantity'] as num).toDouble(),
           sourcePalletBarcode: pallet,
@@ -1037,6 +1042,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         palletId: palletId,
         status: status,
         receiptOperationUuidForAddition: receiptOperationUuidForAddition,
+        expiryDateForDecrement: expiryDateForAddition, // KRITIK FIX: SKT bilgisini gönder
       );
     } else {
       await _processStockIncrement(
@@ -1200,6 +1206,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     required String? palletId,
     required String status,
     String? receiptOperationUuidForAddition,
+    DateTime? expiryDateForDecrement, // KRITIK FIX: Transfer edilen item'ın SKT'si
   }) async {
     double remainingToDecrement = quantityChange.abs();
 
@@ -1214,10 +1221,25 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       includeOrderFilters: true,
     );
 
+    // KRITIK FIX: expiryDate filtresi ekle
+    String finalWhereClause = queryInfo.whereClause;
+    List<dynamic> finalWhereArgs = List.from(queryInfo.whereArgs);
+
+    if (expiryDateForDecrement != null) {
+      final expiryDateStr = DateTime(
+        expiryDateForDecrement.year,
+        expiryDateForDecrement.month,
+        expiryDateForDecrement.day,
+      ).toIso8601String().split('T')[0];
+
+      finalWhereClause += ' AND expiry_date = ?';
+      finalWhereArgs.add(expiryDateStr);
+    }
+
     final stockEntries = await txn.query(
       'inventory_stock',
-      where: queryInfo.whereClause,
-      whereArgs: queryInfo.whereArgs,
+      where: finalWhereClause,
+      whereArgs: finalWhereArgs,
       orderBy: 'expiry_date ASC', // FIFO
     );
 

@@ -404,7 +404,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
 
     final products = _selectedContainer!.items.map((item) {
       return ProductItem(
-        productKey: item.product.key,
+        productKey: item.product.productKey ?? item.product.id.toString(),
         birimKey: item.product.birimKey, // KRITIK FIX: birimKey eklendi
         name: item.product.name,
         productCode: item.product.stockCode,
@@ -590,7 +590,7 @@ class InventoryTransferViewModel extends ChangeNotifier {
       final qty = double.tryParse(qtyText) ?? 0.0;
       if (qty > 0) {
         items.add(TransferItemDetail(
-          productKey: product.key, // _key değeri kullanılıyor
+          productKey: product.productKey, // KRITIK FIX: Sadece urun_key, composite key değil!
           birimKey: product.birimKey, // KRITIK FIX: birimKey eklendi
           productName: product.name,
           productCode: product.productCode,
