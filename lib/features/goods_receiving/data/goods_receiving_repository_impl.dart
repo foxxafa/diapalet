@@ -138,6 +138,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               debugPrint('🔧 goods_receipt_items schema check error: $e');
             }
 
+            // KRITIK FIX: expiry_date'i normalize et - sadece date, time yok (YYYY-MM-DD)
+            final expiryDateStr = item.expiryDate != null
+                ? DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+                    .toIso8601String()
+                    .split('T')[0]
+                : null;
+
             final itemData = {
               'receipt_id': receiptId,
               'operation_unique_id': operationUniqueId,
@@ -147,7 +154,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
               'quantity_received': item.quantity,
               'pallet_barcode': item.palletBarcode,
               'barcode': item.barcode,
-              'expiry_date': item.expiryDate?.toIso8601String(),
+              'expiry_date': expiryDateStr, // KRITIK FIX: Normalized format (YYYY-MM-DD)
               'free': item.isFree ? 1 : 0,
               'created_at': DateTime.now().toUtc().toIso8601String(),
               'updated_at': DateTime.now().toUtc().toIso8601String(),
@@ -193,6 +200,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
             // Backend ile aynı UPSERT mantığı: Aynı ürün/birim/palet/SKT için AYNI KAYDI GÜNCELLE (3+4=7)
             try {
 
+              // KRITIK FIX: expiry_date'i normalize et - query için de aynı format kullan
+              final expiryDateForQuery = item.expiryDate != null
+                  ? DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+                      .toIso8601String()
+                      .split('T')[0]
+                  : null;
+
               // UUID-based consolidation: receiving stoklarını receipt_operation_uuid ile grupla
               final existingStock = await txn.query(
                 DbTables.inventoryStock,
@@ -209,7 +223,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                   operationUniqueId,
                   if (item.birimKey != null) item.birimKey!,
                   if (item.palletBarcode != null) item.palletBarcode!,
-                  if (item.expiryDate != null) item.expiryDate!.toIso8601String(),
+                  if (item.expiryDate != null) expiryDateForQuery,
                 ],
                 limit: 1,
               );
@@ -233,6 +247,13 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                 debugPrint('✅ DEBUG: inventory_stock UPDATED - ID: $existingId, Old: $existingQty, New: $newQty (stock_uuid: $stockUuid)');
               } else {
                 // YENİ KAYIT OLUŞTUR - UUID-based
+                // KRITIK FIX: expiry_date'i normalize et - sadece date, time yok
+                final expiryDateStr = item.expiryDate != null
+                    ? DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+                        .toIso8601String()
+                        .split('T')[0]
+                    : null;
+
                 final inventoryStockData = <String, dynamic>{
                   'stock_uuid': stockUuid,
                   'urun_key': item.productId,
@@ -242,7 +263,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                   'quantity': item.quantity,
                   'pallet_barcode': item.palletBarcode,
                   'stock_status': 'receiving',
-                  'expiry_date': item.expiryDate?.toIso8601String(),
+                  'expiry_date': expiryDateStr, // KRITIK FIX: Normalized format (YYYY-MM-DD)
                   'created_at': DateTime.now().toUtc().toIso8601String(),
                   'updated_at': DateTime.now().toUtc().toIso8601String(),
                 };

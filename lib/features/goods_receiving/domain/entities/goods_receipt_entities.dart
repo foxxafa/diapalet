@@ -65,16 +65,25 @@ class GoodsReceiptItemPayload {
     this.deliveryNoteNumber,
   });
 
-  Map<String, dynamic> toJson() => {
-    'urun_key': productId, // _key değeri urun_key alanına gönderiliyor
-    'birim_key': birimKey, // Birim _key değeri
-    'quantity': quantity,
-    'pallet_barcode': palletBarcode,
-    'barcode': barcode,
-    'expiry_date': expiryDate?.toIso8601String(),
-    'free': isFree ? 1 : 0, // Sipariş dışı ise 1, değilse 0
-    'delivery_note_number': deliveryNoteNumber, // Item-level delivery note
-  };
+  Map<String, dynamic> toJson() {
+    // KRITIK FIX: expiry_date'i normalize et - sadece date, time yok (YYYY-MM-DD)
+    final expiryDateStr = expiryDate != null
+        ? DateTime(expiryDate!.year, expiryDate!.month, expiryDate!.day)
+            .toIso8601String()
+            .split('T')[0]
+        : null;
+
+    return {
+      'urun_key': productId, // _key değeri urun_key alanına gönderiliyor
+      'birim_key': birimKey, // Birim _key değeri
+      'quantity': quantity,
+      'pallet_barcode': palletBarcode,
+      'barcode': barcode,
+      'expiry_date': expiryDateStr, // KRITIK FIX: Normalized format (YYYY-MM-DD)
+      'free': isFree ? 1 : 0, // Sipariş dışı ise 1, değilse 0
+      'delivery_note_number': deliveryNoteNumber, // Item-level delivery note
+    };
+  }
 }
 
 

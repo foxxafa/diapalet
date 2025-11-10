@@ -37,12 +37,19 @@ class TransferItemDetail {
 
   /// Sunucuya gönderilecek olan, sadeleştirilmiş JSON formatını oluşturur.
   Map<String, dynamic> toApiJson() {
+    // KRITIK FIX: expiry_date'i normalize et - sadece date, time yok (YYYY-MM-DD)
+    final expiryDateStr = expiryDate != null
+        ? DateTime(expiryDate!.year, expiryDate!.month, expiryDate!.day)
+            .toIso8601String()
+            .split('T')[0]
+        : null;
+
     return {
       'urun_key': productKey, // _key değeri
       'birim_key': birimKey, // Birim _key değeri
       'quantity': quantity,
       'pallet_id': palletId,
-      'expiry_date': expiryDate?.toIso8601String(),
+      'expiry_date': expiryDateStr, // KRITIK FIX: Normalized format (YYYY-MM-DD)
       'stock_uuid': stockUuid, // KRITIK FIX: Phone-generated UUID'yi sunucuya gönder
     };
   }

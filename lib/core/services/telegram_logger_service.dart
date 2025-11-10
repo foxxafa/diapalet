@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:diapalet/core/network/api_config.dart';
 import 'package:diapalet/core/local/database_helper.dart';
+import 'package:diapalet/core/services/app_version_service.dart';
 
 /// Telegram'a log dosyası gönderen hibrit servis
 ///
@@ -103,7 +103,7 @@ class TelegramLoggerService {
       }
 
       // Tüm logları tek dosya içeriği olarak birleştir
-      final combinedContent = _formatCombinedLogs(logs);
+      final combinedContent = await _formatCombinedLogs(logs);
 
       // Cihaz bilgilerini topla
       final deviceData = await _getDeviceInfo();
@@ -135,13 +135,15 @@ class TelegramLoggerService {
   }
 
   /// Birden fazla log entry'yi tek dosya içeriğinde birleştir
-  static String _formatCombinedLogs(List<Map<String, dynamic>> logs) {
+  static Future<String> _formatCombinedLogs(List<Map<String, dynamic>> logs) async {
     final buffer = StringBuffer();
+    final appVersion = await _getAppVersion();
 
     buffer.writeln('=' * 80);
     buffer.writeln('WMS COMBINED LOG REPORT');
     buffer.writeln('=' * 80);
     buffer.writeln('Generated at: ${DateTime.now().toUtc().toIso8601String()}');
+    buffer.writeln('App Version: $appVersion');
     buffer.writeln('Total log entries: ${logs.length}');
     buffer.writeln();
 
@@ -357,8 +359,7 @@ class TelegramLoggerService {
   /// App versiyonunu al
   static Future<String> _getAppVersion() async {
     try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      return '${packageInfo.version} (${packageInfo.buildNumber})';
+      return await AppVersionService.instance.getVersionForDisplay();
     } catch (e) {
       return 'Unknown';
     }

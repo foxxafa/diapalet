@@ -70,6 +70,13 @@ class ProductItem {
   }
 
   Map<String, dynamic> toJson() {
+    // KRITIK FIX: expiry_date'i normalize et - sadece date, time yok (YYYY-MM-DD)
+    final expiryDateStr = expiryDate != null
+        ? DateTime(expiryDate!.year, expiryDate!.month, expiryDate!.day)
+            .toIso8601String()
+            .split('T')[0]
+        : null;
+
     return {
       'productKey': productKey,
       'birim_key': birimKey,
@@ -77,7 +84,7 @@ class ProductItem {
       'productCode': productCode,
       'barcode': barcode,
       'currentQuantity': currentQuantity,
-      'expiryDate': expiryDate?.toIso8601String(),
+      'expiryDate': expiryDateStr, // KRITIK FIX: Normalized format (YYYY-MM-DD)
     };
   }
 

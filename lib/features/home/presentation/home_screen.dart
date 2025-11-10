@@ -1,4 +1,5 @@
 // lib/features/home/presentation/home_screen.dart
+import 'package:diapalet/core/services/app_version_service.dart';
 import 'package:diapalet/core/sync/sync_service.dart';
 import 'package:diapalet/core/widgets/shared_app_bar.dart';
 import 'package:diapalet/features/auth/domain/repositories/auth_repository.dart';
@@ -23,11 +24,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _userName = '...';
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadAppVersion();
   }
 
   Future<void> _loadUserData() async {
@@ -37,6 +40,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() {
         _userName = '$firstName $lastName';
+      });
+    }
+  }
+
+  Future<void> _loadAppVersion() async {
+    final version = await AppVersionService.instance.getVersionForDisplay();
+    if (mounted) {
+      setState(() {
+        _appVersion = version;
       });
     }
   }
@@ -209,6 +221,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 24),
+                  _buildVersionInfo(),
                 ],
               ),
             ),
@@ -258,6 +272,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVersionInfo() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Text(
+          _appVersion.isEmpty ? '' : 'v$_appVersion',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
+            fontSize: 12,
+          ),
         ),
       ),
     );

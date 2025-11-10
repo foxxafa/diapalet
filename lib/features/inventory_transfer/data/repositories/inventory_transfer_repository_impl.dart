@@ -1236,12 +1236,38 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       finalWhereArgs.add(expiryDateStr);
     }
 
-    final stockEntries = await txn.query(
+    debugPrint('🔍 _processStockDecrement QUERY: WHERE $finalWhereClause, ARGS: $finalWhereArgs');
+
+    // KRITIK FIX: Eğer expiry_date filtresi varsa ve sonuç boşsa, TIME içeren formatı dene
+    var stockEntries = await txn.query(
       'inventory_stock',
       where: finalWhereClause,
       whereArgs: finalWhereArgs,
       orderBy: 'expiry_date ASC', // FIFO
     );
+
+    // Eğer expiry_date filtresi ile sonuç boşsa ve expiryDateForDecrement varsa
+    if (stockEntries.isEmpty && expiryDateForDecrement != null) {
+      // TIME içeren format ile tekrar dene (backward compatibility)
+      final expiryDateTimeStr = DateTime(
+        expiryDateForDecrement.year,
+        expiryDateForDecrement.month,
+        expiryDateForDecrement.day,
+      ).toIso8601String(); // "2025-12-12T00:00:00.000Z"
+
+      final altWhereArgs = List.from(finalWhereArgs);
+      altWhereArgs[altWhereArgs.length - 1] = expiryDateTimeStr;
+
+      debugPrint('🔄 Retry with full ISO8601 format: $expiryDateTimeStr');
+      stockEntries = await txn.query(
+        'inventory_stock',
+        where: finalWhereClause,
+        whereArgs: altWhereArgs,
+        orderBy: 'expiry_date ASC',
+      );
+    }
+
+    debugPrint('🔍 _processStockDecrement RESULT: ${stockEntries.length} kayıt bulundu');
 
     if (stockEntries.isEmpty) {
       // Log to Telegram (CRITICAL level - anında bildirim)
