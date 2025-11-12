@@ -1312,7 +1312,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         onChanged: _productsInContainer.isNotEmpty ? (bool value) {
           setState(() {
             _isPalletOpening = value;
-            if (!value) {
+            if (value) {
+              // Break pallet açıldığında tüm miktarları 0 yap
+              for (var product in _productsInContainer) {
+                _productQuantityControllers[product.key]?.text = '0';
+              }
+            } else {
+              // Break pallet kapatıldığında miktarları geri yükle
               for (var product in _productsInContainer) {
                 final initialQty = product.currentQuantity;
                 final initialQtyText = initialQty == initialQty.truncate()

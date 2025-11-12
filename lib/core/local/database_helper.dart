@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 1; // Reset to version 1 for fresh install
+  static const _databaseVersion = 76; // Version 76: UUID-based inventory relationships migration
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -51,9 +51,136 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Veritabanı $oldVersion sürümünden $newVersion sürümüne yükseltiliyor...");
-    await _dropAllTables(db);
-    await _createAllTables(db);
-    debugPrint("Veritabanı yükseltmesi tamamlandı.");
+
+    // ÖNEMLI: Her versiyon için migration adımlarını sırayla uygula
+    // Bu şekilde kullanıcı verisi korunur
+
+    if (oldVersion < 76) {
+      // Version 76: UUID-based inventory relationships migration
+      await _migrateToVersion76(db);
+    }
+
+    // Gelecekteki migration'lar burada eklenecek:
+    // if (oldVersion < 77) {
+    //   await _migrateToVersion77(db);
+    // }
+
+    debugPrint("Veritabanı yükseltmesi tamamlandı: $oldVersion → $newVersion");
+  }
+
+  /// Version 76: UUID-based inventory relationships migration
+  /// Replaces siparis_id and goods_receipt_id with receipt_operation_uuid
+  Future<void> _migrateToVersion76(Database db) async {
+    debugPrint("🔄 Migration v76: UUID-based inventory relationships başlatılıyor...");
+
+    await db.transaction((txn) async {
+      // Step 1: inventory_stock tablosunu yeniden yapılandır
+      debugPrint("  → inventory_stock tablosu migration...");
+
+      // Önce tablonun mevcut yapısını kontrol et
+      final stockTableInfo = await txn.rawQuery('PRAGMA table_info(inventory_stock)');
+      final hasGoodsReceiptId = stockTableInfo.any((col) => col['name'] == 'goods_receipt_id');
+      final hasReceiptUuid = stockTableInfo.any((col) => col['name'] == 'receipt_operation_uuid');
+
+      debugPrint("    📋 Mevcut kolonlar: goods_receipt_id=$hasGoodsReceiptId, receipt_operation_uuid=$hasReceiptUuid");
+
+      // Yeni sütun ekle (eğer yoksa)
+      if (!hasReceiptUuid) {
+        try {
+          await txn.execute('ALTER TABLE inventory_stock ADD COLUMN receipt_operation_uuid TEXT');
+          debugPrint("    ✅ receipt_operation_uuid column added");
+        } catch (e) {
+          debugPrint("    ⚠️ Column add error: $e");
+        }
+      } else {
+        debugPrint("    ℹ️ receipt_operation_uuid already exists");
+      }
+
+      // Mevcut verilerden UUID'leri doldur (sadece eski kolon varsa)
+      if (hasGoodsReceiptId) {
+        try {
+          await txn.execute('''
+            UPDATE inventory_stock
+            SET receipt_operation_uuid = (
+              SELECT gr.operation_unique_id
+              FROM goods_receipts gr
+              WHERE gr.goods_receipt_id = inventory_stock.goods_receipt_id
+            )
+            WHERE goods_receipt_id IS NOT NULL
+          ''');
+          debugPrint("    ✅ Existing data migrated from goods_receipt_id to receipt_operation_uuid");
+        } catch (e) {
+          debugPrint("    ⚠️ Data migration error: $e");
+        }
+      } else {
+        debugPrint("    ℹ️ goods_receipt_id column not found, skipping data migration");
+      }
+
+      // Eski index'i sil ve yeni index ekle
+      try {
+        await txn.execute('DROP INDEX IF EXISTS idx_inventory_stock_siparis');
+        await txn.execute('CREATE INDEX IF NOT EXISTS idx_inventory_stock_receipt_uuid ON inventory_stock(receipt_operation_uuid)');
+        debugPrint("    ✅ Indexes updated");
+      } catch (e) {
+        debugPrint("    ⚠️ Index update error: $e");
+      }
+
+      // Step 2: inventory_transfers tablosunu yeniden yapılandır
+      debugPrint("  → inventory_transfers tablosu migration...");
+
+      // Tablonun mevcut yapısını kontrol et
+      final transferTableInfo = await txn.rawQuery('PRAGMA table_info(inventory_transfers)');
+      final hasTransferGoodsReceiptId = transferTableInfo.any((col) => col['name'] == 'goods_receipt_id');
+      final hasTransferReceiptUuid = transferTableInfo.any((col) => col['name'] == 'receipt_operation_uuid');
+
+      debugPrint("    📋 Mevcut kolonlar: goods_receipt_id=$hasTransferGoodsReceiptId, receipt_operation_uuid=$hasTransferReceiptUuid");
+
+      // Yeni sütun ekle (eğer yoksa)
+      if (!hasTransferReceiptUuid) {
+        try {
+          await txn.execute('ALTER TABLE inventory_transfers ADD COLUMN receipt_operation_uuid TEXT');
+          debugPrint("    ✅ receipt_operation_uuid column added");
+        } catch (e) {
+          debugPrint("    ⚠️ Column add error: $e");
+        }
+      } else {
+        debugPrint("    ℹ️ receipt_operation_uuid already exists");
+      }
+
+      // Mevcut verilerden UUID'leri doldur (sadece eski kolon varsa)
+      if (hasTransferGoodsReceiptId) {
+        try {
+          await txn.execute('''
+            UPDATE inventory_transfers
+            SET receipt_operation_uuid = (
+              SELECT gr.operation_unique_id
+              FROM goods_receipts gr
+              WHERE gr.goods_receipt_id = inventory_transfers.goods_receipt_id
+            )
+            WHERE goods_receipt_id IS NOT NULL
+          ''');
+          debugPrint("    ✅ Existing data migrated from goods_receipt_id to receipt_operation_uuid");
+        } catch (e) {
+          debugPrint("    ⚠️ Data migration error: $e");
+        }
+      } else {
+        debugPrint("    ℹ️ goods_receipt_id column not found, skipping data migration");
+      }
+
+      // Index ekle
+      try {
+        await txn.execute('CREATE INDEX IF NOT EXISTS idx_inventory_transfers_receipt_uuid ON inventory_transfers(receipt_operation_uuid)');
+        debugPrint("    ✅ Indexes created");
+      } catch (e) {
+        debugPrint("    ⚠️ Index creation error: $e");
+      }
+
+      // NOT: SQLite'da ALTER TABLE DROP COLUMN desteklenmediği için
+      // eski sütunlar (siparis_id, goods_receipt_id) tabloda kalacak (eğer varsa)
+      // ancak artık kullanılmayacak. Uygulama kodu yeni UUID bazlı yaklaşımı kullanıyor.
+
+      debugPrint("✅ Migration v76 tamamlandı!");
+    });
   }
 
   Future<void> _createAllTables(Database db) async {
