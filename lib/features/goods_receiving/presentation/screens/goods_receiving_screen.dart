@@ -505,6 +505,8 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
                   SnackBar(
                     content: Text(errorMessage),
                     backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                   ),
                 );
               }
@@ -668,7 +670,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       content: Text(message),
       backgroundColor: Colors.redAccent,
       behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 100), // Bottom margin artırıldı
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
   }
@@ -680,7 +682,7 @@ class _GoodsReceivingScreenState extends State<GoodsReceivingScreen> {
       content: Text(message),
       backgroundColor: Colors.green,
       behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 100), // Bottom margin artırıldı
       shape: RoundedRectangleBorder(borderRadius: _borderRadius),
     ));
   }

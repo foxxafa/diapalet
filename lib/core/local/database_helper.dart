@@ -219,8 +219,7 @@ class DatabaseHelper {
       batch.execute('''
         CREATE TABLE IF NOT EXISTS goods_receipt_items (
           item_uuid TEXT PRIMARY KEY NOT NULL,
-          receipt_operation_uuid TEXT NOT NULL,
-          operation_unique_id TEXT,
+          operation_unique_id TEXT NOT NULL,
           urun_key TEXT,
           birim_key TEXT,
           siparis_key TEXT,
@@ -232,7 +231,7 @@ class DatabaseHelper {
           free INTEGER DEFAULT 0,
           created_at TEXT,
           updated_at TEXT,
-          FOREIGN KEY(receipt_operation_uuid) REFERENCES goods_receipts(operation_unique_id),
+          FOREIGN KEY(operation_unique_id) REFERENCES goods_receipts(operation_unique_id),
           FOREIGN KEY(urun_key) REFERENCES urunler(_key)
         )
       ''');
@@ -1119,12 +1118,8 @@ class DatabaseHelper {
         newRecord.remove('id');
         newRecord.remove('receipt_id');
 
-        // KRITIK MAPPING: Backend operation_unique_id gönderir (goods_receipts UUID'si)
-        // Flutter local DB'de receipt_operation_uuid olarak kaydediyoruz
-        if (newRecord.containsKey('operation_unique_id') && newRecord['operation_unique_id'] != null) {
-          newRecord['receipt_operation_uuid'] = newRecord['operation_unique_id'].toString();
-          // operation_unique_id kalsın (item'ın kendi UUID'si için kullanılabilir)
-        }
+        // Backend'den gelen operation_unique_id sütunu artık doğrudan kullanılıyor
+        // Sütun adları tam eşleşiyor, mapping gerekmez
 
         // KRITIK FIX: birim_key field handling - ensure it's properly saved
         if (newRecord.containsKey('birim_key') && newRecord['birim_key'] != null) {
@@ -1714,19 +1709,19 @@ class DatabaseHelper {
         COALESCE(previous.previous_received, 0) + gri.quantity_received as total_received
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
-      LEFT JOIN goods_receipts gr ON gri.receipt_operation_uuid = gr.operation_unique_id
+      LEFT JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
       LEFT JOIN (
         SELECT
           gri2.urun_key,
           SUM(gri2.quantity_received) as previous_received
         FROM goods_receipt_items gri2
-        JOIN goods_receipts gr2 ON gri2.receipt_operation_uuid = gr2.operation_unique_id
+        JOIN goods_receipts gr2 ON gri2.operation_unique_id = gr2.operation_unique_id
         WHERE gr2.siparis_id = ?
           AND gr2.receipt_date < (SELECT receipt_date FROM goods_receipts WHERE operation_unique_id = ?)
         GROUP BY gri2.urun_key
       ) previous ON previous.urun_key = gri.urun_key
-      WHERE gri.receipt_operation_uuid = ?
+      WHERE gri.operation_unique_id = ?
       ORDER BY gri.item_uuid
     ''';
 
@@ -1755,7 +1750,7 @@ class DatabaseHelper {
         u.StokKodu as product_code
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
-      WHERE gri.receipt_operation_uuid = ?
+      WHERE gri.operation_unique_id = ?
       ORDER BY gri.item_uuid
     ''';
 
@@ -1862,9 +1857,9 @@ class DatabaseHelper {
         0 as putaway_quantity
       FROM goods_receipt_items gri
       LEFT JOIN urunler u ON u._key = gri.urun_key
-      LEFT JOIN goods_receipts gr ON gri.receipt_operation_uuid = gr.operation_unique_id
+      LEFT JOIN goods_receipts gr ON gri.operation_unique_id = gr.operation_unique_id
       LEFT JOIN siparis_ayrintili sa ON sa.siparisler_id = gr.siparis_id AND sa.urun_key = gri.urun_key
-      WHERE gri.receipt_operation_uuid = ?
+      WHERE gri.operation_unique_id = ?
       ORDER BY gri.item_uuid
     ''';
 
@@ -2535,9 +2530,9 @@ class DatabaseHelper {
               final operationUuid = receipt['operation_unique_id'] as String?;
 
               if (operationUuid != null) {
-                // İlişkili goods_receipt_items'ları da sil (receipt_operation_uuid ile)
+                // İlişkili goods_receipt_items'ları da sil (operation_unique_id ile)
                 await txn.delete('goods_receipt_items',
-                  where: 'receipt_operation_uuid = ?', whereArgs: [operationUuid]);
+                  where: 'operation_unique_id = ?', whereArgs: [operationUuid]);
 
                 // İlişkili inventory_stock kayıtlarını da sil (UUID ile!)
                 await txn.delete('inventory_stock',
@@ -2772,7 +2767,7 @@ class DatabaseHelper {
       final receiptItemsCount = await txn.rawDelete('''
         DELETE FROM goods_receipt_items
         WHERE created_at < ?
-        AND receipt_operation_uuid IN (
+        AND operation_unique_id IN (
           SELECT operation_unique_id FROM goods_receipts
           WHERE siparis_id IS NULL
         )
@@ -2824,7 +2819,7 @@ class DatabaseHelper {
         // 2. goods_receipt_items (en child tablo)
         final receiptItems = await txn.delete(
           'goods_receipt_items',
-          where: 'receipt_operation_uuid IN (SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ?)',
+          where: 'operation_unique_id IN (SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ?)',
           whereArgs: [orderId]
         );
         receiptItemCount += receiptItems;

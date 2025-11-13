@@ -2556,7 +2556,7 @@ class TerminalController extends Controller
         $receiptUuids = array_column($data['goods_receipts'], 'operation_unique_id');
         if (!empty($receiptUuids)) {
             $receiptItemsQuery = (new Query())
-                ->select(['item_uuid', 'operation_unique_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+                ->select(['item_uuid', 'operation_unique_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'StokKodu', 'free', 'created_at', 'updated_at'])
                 ->from('goods_receipt_items')
                 ->where(['in', 'operation_unique_id', $receiptUuids]);
             if ($serverSyncTimestamp) {

@@ -90,8 +90,8 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
       JOIN ${DbTables.products} u ON u._key = s.urun_key
       LEFT JOIN birimler unit ON unit._key = s.birim_key
       LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
-      WHERE s.id IN (
-        SELECT DISTINCT s2.id
+      WHERE s.stock_uuid IN (
+        SELECT DISTINCT s2.stock_uuid
         FROM ${DbTables.inventoryStock} s2
         JOIN ${DbTables.products} u2 ON u2._key = s2.urun_key
         LEFT JOIN birimler b ON b.StokKodu = u2.${DbColumns.productsCode}

@@ -98,12 +98,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
-    // UUID-based filtering: deliveryNoteNumber artık goods_receipt_id değerini tutuyor
+    // UUID-based filtering: deliveryNoteNumber ile operation_unique_id bul
     String joinClause = '';
     if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
-      joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
-      whereClauses.add('gr.goods_receipt_id = ?');
-      whereArgs.add(int.parse(deliveryNoteNumber));
+      final receiptUuid = await _getGoodsReceiptUuidByDeliveryNote(deliveryNoteNumber);
+      if (receiptUuid != null) {
+        joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
+        whereClauses.add('gr.operation_unique_id = ?');
+        whereArgs.add(receiptUuid);
+      } else {
+        // Delivery note bulunamazsa boş liste döndür
+        return [];
+      }
     }
 
     final query = '''
@@ -151,12 +157,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereArgs.addAll(stockStatuses);
     }
 
-    // UUID-based filtering: deliveryNoteNumber artık goods_receipt_id değerini tutuyor
+    // UUID-based filtering: deliveryNoteNumber ile operation_unique_id bul
     String joinClause = '';
     if (deliveryNoteNumber != null) {
-      joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
-      whereClauses.add('gr.goods_receipt_id = ?');
-      whereArgs.add(int.parse(deliveryNoteNumber));
+      final receiptUuid = await _getGoodsReceiptUuidByDeliveryNote(deliveryNoteNumber);
+      if (receiptUuid != null) {
+        joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
+        whereClauses.add('gr.operation_unique_id = ?');
+        whereArgs.add(receiptUuid);
+      } else {
+        // Delivery note bulunamazsa boş liste döndür
+        return [];
+      }
     }
 
     final query = '''
@@ -214,21 +226,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         whereParts.add('gr.siparis_id = ?');
         whereArgs.add(siparisId);
       } else if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
-        // deliveryNoteNumber artık goods_receipt_id değerini tutuyor (string olarak)
-        final parsedId = int.tryParse(deliveryNoteNumber);
-        if (parsedId != null) {
-          whereParts.add('gr.goods_receipt_id = ?');
-          whereArgs.add(parsedId);
+        // UUID-based: deliveryNoteNumber ile operation_unique_id bul
+        final receiptUuid = await _getGoodsReceiptUuidByDeliveryNote(deliveryNoteNumber);
+        if (receiptUuid != null) {
+          whereParts.add('gr.operation_unique_id = ?');
+          whereArgs.add(receiptUuid);
         } else {
-          // String ise gerçek delivery note number, ID'yi bul
-          final goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
-          if (goodsReceiptId != null) {
-            whereParts.add('gr.goods_receipt_id = ?');
-            whereArgs.add(goodsReceiptId);
-          } else {
-            // Delivery note bulunamazsa boş liste döndür
-            return [];
-          }
+          // Delivery note bulunamazsa boş liste döndür
+          return [];
         }
       }
     }
@@ -461,8 +466,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         await txn.query(
           DbTables.orderLines,
           columns: ['id'],
-          where: 'siparisler_id = ? AND urun_key = ? AND turu = ?',
-          whereArgs: [header.siparisId, item.productKey, '1'],
+          where: 'siparisler_id = ? AND urun_key = ?',
+          whereArgs: [header.siparisId, item.productKey],
           limit: 1,
         );
       }
@@ -599,17 +604,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             sourceWhereClause += ' AND receipt_operation_uuid = ?';
             sourceWhereArgs.add(sourceReceiptUuid);
           }
-        } else if (header.goodsReceiptId != null) {
-          // Free receipt + PALET: goods_receipts'ten UUID al
-          final goodsReceiptQuery = await txn.rawQuery(
-            'SELECT operation_unique_id FROM goods_receipts WHERE goods_receipt_id = ? LIMIT 1',
-            [header.goodsReceiptId]
-          );
-          if (goodsReceiptQuery.isNotEmpty) {
-            sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
-            sourceWhereClause += ' AND receipt_operation_uuid = ?';
-            sourceWhereArgs.add(sourceReceiptUuid);
-          }
+        } else if (header.receiptOperationUuid != null) {
+          // Free receipt + PALET: UUID direkt kullan
+          sourceReceiptUuid = header.receiptOperationUuid;
+          sourceWhereClause += ' AND receipt_operation_uuid = ?';
+          sourceWhereArgs.add(sourceReceiptUuid);
         }
       }
       // Paletsiz ürünler için UUID filtresi YOK - FIFO ile tüm kayıtlardan çeker
@@ -737,16 +736,10 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         ''', [orderId]);
       } else if (deliveryNoteNumber != null) {
         // Free receipt putaway - UUID-based query
-        final parsedId = int.tryParse(deliveryNoteNumber);
-        final int? goodsReceiptId;
+        // deliveryNoteNumber ile operation_unique_id bul
+        final receiptUuid = await _getGoodsReceiptUuidByDeliveryNote(deliveryNoteNumber);
 
-        if (parsedId != null) {
-          goodsReceiptId = parsedId;
-        } else {
-          goodsReceiptId = await getGoodsReceiptIdByDeliveryNote(deliveryNoteNumber);
-        }
-
-        if (goodsReceiptId == null) {
+        if (receiptUuid == null) {
           return [];
         }
 
@@ -764,11 +757,11 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
             i.quantity
           FROM inventory_stock i
           JOIN goods_receipts gr ON i.receipt_operation_uuid = gr.operation_unique_id
-          WHERE gr.goods_receipt_id = ?
+          WHERE gr.operation_unique_id = ?
             AND gr.siparis_id IS NULL
             AND i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
             AND i.quantity > 0
-        ''', [goodsReceiptId]);
+        ''', [receiptUuid]);
       } else {
         stockMaps = [];
       }
@@ -1448,19 +1441,26 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     return (Sqflite.firstIntValue(result) ?? 0) > 0;
   }
 
-  @override
-  Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber) async {
+  /// UUID-based: delivery_note_number ile operation_unique_id bul
+  Future<String?> _getGoodsReceiptUuidByDeliveryNote(String deliveryNoteNumber) async {
     final db = await dbHelper.database;
     final result = await db.query(
       'goods_receipts',
-      columns: ['goods_receipt_id'],
+      columns: ['operation_unique_id'],
       where: 'delivery_note_number = ?',
       whereArgs: [deliveryNoteNumber],
       limit: 1,
     );
     if (result.isNotEmpty) {
-      return result.first['goods_receipt_id'] as int?;
+      return result.first['operation_unique_id'] as String?;
     }
+    return null;
+  }
+
+  @override
+  Future<int?> getGoodsReceiptIdByDeliveryNote(String deliveryNoteNumber) async {
+    // DEPRECATED: UUID mimarisine geçildi, bu fonksiyon artık kullanılmamalı
+    // _getGoodsReceiptUuidByDeliveryNote kullanın
     return null;
   }
 
@@ -1500,10 +1500,16 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       whereClauses.add('gr.siparis_id = ?');
       whereArgs.add(orderId);
     } else if (deliveryNoteNumber != null) {
-      // deliveryNoteNumber artık goods_receipt_id değerini tutuyor - JOIN via UUID
-      joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
-      whereClauses.add('gr.goods_receipt_id = ?');
-      whereArgs.add(int.parse(deliveryNoteNumber));
+      // UUID-based: deliveryNoteNumber ile operation_unique_id bul
+      final receiptUuid = await _getGoodsReceiptUuidByDeliveryNote(deliveryNoteNumber);
+      if (receiptUuid != null) {
+        joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
+        whereClauses.add('gr.operation_unique_id = ?');
+        whereArgs.add(receiptUuid);
+      } else {
+        // Delivery note bulunamazsa boş liste döndür
+        return [];
+      }
     } else if (locationId != null) {
       // Search products at specific location
       whereClauses.add('s.location_id = ?');

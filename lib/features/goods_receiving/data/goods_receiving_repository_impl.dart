@@ -127,7 +127,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
 
               if (!hasOperationUniqueId) {
                 debugPrint('❌ CRITICAL: operation_unique_id column missing in goods_receipt_items! Adding column...');
-                await txn.execute('ALTER TABLE goods_receipt_items ADD COLUMN operation_unique_id TEXT');
+                await txn.execute('ALTER TABLE goods_receipt_items ADD COLUMN operation_unique_id TEXT NOT NULL');
               }
 
               if (!hasItemUuid) {
@@ -146,7 +146,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                 : null;
 
             final itemData = {
-              'receipt_id': receiptId,
               'operation_unique_id': operationUniqueId,
               'item_uuid': itemUuid,
               'urun_key': item.productId,
@@ -183,7 +182,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
                 context: {
                   'operation_unique_id': operationUniqueId,
                   'item_uuid': itemUuid,
-                  'receipt_id': receiptId,
                   'product_id': item.productId,
                   'birim_key': item.birimKey,
                   'quantity': item.quantity,
@@ -870,7 +868,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       JOIN ${DbTables.products} u ON u.${DbColumns.productsCode} = sol.${DbColumns.orderLinesProductCode}
       LEFT JOIN ${DbTables.goodsReceiptItems} gri ON gri.urun_key = u._key
       LEFT JOIN ${DbTables.goodsReceipts} gr ON gr.operation_unique_id = gri.operation_unique_id AND gr.siparis_id = sol.${DbColumns.orderLinesOrderId}
-      WHERE sol.${DbColumns.orderLinesOrderId} = ? AND sol.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
+      WHERE sol.${DbColumns.orderLinesOrderId} = ?
       GROUP BY sol.${DbColumns.id}, u.${DbColumns.productsId}, sol.${DbColumns.orderLinesQuantity}
     ''', [siparisId]);
 
@@ -944,7 +942,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       JOIN urunler u ON u._key = gri.urun_key
       WHERE gr.siparis_id = ? AND gri.free = 1
       GROUP BY u._key, u.UrunAdi, u.StokKodu
-      ORDER BY MAX(gri.receipt_id) DESC
+      ORDER BY MAX(gri.created_at) DESC
     ''', [orderId]);
     
     

@@ -31,8 +31,8 @@ import 'package:diapalet/core/widgets/shared_input_decoration.dart';
 class InventoryTransferScreen extends StatefulWidget {
   final PurchaseOrder? selectedOrder;
   final bool isFreePutAway;
-  final String? selectedDeliveryNote; // goods_receipt_id (for queries)
-  final String? deliveryNoteDisplayName; // Gerçek irsaliye numarası (ekranda gösterim için)
+  final String? selectedDeliveryNote; // delivery_note_number (UUID-based queries)
+  final String? deliveryNoteDisplayName; // Ekranda gösterim için (NULL ise FREE-{UUID})
 
   const InventoryTransferScreen({
     super.key,
@@ -264,23 +264,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
       final receiptQuery = await db.rawQuery('''
         SELECT
-          gr.goods_receipt_id,
           gr.operation_unique_id,
           gr.delivery_note_number,
           gr.siparis_id,
           gr.receipt_date
         FROM goods_receipts gr
-        WHERE CAST(gr.goods_receipt_id AS TEXT) = ?
-           OR gr.delivery_note_number = ?
+        WHERE gr.delivery_note_number = ?
            OR gr.delivery_note_number IS NULL
-        ORDER BY gr.goods_receipt_id DESC
+        ORDER BY gr.created_at DESC
         LIMIT 1
-      ''', [widget.selectedDeliveryNote, widget.selectedDeliveryNote]);
+      ''', [widget.selectedDeliveryNote]);
 
       if (receiptQuery.isNotEmpty) {
         final receipt = receiptQuery.first;
         debugPrint('📋 GOODS RECEIPT:');
-        debugPrint('   - ID: ${receipt['goods_receipt_id']}');
         debugPrint('   - UUID: ${receipt['operation_unique_id']}');
         debugPrint('   - Delivery Note: ${receipt['delivery_note_number']}');
         debugPrint('   - Sipariş ID: ${receipt['siparis_id']}');

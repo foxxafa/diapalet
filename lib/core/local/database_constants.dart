@@ -155,7 +155,6 @@ class DbQueries {
           SELECT 1
           FROM ${DbTables.orderLines} s2
           WHERE s2.${DbColumns.orderLinesOrderId} = o.${DbColumns.id}
-            AND s2.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
             AND s2.${DbColumns.orderLinesQuantity} > COALESCE((
               SELECT SUM(gri.quantity_received)
               FROM ${DbTables.goodsReceiptItems} gri
@@ -183,7 +182,7 @@ class DbQueries {
         0 as transferredQuantity
       FROM ${DbTables.orderLines} s
       JOIN ${DbTables.products} u ON u._key = s.${DbColumns.orderLinesProductId}
-      WHERE s.${DbColumns.orderLinesOrderId} = ? AND s.${DbColumns.orderLinesType} = '${DbColumns.orderLinesTypeValue}'
+      WHERE s.${DbColumns.orderLinesOrderId} = ?
     ''';
   }
   

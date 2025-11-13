@@ -121,11 +121,11 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                     itemBuilder: (context, index) {
                       final deliveryNote = _filteredDeliveryNotes[index];
                       final deliveryNoteNumber = deliveryNote['delivery_note_number'] as String?;
-                      final goodsReceiptId = deliveryNote['goods_receipt_id']; // KRITIK FIX: goods_receipt_id'yi alıyoruz
+                      final operationUniqueId = deliveryNote['operation_unique_id'] as String?; // UUID-based
                       final receiptDate = deliveryNote['receipt_date'] as String?;
 
-                      // NULL ise "FREE-{id}" göster
-                      final displayName = deliveryNoteNumber ?? 'FREE-$goodsReceiptId';
+                      // NULL ise "FREE-{UUID}" göster
+                      final displayName = deliveryNoteNumber ?? 'FREE-${operationUniqueId?.substring(0, 8)}';
 
                       String formattedDate = '';
                       if (receiptDate != null) {
@@ -148,8 +148,8 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                               MaterialPageRoute(
                                 builder: (_) => InventoryTransferScreen(
                                   isFreePutAway: true,
-                                  selectedDeliveryNote: goodsReceiptId?.toString(), // KRITIK FIX: goods_receipt_id'yi string olarak gönderiyoruz (sorgu için)
-                                  deliveryNoteDisplayName: displayName, // NULL ise FREE-{id} göster
+                                  selectedDeliveryNote: deliveryNoteNumber, // UUID-based: delivery_note_number göndер
+                                  deliveryNoteDisplayName: displayName, // NULL ise FREE-{UUID} göster
                                 ),
                               ),
                             );
