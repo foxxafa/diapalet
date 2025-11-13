@@ -242,10 +242,10 @@ class TerminalController extends Controller
                 $this->castNumericValues($data, ['id', 'warehouse_id', 'is_active']);
                 break;
             case 'inventory_stock':
-                $this->castNumericValues($data, ['id', 'location_id'], ['quantity']);
+                $this->castNumericValues($data, ['location_id'], ['quantity']);
                 break;
             case 'goods_receipts':
-                $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id']);
+                $this->castNumericValues($data, ['siparis_id', 'employee_id']);
                 break;
             default:
                 // Varsayılan cast işlemi yok
@@ -2288,7 +2288,8 @@ class TerminalController extends Controller
     // GÜVENLIK: Race condition ve timing sorunları için 60 saniye buffer ekle
     if ($lastSyncTimestamp) {
         // ISO8601 formatını parse et (2025-08-22T21:20:28.545772Z)
-        $syncDateTime = new \DateTime($lastSyncTimestamp);
+        // KRITIK FIX: UTC timezone belirt, aksi halde sunucu local timezone kullanır
+        $syncDateTime = new \DateTime($lastSyncTimestamp, new \DateTimeZone('UTC'));
         // Race condition riskini minimize etmek için buffer artırıldı
         $syncDateTime->sub(new \DateInterval('PT60S')); // 30'dan 60 saniyeye çıkarıldı
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
@@ -2525,19 +2526,19 @@ class TerminalController extends Controller
             }
 
             // ########## GOODS RECEIPTS İÇİN İNKREMENTAL SYNC ##########
-            $poReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
+            $poReceiptsQuery = (new Query())->select(['operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['in', 'siparis_id', $poIds]);
             if ($serverSyncTimestamp) {
                 $poReceiptsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
             $poReceipts = $poReceiptsQuery->all();
             $data['goods_receipts'] = $poReceipts;
-            $this->castNumericValues($data['goods_receipts'], ['id', 'siparis_id', 'employee_id']);
+            $this->castNumericValues($data['goods_receipts'], ['siparis_id', 'employee_id']);
         }
 
         // ########## FREE RECEIPTS İÇİN İNKREMENTAL SYNC ##########
         // Use employee-based filtering instead of direct warehouse_id
         $employeeIds = $this->getEmployeeIdsByWarehouseCode($warehouseCode);
-        $freeReceiptsQuery = (new Query())->select(['goods_receipt_id as id', 'operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
+        $freeReceiptsQuery = (new Query())->select(['operation_unique_id', 'siparis_id', 'invoice_number', 'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])->from('goods_receipts')->where(['siparis_id' => null]);
         if (!empty($employeeIds)) {
             $freeReceiptsQuery->andWhere(['in', 'employee_id', $employeeIds]);
         } else {
@@ -2552,23 +2553,23 @@ class TerminalController extends Controller
         $this->applyStandardCasts($data['goods_receipts'], 'goods_receipts');
 
         // ########## GOODS RECEIPT ITEMS İÇİN İNKREMENTAL SYNC ##########
-        $receiptIds = array_column($data['goods_receipts'], 'id');
-        if (!empty($receiptIds)) {
+        $receiptUuids = array_column($data['goods_receipts'], 'operation_unique_id');
+        if (!empty($receiptUuids)) {
             $receiptItemsQuery = (new Query())
-                ->select(['id', 'receipt_id', 'operation_unique_id', 'item_uuid', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+                ->select(['item_uuid', 'operation_unique_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
                 ->from('goods_receipt_items')
-                ->where(['in', 'receipt_id', $receiptIds]);
+                ->where(['in', 'operation_unique_id', $receiptUuids]);
             if ($serverSyncTimestamp) {
                 $receiptItemsQuery->andWhere(['>=', 'updated_at', $serverSyncTimestamp]);
             }
             $data['goods_receipt_items'] = $receiptItemsQuery->all();
-            $this->castNumericValues($data['goods_receipt_items'], ['id', 'receipt_id'], ['quantity_received']);
+            $this->castNumericValues($data['goods_receipt_items'], [], ['quantity_received']);
         }
 
         // ########## INVENTORY STOCK İÇİN İNKREMENTAL SYNC ##########
         $locationIds = array_column($data['shelfs'], 'id');
         $stockQuery = (new Query())
-            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock');
         $stockConditions = ['or'];
 
@@ -2607,7 +2608,7 @@ class TerminalController extends Controller
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers');
         $transferConditions = ['or'];
 
@@ -2633,7 +2634,7 @@ class TerminalController extends Controller
         }
 
         $data['inventory_transfers'] = $transferQuery->all();
-        $this->castNumericValues($data['inventory_transfers'], ['id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
+        $this->castNumericValues($data['inventory_transfers'], ['from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
 
         // ########## TOMBSTONE RECORDS - Silinmiş inventory_stock kayıtları (UUID TABANLI) ##########
         $tombstoneUuids = [];
@@ -2971,8 +2972,7 @@ class TerminalController extends Controller
         $warehouseKey = $warehouseInfo['_key'];
 
         $query = (new Query())
-            ->select(['id', 'fisno', 'tarih', 'status',
-                     '_key_sis_depo_source', '__carikodu', 'created_at', 'updated_at'])
+            ->select(['id', 'fisno', 'tarih', 'status', '__carikodu', 'created_at', 'updated_at'])
             ->from('siparisler')
             ->where(['_key_sis_depo_source' => $warehouseKey])
             ->andWhere(['in', 'status', [0, 1, 2]])
@@ -2986,12 +2986,23 @@ class TerminalController extends Controller
 
         $data = $query->all();
 
-        // Add notlar field as null
-        foreach ($data as &$siparis) {
-            $siparis['notlar'] = null;
+        $this->castNumericValues($data, ['id', 'status']);
+
+        // DEBUG: Log siparisler data being sent - VERİTABANINDAN OKUNAN GERÇEK KAYIT SAYISI
+        $this->logToFile("📦 BACKEND DEBUG: Sending " . count($data) . " siparisler records (offset: $offset, limit: $limit)", 'DEBUG');
+        if (!empty($data)) {
+            // Tüm ID'leri logla - hangi kayıtları gönderiyoruz görelim
+            $allIds = array_column($data, 'id');
+            $this->logToFile("  📋 Gönderilen tüm ID'ler: " . implode(', ', $allIds), 'DEBUG');
+
+            // İlk 3 kaydı da göster
+            $sampleCount = min(3, count($data));
+            for ($i = 0; $i < $sampleCount; $i++) {
+                $record = $data[$i];
+                $this->logToFile("  Sample #$i: id={$record['id']}, fisno={$record['fisno']}, status={$record['status']}", 'DEBUG');
+            }
         }
 
-        $this->castNumericValues($data, ['id', 'status']);
         return $data;
     }
 
@@ -3071,8 +3082,8 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['goods_receipt_id as id', 'siparis_id', 'invoice_number',
-                     'delivery_note_number', 'employee_id', 'receipt_date', 'operation_unique_id', 'created_at', 'updated_at'])
+            ->select(['operation_unique_id', 'siparis_id', 'invoice_number',
+                     'delivery_note_number', 'employee_id', 'receipt_date', 'created_at', 'updated_at'])
             ->from('goods_receipts');
 
         if (count($conditions) > 1) {
@@ -3088,7 +3099,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'siparis_id', 'employee_id']);
+        $this->castNumericValues($data, ['siparis_id', 'employee_id']);
         return $data;
     }
 
@@ -3102,7 +3113,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'receipt_id', 'operation_unique_id', 'item_uuid', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
+            ->select(['item_uuid', 'operation_unique_id', 'urun_key', 'birim_key', 'siparis_key', 'quantity_received', 'pallet_barcode', 'barcode', 'expiry_date', 'free', 'created_at', 'updated_at'])
             ->from('goods_receipt_items')
             ->where(['in', 'receipt_id', $receiptIds]);
 
@@ -3113,7 +3124,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'receipt_id'], ['quantity_received']);
+        $this->castNumericValues($data, [], ['quantity_received']);
         return $data;
     }
 
@@ -3123,7 +3134,7 @@ class TerminalController extends Controller
             return [];
         }
         $query = (new Query())
-            ->select(['id', 'stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
+            ->select(['stock_uuid', 'urun_key', 'birim_key', 'location_id', 'receipt_operation_uuid', 'quantity', 'pallet_barcode', 'expiry_date', 'stock_status', 'created_at', 'updated_at'])
             ->from('inventory_stock')
             ->where(['warehouse_code' => $warehouseCode]);
         if ($serverSyncTimestamp) {
@@ -3131,7 +3142,7 @@ class TerminalController extends Controller
         }
         $query->offset($offset)->limit($limit);
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'location_id'], ['quantity']);
+        $this->castNumericValues($data, ['location_id'], ['quantity']);
         return $data;
     }
 
@@ -3171,7 +3182,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers')
             ->where($transferConditions);
 
@@ -3182,7 +3193,7 @@ class TerminalController extends Controller
         $query->offset($offset)->limit($limit);
 
         $data = $query->all();
-        $this->castNumericValues($data, ['id', 'from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
+        $this->castNumericValues($data, ['from_location_id', 'to_location_id', 'employee_id'], ['quantity']);
         return $data;
     }
 

@@ -691,20 +691,18 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         o.id,
         o.fisno,
         o.tarih,
-        o.notlar,
         ? as warehouse_name,
         o.status,
         o.created_at,
         o.updated_at,
         t.tedarikci_adi as supplierName
       FROM siparisler o
+      LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       LEFT JOIN goods_receipts gr ON gr.siparis_id = o.id
       LEFT JOIN inventory_stock i ON i.receipt_operation_uuid = gr.operation_unique_id AND i.stock_status = '${InventoryTransferConstants.stockStatusReceiving}' AND i.quantity > 0
-      LEFT JOIN siparis_ayrintili s ON s.siparisler_id = o.id AND s.turu = '1'
-      LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.status = 2
-        AND i.id IS NOT NULL
-      GROUP BY o.id, o.fisno, o.tarih, o.notlar, o.status, o.created_at, o.updated_at, t.tedarikci_adi
+        AND i.stock_uuid IS NOT NULL
+      GROUP BY o.id, o.fisno, o.tarih, o.status, o.created_at, o.updated_at, t.tedarikci_adi
       ORDER BY o.created_at DESC
     ''', [warehouseName ?? 'N/A']);
     return maps.map((map) => PurchaseOrder.fromMap(map)).toList();
@@ -722,7 +720,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         // UUID-based query: siparis_id ile eşleşen receipt_operation_uuid'leri bul
         stockMaps = await db.rawQuery('''
           SELECT
-            i.id,
+            i.stock_uuid,
             i.urun_key,
             i.birim_key,
             i.location_id,
@@ -755,7 +753,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         // UUID-based query: free receipt (siparis_id IS NULL) için
         stockMaps = await db.rawQuery('''
           SELECT
-            i.id,
+            i.stock_uuid,
             i.urun_key,
             i.birim_key,
             i.location_id,
@@ -1396,15 +1394,15 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   Future<List<String>> getFreeReceiptDeliveryNotes() async {
     final db = await dbHelper.database;
 
-    // UUID-based query: goods_receipts tablosundan siparis_id NULL olan kayıtların ID'lerini al
+    // UUID-based query: goods_receipts tablosundan siparis_id NULL olan kayıtların delivery_note_number'larını al
     const query = '''
-      SELECT DISTINCT CAST(gr.goods_receipt_id AS TEXT) as delivery_note_number
+      SELECT DISTINCT COALESCE(gr.delivery_note_number, gr.operation_unique_id) as delivery_note_number
       FROM inventory_stock s
       JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id
       WHERE gr.siparis_id IS NULL
         AND s.stock_status = '${InventoryTransferConstants.stockStatusReceiving}'
         AND s.quantity > 0
-      ORDER BY gr.goods_receipt_id DESC
+      ORDER BY gr.receipt_date DESC
     ''';
 
     final maps = await db.rawQuery(query);

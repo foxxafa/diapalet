@@ -411,13 +411,12 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         o.${DbColumns.id},
         o.${DbColumns.ordersFisno},
         o.${DbColumns.ordersDate},
-        o.${DbColumns.ordersNotes},
         o.${DbColumns.status},
         o.${DbColumns.createdAt},
         o.${DbColumns.updatedAt},
-        t.${DbColumns.suppliersName} as supplierName
+        t.tedarikci_adi as supplierName
       FROM ${DbTables.orders} o
-      LEFT JOIN ${DbTables.suppliers} t ON t.${DbColumns.suppliersCode} = o.${DbColumns.ordersSupplierCode}
+      LEFT JOIN tedarikci t ON t.tedarikci_kodu = o.__carikodu
       WHERE o.${DbColumns.status} IN (0, 1)
       ORDER BY o.${DbColumns.createdAt} DESC
     ''');
@@ -445,8 +444,6 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
         SUM(sa.miktar) as miktar,
         MIN(sa.created_at) as created_at,
         MAX(sa.updated_at) as updated_at,
-        sa.status,
-        sa.turu,
         bark.barkod,
         u.UrunId,
         u.aktif,
@@ -455,7 +452,7 @@ class GoodsReceivingRepositoryImpl implements GoodsReceivingRepository {
       JOIN urunler u ON sa.kartkodu = u.StokKodu
       LEFT JOIN birimler b ON CAST(sa.sipbirimkey AS TEXT) = b._key
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-      WHERE sa.siparisler_id = ? AND sa.turu = '1'
+      WHERE sa.siparisler_id = ?
       GROUP BY u.StokKodu, sa.sipbirimkey, u._key, b._key
       ORDER BY MIN(sa.id)
     ''', [orderId]);

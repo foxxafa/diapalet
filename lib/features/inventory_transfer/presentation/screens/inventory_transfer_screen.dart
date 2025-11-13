@@ -292,7 +292,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           // 2. Goods receipt items (mal kabul kalemleri)
           final itemsQuery = await db.rawQuery('''
             SELECT
-              gri.id,
               gri.item_uuid,
               gri.urun_key,
               gri.quantity_received,
@@ -303,7 +302,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             FROM goods_receipt_items gri
             LEFT JOIN urunler u ON u._key = gri.urun_key
             WHERE gri.operation_unique_id = ?
-            ORDER BY gri.id
+            ORDER BY gri.item_uuid
           ''', [operationUuid]);
 
           debugPrint('');
@@ -321,7 +320,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           // 3. Inventory stock (stok kayıtları)
           final stockQuery = await db.rawQuery('''
             SELECT
-              ist.id,
               ist.stock_uuid,
               ist.urun_key,
               ist.quantity,
@@ -336,7 +334,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             LEFT JOIN urunler u ON u._key = ist.urun_key
             LEFT JOIN shelfs l ON l.id = ist.location_id
             WHERE ist.receipt_operation_uuid = ?
-            ORDER BY ist.id
+            ORDER BY ist.created_at
           ''', [operationUuid]);
 
           debugPrint('');
