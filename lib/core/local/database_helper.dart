@@ -273,11 +273,13 @@ class DatabaseHelper {
       
       // KRITIK DEĞIŞIKLIK: siparis_id ve goods_receipt_id kaldırıldı
       // receipt_operation_uuid eklendi (transfer hangi mal kabule ait, putaway için)
+      // PRIMARY KEY: Composite key (operation_unique_id + urun_key + birim_key)
+      // çünkü bir transfer birden fazla ürün içerebilir
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
-          operation_unique_id TEXT PRIMARY KEY NOT NULL,
-          urun_key TEXT,
-          birim_key TEXT,
+          operation_unique_id TEXT NOT NULL,
+          urun_key TEXT NOT NULL,
+          birim_key TEXT NOT NULL,
           from_location_id INTEGER,
           to_location_id INTEGER,
           quantity REAL,
@@ -293,6 +295,7 @@ class DatabaseHelper {
           sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT,
+          PRIMARY KEY (operation_unique_id, urun_key, birim_key),
           FOREIGN KEY(urun_key) REFERENCES urunler(_key),
           FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
           FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
@@ -812,15 +815,19 @@ class DatabaseHelper {
               continue;
             }
 
-            // Check if this record already exists locally (UUID-only check)
-            final existingByUuid = await txn.query(
+            // Check if this record already exists locally (Composite key check)
+            // KRITIK: Bir transfer birden fazla ürün içerebilir, sadece operation_unique_id'ye bakmak yeterli değil
+            final urunKey = transfer['urun_key'];
+            final birimKey = transfer['birim_key'];
+
+            final existingByComposite = await txn.query(
               'inventory_transfers',
-              where: 'operation_unique_id = ?',
-              whereArgs: [operationUniqueId],
+              where: 'operation_unique_id = ? AND urun_key = ? AND birim_key = ?',
+              whereArgs: [operationUniqueId, urunKey, birimKey],
               limit: 1
             );
 
-            if (existingByUuid.isNotEmpty) {
+            if (existingByComposite.isNotEmpty) {
               // Already in local DB - skip to avoid duplicate
               continue;
             }
