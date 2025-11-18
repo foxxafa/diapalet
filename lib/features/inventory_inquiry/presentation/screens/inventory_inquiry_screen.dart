@@ -21,6 +21,8 @@ class InventoryInquiryScreen extends StatefulWidget {
   State<InventoryInquiryScreen> createState() => _InventoryInquiryScreenState();
 }
 
+enum SearchType { barcode, stockCode, productName, pallet }
+
 class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -28,6 +30,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   List<ProductLocation>? _locations;
   List<Map<String, dynamic>> _productSuggestions = [];
   String? _lastSearchQuery;
+  SearchType _searchType = SearchType.pallet; // Varsayılan olarak palet barkodu
 
   late final BarcodeIntentService _barcodeService;
   StreamSubscription<String>? _intentSub;
@@ -120,7 +123,25 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
     try {
       final repo = context.read<InventoryInquiryRepository>();
-      final results = await repo.searchProductLocationsByStockCode(query);
+      List<ProductLocation> results;
+
+      // Seçilen arama tipine göre arama yap
+      switch (_searchType) {
+        case SearchType.barcode:
+          results = await repo.findProductLocationsByBarcode(query);
+          break;
+        case SearchType.pallet:
+          results = await repo.searchProductLocationsByPalletBarcode(query);
+          break;
+        case SearchType.productName:
+          results = await repo.searchProductLocationsByProductName(query);
+          break;
+        case SearchType.stockCode:
+        default:
+          results = await repo.searchProductLocationsByStockCode(query);
+          break;
+      }
+
       if (!mounted) return;
       setState(() {
         _locations = results;
@@ -191,25 +212,146 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       padding: const EdgeInsets.all(InventoryInquiryConstants.searchBarPadding),
       child: Column(
         children: [
+          // Arama tipi seçici - Dropdown
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.manage_search, size: 20, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'inventory_inquiry.search_by'.tr(),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const Spacer(),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<SearchType>(
+                    value: _searchType,
+                    isDense: true,
+                    alignment: AlignmentDirectional.centerEnd,
+                    selectedItemBuilder: (BuildContext context) {
+                      return SearchType.values.map<Widget>((SearchType type) {
+                        IconData icon;
+                        String label;
+
+                        switch (type) {
+                          case SearchType.barcode:
+                            icon = Icons.qr_code_scanner;
+                            label = 'inventory_inquiry.barcode'.tr();
+                            break;
+                          case SearchType.stockCode:
+                            icon = Icons.inventory_2;
+                            label = 'inventory_inquiry.stock_code'.tr();
+                            break;
+                          case SearchType.productName:
+                            icon = Icons.label;
+                            label = 'inventory_inquiry.product_name'.tr();
+                            break;
+                          case SearchType.pallet:
+                            icon = Icons.pallet;
+                            label = 'inventory_inquiry.pallet_barcode'.tr();
+                            break;
+                        }
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Icon(icon, size: 18),
+                            const SizedBox(width: 8),
+                            Text(label, style: Theme.of(context).textTheme.bodyMedium),
+                          ],
+                        );
+                      }).toList();
+                    },
+                    items: [
+                      DropdownMenuItem(
+                        value: SearchType.barcode,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.qr_code_scanner, size: 18),
+                            const SizedBox(width: 8),
+                            Text('inventory_inquiry.barcode'.tr()),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: SearchType.stockCode,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.inventory_2, size: 18),
+                            const SizedBox(width: 8),
+                            Text('inventory_inquiry.stock_code'.tr()),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: SearchType.productName,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.label, size: 18),
+                            const SizedBox(width: 8),
+                            Text('inventory_inquiry.product_name'.tr()),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: SearchType.pallet,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.pallet, size: 18),
+                            const SizedBox(width: 8),
+                            Text('inventory_inquiry.pallet_barcode'.tr()),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (SearchType? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _searchType = newValue;
+                          _locations = null; // Sonuçları temizle
+                          _productSuggestions = []; // Önerileri temizle
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           QrTextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
-            labelText: 'inventory_inquiry.search_label'.tr(),
+            labelText: _getSearchLabel(),
             onChanged: (value) {
               if (value.trim().isEmpty) {
                 setState(() {
                   _productSuggestions = [];
                 });
               } else {
-                _searchProductSuggestions(value);
+                // Stok kodu, ürün adı ve palet barcode aramasında suggestions göster
+                if (_searchType == SearchType.stockCode ||
+                    _searchType == SearchType.productName ||
+                    _searchType == SearchType.pallet) {
+                  _searchProductSuggestions(value);
+                }
               }
             },
             onFieldSubmitted: (value) {
               if (value.trim().isNotEmpty) {
-                if (_productSuggestions.isNotEmpty) {
+                if (_productSuggestions.isNotEmpty &&
+                    (_searchType == SearchType.stockCode ||
+                     _searchType == SearchType.productName ||
+                     _searchType == SearchType.pallet)) {
                   _selectProduct(_productSuggestions.first['StokKodu'] ?? '');
                 } else {
-                  // Enter'a basınca hem barkod hem StokKodu ile arama yap
                   _searchByStockCode();
                 }
               }
@@ -220,6 +362,20 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
         ],
       ),
     );
+  }
+
+  String _getSearchLabel() {
+    switch (_searchType) {
+      case SearchType.barcode:
+        return 'inventory_inquiry.enter_barcode'.tr();
+      case SearchType.pallet:
+        return 'inventory_inquiry.enter_pallet'.tr();
+      case SearchType.productName:
+        return 'inventory_inquiry.enter_product_name'.tr();
+      case SearchType.stockCode:
+      default:
+        return 'inventory_inquiry.enter_stock_code'.tr();
+    }
   }
 
   Widget _buildProductSuggestions() {
@@ -244,12 +400,20 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                   '${'inventory_inquiry.stock_code'.tr()}: ${product['StokKodu'] ?? ''}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                Text(
-                  '${'inventory_inquiry.barcode'.tr()}: ${product['barcode'] ?? 'N/A'}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
+                if (product['barcode'] != null && product['barcode'].toString().isNotEmpty)
+                  Text(
+                    '${'inventory_inquiry.barcode'.tr()}: ${product['barcode']}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
                   ),
-                ),
+                if (product['pallet_barcode'] != null && product['pallet_barcode'].toString().isNotEmpty)
+                  Text(
+                    '${'inventory_inquiry.pallet_barcode'.tr()}: ${product['pallet_barcode']}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.orange,
+                    ),
+                  ),
                 Text(
                   '${'inventory_inquiry.unit'.tr()}: ${product['unit_name'] ?? 'N/A'}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(

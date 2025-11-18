@@ -492,7 +492,8 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   /// Gets the receipt operation UUID from source stock for putaway operations
-  /// KRITIK: Paletsiz ürünlerde NULL döner (FIFO mantığı için)
+  /// YENİ YAKLAŞIM: Hem paletli hem paletsiz transferlerde UUID döndürülür
+  /// FIFO mantığı kaldırıldı - kullanıcı envanter aramada ürünü seçiyor
   Future<String?> _getSourceReceiptUuid(
     DatabaseExecutor txn,
     TransferItemDetail item,
@@ -500,33 +501,49 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     int? sourceLocationId,
   ) async {
     // Only for putaway operations (source = receiving area)
+    // Shelf-to-shelf transfers should NOT send receipt_operation_uuid
     if (sourceLocationId != null) return null;
 
-    // KRITIK FIX: Paletsiz ürünlerde NULL döndür
-    // Çünkü aynı üründen birden fazla goods_receipt olabiliyor
-    // Backend'e NULL gönderip FIFO mantığıyla tüm kayıtlardan çekmesini sağla
-    if (item.palletId == null) {
-      return null; // Paletsiz ürünlerde UUID filtresi yok
-    }
-
-    // SADECE PALET TRANSFERDE UUID döndür
-    String sourceWhereClause = 'urun_key = ? AND stock_status = ? AND birim_key = ?';
+    // Build query to find the source stock
+    String sourceWhereClause = 'urun_key = ? AND stock_status = ? AND location_id IS NULL';
     List<dynamic> sourceWhereArgs = [
       item.productKey,
       InventoryTransferConstants.stockStatusReceiving,
-      item.birimKey,
     ];
 
-    sourceWhereClause += ' AND location_id IS NULL';
-    sourceWhereClause += ' AND pallet_barcode = ?';
-    sourceWhereArgs.add(item.palletId);
+    // Add birim_key filter
+    if (item.birimKey == null) {
+      sourceWhereClause += ' AND birim_key IS NULL';
+    } else {
+      sourceWhereClause += ' AND birim_key = ?';
+      sourceWhereArgs.add(item.birimKey);
+    }
 
-    // Palet transferde: header'daki UUID varsa kullan
+    // Add pallet filter (if applicable)
+    if (item.palletId == null) {
+      sourceWhereClause += ' AND pallet_barcode IS NULL';
+    } else {
+      sourceWhereClause += ' AND pallet_barcode = ?';
+      sourceWhereArgs.add(item.palletId);
+    }
+
+    // KRITIK: expiry_date ile filtrele - kullanıcının seçtiği stokla eşleşmeli
+    if (item.expiryDate != null) {
+      final normalizedDate = DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+          .toIso8601String()
+          .split('T')[0];
+      sourceWhereClause += ' AND expiry_date = ?';
+      sourceWhereArgs.add(normalizedDate);
+      debugPrint('🔍 _getSourceReceiptUuid: Filtering by expiry_date: $normalizedDate');
+    }
+
+    // If header already has UUID, use it to filter
     if (header.receiptOperationUuid != null) {
       sourceWhereClause += ' AND receipt_operation_uuid = ?';
       sourceWhereArgs.add(header.receiptOperationUuid);
     }
 
+    debugPrint('🔍 _getSourceReceiptUuid QUERY: WHERE $sourceWhereClause, ARGS: $sourceWhereArgs');
     final sourceStockQuery = await txn.query(
       'inventory_stock',
       columns: ['receipt_operation_uuid'],
@@ -536,8 +553,12 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     );
 
     if (sourceStockQuery.isNotEmpty) {
-      return sourceStockQuery.first['receipt_operation_uuid'] as String?;
+      final uuid = sourceStockQuery.first['receipt_operation_uuid'] as String?;
+      debugPrint('🔍 _getSourceReceiptUuid RESULT: receipt_operation_uuid = $uuid');
+      return uuid;
     }
+
+    debugPrint('⚠️ _getSourceReceiptUuid: No matching stock found!');
     return null;
   }
 
@@ -585,33 +606,40 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     }
     
     // Add order/goods_receipt filter for putaway operations (UUID-based)
-    // KRITIK FIX: Paletsiz ürünlerde receipt_operation_uuid filtresi YAPMA
-    // Çünkü aynı üründen birden fazla goods_receipt olabiliyor (farklı zamanlarda kabul)
-    // FIFO mantığıyla TÜM kayıtlardan çekmeli
+    // YENİ YAKLAŞIM: Hem paletli hem paletsiz transferlerde receipt_operation_uuid kullan
+    // FIFO mantığı kaldırıldı - kullanıcı envanter aramada ürünü seçiyor
     String? sourceReceiptUuid;
     if (sourceLocationId == null || sourceLocationId == 0) {
-      // SADECE PALLET TRANSFER'de UUID filtresi kullan
-      // Paletsiz ürünlerde UUID filtresi YOK - tüm receipt UUID'lerinden FIFO ile çeker
-      if (item.palletId != null) {
-        if (header.siparisId != null) {
-          // Sipariş bazlı + PALET: goods_receipts'ten UUID al
-          final goodsReceiptQuery = await txn.rawQuery(
-            'SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ? LIMIT 1',
-            [header.siparisId]
-          );
-          if (goodsReceiptQuery.isNotEmpty) {
-            sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
-            sourceWhereClause += ' AND receipt_operation_uuid = ?';
-            sourceWhereArgs.add(sourceReceiptUuid);
-          }
-        } else if (header.receiptOperationUuid != null) {
-          // Free receipt + PALET: UUID direkt kullan
-          sourceReceiptUuid = header.receiptOperationUuid;
+      // PUTAWAY işlemleri: receipt_operation_uuid ZORUNLU (hem paletli hem paletsiz)
+      if (header.siparisId != null) {
+        // Sipariş bazlı transfer: goods_receipts'ten UUID al
+        final goodsReceiptQuery = await txn.rawQuery(
+          'SELECT operation_unique_id FROM goods_receipts WHERE siparis_id = ? LIMIT 1',
+          [header.siparisId]
+        );
+        if (goodsReceiptQuery.isNotEmpty) {
+          sourceReceiptUuid = goodsReceiptQuery.first['operation_unique_id'] as String?;
           sourceWhereClause += ' AND receipt_operation_uuid = ?';
           sourceWhereArgs.add(sourceReceiptUuid);
+          debugPrint('🔍 PUTAWAY (sipariş): receipt_operation_uuid = $sourceReceiptUuid');
         }
+      } else if (header.receiptOperationUuid != null) {
+        // Free receipt transfer: UUID direkt kullan
+        sourceReceiptUuid = header.receiptOperationUuid;
+        sourceWhereClause += ' AND receipt_operation_uuid = ?';
+        sourceWhereArgs.add(sourceReceiptUuid);
+        debugPrint('🔍 PUTAWAY (serbest): receipt_operation_uuid = $sourceReceiptUuid');
       }
-      // Paletsiz ürünler için UUID filtresi YOK - FIFO ile tüm kayıtlardan çeker
+    }
+
+    // KRITIK: expiry_date filtresi ekle - kullanıcının seçtiği stokla eşleşmeli
+    if (item.expiryDate != null) {
+      final normalizedDate = DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+          .toIso8601String()
+          .split('T')[0];
+      sourceWhereClause += ' AND expiry_date = ?';
+      sourceWhereArgs.add(normalizedDate);
+      debugPrint('🔍 TRANSFER: Filtering by expiry_date: $normalizedDate');
     }
 
     // Get source stock info
@@ -629,13 +657,6 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
     if (sourceStockQuery.isNotEmpty) {
       sourceReceiptOperationUuid = sourceStockQuery.first['receipt_operation_uuid'] as String?;
       debugPrint('🔄 TRANSFER SOURCE INFO: id=${sourceStockQuery.first['id']}, receipt_operation_uuid=$sourceReceiptOperationUuid, pallet=${sourceStockQuery.first['pallet_barcode']}, qty=${sourceStockQuery.first['quantity']}');
-    }
-
-    // KRITIK FIX: Paletsiz transferde receipt_operation_uuid NULL olmalı
-    // Çünkü FIFO ile TÜM kayıtlardan çekmeli (birden fazla goods_receipt olabilir)
-    if (item.palletId == null && sourceLocationId == null) {
-      sourceReceiptOperationUuid = null;
-      debugPrint('🔍 PALLETLESS TRANSFER: Setting sourceReceiptOperationUuid to NULL for FIFO');
     }
 
     // Decrement source stock

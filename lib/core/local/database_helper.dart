@@ -2758,6 +2758,12 @@ class DatabaseHelper {
   /// Siparişler ve inventory_stock KESİNLİKLE silinmez
   /// Sadece 14 günden eski transferler ve mal kabul kayıtları temizlenir
   Future<void> cleanupOldData({int days = 14}) async {
+    // ⚠️ CLEANUP DEVRE DIŞI - Şimdilik yorum satırına alındı
+    // goods_receipts siliyor ama inventory_stock kalıyor, bu da orphan kayıtlar yaratıyor
+    debugPrint("⚠️ Veritabanı temizleme şu an devre dışı");
+    return;
+
+    /* YORUM SATIRI - ŞİMDİLİK KULLANILMIYOR
     final db = await database;
     final cutoffDate = DateTime.now().toUtc().subtract(Duration(days: days));
 
@@ -2797,6 +2803,7 @@ class DatabaseHelper {
       debugPrint("- ✅ Siparişli mal kabul kayıtları korunuyor");
 
       return; // Erken çık, siparişleri silme
+
 
       // 2. DEVRE DIŞI: Status 2,3 olan eski siparişleri ve bağlı kayıtları sil
       final oldOrders = await txn.query(
@@ -2864,6 +2871,7 @@ class DatabaseHelper {
       debugPrint("- $receiptItemCount adet mal kabul detayı silindi");
       debugPrint("- $putawayCount adet yerleştirme kaydı silindi");
     });
+    */
   }
 
 

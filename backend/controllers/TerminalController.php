@@ -1219,9 +1219,36 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($sourceStocksQuery, 'location_id', $sourceLocationId);
             $this->addNullSafeWhere($sourceStocksQuery, 'pallet_barcode', $sourcePallet);
 
-            // KRITIK FIX: Item'ın expiry_date'i ile eşleşen stoklardan çek
+            // YENİ YAKLAŞIM: FIFO mantığı KALDIRILDI
+            // Kullanıcı envanter arama sayfasında zaten en eski tarihli ürünü seçiyor
+            // Backend sadece mobile'ın seçtiği AYNI stoktan çekmeli
+
+            // PUTAWAY işlemlerinde (receiving'den rafa): receipt_operation_uuid ZORUNLU
+            if ($isPutawayOperation) {
+                if ($receiptOperationUuid) {
+                    // UUID ile filtrele - hem paletli hem paletsiz transferler için
+                    $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $receiptOperationUuid);
+                    $this->logToFile("🔍 PUTAWAY: Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
+                } elseif ($deliveryNoteNumber) {
+                    // Fallback: delivery_note_number üzerinden operation_unique_id bul
+                    $foundReceiptUuid = $db->createCommand(
+                        'SELECT operation_unique_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
+                    )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
+                    if ($foundReceiptUuid) {
+                        $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $foundReceiptUuid);
+                        $receiptOperationUuid = $foundReceiptUuid; // Güncelle (transfer kaydı için)
+                        $this->logToFile("🔍 PUTAWAY (fallback): Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
+                    } else {
+                        $this->logToFile("⚠️ PUTAWAY: delivery_note_number'a göre receipt bulunamadı: $deliveryNoteNumber", 'WARNING');
+                    }
+                } else {
+                    // KRITIK: Putaway işleminde receipt_operation_uuid yoksa HATA
+                    $this->logToFile("❌ CRITICAL: PUTAWAY operation without receipt_operation_uuid or delivery_note_number!", 'ERROR');
+                }
+            }
+
+            // Expiry date filtresi: Sadece kullanıcının seçtiği expiry_date ile eşleşen stok
             if ($itemExpiryDate !== null) {
-                // Normalize date format (YYYY-MM-DD)
                 if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $itemExpiryDate, $matches)) {
                     $normalizedDate = $matches[1] . '-' . $matches[2] . '-' . $matches[3];
                     $this->addNullSafeWhere($sourceStocksQuery, 'expiry_date', $normalizedDate);
@@ -1229,30 +1256,8 @@ class TerminalController extends Controller
                 }
             }
 
-            // KRITIK FIX: Paletsiz ürünlerde receipt_operation_uuid filtresi YAPMA
-            // Çünkü aynı üründen birden fazla goods_receipt olabiliyor (farklı zamanlarda kabul)
-            // SADECE PALET TRANSFER'de UUID filtresi kullan
-            // Paletsiz ürünlerde FIFO mantığıyla TÜM kayıtlardan çeker
-            if ($isPutawayOperation && $sourcePallet && $receiptOperationUuid) {
-                // PALET TRANSFER: UUID filtresi kullan
-                $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $receiptOperationUuid);
-                $this->logToFile("🔍 PALLET TRANSFER: Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
-            } elseif ($isPutawayOperation && $sourcePallet && $deliveryNoteNumber) {
-                // PALLET TRANSFER + Fallback: delivery_note_number üzerinden operation_unique_id bul
-                $foundReceiptUuid = $db->createCommand(
-                    'SELECT operation_unique_id FROM goods_receipts WHERE delivery_note_number = :delivery_note'
-                )->bindValue(':delivery_note', $deliveryNoteNumber)->queryScalar();
-                if ($foundReceiptUuid) {
-                    $this->addNullSafeWhere($sourceStocksQuery, 'receipt_operation_uuid', $foundReceiptUuid);
-                    $receiptOperationUuid = $foundReceiptUuid; // Güncelle (transfer kaydı için)
-                    $this->logToFile("🔍 PALLET TRANSFER (fallback): Filtering by receipt_operation_uuid: $receiptOperationUuid", 'DEBUG');
-                }
-            } elseif ($isPutawayOperation && !$sourcePallet) {
-                // PALETSIZ TRANSFER: UUID filtresi YAPMA - FIFO ile tüm kayıtlardan çeker
-                $this->logToFile("🔍 PALLETLESS TRANSFER: NO UUID filter - FIFO from ALL receipts", 'DEBUG');
-            }
-
-            $sourceStocksQuery->orderBy(['expiry_date' => SORT_ASC]);
+            // FIFO sıralaması KALDIRILDI - artık kullanıcının seçtiği stok kullanılıyor
+            $sourceStocksQuery->orderBy(['created_at' => SORT_ASC]); // Sadece aynı receipt içinde sıralama için
             $sourceStocks = $sourceStocksQuery->all($db);
 
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
