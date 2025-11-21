@@ -40,7 +40,7 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
       if (productByBarcode != null) {
         final productKey = productByBarcode['_key'] as String;
         
-        // 2. Bu ürünün stok durumunu detaylı bilgilerle getir
+        // 2. Bu ürünün stok durumunu detaylı bilgilerle getir (available ve receiving)
         final sql = '''
           SELECT
             s.urun_key,
@@ -52,15 +52,20 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
             s.${DbColumns.stockExpiryDate} as expiry_date,
             s.${DbColumns.stockLocationId} as location_id,
             sh.${DbColumns.locationsName} as location_name,
-            sh.${DbColumns.locationsCode} as location_code
+            sh.${DbColumns.locationsCode} as location_code,
+            s.receipt_operation_uuid,
+            gr.delivery_note_number,
+            sip.fisno as order_number
           FROM ${DbTables.inventoryStock} s
           JOIN ${DbTables.products} u ON u._key = s.urun_key
           LEFT JOIN birimler unit ON unit._key = s.birim_key
           LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
-          WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+          LEFT JOIN goods_receipts gr ON gr.operation_unique_id = s.receipt_operation_uuid
+          LEFT JOIN siparisler sip ON sip.id = gr.siparis_id
+          WHERE s.urun_key = ? AND s.${DbColumns.stockStatus} IN ('${InventoryInquiryConstants.stockAvailableStatus}', 'receiving')
           ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
         ''';
-        
+
         final stockResults = await db.rawQuery(sql, [productKey]);
         return stockResults.map((map) => ProductLocation.fromMap(map)).toList();
       }
@@ -85,20 +90,24 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
         s.${DbColumns.stockExpiryDate} as expiry_date,
         s.${DbColumns.stockLocationId} as location_id,
         sh.${DbColumns.locationsName} as location_name,
-        sh.${DbColumns.locationsCode} as location_code
+        sh.${DbColumns.locationsCode} as location_code,
+        s.receipt_operation_uuid,
+        gr.delivery_note_number,
+        sip.fisno as order_number
       FROM ${DbTables.inventoryStock} s
       JOIN ${DbTables.products} u ON u._key = s.urun_key
       LEFT JOIN birimler unit ON unit._key = s.birim_key
       LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+      LEFT JOIN goods_receipts gr ON gr.operation_unique_id = s.receipt_operation_uuid
+      LEFT JOIN siparisler sip ON sip.id = gr.siparis_id
       WHERE s.stock_uuid IN (
         SELECT DISTINCT s2.stock_uuid
         FROM ${DbTables.inventoryStock} s2
         JOIN ${DbTables.products} u2 ON u2._key = s2.urun_key
         WHERE u2.${DbColumns.productsCode} LIKE ?
       )
-        AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+        AND s.${DbColumns.stockStatus} IN ('${InventoryInquiryConstants.stockAvailableStatus}', 'receiving')
         AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
-        AND s.${DbColumns.stockLocationId} IS NOT NULL
       ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.createdAt} ASC, u.${DbColumns.productsCode} ASC
     ''';
 
@@ -110,8 +119,6 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
   @override
   Future<List<ProductLocation>> searchProductLocationsByProductName(String query) async {
     final db = await dbHelper.database;
-
-    // Kelimeleri ayır (goods_receiving mantığı)
     final keywords = query
         .trim()
         .toUpperCase()
@@ -119,103 +126,44 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
         .where((word) => word.isNotEmpty)
         .toList();
 
-    if (keywords.isEmpty) return [];
-
-    // Tek kelime ise: başlayan veya içeren ürünleri bul
-    if (keywords.length == 1) {
-      final searchTerm = keywords.first;
-
-      final sql = '''
-        SELECT DISTINCT
-          s.urun_key,
-          u.UrunAdi as UrunAdi,
-          u.StokKodu as StokKodu,
-          unit.BirimAdi as unit_name,
-          s.quantity as quantity,
-          s.pallet_barcode as pallet_barcode,
-          s.expiry_date as expiry_date,
-          s.location_id as location_id,
-          sh.location_name as location_name,
-          sh.location_code as location_code,
-          CASE
-            WHEN UPPER(u.UrunAdi) LIKE ? THEN 1
-            ELSE 2
-          END as priority
-        FROM inventory_stock s
-        JOIN urunler u ON u._key = s.urun_key
-        LEFT JOIN birimler unit ON unit._key = s.birim_key
-        LEFT JOIN shelfs sh ON sh.id = s.location_id
-        WHERE (UPPER(u.UrunAdi) LIKE ? OR UPPER(u.UrunAdi) LIKE ?)
-          AND s.status = 'available'
-          AND s.quantity > 0
-          AND s.location_id IS NOT NULL
-        ORDER BY priority ASC, u.UrunAdi ASC, s.expiry_date ASC
-      ''';
-
-      final results = await db.rawQuery(sql, ['$searchTerm%', '$searchTerm%', '%$searchTerm%']);
-      return results.map((map) => ProductLocation.fromMap(map)).toList();
+    if (keywords.isEmpty) {
+      return [];
     }
 
-    // Çoklu kelime: İlk önce başlayan kelimeleri ara (FIZZ 12 için UPPER(UrunAdi) LIKE 'FIZZ%' AND UPPER(UrunAdi) LIKE '12%')
-    var nameConditions = keywords.map((_) => 'UPPER(u.UrunAdi) LIKE ?').join(' AND ');
-    var nameParams = keywords.map((k) => '$k%').toList();
+    // Sadece ürün adına göre arama yap
+    final whereClause = keywords.map((k) => 'UPPER(u.${DbColumns.productsName}) LIKE ?').join(' AND ');
+    final params = keywords.map((k) => '%$k%').toList();
 
-    var sql = '''
-      SELECT DISTINCT
-        s.urun_key,
-        u.UrunAdi as UrunAdi,
-        u.StokKodu as StokKodu,
-        unit.BirimAdi as unit_name,
-        s.quantity as quantity,
-        s.pallet_barcode as pallet_barcode,
-        s.expiry_date as expiry_date,
-        s.location_id as location_id,
-        sh.location_name as location_name,
-        sh.location_code as location_code
-      FROM inventory_stock s
-      JOIN urunler u ON u._key = s.urun_key
-      LEFT JOIN birimler unit ON unit._key = s.birim_key
-      LEFT JOIN shelfs sh ON sh.id = s.location_id
-      WHERE $nameConditions
-        AND s.status = 'available'
-        AND s.quantity > 0
-        AND s.location_id IS NOT NULL
-      ORDER BY u.UrunAdi ASC, s.expiry_date ASC, s.created_at ASC
-    ''';
+    final sql = '''
+          SELECT
+            s.urun_key,
+            u.${DbColumns.productsName} as UrunAdi,
+            u.${DbColumns.productsCode} as StokKodu,
+            bark.barkod as barcode,
+            unit.BirimAdi as unit_name,
+            s.${DbColumns.stockQuantity} as quantity,
+            s.${DbColumns.stockPalletBarcode} as pallet_barcode,
+            s.${DbColumns.stockExpiryDate} as expiry_date,
+            s.${DbColumns.stockLocationId} as location_id,
+            sh.${DbColumns.locationsName} as location_name,
+            sh.${DbColumns.locationsCode} as location_code,
+            s.receipt_operation_uuid,
+            gr.delivery_note_number,
+            sip.fisno as order_number
+          FROM ${DbTables.inventoryStock} s
+          JOIN ${DbTables.products} u ON u._key = s.urun_key
+          LEFT JOIN birimler unit ON unit._key = s.birim_key
+          LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+          LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = unit._key
+          LEFT JOIN goods_receipts gr ON gr.operation_unique_id = s.receipt_operation_uuid
+          LEFT JOIN siparisler sip ON sip.id = gr.siparis_id
+          WHERE $whereClause
+            AND s.${DbColumns.stockStatus} IN ('${InventoryInquiryConstants.stockAvailableStatus}', 'receiving')
+            AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
+          ORDER BY u.${DbColumns.productsName} ASC, s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.createdAt} ASC
+        ''';
 
-    var results = await db.rawQuery(sql, nameParams);
-
-    // Eğer yeterli sonuç yoksa, içeren kelimeleri ara (FIZZ 12 için UPPER(UrunAdi) LIKE '%FIZZ%' AND UPPER(UrunAdi) LIKE '%12%')
-    if (results.length < 5) {
-      nameConditions = keywords.map((_) => 'UPPER(u.UrunAdi) LIKE ?').join(' AND ');
-      nameParams = keywords.map((k) => '%$k%').toList();
-
-      sql = '''
-        SELECT DISTINCT
-          s.urun_key,
-          u.UrunAdi as UrunAdi,
-          u.StokKodu as StokKodu,
-          unit.BirimAdi as unit_name,
-          s.quantity as quantity,
-          s.pallet_barcode as pallet_barcode,
-          s.expiry_date as expiry_date,
-          s.location_id as location_id,
-          sh.location_name as location_name,
-          sh.location_code as location_code
-        FROM inventory_stock s
-        JOIN urunler u ON u._key = s.urun_key
-        LEFT JOIN birimler unit ON unit._key = s.birim_key
-        LEFT JOIN shelfs sh ON sh.id = s.location_id
-        WHERE $nameConditions
-          AND s.status = 'available'
-          AND s.quantity > 0
-          AND s.location_id IS NOT NULL
-        ORDER BY u.UrunAdi ASC, s.expiry_date ASC, s.created_at ASC
-      ''';
-
-      results = await db.rawQuery(sql, nameParams);
-    }
-
+    final results = await db.rawQuery(sql, params);
     return results.map((map) => ProductLocation.fromMap(map)).toList();
   }
 
@@ -234,13 +182,18 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
         s.${DbColumns.stockExpiryDate} as expiry_date,
         s.${DbColumns.stockLocationId} as location_id,
         sh.${DbColumns.locationsName} as location_name,
-        sh.${DbColumns.locationsCode} as location_code
+        sh.${DbColumns.locationsCode} as location_code,
+        s.receipt_operation_uuid,
+        gr.delivery_note_number,
+        sip.fisno as order_number
       FROM ${DbTables.inventoryStock} s
       JOIN ${DbTables.products} u ON u._key = s.urun_key
       LEFT JOIN birimler unit ON unit._key = s.birim_key
       LEFT JOIN ${DbTables.locations} sh ON sh.${DbColumns.id} = s.${DbColumns.stockLocationId}
+      LEFT JOIN goods_receipts gr ON gr.operation_unique_id = s.receipt_operation_uuid
+      LEFT JOIN siparisler sip ON sip.id = gr.siparis_id
       WHERE s.${DbColumns.stockPalletBarcode} = ?
-        AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+        AND s.${DbColumns.stockStatus} IN ('${InventoryInquiryConstants.stockAvailableStatus}', 'receiving')
         AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
       ORDER BY s.${DbColumns.stockExpiryDate} ASC, s.${DbColumns.updatedAt} ASC
     ''';
@@ -250,8 +203,88 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getProductSuggestions(String query) async {
+  Future<List<Map<String, dynamic>>> getProductSuggestions(String query, SuggestionSearchType searchType) async {
     final db = await dbHelper.database;
+    final String searchTerm = query.trim().toUpperCase();
+
+    if (searchTerm.isEmpty) {
+      return [];
+    }
+
+    String whereClause;
+    List<dynamic> whereParams;
+    String orderByClause;
+    List<dynamic> orderByParams;
+
+    switch (searchType) {
+      case SuggestionSearchType.pallet:
+        // Sadece pallet barcode'a göre ara
+        whereClause = "s.${DbColumns.stockPalletBarcode} IS NOT NULL AND UPPER(s.${DbColumns.stockPalletBarcode}) LIKE ?";
+        whereParams = ['%$searchTerm%'];
+        orderByClause = '''
+          CASE
+            WHEN UPPER(s.${DbColumns.stockPalletBarcode}) = ? THEN 1
+            WHEN UPPER(s.${DbColumns.stockPalletBarcode}) LIKE ? THEN 2
+            ELSE 3
+          END,
+          s.${DbColumns.stockPalletBarcode} ASC
+        ''';
+        orderByParams = [searchTerm, '$searchTerm%'];
+        break;
+
+      case SuggestionSearchType.barcode:
+        // Sadece barkod'a göre ara
+        whereClause = "UPPER(bark.barkod) LIKE ?";
+        whereParams = ['%$searchTerm%'];
+        orderByClause = '''
+          CASE
+            WHEN UPPER(bark.barkod) = ? THEN 1
+            WHEN UPPER(bark.barkod) LIKE ? THEN 2
+            ELSE 3
+          END,
+          bark.barkod ASC
+        ''';
+        orderByParams = [searchTerm, '$searchTerm%'];
+        break;
+
+      case SuggestionSearchType.stockCode:
+        // Sadece stok kodu'na göre ara
+        whereClause = "UPPER(u.${DbColumns.productsCode}) LIKE ?";
+        whereParams = ['%$searchTerm%'];
+        orderByClause = '''
+          CASE
+            WHEN UPPER(u.${DbColumns.productsCode}) = ? THEN 1
+            WHEN UPPER(u.${DbColumns.productsCode}) LIKE ? THEN 2
+            ELSE 3
+          END,
+          u.${DbColumns.productsCode} ASC
+        ''';
+        orderByParams = [searchTerm, '$searchTerm%'];
+        break;
+
+      case SuggestionSearchType.productName:
+        // Ürün adına göre ara (çoklu kelime desteği)
+        final keywords = searchTerm.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        final List<String> nameConditions = [];
+        whereParams = [];
+
+        for (final keyword in keywords) {
+          nameConditions.add("UPPER(u.${DbColumns.productsName}) LIKE ?");
+          whereParams.add('%$keyword%');
+        }
+
+        whereClause = nameConditions.join(' AND ');
+        orderByClause = '''
+          CASE
+            WHEN UPPER(u.${DbColumns.productsName}) = ? THEN 1
+            WHEN UPPER(u.${DbColumns.productsName}) LIKE ? THEN 2
+            ELSE 3
+          END,
+          u.${DbColumns.productsName} ASC
+        ''';
+        orderByParams = [searchTerm, '$searchTerm%'];
+        break;
+    }
 
     final sql = '''
       SELECT DISTINCT
@@ -266,15 +299,14 @@ class InventoryInquiryRepositoryImpl implements InventoryInquiryRepository {
       LEFT JOIN birimler unit ON unit._key = s.birim_key
       LEFT JOIN birimler b ON b.StokKodu = u.${DbColumns.productsCode}
       LEFT JOIN barkodlar bark ON bark._key_scf_stokkart_birimleri = b._key
-      WHERE (u.${DbColumns.productsCode} LIKE ? OR bark.barkod LIKE ? OR u.${DbColumns.productsName} LIKE ? OR s.${DbColumns.stockPalletBarcode} LIKE ?)
-        AND s.${DbColumns.stockStatus} = '${InventoryInquiryConstants.stockAvailableStatus}'
+      WHERE $whereClause
+        AND s.${DbColumns.stockStatus} IN ('${InventoryInquiryConstants.stockAvailableStatus}', 'receiving')
         AND s.${DbColumns.stockQuantity} > ${InventoryInquiryConstants.minStockQuantity}
-        AND s.${DbColumns.stockLocationId} IS NOT NULL
-      ORDER BY u.${DbColumns.productsCode} ASC
+      ORDER BY $orderByClause
       LIMIT ${InventoryInquiryConstants.maxProductSuggestions}
     ''';
 
-    final searchPattern = '${InventoryInquiryConstants.wildcardPrefix}$query${InventoryInquiryConstants.wildcardSuffix}';
-    return await db.rawQuery(sql, [searchPattern, searchPattern, searchPattern, searchPattern]);
+    final allParams = [...whereParams, ...orderByParams];
+    return await db.rawQuery(sql, allParams);
   }
 }

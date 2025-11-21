@@ -10,6 +10,7 @@ class ApiConfig {
   // ApiEnvironment.local -> Bilgisayarındaki Docker sunucusu (Geliştirme için)
   // ApiEnvironment.staging -> Railway staging ortamı (Test için)
   // ApiEnvironment.production -> Railway production ortamı (Canlı)
+  // ApiEnvironment.test -> Test Terminal Controller (Debug/Test için)
   // ******************************************************************
   static const ApiEnvironment currentEnvironment = ApiEnvironment.production;
 
@@ -23,6 +24,7 @@ class ApiConfig {
   static bool get isProduction => currentEnvironment == ApiEnvironment.production;
   static bool get isStaging => currentEnvironment == ApiEnvironment.staging;
   static bool get isLocal => currentEnvironment == ApiEnvironment.local;
+  static bool get isTest => currentEnvironment == ApiEnvironment.test;
 
   // API Endpoint yolları - Ortama göre otomatik format seçimi
   static String get login => _getEndpoint('login');
@@ -35,7 +37,10 @@ class ApiConfig {
 
   // Endpoint formatını ortama göre belirle
   static String _getEndpoint(String action) {
-    if (isProduction) {
+    if (isTest) {
+      // Test ortamı - test-terminal controller'ı kullan
+      return '/index.php?r=test-terminal/$action';
+    } else if (isProduction) {
       // Rowhub formatı
       return '/index.php?r=terminal/$action';
     } else {

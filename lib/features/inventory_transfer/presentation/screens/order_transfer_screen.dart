@@ -1031,15 +1031,34 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Ürün adı
                           Text(
-                            'order_transfer.label_current_quantity'.tr(namedArgs: {
-                              'productCode': product.productCode,
-                              'quantity': product.currentQuantity.toStringAsFixed(
-                                product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
-                              )
-                            }),
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)
+                            product.name,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+
+                          // Expiry Date
+                          if (product.expiryDate != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Exp: ${DateFormat('dd.MM.yyyy').format(product.expiryDate!)}',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1055,7 +1074,10 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))
                         ],
-                        decoration: _inputDecoration('order_transfer.label_quantity'.tr()),
+                        decoration: _inputDecoration(
+                          'order_transfer.label_quantity'.tr(),
+                          hintText: product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2),
+                        ),
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'order_transfer.validator_required'.tr();
                           final qty = double.tryParse(value);
@@ -1092,7 +1114,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(width: _smallGap),
+                    const SizedBox(width: 4),
                     // Birim adı için alan
                     FutureBuilder<String?>(
                       future: _getUnitName(product.birimKey),
@@ -1144,13 +1166,14 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false, String? hintText}) {
     final theme = Theme.of(context);
     final borderColor = isValid ? Colors.green : theme.dividerColor;
     final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
     final borderWidth = isValid ? 2.5 : 1.0; // Kalın yeşil border
     return InputDecoration(
       labelText: label,
+      hintText: hintText,
       filled: true,
       fillColor: enabled ? theme.inputDecorationTheme.fillColor : theme.disabledColor.withAlpha(20),
       border: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide.none),

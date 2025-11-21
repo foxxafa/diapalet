@@ -1380,16 +1380,35 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'inventory_transfer.label_current_quantity'.tr(namedArgs: {
-                              'productCode': product.productCode,
-                              'quantity': product.currentQuantity.toStringAsFixed(
-                                product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2
-                              )
-                            }),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500)
-                          ),
+
+                          // Expiry Date (SKT Bilgisi)
+                          if (product.expiryDate != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Exp: ${DateFormat('dd.MM.yyyy').format(product.expiryDate!)}',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12
+                                  ),
+                                ),
+                                // Sadece raftan rafa transferde Qty göster
+                                if (widget.selectedOrder == null && !widget.isFreePutAway) ...[
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Qty: ${product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1403,7 +1422,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         textAlign: TextAlign.center,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                        decoration: SharedInputDecoration.create(context, 'inventory_transfer.label_quantity'.tr(), borderRadius: InventoryTransferConstants.borderRadius),
+                        decoration: SharedInputDecoration.create(
+                          context,
+                          'inventory_transfer.label_quantity'.tr(),
+                          hintText: product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2),
+                          borderRadius: InventoryTransferConstants.borderRadius
+                        ),
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
                           final qty = double.tryParse(value);
@@ -1418,7 +1442,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(width: _smallGap),
+                    const SizedBox(width: 4),
                     // Birim adı için alan
                     FutureBuilder<String?>(
                       future: _getUnitName(product.birimKey),

@@ -1,5 +1,5 @@
 // lib/core/network/api_environments.dart
-enum ApiEnvironment { local, staging, production }
+enum ApiEnvironment { local, staging, production, test }
 
 class ApiEnvConfig {
   final String name;
@@ -41,6 +41,11 @@ class ApiEnvironments {
       name: 'Production',
       baseUrl: _productionBaseUrl,
       description: 'rowhub Production API (Live System)',
+    ),
+    ApiEnvironment.test: ApiEnvConfig(
+      name: 'Test',
+      baseUrl: _productionBaseUrl,
+      description: 'Test Terminal Controller (Debugging)',
     ),
   };
 

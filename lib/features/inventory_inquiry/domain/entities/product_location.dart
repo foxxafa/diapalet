@@ -11,6 +11,9 @@ class ProductLocation {
   final int? locationId;
   final String? locationName;
   final String? locationCode;
+  final String? receiptOperationUuid; // Hangi mal kabule bağlı
+  final String? deliveryNoteNumber; // İrsaliye numarası (serbest mal kabul için)
+  final String? orderNumber; // Sipariş numarası (sipariş bazlı mal kabul için)
 
   ProductLocation({
     required this.productId,
@@ -24,6 +27,9 @@ class ProductLocation {
     this.locationId,
     this.locationName,
     this.locationCode,
+    this.receiptOperationUuid,
+    this.deliveryNoteNumber,
+    this.orderNumber,
   });
 
   factory ProductLocation.fromMap(Map<String, dynamic> map) {
@@ -41,6 +47,9 @@ class ProductLocation {
       locationId: map['location_id'],
       locationName: map['location_name'],
       locationCode: map['location_code'],
+      receiptOperationUuid: map['receipt_operation_uuid'],
+      deliveryNoteNumber: map['delivery_note_number'],
+      orderNumber: map['order_number'],
     );
   }
 } 

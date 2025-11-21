@@ -148,7 +148,7 @@ class _DeliveryNoteSelectionScreenState extends State<DeliveryNoteSelectionScree
                               MaterialPageRoute(
                                 builder: (_) => InventoryTransferScreen(
                                   isFreePutAway: true,
-                                  selectedDeliveryNote: deliveryNoteNumber, // UUID-based: delivery_note_number göndер
+                                  selectedDeliveryNote: operationUniqueId, // KRITIK FIX: UUID göndер, delivery_note_number değil!
                                   deliveryNoteDisplayName: displayName, // NULL ise FREE-{UUID} göster
                                 ),
                               ),

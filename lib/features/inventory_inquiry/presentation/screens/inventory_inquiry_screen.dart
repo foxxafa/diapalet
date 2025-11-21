@@ -23,6 +23,20 @@ class InventoryInquiryScreen extends StatefulWidget {
 
 enum SearchType { barcode, stockCode, productName, pallet }
 
+// SearchType'ı SuggestionSearchType'a dönüştür
+SuggestionSearchType _toSuggestionSearchType(SearchType type) {
+  switch (type) {
+    case SearchType.barcode:
+      return SuggestionSearchType.barcode;
+    case SearchType.stockCode:
+      return SuggestionSearchType.stockCode;
+    case SearchType.productName:
+      return SuggestionSearchType.productName;
+    case SearchType.pallet:
+      return SuggestionSearchType.pallet;
+  }
+}
+
 class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -75,38 +89,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       }
     }
     _searchController.text = displayCode;
-    _searchByBarcode();
-  }
-
-  Future<void> _searchByBarcode() async {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) return;
-
-    _searchFocusNode.unfocus();
-    setState(() {
-      _isLoading = true;
-      _locations = null;
-      _productSuggestions = [];
-      _lastSearchQuery = query;
-    });
-
-    try {
-      final repo = context.read<InventoryInquiryRepository>();
-      final results = await repo.findProductLocationsByBarcode(query);
-      if (!mounted) return;
-      setState(() {
-        _locations = results;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _locations = [];
-          _isLoading = false;
-        });
-        _showErrorSnackBar('inventory_inquiry.error_searching'.tr(namedArgs: {'error': e.toString()}));
-      }
-    }
+    _searchByStockCode(); // Dropdown seçimine göre arama yap
   }
 
   Future<void> _searchByStockCode() async {
@@ -168,7 +151,9 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
 
     try {
       final repo = context.read<InventoryInquiryRepository>();
-      final results = await repo.getProductSuggestions(query);
+      // Seçilen arama tipine göre suggestions getir
+      final suggestionType = _toSuggestionSearchType(_searchType);
+      final results = await repo.getProductSuggestions(query, suggestionType);
       if (!mounted) return;
       setState(() {
         _productSuggestions = results;
@@ -182,12 +167,21 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
     }
   }
 
-  void _selectProduct(String stockCode) {
-    _searchController.text = stockCode;
-    setState(() {
-      _productSuggestions = [];
-    });
-    _searchByStockCode();
+  void _selectProduct(Map<String, dynamic> product) {
+    if (_searchType == SearchType.pallet) {
+      _searchController.text = product['pallet_barcode'] ?? '';
+      setState(() {
+        _productSuggestions = [];
+      });
+      _searchByStockCode(); // dispatcher
+    } else { // productName or stockCode
+      _searchController.text = product['StokKodu'] ?? '';
+      setState(() {
+        _productSuggestions = [];
+        _searchType = SearchType.stockCode;
+      });
+      _searchByStockCode();
+    }
   }
 
   @override
@@ -346,14 +340,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
             },
             onFieldSubmitted: (value) {
               if (value.trim().isNotEmpty) {
-                if (_productSuggestions.isNotEmpty &&
-                    (_searchType == SearchType.stockCode ||
-                     _searchType == SearchType.productName ||
-                     _searchType == SearchType.pallet)) {
-                  _selectProduct(_productSuggestions.first['StokKodu'] ?? '');
-                } else {
-                  _searchByStockCode();
-                }
+                _searchByStockCode();
               }
             },
             onQrScanned: (scannedData) => _handleBarcode(scannedData),
@@ -422,7 +409,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                 ),
               ],
             ),
-            onTap: () => _selectProduct(product['StokKodu'] ?? ''),
+            onTap: () => _selectProduct(product),
           );
         }).toList(),
       ),
@@ -463,14 +450,15 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
           margin: const EdgeInsets.symmetric(horizontal: InventoryInquiryConstants.cardMarginHorizontal, vertical: InventoryInquiryConstants.cardMarginVertical),
           child: Padding(
             padding: const EdgeInsets.all(InventoryInquiryConstants.cardPadding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 Text(
                   location.productName,
                   style: Theme.of(context)
                       .textTheme
-                      .titleLarge
+                      .bodyLarge
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 Text(
@@ -486,7 +474,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                 _buildInfoRow(
                     Icons.location_on,
                     'inventory_inquiry.location'.tr(),
-                    location.locationName ?? 'N/A'),
+                    location.locationId == null ? '000' : (location.locationName ?? 'N/A')),
                 if (location.palletBarcode != null) ...[
                   const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
                   _buildInfoRow(
@@ -501,7 +489,24 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                       'inventory_inquiry.expiry_date'.tr(),
                       DateFormat('dd.MM.yyyy').format(location.expiryDate!)),
                 ],
+                // Mal kabul bilgisi - Sipariş veya İrsaliye
+                if (location.orderNumber != null) ...[
+                  const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
+                  _buildInfoRow(
+                      Icons.receipt_long,
+                      'Order Number',
+                      location.orderNumber!,
+                      valueColor: Colors.blue),
+                ] else if (location.deliveryNoteNumber != null) ...[
+                  const SizedBox(height: InventoryInquiryConstants.infoRowSpacing),
+                  _buildInfoRow(
+                      Icons.local_shipping,
+                      'Delivery Note',
+                      location.deliveryNoteNumber!,
+                      valueColor: Colors.green),
+                ],
               ],
+              ),
             ),
           ),
         );
@@ -509,7 +514,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
+  Widget _buildInfoRow(IconData icon, String label, String value, {Color? valueColor}) {
     return Row(
       children: [
         Icon(icon, size: InventoryInquiryConstants.iconSize, color: Theme.of(context).colorScheme.secondary),
@@ -521,7 +526,10 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
             style: Theme.of(context)
                 .textTheme
                 .bodyLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
+                ?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: valueColor,
+                ),
             textAlign: TextAlign.end,
           ),
         ),

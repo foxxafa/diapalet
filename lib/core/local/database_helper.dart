@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 
 class DatabaseHelper {
   static const _databaseName = "Diapallet_v2.db";
-  static const _databaseVersion = 1; // Version 1: Clean UUID-only architecture
+  static const _databaseVersion = 2; // Version 2: Add expiry_date to inventory_transfers PK
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
   DatabaseHelper._privateConstructor();
@@ -52,11 +52,67 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     debugPrint("Veritabanı güncelleniyor: $oldVersion → $newVersion");
 
-    // UUID-only mimariye geçiş için tüm tabloları yeniden oluştur
+    // Version 1 -> 2: inventory_transfers tablosuna expiry_date ekle
+    if (oldVersion == 1 && newVersion == 2) {
+      await _migrateV1ToV2(db);
+      debugPrint("✅ V1→V2 Migration tamamlandı (expiry_date eklendi)");
+      return;
+    }
+
+    // Diğer büyük güncellemeler için tüm tabloları yeniden oluştur
     await _dropAllTables(db);
     await _createAllTables(db);
 
-    debugPrint("✅ Veritabanı yeniden oluşturuldu (UUID-only architecture)");
+    debugPrint("✅ Veritabanı yeniden oluşturuldu");
+  }
+
+  /// Version 1 -> 2 Migration: inventory_transfers'a expiry_date ekle
+  Future<void> _migrateV1ToV2(Database db) async {
+    debugPrint("🔄 V1→V2 Migration başlatılıyor...");
+
+    await db.transaction((txn) async {
+      // Eski inventory_transfers verilerini kontrol et
+      final existingData = await txn.query('inventory_transfers');
+      debugPrint("📊 Eski inventory_transfers kayıt sayısı: ${existingData.length}");
+
+      // Eski tabloyu sil (veriler mobilde kullanılmıyor, sunucudan sync edilecek)
+      debugPrint("🗑️ Eski inventory_transfers tablosu siliniyor...");
+      await txn.execute('DROP TABLE IF EXISTS inventory_transfers');
+
+      // Yeni schema ile tabloyu oluştur (expiry_date PRIMARY KEY'e eklendi)
+      debugPrint("📦 Yeni inventory_transfers tablosu oluşturuluyor (expiry_date ile)...");
+      await txn.execute('''
+        CREATE TABLE inventory_transfers (
+          operation_unique_id TEXT NOT NULL,
+          urun_key TEXT NOT NULL,
+          birim_key TEXT NOT NULL,
+          from_location_id INTEGER,
+          to_location_id INTEGER,
+          quantity REAL,
+          from_pallet_barcode TEXT,
+          pallet_barcode TEXT,
+          expiry_date TEXT,
+          receipt_operation_uuid TEXT,
+          delivery_note_number TEXT,
+          employee_id INTEGER,
+          transfer_date TEXT,
+          StokKodu TEXT,
+          from_shelf TEXT,
+          to_shelf TEXT,
+          sip_fisno TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          PRIMARY KEY (operation_unique_id, urun_key, birim_key, expiry_date),
+          FOREIGN KEY(urun_key) REFERENCES urunler(_key),
+          FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
+          FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
+          FOREIGN KEY(employee_id) REFERENCES employees(id)
+        )
+      ''');
+
+      debugPrint("✅ inventory_transfers tablosu başarıyla güncellendi!");
+      debugPrint("ℹ️ Eski veriler silindi (${existingData.length} kayıt), sunucudan sync edilecek");
+    });
   }
 
   Future<void> _createAllTables(Database db) async {
@@ -273,8 +329,8 @@ class DatabaseHelper {
       
       // KRITIK DEĞIŞIKLIK: siparis_id ve goods_receipt_id kaldırıldı
       // receipt_operation_uuid eklendi (transfer hangi mal kabule ait, putaway için)
-      // PRIMARY KEY: Composite key (operation_unique_id + urun_key + birim_key)
-      // çünkü bir transfer birden fazla ürün içerebilir
+      // PRIMARY KEY: Composite key (operation_unique_id + urun_key + birim_key + expiry_date)
+      // çünkü bir transfer birden fazla ürün içerebilir ve aynı ürünün farklı SKT'leri olabilir
       batch.execute('''
         CREATE TABLE IF NOT EXISTS inventory_transfers (
           operation_unique_id TEXT NOT NULL,
@@ -285,6 +341,7 @@ class DatabaseHelper {
           quantity REAL,
           from_pallet_barcode TEXT,
           pallet_barcode TEXT,
+          expiry_date TEXT,
           receipt_operation_uuid TEXT,
           delivery_note_number TEXT,
           employee_id INTEGER,
@@ -295,7 +352,7 @@ class DatabaseHelper {
           sip_fisno TEXT,
           created_at TEXT,
           updated_at TEXT,
-          PRIMARY KEY (operation_unique_id, urun_key, birim_key),
+          PRIMARY KEY (operation_unique_id, urun_key, birim_key, expiry_date),
           FOREIGN KEY(urun_key) REFERENCES urunler(_key),
           FOREIGN KEY(from_location_id) REFERENCES shelfs(id),
           FOREIGN KEY(to_location_id) REFERENCES shelfs(id),
@@ -688,8 +745,8 @@ class DatabaseHelper {
                   );
                 } else {
                   debugPrint('🔄 Inventory stock güncel, skip: UUID=$stockUuid (quantity: $localQuantity, updated_at: $localUpdatedAt)');
+                  continue;
                 }
-                continue;
               }
             }
             
@@ -805,6 +862,17 @@ class DatabaseHelper {
         // Inventory transfers incremental sync - Multi-device safe
         if (data.containsKey('inventory_transfers')) {
           final inventoryTransfersData = List<Map<String, dynamic>>.from(data['inventory_transfers']);
+
+          // DEBUG: Log first 3 transfers to check expiry_date
+          if (inventoryTransfersData.isNotEmpty) {
+            debugPrint('🔍 SYNC DEBUG: inventory_transfers - ${inventoryTransfersData.length} kayıt alındı');
+            final sampleCount = inventoryTransfersData.length < 3 ? inventoryTransfersData.length : 3;
+            for (int i = 0; i < sampleCount; i++) {
+              final sample = inventoryTransfersData[i];
+              debugPrint('  Sample #${i+1}: operation_unique_id=${sample['operation_unique_id']}, urun_key=${sample['urun_key']}, expiry_date=${sample['expiry_date']}');
+            }
+          }
+
           for (final transfer in inventoryTransfersData) {
             // UUID-based duplicate check (device reset safe)
             final operationUniqueId = transfer['operation_unique_id'];
@@ -817,13 +885,26 @@ class DatabaseHelper {
 
             // Check if this record already exists locally (Composite key check)
             // KRITIK: Bir transfer birden fazla ürün içerebilir, sadece operation_unique_id'ye bakmak yeterli değil
+            // PRIMARY KEY: (operation_unique_id, urun_key, birim_key, expiry_date)
             final urunKey = transfer['urun_key'];
             final birimKey = transfer['birim_key'];
+            final expiryDate = transfer['expiry_date']; // SKT kontrolü için eklendi
+
+            // NULL safe query builder (expiry_date NULL olabilir)
+            String whereClause = 'operation_unique_id = ? AND urun_key = ? AND birim_key = ?';
+            List<dynamic> whereArgs = [operationUniqueId, urunKey, birimKey];
+
+            if (expiryDate == null) {
+              whereClause += ' AND expiry_date IS NULL';
+            } else {
+              whereClause += ' AND expiry_date = ?';
+              whereArgs.add(expiryDate);
+            }
 
             final existingByComposite = await txn.query(
               'inventory_transfers',
-              where: 'operation_unique_id = ? AND urun_key = ? AND birim_key = ?',
-              whereArgs: [operationUniqueId, urunKey, birimKey],
+              where: whereClause,
+              whereArgs: whereArgs,
               limit: 1
             );
 
@@ -2507,53 +2588,10 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getFreeReceiptsForPutaway() async {
     final db = await database;
 
-    // Duplicate'leri tespit et ve temizle
-    final duplicateCheck = await db.rawQuery('''
-      SELECT delivery_note_number, COUNT(*) as count
-      FROM goods_receipts
-      WHERE siparis_id IS NULL AND delivery_note_number IS NOT NULL
-      GROUP BY delivery_note_number
-      HAVING COUNT(*) > 1
-    ''');
-
-    if (duplicateCheck.isNotEmpty) {
-      await db.transaction((txn) async {
-        for (final dup in duplicateCheck) {
-          final deliveryNote = dup['delivery_note_number'];
-          
-          // En eski kaydı bırak, diğerlerini sil
-          final duplicateReceipts = await txn.query(
-            'goods_receipts',
-            where: 'delivery_note_number = ? AND siparis_id IS NULL',
-            whereArgs: [deliveryNote],
-            orderBy: 'receipt_date ASC'
-          );
-
-          if (duplicateReceipts.length > 1) {
-            // İlk kaydı koru, diğerlerini sil
-            final receiptsToDelete = duplicateReceipts.skip(1).toList();
-
-            for (final receipt in receiptsToDelete) {
-              final operationUuid = receipt['operation_unique_id'] as String?;
-
-              if (operationUuid != null) {
-                // İlişkili goods_receipt_items'ları da sil (operation_unique_id ile)
-                await txn.delete('goods_receipt_items',
-                  where: 'operation_unique_id = ?', whereArgs: [operationUuid]);
-
-                // İlişkili inventory_stock kayıtlarını da sil (UUID ile!)
-                await txn.delete('inventory_stock',
-                  where: 'receipt_operation_uuid = ?', whereArgs: [operationUuid]);
-
-                // goods_receipt'i sil (UUID ile)
-                await txn.delete('goods_receipts',
-                  where: 'operation_unique_id = ?', whereArgs: [operationUuid]);
-              }
-            }
-          }
-        }
-      });
-    }
+    // KRITIK FIX: Duplicate cleanup KALDIRILDI
+    // Aynı delivery_note_number ile birden fazla goods_receipt olabilir, bu normaldir
+    // Duplicate cleanup inventory_stock kayıtlarını siliyordu ve veri kaybına neden oluyordu
+    // Artık hiçbir kayıt silinmeyecek
 
     // UUID bazlı serbest mal kabul listesi
     const sql = '''

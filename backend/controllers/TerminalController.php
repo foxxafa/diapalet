@@ -1402,6 +1402,7 @@ class TerminalController extends Controller
                     'quantity'                => $portion['qty'],
                     'from_pallet_barcode'     => $sourcePallet,
                     'pallet_barcode'          => $targetPallet,
+                    'expiry_date'             => $portion['expiry'] ?? null, // KRITIK FIX: Expiry date desteği (opsiyonel - eski versiyonlar için NULL) - DÜZELTME: 'expiry_date' değil 'expiry' key'i kullanılıyor
                     'receipt_operation_uuid'  => $receiptOperationUuid, // YENİ: Transfer hangi mal kabule ait (putaway için)
                     'delivery_note_number'    => $deliveryNoteNumber,
                     'employee_id'             => $header['employee_id'],
@@ -1503,14 +1504,13 @@ class TerminalController extends Controller
             $this->addNullSafeWhere($query, 'pallet_barcode', $palletBarcode);
             $this->addNullSafeWhere($query, 'expiry_date', $expiryDate);
 
-            // YENİ YAKLŞIM: 'receiving' durumunda receipt_operation_uuid ile grupla
-            // 'available' durumunda receipt_operation_uuid YOK - tam konsolidasyon
-            if ($stockStatus === 'receiving' && $receiptOperationUuid !== null) {
-                // RECEIVING: receipt_operation_uuid ile grupla
-                // Aynı mal kabulden gelen ürünler birleşir
-                $this->addNullSafeWhere($query, 'receipt_operation_uuid', $receiptOperationUuid);
-            }
-            // 'available' durumunda receipt_operation_uuid kontrolü YOK - tam konsolidasyon
+            // KRITIK FIX: receipt_operation_uuid kontrolü KALDIRILDI
+            // Sebep: Aynı mal kabulde aynı ürünün farklı paletleri için ayrı stok kayıtları olmalı
+            // pallet_barcode ve expiry_date kontrolü zaten yukarıda var, bu yeterli
+            // Örnek: Mal kabul ABC123'te ürün 588958'in 2 farklı paleti varsa → 2 ayrı stok kaydı
+
+            // 'available' durumunda: Farklı paletler/SKT'ler ayrı kayıt olarak kalır (konsolidasyon YOK)
+            // 'receiving' durumunda: Farklı paletler/SKT'ler ayrı kayıt olarak kalır (konsolidasyon YOK)
 
             $stock = $query->createCommand($db)->queryOne();
 
@@ -2023,9 +2023,10 @@ class TerminalController extends Controller
         $serverSyncTimestamp = $lastSyncTimestamp;
         if ($lastSyncTimestamp) {
             $syncDateTime = new \DateTime($lastSyncTimestamp);
-            // Ana sync ile aynı 60 saniye buffer kullan
-            $syncDateTime->sub(new \DateInterval('PT60S'));
+            // Ana sync ile aynı 10 dakika buffer kullan
+            $syncDateTime->sub(new \DateInterval('PT10M'));
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+            $this->logToFile("actionSyncCounts - Buffer: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", 'INFO');
         }
 
         try {
@@ -2296,10 +2297,11 @@ class TerminalController extends Controller
         // KRITIK FIX: UTC timezone belirt, aksi halde sunucu local timezone kullanır
         $syncDateTime = new \DateTime($lastSyncTimestamp, new \DateTimeZone('UTC'));
         // Race condition riskini minimize etmek için buffer artırıldı
-        $syncDateTime->sub(new \DateInterval('PT60S')); // 30'dan 60 saniyeye çıkarıldı
+        $syncDateTime->sub(new \DateInterval('PT10M')); // 10 dakika buffer - kayıp veriyi önlemek için
         $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
 
-        // Debug için log
+        // Debug için detaylı log
+        $this->logToFile("actionSyncDownload - Buffer: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", 'INFO');
         \Yii::info("Sync buffer applied: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", __METHOD__);
     } else {
     }
@@ -2613,7 +2615,7 @@ class TerminalController extends Controller
 
         // ########## INVENTORY TRANSFERS İÇİN İNKREMENTAL SYNC ##########
         $transferQuery = (new Query())
-            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'expiry_date', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers');
         $transferConditions = ['or'];
 
@@ -2700,8 +2702,9 @@ class TerminalController extends Controller
         if ($lastSyncTimestamp) {
             $syncDateTime = new \DateTime($lastSyncTimestamp);
             // Ana sync ile aynı buffer kullan
-            $syncDateTime->sub(new \DateInterval('PT60S')); // 60 saniye buffer
+            $syncDateTime->sub(new \DateInterval('PT10M')); // 10 dakika buffer
             $serverSyncTimestamp = $syncDateTime->format('Y-m-d H:i:s');
+            $this->logToFile("handlePaginatedTableDownload - Table: $tableName, Page: $page, Buffer: original={$lastSyncTimestamp}, buffered={$serverSyncTimestamp}", 'INFO');
         }
 
         $offset = ($page - 1) * $limit;
@@ -3187,7 +3190,7 @@ class TerminalController extends Controller
         }
 
         $query = (new Query())
-            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
+            ->select(['operation_unique_id', 'urun_key', 'birim_key', 'from_location_id', 'to_location_id', 'quantity', 'from_pallet_barcode', 'pallet_barcode', 'expiry_date', 'receipt_operation_uuid', 'delivery_note_number', 'employee_id', 'transfer_date', 'created_at', 'updated_at'])
             ->from('inventory_transfers')
             ->where($transferConditions);
 

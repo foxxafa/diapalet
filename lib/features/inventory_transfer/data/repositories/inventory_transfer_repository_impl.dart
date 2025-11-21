@@ -448,6 +448,14 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
 
       // Create transfer record
       final targetPalletId = header.operationType == AssignmentMode.pallet ? item.palletId : null;
+
+      // KRITIK FIX: expiry_date'i normalize et (DATE-only format)
+      final expiryDateStr = item.expiryDate != null
+          ? DateTime(item.expiryDate!.year, item.expiryDate!.month, item.expiryDate!.day)
+              .toIso8601String()
+              .split('T')[0]
+          : null;
+
       await txn.insert(DbTables.inventoryTransfers, {
         'operation_unique_id': operationUniqueId,
         'urun_key': item.productKey,
@@ -457,6 +465,7 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
         'quantity': item.quantity,
         'from_pallet_barcode': item.palletId,
         'pallet_barcode': targetPalletId,
+        'expiry_date': expiryDateStr, // KRITIK FIX: expiry_date eklendi
         'employee_id': header.employeeId,
         'transfer_date': header.transferDate.toIso8601String(),
       });
@@ -1463,18 +1472,36 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   /// UUID-based: delivery_note_number ile operation_unique_id bul
-  Future<String?> _getGoodsReceiptUuidByDeliveryNote(String deliveryNoteNumber) async {
+  Future<String?> _getGoodsReceiptUuidByDeliveryNote(String deliveryNoteOrUuid) async {
     final db = await dbHelper.database;
-    final result = await db.query(
+
+    // KRITIK FIX: Parametre artık direkt UUID olabilir veya delivery_note_number olabilir
+    // Önce UUID olarak kontrol et
+    var result = await db.query(
       'goods_receipts',
       columns: ['operation_unique_id'],
-      where: 'delivery_note_number = ?',
-      whereArgs: [deliveryNoteNumber],
+      where: 'operation_unique_id = ?',
+      whereArgs: [deliveryNoteOrUuid],
       limit: 1,
     );
+
     if (result.isNotEmpty) {
       return result.first['operation_unique_id'] as String?;
     }
+
+    // UUID değilse, delivery_note_number olarak ara
+    result = await db.query(
+      'goods_receipts',
+      columns: ['operation_unique_id'],
+      where: 'delivery_note_number = ?',
+      whereArgs: [deliveryNoteOrUuid],
+      limit: 1,
+    );
+
+    if (result.isNotEmpty) {
+      return result.first['operation_unique_id'] as String?;
+    }
+
     return null;
   }
 
