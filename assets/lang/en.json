@@ -527,7 +527,7 @@
     "mode_pallet": "Pallet",
     "mode_box": "Product",
     "label_source_location": "Source Location (Goods Receiving)",
-    "label_pallet": "Pallet ID",
+    "label_pallet": "Pallet",
     "label_product": "Product",
     "label_target_location": "Target Location",
     "label_quantity": "Quantity",

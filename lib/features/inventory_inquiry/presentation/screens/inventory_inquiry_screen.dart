@@ -193,9 +193,16 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       body: Column(
         children: [
           _buildSearchBar(),
-          Expanded(
-            child: _buildResults(),
-          ),
+          // Suggestions göster
+          if (_productSuggestions.isNotEmpty)
+            Flexible(
+              child: _buildProductSuggestions(),
+            ),
+          // Suggestion gösteriliyorsa results'ı hiç render etme
+          if (_productSuggestions.isEmpty)
+            Expanded(
+              child: _buildResults(),
+            ),
         ],
       ),
     );
@@ -205,6 +212,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
     return Padding(
       padding: const EdgeInsets.all(InventoryInquiryConstants.searchBarPadding),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Arama tipi seçici - Dropdown
           Container(
@@ -345,7 +353,6 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
             },
             onQrScanned: (scannedData) => _handleBarcode(scannedData),
           ),
-          if (_productSuggestions.isNotEmpty) _buildProductSuggestions(),
         ],
       ),
     );
@@ -366,14 +373,23 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
   }
 
   Widget _buildProductSuggestions() {
+    final suggestions = _productSuggestions.take(InventoryInquiryConstants.maxDisplayedSuggestions).toList();
+
     return Container(
-      margin: const EdgeInsets.only(top: InventoryInquiryConstants.suggestionMarginTop),
+      margin: const EdgeInsets.symmetric(
+        horizontal: InventoryInquiryConstants.searchBarPadding,
+      ),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
         border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(InventoryInquiryConstants.borderRadius),
       ),
-      child: Column(
-        children: _productSuggestions.take(InventoryInquiryConstants.maxDisplayedSuggestions).map((product) {
+      child: ListView.builder(
+        padding: EdgeInsets.zero,
+        itemCount: suggestions.length,
+        itemBuilder: (context, index) {
+          final product = suggestions[index];
           return ListTile(
             dense: true,
             title: Text(
@@ -411,7 +427,7 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
             ),
             onTap: () => _selectProduct(product),
           );
-        }).toList(),
+        },
       ),
     );
   }
@@ -421,14 +437,20 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // Suggestion gösteriliyorsa prompt mesajını gösterme
     if (_locations == null) {
-      return Center(
-        child: Text(
-          'inventory_inquiry.prompt'.tr(),
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-      );
+      // Suggestion yoksa prompt göster
+      if (_productSuggestions.isEmpty) {
+        return Center(
+          child: Text(
+            'inventory_inquiry.prompt'.tr(),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        );
+      }
+      // Suggestion varsa hiçbir şey gösterme
+      return const SizedBox();
     }
 
     if (_locations!.isEmpty) {
@@ -450,10 +472,9 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
           margin: const EdgeInsets.symmetric(horizontal: InventoryInquiryConstants.cardMarginHorizontal, vertical: InventoryInquiryConstants.cardMarginVertical),
           child: Padding(
             padding: const EdgeInsets.all(InventoryInquiryConstants.cardPadding),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
                   location.productName,
                   style: Theme.of(context)
@@ -506,7 +527,6 @@ class _InventoryInquiryScreenState extends State<InventoryInquiryScreen> {
                       valueColor: Colors.green),
                 ],
               ],
-              ),
             ),
           ),
         );

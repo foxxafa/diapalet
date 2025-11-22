@@ -1003,10 +1003,10 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(_smallGap),
+            padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: 8),
             itemCount: _productsInContainer.length,
             separatorBuilder: (context, index) => const Divider(
-              height: _smallGap,
+              height: 10,
               indent: 16,
               endIndent: 16,
               thickness: 0.2
@@ -1021,51 +1021,61 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                 return const SizedBox.shrink();
               }
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: InventoryTransferConstants.microGap),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Ürün adı
-                          Text(
-                            product.name,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.primary,
+                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: 6),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Ürün adı
+                            Text(
+                              product.name,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
 
-                          // Expiry Date
-                          if (product.expiryDate != null) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Exp: ${DateFormat('dd.MM.yyyy').format(product.expiryDate!)}',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12
+                            // Expiry Date ve Stok Kodu
+                            if (product.expiryDate != null) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    DateFormat('dd.MM.yyyy').format(product.expiryDate!),
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${product.productCode}',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.secondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: _gap),
-                    Expanded(
-                      flex: 2, // Quantity input alanını biraz genişlet (4:2 oranı = 1.5 kat gibi)
-                      child: TextFormField(
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 70,
+                        child: TextFormField(
                         controller: controller,
                         focusNode: focusNode,
                         enabled: !(_selectedMode == AssignmentMode.pallet && !_isPalletOpening),
@@ -1074,9 +1084,11 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))
                         ],
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
                         decoration: _inputDecoration(
                           'order_transfer.label_quantity'.tr(),
                           hintText: product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2),
+                          verticalPadding: 8,
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'order_transfer.validator_required'.tr();
@@ -1121,20 +1133,23 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
                       builder: (context, snapshot) {
                         final unitName = snapshot.data ?? '';
                         return SizedBox(
-                          width: 50,
-                          child: Text(
-                            unitName,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold, // Birim adını kalın yap
+                          width: 35,
+                          child: Center(
+                            child: Text(
+                              unitName,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold, // Birim adını kalın yap
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         );
                       },
                     ),
                   ],
                 ),
+              ),
               );
             },
           ),
@@ -1166,7 +1181,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false, String? hintText}) {
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon, bool enabled = true, bool isValid = false, String? hintText, double? verticalPadding}) {
     final theme = Theme.of(context);
     final borderColor = isValid ? Colors.green : theme.dividerColor;
     final focusedBorderColor = isValid ? Colors.green : theme.colorScheme.primary;
@@ -1181,7 +1196,7 @@ class _OrderTransferScreenState extends State<OrderTransferScreen> {
       focusedBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: focusedBorderColor, width: borderWidth + 0.5)),
       errorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 1)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: _borderRadius, borderSide: BorderSide(color: theme.colorScheme.error, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // QrTextField ile tutarlı yükseklik
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: verticalPadding ?? 16), // QrTextField ile tutarlı yükseklik
       isDense: true,
       enabled: enabled,
       floatingLabelBehavior: FloatingLabelBehavior.auto,

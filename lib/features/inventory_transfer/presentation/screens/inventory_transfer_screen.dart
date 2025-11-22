@@ -1347,121 +1347,136 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(_smallGap),
+            padding: const EdgeInsets.symmetric(horizontal: _smallGap, vertical: 8),
             itemCount: _productsInContainer.length,
-            separatorBuilder: (context, index) => const Divider(height: _smallGap, indent: 16, endIndent: 16, thickness: 0.2),
+            separatorBuilder: (context, index) => const Divider(height: 10, indent: 16, endIndent: 16, thickness: 0.2),
             itemBuilder: (context, index) {
               final product = _productsInContainer[index];
               final controller = _productQuantityControllers[product.key];
               final focusNode = _productQuantityFocusNodes[product.key];
-              
+
               // Safety check: if controllers are null, skip this item
               if (controller == null || focusNode == null) {
                 return const SizedBox.shrink();
               }
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: InventoryTransferConstants.microGap),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Ürün adı
-                          Text(
-                            product.name,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.primary,
+                padding: const EdgeInsets.symmetric(horizontal: InventoryTransferConstants.smallGap, vertical: 6),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Ürün adı
+                            Text(
+                              product.name,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
 
-                          // Expiry Date (SKT Bilgisi)
-                          if (product.expiryDate != null) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Exp: ${DateFormat('dd.MM.yyyy').format(product.expiryDate!)}',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12
-                                  ),
-                                ),
-                                // Sadece raftan rafa transferde Qty göster
-                                if (widget.selectedOrder == null && !widget.isFreePutAway) ...[
-                                  const SizedBox(width: 8),
+                            // Expiry Date (SKT Bilgisi) ve Stok Kodu
+                            if (product.expiryDate != null) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(Icons.calendar_today, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                                  const SizedBox(width: 4),
                                   Text(
-                                    'Qty: ${product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}',
+                                    DateFormat('dd.MM.yyyy').format(product.expiryDate!),
                                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${product.productCode}',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.secondary,
+                                    ),
+                                  ),
+                                  // Sadece raftan rafa transferde Qty göster
+                                  if (widget.selectedOrder == null && !widget.isFreePutAway) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Qty: ${product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
-                            ),
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: _gap),
-                    Expanded(
-                      flex: 2, // Quantity input alanını biraz genişlet
-                      child: TextFormField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        enabled: !(_selectedMode == AssignmentMode.pallet && !_isPalletOpening),
-                        textAlign: TextAlign.center,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
-                        decoration: SharedInputDecoration.create(
-                          context,
-                          'inventory_transfer.label_quantity'.tr(),
-                          hintText: product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2),
-                          borderRadius: InventoryTransferConstants.borderRadius
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
-                          final qty = double.tryParse(value);
-                          if (qty == null) return 'inventory_transfer.validator_invalid'.tr();
-                          if (qty > product.currentQuantity + 0.001) return 'inventory_transfer.validator_max'.tr();
-                          if (qty < 0) return 'inventory_transfer.validator_negative'.tr();
-                          return null;
-                        },
-                        onFieldSubmitted: (value) {
-                          // Sadece klavyeyi kapat
-                          FocusScope.of(context).unfocus();
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 70,
+                        child: TextFormField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          enabled: !(_selectedMode == AssignmentMode.pallet && !_isPalletOpening),
+                          textAlign: TextAlign.center,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
+                          decoration: SharedInputDecoration.create(
+                            context,
+                            'inventory_transfer.label_quantity'.tr(),
+                            hintText: product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2),
+                            borderRadius: InventoryTransferConstants.borderRadius,
+                            verticalPadding: 8,
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) return 'inventory_transfer.validator_required'.tr();
+                            final qty = double.tryParse(value);
+                            if (qty == null) return 'inventory_transfer.validator_invalid'.tr();
+                            if (qty > product.currentQuantity + 0.001) return 'inventory_transfer.validator_max'.tr();
+                            if (qty < 0) return 'inventory_transfer.validator_negative'.tr();
+                            return null;
+                          },
+                          onFieldSubmitted: (value) {
+                            // Sadece klavyeyi kapat
+                            FocusScope.of(context).unfocus();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      // Birim adı için alan
+                      FutureBuilder<String?>(
+                        future: _getUnitName(product.birimKey),
+                        builder: (context, snapshot) {
+                          final unitName = snapshot.data ?? '';
+                          return SizedBox(
+                            width: 35,
+                            child: Center(
+                              child: Text(
+                                unitName,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold, // Birim adını kalın yap
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          );
                         },
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    // Birim adı için alan
-                    FutureBuilder<String?>(
-                      future: _getUnitName(product.birimKey),
-                      builder: (context, snapshot) {
-                        final unitName = snapshot.data ?? '';
-                        return SizedBox(
-                          width: 50,
-                          child: Text(
-                            unitName,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold, // Birim adını kalın yap
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
