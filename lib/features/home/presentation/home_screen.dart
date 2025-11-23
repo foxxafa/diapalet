@@ -129,6 +129,19 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: SharedAppBar(
         title: 'home.title'.tr(),
         showBackButton: false,
+        leadingWidget: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _appVersion.isEmpty ? '' : 'v$_appVersion',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).appBarTheme.foregroundColor ?? Theme.of(context).colorScheme.onPrimary,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             icon: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
@@ -221,8 +234,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     },
                   ),
-                  const SizedBox(height: 24),
-                  _buildVersionInfo(),
                 ],
               ),
             ),
@@ -272,22 +283,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVersionInfo() {
-    final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Text(
-          _appVersion.isEmpty ? '' : 'v$_appVersion',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6),
-            fontSize: 12,
-          ),
         ),
       ),
     );

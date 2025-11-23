@@ -7,6 +7,7 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
   final PreferredSizeWidget? bottom;
   // YENİ: Geri butonunun görünürlüğünü kontrol etmek için eklendi.
   final bool showBackButton;
+  final Widget? leadingWidget;
 
   const SharedAppBar({
     super.key,
@@ -16,6 +17,7 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
     // YENİ: Varsayılan olarak geri butonunu gösterir.
     // Bu sayede mevcut kullanımların bozulması engellenir.
     this.showBackButton = true,
+    this.leadingWidget,
   });
 
   @override
@@ -24,8 +26,8 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     return AppBar(
       title: Text(title),
-      automaticallyImplyLeading: showBackButton,
-      leading: showBackButton && canGoBack
+      automaticallyImplyLeading: showBackButton && leadingWidget == null,
+      leading: leadingWidget ?? (showBackButton && canGoBack
           ? IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () {
@@ -33,7 +35,7 @@ class SharedAppBar extends StatelessWidget implements PreferredSizeWidget {
                 Navigator.of(context).pop();
               },
             )
-          : null,
+          : null),
       actions: actions,
       bottom: bottom,
     );

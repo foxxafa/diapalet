@@ -1406,16 +1406,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                                     ),
                                   ),
                                   // Sadece raftan rafa transferde Qty göster
-                                  if (widget.selectedOrder == null && !widget.isFreePutAway) ...[
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Qty: ${product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}',
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12
-                                      ),
-                                    ),
-                                  ],
+                                  // if (widget.selectedOrder == null && !widget.isFreePutAway) ...[
+                                  //   const SizedBox(width: 8),
+                                  //   Text(
+                                  //     'Qty: ${product.currentQuantity.toStringAsFixed(product.currentQuantity.truncateToDouble() == product.currentQuantity ? 0 : 2)}',
+                                  //     style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  //       fontWeight: FontWeight.bold,
+                                  //       fontSize: 12
+                                  //     ),
+                                  //   ),
+                                  // ],
                                 ],
                               ),
                             ],

@@ -122,8 +122,10 @@ class PdfService {
     final warehouseInfo = header['warehouse_info'] as Map<String, dynamic>?;
     final orderInfo = header['order_info'] as Map<String, dynamic>?;
 
+    final firstName = employeeInfo?['first_name'] ?? '';
+    final lastName = employeeInfo?['last_name'];
     final employeeName = (employeeInfo != null)
-        ? '${employeeInfo['first_name']} ${employeeInfo['last_name']}'
+        ? (lastName != null ? '$firstName $lastName' : firstName).trim()
         : 'System User';
     final warehouseName = warehouseInfo?['name'] ?? 'N/A';
     final warehouseCode = warehouseInfo?['warehouse_code'] ?? 'N/A';
