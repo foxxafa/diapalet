@@ -857,14 +857,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         );
         debugPrint('🔍 PALET İÇERİĞİ SONUÇ: ${contents.length} ürün bulundu');
       } else if (_selectedMode == AssignmentMode.product && container is TransferableContainer) {
-        contents = container.items.map((transferableItem) => ProductItem(
-          productKey: transferableItem.product.productKey ?? transferableItem.product.id.toString(),
-          birimKey: transferableItem.product.birimKey, // KRITIK FIX: birimKey eklendi
-          name: transferableItem.product.name,
-          productCode: transferableItem.product.stockCode,
-          currentQuantity: transferableItem.quantity,
-          expiryDate: transferableItem.expiryDate,
-        )).toList();
+        // KRITIK FIX: Veritabanından güncel miktar bilgilerini çek (cache yerine)
+        debugPrint('🔍 PRODUCT CONTAINER İÇERİĞİ YÜKLEME: containerId=${container.id}, locationId=$locationId, stockStatus=$stockStatus');
+        contents = await _repo.getProductContainerContents(
+          container.id,
+          locationId == 0 ? null : locationId,
+          stockStatus: stockStatus,
+          siparisId: widget.selectedOrder?.id,
+          deliveryNoteNumber: widget.isFreePutAway ? widget.selectedDeliveryNote : null,
+        );
+        debugPrint('🔍 PRODUCT CONTAINER İÇERİĞİ SONUÇ: ${contents.length} ürün bulundu');
       }
 
       if (!mounted) return;
@@ -960,6 +962,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         siparisId: widget.selectedOrder?.id,
         deliveryNoteNumber: widget.selectedDeliveryNote,
         goodsReceiptId: _goodsReceiptId,
+        // KRITIK FIX: Serbest mal kabul için UUID'yi receiptOperationUuid olarak geç
+        // Bu sayede _updateStockForTransfer doğru stoğu bulacak
+        receiptOperationUuid: widget.isFreePutAway ? widget.selectedDeliveryNote : null,
       );
 
       await _repo.recordTransferOperation(header, itemsToTransfer, sourceId, targetId);

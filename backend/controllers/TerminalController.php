@@ -1262,7 +1262,7 @@ class TerminalController extends Controller
 
             $totalAvailable = array_sum(array_column($sourceStocks, 'quantity'));
             if ($totalAvailable < $totalQuantityToTransfer - 0.001) {
-                $errorContext = $isPutawayOperation ? "Putaway for Receipt #$goodsReceiptId / Order #$siparisId" : "Shelf Transfer";
+                $errorContext = $isPutawayOperation ? "Putaway for Receipt $receiptOperationUuid / Order #$siparisId" : "Shelf Transfer";
                 $errorMessage = "Yetersiz stok. Ürün ID: {$urunKey}, Mevcut: {$totalAvailable}, İstenen: {$totalQuantityToTransfer}";
 
                 // Çalışan bilgisini al

@@ -21,6 +21,10 @@ abstract class InventoryTransferRepository {
     /// Belirli bir paletteki ürünleri ve miktarlarını getirir.
     Future<List<ProductItem>> getPalletContents(String palletBarcode, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber});
 
+    /// Belirli bir ürün container'ındaki ürünleri ve güncel miktarlarını getirir.
+    /// Product mode için veritabanından taze veri çeker.
+    Future<List<ProductItem>> getProductContainerContents(String containerId, int? locationId, {String stockStatus = 'available', int? siparisId, String? deliveryNoteNumber});
+
     Future<void> recordTransferOperation(
         TransferOperationHeader header,
         List<TransferItemDetail> items,

@@ -262,6 +262,89 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
   }
 
   @override
+  Future<List<ProductItem>> getProductContainerContents(String containerId, int? locationId, {String stockStatus = InventoryTransferConstants.stockStatusAvailable, int? siparisId, String? deliveryNoteNumber}) async {
+    final db = await dbHelper.database;
+
+    // Container ID formatı: "box_STOCKCODE" - stock code'u çıkar
+    String? stockCode;
+    if (containerId.startsWith('box_')) {
+      stockCode = containerId.substring(4); // "box_" prefixini kaldır
+    } else {
+      stockCode = containerId;
+    }
+
+    final whereParts = <String>[];
+    final whereArgs = <dynamic>[];
+
+    // Palet olmayan ürünleri al (pallet_barcode NULL)
+    whereParts.add('s.pallet_barcode IS NULL');
+
+    // Stock code ile eşleşen ürünleri bul
+    whereParts.add('u.StokKodu = ?');
+    whereArgs.add(stockCode);
+
+    if (locationId == null) {
+      whereParts.add('s.location_id IS NULL');
+    } else {
+      whereParts.add('s.location_id = ?');
+      whereArgs.add(locationId);
+    }
+
+    whereParts.add('s.stock_status = ?');
+    whereArgs.add(stockStatus);
+
+    // Sadece miktarı > 0 olan kayıtları getir
+    whereParts.add('s.quantity > 0');
+
+    // UUID-based filtering
+    String joinClause = '';
+    if (siparisId != null) {
+      // Sipariş bazlı putaway: goods_receipts üzerinden filtrele
+      joinClause = 'LEFT JOIN goods_receipts gr ON s.receipt_operation_uuid = gr.operation_unique_id';
+      whereParts.add('gr.siparis_id = ?');
+      whereArgs.add(siparisId);
+    } else if (deliveryNoteNumber != null && deliveryNoteNumber.isNotEmpty) {
+      // Free putaway: Doğrudan receipt_operation_uuid ile filtrele
+      // deliveryNoteNumber aslında goods_receipt'in operation_unique_id'si (UUID)
+      whereParts.add('s.receipt_operation_uuid = ?');
+      whereArgs.add(deliveryNoteNumber);
+    }
+
+    final query = '''
+      SELECT
+        u._key as productKey,
+        u.UrunAdi as productName,
+        u.StokKodu as productCode,
+        s.birim_key,
+        (SELECT bark.barkod FROM barkodlar bark WHERE bark._key_scf_stokkart_birimleri = s.birim_key LIMIT 1) as barcode,
+        SUM(s.quantity) as currentQuantity,
+        s.expiry_date as expiryDate
+      FROM inventory_stock s
+      $joinClause
+      JOIN urunler u ON s.urun_key = u._key
+      WHERE ${whereParts.join(' AND ')}
+      GROUP BY u._key, u.UrunAdi, u.StokKodu, s.birim_key, s.expiry_date
+      ORDER BY s.expiry_date, u.UrunAdi
+    ''';
+
+    debugPrint('🔍 PRODUCT CONTAINER İÇERİĞİ SORGU: containerId=$containerId, stockCode=$stockCode, locationId=$locationId, stockStatus=$stockStatus, deliveryNoteNumber=$deliveryNoteNumber, siparisId=$siparisId');
+    debugPrint('🔍 PRODUCT CONTAINER SQL: $query');
+    debugPrint('🔍 PRODUCT CONTAINER ARGS: $whereArgs');
+
+    final maps = await db.rawQuery(query, whereArgs);
+
+    debugPrint('🔍 PRODUCT CONTAINER İÇERİĞİ SONUÇ: ${maps.length} kayıt bulundu');
+    for (var i = 0; i < maps.length; i++) {
+      final map = maps[i];
+      debugPrint('🔍 PRODUCT CONTAINER [$i]: productKey=${map['productKey']}, productName=${map['productName']}, currentQuantity=${map['currentQuantity']}, expiryDate=${map['expiryDate']}');
+    }
+
+    final result = maps.map((map) => ProductItem.fromJson(map)).toList();
+
+    return result;
+  }
+
+  @override
   Future<void> recordTransferOperation(
     TransferOperationHeader header,
     List<TransferItemDetail> items,
@@ -1589,8 +1672,56 @@ class InventoryTransferRepositoryImpl implements InventoryTransferRepository {
       GROUP BY u._key, u.UrunAdi, u.StokKodu, u.aktif, bark.barkod
       ORDER BY u.UrunAdi ASC
     ''';
-    
+
+    debugPrint('');
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('🔍 PRODUCT SEARCH DEBUG');
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('📝 Query: $query');
+    debugPrint('📍 Location ID: $locationId');
+    debugPrint('📦 Order ID: $orderId');
+    debugPrint('🧾 Delivery Note: $deliveryNoteNumber');
+    debugPrint('📊 Stock Statuses: $stockStatuses');
+    debugPrint('🚫 Exclude Palletized: $excludePalletizedProducts');
+    debugPrint('');
+    debugPrint('📋 SQL: $sql');
+    debugPrint('📋 Args: $whereArgs');
+    debugPrint('═══════════════════════════════════════════════════════════');
+
+    // DEBUG: Location'daki tüm stokları kontrol et
+    if (locationId != null) {
+      final stockCheck = await db.rawQuery('''
+        SELECT
+          s.stock_uuid,
+          s.urun_key,
+          s.location_id,
+          s.stock_status,
+          s.pallet_barcode,
+          s.quantity,
+          u.StokKodu,
+          u.UrunAdi
+        FROM inventory_stock s
+        LEFT JOIN urunler u ON s.urun_key = u._key
+        WHERE s.location_id = ? AND s.quantity > 0
+        LIMIT 10
+      ''', [locationId]);
+      debugPrint('');
+      debugPrint('📦 STOCKS AT LOCATION $locationId (first 10):');
+      for (var stock in stockCheck) {
+        debugPrint('   - ${stock['StokKodu']} | status: ${stock['stock_status']} | pallet: ${stock['pallet_barcode']} | qty: ${stock['quantity']}');
+      }
+      debugPrint('');
+    }
+
     final maps = await db.rawQuery(sql, whereArgs);
+
+    debugPrint('📊 Results: ${maps.length} rows found');
+    for (var i = 0; i < maps.length && i < 5; i++) {
+      debugPrint('   [$i] ${maps[i]}');
+    }
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('');
+
     final results = maps.map((map) => ProductInfo.fromDbMap(map)).toList();
     return results;
   }
